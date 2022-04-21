@@ -1,0 +1,9 @@
+[unstable]
+build-std = ["core,alloc", "compiler_builtins"]
+build-std-features = ["compiler-builtins-mem"]
+
+[build]
+target = "x86-kernel.json"
+
+[target.'cfg(target_os = "none")']
+runner = "bootimage runner"
