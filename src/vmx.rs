@@ -15,13 +15,16 @@ use x86_64::PhysAddr;
 
 use crate::memory::{VirtualMemoryArea, VirtualMemoryAreaAllocator};
 
+const LOW_32_BITS_MASK: u64 = (1 << 32) - 1;
+
 /// CPUID mask for VMX support
 const CPUID_ECX_VMX_MASK: u32 = 1 << 5;
 
 /// Model Specific Registers
 const MSR_IA32_FEATURE_CONTROL: Msr = Msr::new(0x3A);
 const MSR_IA32_VMX_BASIC: Msr = Msr::new(0x480);
-const MSR_IA32_VMX_PINBASED_CTL: Msr = Msr::new(0x481);
+const MSR_IA32_VMX_PINBASED_CTLS: Msr = Msr::new(0x481);
+const MSR_IA32_VMX_TRUE_PINBASED_CTLS: Msr = Msr::new(0x48D);
 
 /// Basic VMX Information.
 ///
@@ -36,7 +39,6 @@ pub struct VmxBasicInfo {
 
     /// Support the VMX_TRUE_CTLS registers.
     pub support_true_ctls: bool,
-
     // TODO: list supported memory types.
 }
 
@@ -54,6 +56,12 @@ pub enum VmxError {
 
     /// VMX is supported by the CPU but not enabled. See IA_32_FEATURE_CONTROL MSR.
     VmxNotEnabled,
+
+    /// Value 1 is not supported for one of the configuration bits for which it was requested.
+    Disallowed1,
+
+    /// Value 0 is not supported for one of the configuration bits for which it was requested.
+    Disallowed0,
 }
 
 /// Returns Ok is VMX is available, otherwise returns the reason it's not.
@@ -132,10 +140,11 @@ pub unsafe fn get_vmx_info() -> VmxBasicInfo {
     let revision = revision as u32;
     let vmcs_width = (raw_info & ((1 << 45) - 1)) >> 32; // bits 44:32
     let vmcs_width = vmcs_width as u32;
+    let support_true_ctls = raw_info & (1 << 55) != 0;
     VmxBasicInfo {
         revision,
         vmcs_width,
-        support_true_ctls: true,
+        support_true_ctls,
     }
 }
 
@@ -212,6 +221,59 @@ impl VmcsRegion {
     pub unsafe fn deactivate() {
         // Use VMCLEAR
         todo!()
+    }
+
+    /// Set the pin-based controls.
+    pub fn set_pin_based_ctls(&mut self, flags: PinbasedControls) -> Result<(), VmxError> {
+        // NOTE: see Intel SDM Vol 3D Appending A.3.1 for allowed settings explanation.
+        let raw_flags = flags.bits();
+        let vmx_info = unsafe { get_vmx_info() };
+        let spec = unsafe { MSR_IA32_VMX_PINBASED_CTLS.read() };
+        let known = PinbasedControls::all().bits();
+        let new_flags = if vmx_info.support_true_ctls {
+            let true_spec = unsafe { MSR_IA32_VMX_TRUE_PINBASED_CTLS.read() };
+            Self::get_true_ctls(raw_flags, spec, true_spec, known)?
+        } else {
+            Self::get_ctls(raw_flags, spec, known)?
+        };
+
+        todo!();
+    }
+
+    /// Computes the controls bits when there is no support for true controls.
+    fn get_ctls(user: u32, spec: u64, known: u32) -> Result<u32, VmxError> {
+        // NOTE: see Intel SDM Vol 3C Section 31.5.1, algorithm 3
+        let allowed_zeros = (spec & LOW_32_BITS_MASK) as u32;
+        let allowed_ones = (spec >> 32) as u32;
+
+        if !user & allowed_zeros & known != 0 {
+            return Err(VmxError::Disallowed0);
+        }
+        if user & !allowed_ones & known != 0 {
+            return Err(VmxError::Disallowed1);
+        }
+
+        let default_value = allowed_zeros & allowed_ones;
+        Ok(user | default_value)
+    }
+
+    fn get_true_ctls(user: u32, spec: u64, true_spec: u64, known: u32) -> Result<u32, VmxError> {
+        // NOTE: see Intel SDM Vol 3C Section 31.5.1, algorithm 3
+        let allowed_zeros = (spec & LOW_32_BITS_MASK) as u32;
+        let true_allowed_zeros = (true_spec & LOW_32_BITS_MASK) as u32;
+        let true_allowed_ones = (true_spec >> 32) as u32;
+
+        if !user & true_allowed_zeros & known != 0 {
+            return Err(VmxError::Disallowed0);
+        }
+        if user & !true_allowed_ones & known != 0 {
+            return Err(VmxError::Disallowed1);
+        }
+
+        let default_value = true_allowed_zeros & true_allowed_ones;
+        let can_be_both = true_allowed_ones & !true_allowed_zeros;
+        let must_be_ones = can_be_both & !known & !allowed_zeros;
+        Ok(default_value | must_be_ones)
     }
 }
 

@@ -32,7 +32,13 @@ run-args = [
 test-args = [
     "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
     "-serial", "stdio",
-    "-display", "none"
+    "-display", "none",
+    "-cpu", "host,+vmx",
+
+    # Enable nested virtualization on MacOS
+    # "-accel", "hvf",
+    # Enable nested virtualization on Linux
+    "-enable-kvm",
 ]
 test-success-exit-code = 33 # (0x10 << 1) | 1
 test-timeout = 20 # in seconds
