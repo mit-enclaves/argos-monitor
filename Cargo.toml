@@ -21,13 +21,13 @@ features = ["spin_no_std"]
 run-args = [
     "-nographic",
     "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
-    "-cpu", "host,vmx",
+    "-cpu", "host,+vmx",
     "-s",
 
     # Enable nested virtualization on MacOS
-    "-accel", "hvf",
+    # "-accel", "hvf",
     # Enable nested virtualization on Linux
-    # "-enable-kvm",
+    "-enable-kvm",
 ]
 test-args = [
     "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",

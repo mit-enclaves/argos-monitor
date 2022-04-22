@@ -18,17 +18,14 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     println!("=========== Start QEMU ===========");
 
     kernel::init();
-    let mut _vma_allocator =  unsafe { kernel::init_memory(boot_info).expect("Failed to initialize memory") };
+    let vma_allocator =
+        unsafe { kernel::init_memory(boot_info).expect("Failed to initialize memory") };
 
-    println!("VMX: {:?}", vmx::vmx_available());
+    println!("VMX:   {:?}", vmx::vmx_available());
 
-    // the vmxon region must be a 4kb page-aligned region.
-    // let vmxon_region = vma_allocator.with_capacity(0x1000).unwrap();
-    // let vmxon_addr = vmxon_region.as_phys_addr();
-
-    // unsafe {
-    //     vmx::vmxon();
-    // }
+    unsafe {
+        println!("VMXON: {:?}", vmx::vmxon(&vma_allocator));
+    }
 
     println!("Done");
 
