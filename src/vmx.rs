@@ -1,18 +1,19 @@
 //! VMX support
 //!
-//! Inspired from the [x86] crate.
+//! Inspired and in part copied from the [x86] crate.
 //!
 //! [x86]: https://hermitcore.github.io/libhermit-rs/x86/bits64/vmx/index.html
 
 use core::arch;
 use core::arch::asm;
 
+use bitflags::bitflags;
 use x86_64::registers::control::{Cr4, Cr4Flags};
 use x86_64::registers::model_specific::Msr;
 use x86_64::registers::rflags::RFlags;
 use x86_64::PhysAddr;
 
-use crate::memory::{VirtualMemoryAreaAllocator, VirtualMemoryArea};
+use crate::memory::{VirtualMemoryArea, VirtualMemoryAreaAllocator};
 
 /// CPUID mask for VMX support
 const CPUID_ECX_VMX_MASK: u32 = 1 << 5;
@@ -20,6 +21,7 @@ const CPUID_ECX_VMX_MASK: u32 = 1 << 5;
 /// Model Specific Registers
 const MSR_IA32_FEATURE_CONTROL: Msr = Msr::new(0x3A);
 const MSR_IA32_VMX_BASIC: Msr = Msr::new(0x480);
+const MSR_IA32_VMX_PINBASED_CTL: Msr = Msr::new(0x481);
 
 /// Basic VMX Information.
 ///
@@ -31,6 +33,10 @@ pub struct VmxBasicInfo {
 
     /// Minimum required size in bytes for VMCS and VMXON regions.
     pub vmcs_width: u32,
+
+    /// Support the VMX_TRUE_CTLS registers.
+    pub support_true_ctls: bool,
+
     // TODO: list supported memory types.
 }
 
@@ -129,6 +135,7 @@ pub unsafe fn get_vmx_info() -> VmxBasicInfo {
     VmxBasicInfo {
         revision,
         vmcs_width,
+        support_true_ctls: true,
     }
 }
 
@@ -205,5 +212,27 @@ impl VmcsRegion {
     pub unsafe fn deactivate() {
         // Use VMCLEAR
         todo!()
+    }
+}
+
+// —————————————————————— VM Execution Control Fields ——————————————————————— //
+
+bitflags! {
+    /// Pin-based VM-execution controls.
+    ///
+    /// A set of bitmask flags useful when setting up [`PINBASED_EXEC_CONTROLS`] VMCS field.
+    ///
+    /// See Intel SDM, Volume 3C, Section 24.6.1.
+    pub struct PinbasedControls: u32 {
+        /// External-interrupt exiting.
+        const EXTERNAL_INTERRUPT_EXITING = 1 << 0;
+        /// NMI exiting.
+        const NMI_EXITING = 1 << 3;
+        /// Virtual NMIs.
+        const VIRTUAL_NMIS = 1 << 5;
+        /// Activate VMX-preemption timer.
+        const VMX_PREEMPTION_TIMER = 1 << 6;
+        /// Process posted interrupts.
+        const POSTED_INTERRUPTS = 1 << 7;
     }
 }

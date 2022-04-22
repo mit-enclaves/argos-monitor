@@ -246,6 +246,9 @@ impl VirtualMemoryArea {
         self.ptr.as_ptr()
     }
 
+    /// Physical address of the first frame of this VMA.
+    ///
+    /// WARNING: There is no guarantee that frames are continuous!
     pub fn as_phys_addr(&self) -> PhysAddr {
         let page = Page::<Size4KiB>::containing_address(VirtAddr::from_ptr(self.as_ptr()));
         let allocator = self.vma_allocator.lock();

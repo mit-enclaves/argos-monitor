@@ -13,7 +13,6 @@ use bootloader::{entry_point, BootInfo};
 
 entry_point!(kernel_main);
 
-#[no_mangle]
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     println!("=========== Start QEMU ===========");
 
