@@ -18,7 +18,8 @@ pub fn vmx_available() -> Result<(), &'static str> {
     // SAFETY: the CPUID instruction is not supported under SGX, we assume that this function is
     // never executed under SGX.
     let cpuid = unsafe { arch::x86_64::__cpuid(0x01) };
-    if (cpuid.eax & CPUID_ECX_VMX_MASK) == 0 {
+    if (cpuid.ecx & CPUID_ECX_VMX_MASK) == 0 {
+        crate::println!("CPUID.ECX: {:b}", cpuid.ecx);
         return Err("CPU does not support VMX");
     }
 
