@@ -21,19 +21,24 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let vma_allocator =
         unsafe { kernel::init_memory(boot_info).expect("Failed to initialize memory") };
 
-    println!("VMX:   {:?}", vmx::vmx_available());
-
     unsafe {
-        println!("VMXON: {:?}", vmx::vmxon(&vma_allocator));
-    }
+        println!("VMX:    {:?}", vmx::vmx_available());
+        println!("VMXON:  {:?}", vmx::vmxon(&vma_allocator));
 
-    println!("Done");
+        let vmcs = vmx::VmcsRegion::new(&vma_allocator);
+        if let Err(err) = vmcs {
+            println!("VMCS:   Err({:?})", err);
+        } else {
+            println!("VMCS:   Ok(())");
+        }
+
+        println!("VMXOFF: {:?}", vmx::vmxoff());
+    }
 
     #[cfg(test)]
     test_main();
 
     kernel::qemu::exit(kernel::qemu::ExitCode::Success);
-    kernel::hlt_loop();
 }
 
 #[cfg(not(test))]
@@ -42,7 +47,6 @@ fn panic(info: &PanicInfo) -> ! {
     println!("{}", info);
 
     kernel::qemu::exit(kernel::qemu::ExitCode::Failure);
-    kernel::hlt_loop();
 }
 
 #[cfg(test)]

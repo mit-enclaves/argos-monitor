@@ -17,7 +17,7 @@ impl ExitCode {
     }
 }
 
-pub fn exit(exit_code: ExitCode) {
+pub fn exit(exit_code: ExitCode) -> ! {
     println!("========== Exiting QEMU ==========");
     println!("{}", exit_code.to_str());
     println!("==================================");
@@ -26,4 +26,5 @@ pub fn exit(exit_code: ExitCode) {
         let mut port = Port::new(0xf4);
         port.write(exit_code as u32);
     }
+    crate::hlt_loop();
 }

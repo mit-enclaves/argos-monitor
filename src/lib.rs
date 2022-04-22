@@ -12,13 +12,13 @@ extern crate alloc;
 
 use core::panic::PanicInfo;
 
+pub mod allocator;
 pub mod gdt;
 pub mod interrupts;
+pub mod memory;
 pub mod qemu;
 pub mod serial;
 pub mod vmx;
-pub mod memory;
-pub mod allocator;
 
 pub use memory::init as init_memory;
 
@@ -93,7 +93,6 @@ pub fn test_panic_handler(info: &PanicInfo) -> ! {
     println!("[failed]\n");
     println!("Error: {}\n", info);
     qemu::exit(qemu::ExitCode::Failure);
-    hlt_loop();
 }
 
 #[cfg(test)]

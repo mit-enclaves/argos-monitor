@@ -58,7 +58,7 @@ pub fn init_idt() {
 }
 
 extern "x86-interrupt" fn divide_by_zero_handler(stack_frame: InterruptStackFrame) {
-    println!("EXCEPTION: DIVIDE BY ZERO\n{:#?}", stack_frame);
+    panic!("EXCEPTION: DIVIDE BY ZERO\n{:#?}", stack_frame);
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
@@ -84,7 +84,7 @@ extern "x86-interrupt" fn page_fault_handler(
 }
 
 extern "x86-interrupt" fn invalid_opcode_handler(stack_frame: InterruptStackFrame) {
-    println!("EXCEPTION: INVALID OPCODE\n{:#?}", stack_frame);
+    panic!("EXCEPTION: INVALID OPCODE\n{:#?}", stack_frame);
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {

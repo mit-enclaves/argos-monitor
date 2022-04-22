@@ -1,8 +1,8 @@
 //! VMX support
 //!
-//! Inspired from [1].
+//! Inspired from the [x86] crate.
 //!
-//! [1]: https://hermitcore.github.io/libhermit-rs/x86/bits64/vmx/index.html
+//! [x86]: https://hermitcore.github.io/libhermit-rs/x86/bits64/vmx/index.html
 
 use core::arch;
 use core::arch::asm;
@@ -10,8 +10,9 @@ use core::arch::asm;
 use x86_64::registers::control::{Cr4, Cr4Flags};
 use x86_64::registers::model_specific::Msr;
 use x86_64::registers::rflags::RFlags;
+use x86_64::PhysAddr;
 
-use crate::memory::VirtualMemoryAreaAllocator;
+use crate::memory::{VirtualMemoryAreaAllocator, VirtualMemoryArea};
 
 /// CPUID mask for VMX support
 const CPUID_ECX_VMX_MASK: u32 = 1 << 5;
@@ -102,10 +103,23 @@ pub unsafe fn vmxon(allocator: &VirtualMemoryAreaAllocator) -> Result<(), VmxErr
     vmx_capture_status()
 }
 
+/// Exit VMX operations
+pub unsafe fn vmxoff() -> Result<(), VmxError> {
+    asm!("vmxoff");
+    vmx_capture_status()
+}
+
+/// Clear the VMCS at the provided physical address.
+unsafe fn vmclear(addr: PhysAddr) -> Result<(), VmxError> {
+    let addr = addr.as_u64();
+    asm! {"vmclear ({0})", in(reg) &addr, options(att_syntax)};
+    vmx_capture_status()
+}
+
 /// Return basic info about VMX CPU-defined structures.
 ///
 /// SAFETY: This function assumes that VMX is available, otherwise its behavior is undefined.
-unsafe fn get_vmx_info() -> VmxBasicInfo {
+pub unsafe fn get_vmx_info() -> VmxBasicInfo {
     // SAFETY: this register can be read if VMX is available.
     let raw_info = MSR_IA32_VMX_BASIC.read();
     let revision = raw_info & ((1 << 32) - 1); // bits 31:0
@@ -149,4 +163,47 @@ fn rflags_read() -> RFlags {
         asm!("pushfq; pop {}", out(reg) r, options(nomem, preserves_flags));
     }
     RFlags::from_bits_truncate(r)
+}
+
+// —————————————————————————————————— VMCS —————————————————————————————————— //
+
+pub struct VmcsRegion {
+    /// The physical address of the region, corresponds to the VMCS pointer.
+    phys_addr: PhysAddr,
+    /// The VMA used by the region.
+    vma: VirtualMemoryArea,
+}
+
+impl VmcsRegion {
+    pub unsafe fn new(allocator: &VirtualMemoryAreaAllocator) -> Result<Self, VmxError> {
+        let vmcs_info = get_vmx_info();
+
+        // Allocate a VMCS region with the required capacity
+        let mut vmcs_vma = allocator
+            .with_capacity(vmcs_info.vmcs_width as usize)
+            .expect("Failed to allocate VMXON region");
+
+        // Initialize the VMCS region by copying the revision ID into the 4 first bytes of VMCS
+        // region
+        vmcs_vma.as_bytes_mut()[0..4].copy_from_slice(&vmcs_info.revision.to_le_bytes());
+
+        // Use VMCLEAR to put the VMCS in a clear (valid) state.
+        let phys_addr = vmcs_vma.as_phys_addr();
+        vmclear(phys_addr)?;
+
+        Ok(VmcsRegion {
+            phys_addr,
+            vma: vmcs_vma,
+        })
+    }
+
+    pub unsafe fn set_as_active() {
+        // Use VMPTRLD
+        todo!()
+    }
+
+    pub unsafe fn deactivate() {
+        // Use VMCLEAR
+        todo!()
+    }
 }
