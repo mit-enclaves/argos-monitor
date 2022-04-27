@@ -42,7 +42,7 @@ pub struct VmxBasicInfo {
     // TODO: list supported memory types.
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum VmxError {
     /// VMCS pointer is valid, but some other error was encountered. Read VM-instruction error
     /// field of VMCS for more details.
@@ -240,7 +240,7 @@ impl VmcsRegion {
         todo!();
     }
 
-    /// Computes the controls bits when there is no support for true controls.
+    /// Computes the control bits when there is no support for true controls.
     fn get_ctls(user: u32, spec: u64, known: u32) -> Result<u32, VmxError> {
         // NOTE: see Intel SDM Vol 3C Section 31.5.1, algorithm 3
         let allowed_zeros = (spec & LOW_32_BITS_MASK) as u32;
@@ -257,6 +257,7 @@ impl VmcsRegion {
         Ok(user | default_value)
     }
 
+    /// Computes the control bits when there  is support for true controls.
     fn get_true_ctls(user: u32, spec: u64, true_spec: u64, known: u32) -> Result<u32, VmxError> {
         // NOTE: see Intel SDM Vol 3C Section 31.5.1, algorithm 3
         let allowed_zeros = (spec & LOW_32_BITS_MASK) as u32;
@@ -272,8 +273,8 @@ impl VmcsRegion {
 
         let default_value = true_allowed_zeros & true_allowed_ones;
         let can_be_both = true_allowed_ones & !true_allowed_zeros;
-        let must_be_ones = can_be_both & !known & !allowed_zeros;
-        Ok(default_value | must_be_ones)
+        let must_be_ones = can_be_both & !known & allowed_zeros;
+        Ok(default_value | user | must_be_ones)
     }
 }
 
@@ -296,5 +297,90 @@ bitflags! {
         const VMX_PREEMPTION_TIMER = 1 << 6;
         /// Process posted interrupts.
         const POSTED_INTERRUPTS = 1 << 7;
+    }
+}
+
+// ————————————————————————————————— Tests —————————————————————————————————— //
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    /// See manual Annex A.3.
+    #[rustfmt::skip]
+    #[test_case]
+    fn ctls_flags_spec() {
+        // testing valid combinations
+        let spec_0_setting: u64 = 0b001_00_01;
+        let spec_1_setting: u64 = 0b011_01_11;
+        let user_request:   u32 = 0b000_00_11;
+        let known:          u32 = 0b000_11_11;
+        let expected:       u32 = 0b001_00_11;
+
+        let spec = (spec_1_setting << 32) + spec_0_setting;
+        assert_eq!(VmcsRegion::get_ctls(user_request, spec, known), Ok(expected));
+
+        // testing disallowed one
+        let spec_0_setting: u64 = 0b0;
+        let spec_1_setting: u64 = 0b0;
+        let user_request:   u32 = 0b1;
+        let known:          u32 = 0b1;
+
+        let spec = (spec_1_setting << 32) + spec_0_setting;
+        assert_eq!(VmcsRegion::get_ctls(user_request, spec, known), Err(VmxError::Disallowed1));
+
+        // testing disallowed zero
+        let spec_0_setting: u64 = 0b1;
+        let spec_1_setting: u64 = 0b1;
+        let user_request:   u32 = 0b0;
+        let known:          u32 = 0b1;
+
+        let spec = (spec_1_setting << 32) + spec_0_setting;
+        assert_eq!(VmcsRegion::get_ctls(user_request, spec, known), Err(VmxError::Disallowed0));
+    }
+
+    /// See manual Annex A.3.
+    #[rustfmt::skip]
+    #[test_case]
+    fn ctls_flags_true_spec() {
+        // testing valid combinations
+        let spec_0_setting:      u64 = 0b000_1_00_011;
+        let true_spec_0_setting: u64 = 0b001_0_00_010;
+        let true_spec_1_setting: u64 = 0b011_1_01_111;
+        let user_request:        u32 = 0b000_0_00_111;
+        let known:               u32 = 0b000_0_11_111;
+        let expected:            u32 = 0b001_1_00_111;
+
+        let spec = spec_0_setting;
+        let true_spec = (true_spec_1_setting << 32) + true_spec_0_setting;
+        assert_eq!(VmcsRegion::get_true_ctls(user_request, spec, true_spec, known), Ok(expected));
+
+        // testing disallowed one
+        let spec_0_setting:      u64 = 0b0;
+        let true_spec_0_setting: u64 = 0b0;
+        let true_spec_1_setting: u64 = 0b0;
+        let user_request:        u32 = 0b1;
+        let known:               u32 = 0b1;
+
+        let spec = spec_0_setting;
+        let true_spec = (true_spec_1_setting << 32) + true_spec_0_setting;
+        assert_eq!(
+            VmcsRegion::get_true_ctls(user_request, spec, true_spec, known),
+            Err(VmxError::Disallowed1),
+        );
+
+        // testing disallowed zero
+        let spec_0_setting:      u64 = 0b1;
+        let true_spec_0_setting: u64 = 0b1;
+        let true_spec_1_setting: u64 = 0b0;
+        let user_request:        u32 = 0b0;
+        let known:               u32 = 0b1;
+
+        let spec = spec_0_setting;
+        let true_spec = (true_spec_1_setting << 32) + true_spec_0_setting;
+        assert_eq!(
+            VmcsRegion::get_true_ctls(user_request, spec, true_spec, known),
+            Err(VmxError::Disallowed0),
+        );
     }
 }
