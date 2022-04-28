@@ -9,7 +9,6 @@ use core::arch::asm;
 
 use bitflags::bitflags;
 use x86_64::registers::control::{Cr4, Cr4Flags};
-use x86_64::registers::model_specific::Msr;
 use x86_64::registers::rflags::RFlags;
 use x86_64::PhysAddr;
 
@@ -20,13 +19,20 @@ const LOW_32_BITS_MASK: u64 = (1 << 32) - 1;
 /// CPUID mask for VMX support
 const CPUID_ECX_VMX_MASK: u32 = 1 << 5;
 
-/// Model Specific Registers
-const MSR_IA32_FEATURE_CONTROL: Msr = Msr::new(0x3A);
-const MSR_IA32_VMX_BASIC: Msr = Msr::new(0x480);
-const MSR_IA32_VMX_PINBASED_CTLS: Msr = Msr::new(0x481);
-const MSR_IA32_VMX_PROCBASED_CTL: Msr = Msr::new(0x482);
-const MSR_IA32_VMX_TRUE_PINBASED_CTLS: Msr = Msr::new(0x48D);
-const MSR_IA32_VMX_TRUE_PROCBASED_CTLS: Msr = Msr::new(0x48E);
+pub mod msr {
+    //! VMX Model Specific Registers
+
+    pub use x86_64::registers::model_specific::Msr;
+
+    pub const FEATURE_CONTROL: Msr = Msr::new(0x3A);
+    pub const VMX_BASIC: Msr = Msr::new(0x480);
+    pub const VMX_PINBASED_CTLS: Msr = Msr::new(0x481);
+    pub const VMX_PROCBASED_CTL: Msr = Msr::new(0x482);
+    pub const VMX_EXIT_CTLS: Msr = Msr::new(0x483);
+    pub const VMX_TRUE_EXIT_CTLS: Msr = Msr::new(0x484);
+    pub const VMX_TRUE_PINBASED_CTLS: Msr = Msr::new(0x48D);
+    pub const VMX_TRUE_PROCBASED_CTLS: Msr = Msr::new(0x48E);
+}
 
 /// VMCS fields encoding.of 64 bits control fields.
 ///
@@ -148,7 +154,7 @@ pub fn vmx_available() -> Result<(), VmxError> {
     }
 
     // See manual 3C Section 23.7
-    let feature_control = unsafe { MSR_IA32_FEATURE_CONTROL.read() };
+    let feature_control = unsafe { msr::FEATURE_CONTROL.read() };
     if feature_control & 0b110 == 0 || feature_control & &0b001 == 0 {
         return Err(VmxError::VmxNotSupported);
     }
@@ -211,7 +217,7 @@ unsafe fn vmwrite32(field: VmcsCtrl32, value: u32) -> Result<(), VmxError> {
 /// SAFETY: This function assumes that VMX is available, otherwise its behavior is undefined.
 pub unsafe fn get_vmx_info() -> VmxBasicInfo {
     // SAFETY: this register can be read if VMX is available.
-    let raw_info = MSR_IA32_VMX_BASIC.read();
+    let raw_info = msr::VMX_BASIC.read();
     let revision = raw_info & ((1 << 32) - 1); // bits 31:0
     let revision = revision as u32;
     let vmcs_width = (raw_info & ((1 << 45) - 1)) >> 32; // bits 44:32
@@ -300,46 +306,79 @@ impl VmcsRegion {
         todo!()
     }
 
-    /// Set the pin-based controls.
+    /// Sets the pin-based controls.
     ///
     /// WARNING: the region must be active, otherwise this function might modify another VMCS.
     pub fn set_pin_based_ctrls(&mut self, flags: PinbasedControls) -> Result<(), VmxError> {
-        // NOTE: see Intel SDM Vol 3D Appending A.3.1 for allowed settings explanation.
-        let raw_flags = flags.bits();
-        let vmx_info = unsafe { get_vmx_info() };
-        let spec = unsafe { MSR_IA32_VMX_PINBASED_CTLS.read() };
-        let known = PinbasedControls::all().bits();
-        let new_flags = if vmx_info.support_true_ctls {
-            let true_spec = unsafe { MSR_IA32_VMX_TRUE_PINBASED_CTLS.read() };
-            Self::get_true_ctls(raw_flags, spec, true_spec, known)?
-        } else {
-            Self::get_ctls(raw_flags, spec, known)?
-        };
-
-        unsafe { vmwrite32(VmcsCtrl32::PinBasedExecCtrls, new_flags) }
+        unsafe {
+            Self::set_ctrls(
+                flags.bits(),
+                PinbasedControls::all().bits(),
+                msr::VMX_PINBASED_CTLS,
+                msr::VMX_TRUE_PINBASED_CTLS,
+                VmcsCtrl32::PinBasedExecCtrls,
+            )
+        }
     }
 
-    /// Set the primary processor-based controls.
+    /// Sets the primary processor-based controls.
     ///
     /// WARNING: the region must be active, otherwise this function might modify another VMCS.
     pub fn set_primary_ctrls(&mut self, flags: PrimaryControls) -> Result<(), VmxError> {
-        // NOTE: see Intel SDM Vol 3D Appending A.3.1 for allowed settings explanation.
-        let raw_flags = flags.bits();
-        let vmx_info = unsafe { get_vmx_info() };
-        let spec = unsafe { MSR_IA32_VMX_PROCBASED_CTL.read() };
-        let known = PrimaryControls::all().bits();
+        unsafe {
+            Self::set_ctrls(
+                flags.bits(),
+                PrimaryControls::all().bits(),
+                msr::VMX_PROCBASED_CTL,
+                msr::VMX_TRUE_PROCBASED_CTLS,
+                VmcsCtrl32::PrimaryProcBasedExecCtrls,
+            )
+        }
+    }
+
+    /// Sets the VM exit controls.
+    ///
+    /// WARNING: the region must be active, otherwise this function might modify another VMCS.
+    pub fn set_vm_exit_ctrls(&mut self, flags: ExitControls) -> Result<(), VmxError> {
+        unsafe {
+            Self::set_ctrls(
+                flags.bits(),
+                ExitControls::all().bits(),
+                msr::VMX_EXIT_CTLS,
+                msr::VMX_TRUE_EXIT_CTLS,
+                VmcsCtrl32::VmExitCtrls,
+            )
+        }
+    }
+
+    pub fn set_exception_bitmap(&mut self, bitmap: ExceptionBitmap) -> Result<(), VmxError> {
+        // TODO: is there a list of allowed settings?
+        unsafe { vmwrite32(VmcsCtrl32::ExceptionBitmap, bitmap.bits()) }
+    }
+
+    /// Sets a control setting for the current VMCS.
+    ///
+    /// Raw flags is a raw 32 bits bitflag vector, known is the birflags of bits known by the VMM,
+    /// spec and true_spec MSRs are the MSRs containing the supported features of the current CPU.
+    ///
+    /// See Intel SDM Vol 3D Appending A.3.1 for allowed settings explanation.
+    unsafe fn set_ctrls(
+        raw_flags: u32,
+        known: u32,
+        spec_msr: msr::Msr,
+        true_spec_msr: msr::Msr,
+        control: VmcsCtrl32,
+    ) -> Result<(), VmxError> {
+        let vmx_info = get_vmx_info();
+        let spec = spec_msr.read();
         let new_flags = if vmx_info.support_true_ctls {
-            let true_spec = unsafe { MSR_IA32_VMX_TRUE_PROCBASED_CTLS.read() };
+            let true_spec = true_spec_msr.read();
             Self::get_true_ctls(raw_flags, spec, true_spec, known)?
         } else {
             Self::get_ctls(raw_flags, spec, known)?
         };
 
-        unsafe { vmwrite32(VmcsCtrl32::PrimaryProcBasedExecCtrls, new_flags) }
-    }
-
-    pub fn set_exception_bitmap(&mut self, bitmap: ExceptionBitmap) -> Result<(), VmxError> {
-        unsafe { vmwrite32(VmcsCtrl32::ExceptionBitmap, bitmap.bits()) }
+        vmwrite32(control, new_flags)
     }
 
     /// Computes the control bits when there is no support for true controls.
@@ -449,6 +488,38 @@ bitflags! {
         const PAUSE_EXITING            = 1 << 30;
         /// Activate secondary controls.
         const SECONDARY_CONTROLS       = 1 << 31;
+    }
+
+    /// VM-exit controls.
+    ///
+    /// A set of bitmask flags useful when setting up [`VMEXIT_CONTROLS`] VMCS field.
+    ///
+    /// See Intel SDM, Volume 3C, Section 24.7.
+    pub struct ExitControls: u32 {
+        /// Save debug controls.
+        const SAVE_DEBUG_CONTROLS        = 1 << 2;
+        /// Host address-space size.
+        const HOST_ADDRESS_SPACE_SIZE    = 1 << 9;
+        /// Load IA32_PERF_GLOBAL_CTRL.
+        const LOAD_IA32_PERF_GLOBAL_CTRL = 1 << 12;
+        /// Acknowledge interrupt on exit.
+        const ACK_INTERRUPT_ON_EXIT      = 1 << 15;
+        /// Save IA32_PAT.
+        const SAVE_IA32_PAT              = 1 << 18;
+        /// Load IA32_PAT.
+        const LOAD_IA32_PAT              = 1 << 19;
+        /// Save IA32_EFER.
+        const SAVE_IA32_EFER             = 1 << 20;
+        /// Load IA32_EFER.
+        const LOAD_IA32_EFER             = 1 << 21;
+        /// Save VMX-preemption timer.
+        const SAVE_VMX_PREEMPTION_TIMER  = 1 << 22;
+        /// Clear IA32_BNDCFGS.
+        const CLEAR_IA32_BNDCFGS         = 1 << 23;
+        /// Conceal VMX from PT.
+        const CONCEAL_VMX_FROM_PT        = 1 << 24;
+        /// Clear IA32_RTIT_CTL.
+        const CLEAR_IA32_RTIT_CTL        = 1 << 25;
     }
 
     pub struct ExceptionBitmap: u32 {

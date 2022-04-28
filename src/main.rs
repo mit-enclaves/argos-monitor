@@ -46,6 +46,14 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
             vmcs.set_primary_ctrls(vmx::PrimaryControls::empty())
         );
         println!(
+            "VMExit: {:?}",
+            vmcs.set_vm_exit_ctrls(
+                vmx::ExitControls::HOST_ADDRESS_SPACE_SIZE
+                    | vmx::ExitControls::SAVE_DEBUG_CONTROLS
+                    | vmx::ExitControls::LOAD_IA32_PERF_GLOBAL_CTRL
+            )
+        );
+        println!(
             "Bitm:   {:?}",
             vmcs.set_exception_bitmap(vmx::ExceptionBitmap::empty())
         );
