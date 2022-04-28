@@ -338,6 +338,10 @@ impl VmcsRegion {
         unsafe { vmwrite32(VmcsCtrl32::PrimaryProcBasedExecCtrls, new_flags) }
     }
 
+    pub fn set_exception_bitmap(&mut self, bitmap: ExceptionBitmap) -> Result<(), VmxError> {
+        unsafe { vmwrite32(VmcsCtrl32::ExceptionBitmap, bitmap.bits()) }
+    }
+
     /// Computes the control bits when there is no support for true controls.
     fn get_ctls(user: u32, spec: u64, known: u32) -> Result<u32, VmxError> {
         // NOTE: see Intel SDM Vol 3C Section 31.5.1, algorithm 3
@@ -445,6 +449,51 @@ bitflags! {
         const PAUSE_EXITING            = 1 << 30;
         /// Activate secondary controls.
         const SECONDARY_CONTROLS       = 1 << 31;
+    }
+
+    pub struct ExceptionBitmap: u32 {
+        // Dive Error #DE
+        const DIVIDE_ERROR             = 1 << 0;
+        // Debug #DB
+        const DEBUG                    = 1 << 1;
+        // Non Maskable Interrupt (NMI)
+        const NMI                      = 1 << 2;
+        // Breakpoint #BP
+        const BREAKPOINT               = 1 << 3;
+        // Overflow #OF
+        const OVERFLOW                 = 1 << 4;
+        // Bound range exceeded #BR
+        const BOUND_RANGE_EXCEEDED     = 1 << 5;
+        // Invalid Opcode #UD
+        const INVALID_OPCODE           = 1 << 6;
+        // Device not available #NM
+        const DEVICE_NOT_AVAILABLE     = 1 << 7;
+        // Double fault
+        const DOUBLE_FAULT             = 1 << 8;
+        // Invalid TSS exception #TS
+        const INVALID_TSS              = 1 << 10;
+        // Segment not present #NP
+        const SEGMENT_NOT_PRESENT      = 1 << 11;
+        // Stack segment #SS
+        const STACK_SEGMENT_FAULT      = 1 << 12;
+        // General protection fault #GP
+        const GENERAL_PROTECTION_FAULT = 1 << 13;
+        // Page fault #PF
+        const PAGE_FAULT               = 1 << 14;
+        // x87 floating point #MF
+        const X87_FLOATING_POINT       = 1 << 16;
+        // Alignment check #AC
+        const ALIGNMENT_CHECK          = 1 << 17;
+        // Machine check #MC
+        const MACHINE_CHECK            = 1 << 18;
+        // SIMD floating point #XF
+        const SIMD_FLOATING_POINT      = 1 << 19;
+        // ?
+        const VIRTUALIZATION           = 1 << 20;
+        // VMM communication #VC
+        const VMM_COMMUNICATION        = 1 << 29;
+        // Security #SX
+        const SECURITY_EXCEPTION       = 1 << 30;
     }
 }
 

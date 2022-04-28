@@ -45,6 +45,10 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
             "Ctrls2: {:?}",
             vmcs.set_primary_ctrls(vmx::PrimaryControls::empty())
         );
+        println!(
+            "Bitm:   {:?}",
+            vmcs.set_exception_bitmap(vmx::ExceptionBitmap::empty())
+        );
         println!("VMXOFF: {:?}", vmx::vmxoff());
     }
 
