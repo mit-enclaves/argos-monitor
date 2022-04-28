@@ -57,6 +57,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
             "Bitm:   {:?}",
             vmcs.set_exception_bitmap(vmx::ExceptionBitmap::empty())
         );
+        println!("Host:   {:?}", vmcs.save_control_register());
         println!("VMXOFF: {:?}", vmx::vmxoff());
     }
 

@@ -8,7 +8,7 @@ use core::arch;
 use core::arch::asm;
 
 use bitflags::bitflags;
-use x86_64::registers::control::{Cr4, Cr4Flags};
+use x86_64::registers::control::{Cr0, Cr3, Cr4, Cr4Flags};
 use x86_64::registers::rflags::RFlags;
 use x86_64::PhysAddr;
 
@@ -93,6 +93,26 @@ pub enum VmcsCtrl32 {
     SecondaryProcBasedVmExecCtrls = 0x0000401E,
     PleGap                        = 0x00004020,
     PleWindow                     = 0x00004022,
+}
+
+/// VMCS fields containing host state fields.
+///
+/// See appendix B.
+#[rustfmt::skip]
+#[repr(u32)]
+pub enum VmcsHostState {
+    Cr0             = 0x00006C00,
+    Cr3             = 0x00006C02,
+    Cr4             = 0x00006C04,
+    FsBase          = 0x00006C06,
+    GsBase          = 0x00006C08,
+    TrBase          = 0x00006C0A,
+    GdtrBase        = 0x00006C0C,
+    IdtrBase        = 0x00006C0E,
+    Ia32SysenterEsp = 0x00006C10,
+    Ia32SysenterEip = 0x00006C12,
+    Rsp             = 0x00006C14,
+    Rip             = 0x00006C16,
 }
 
 /// Basic VMX Information.
@@ -208,6 +228,14 @@ unsafe fn vmwrite64(field: VmcsCtrl64, value: u64) -> Result<(), VmxError> {
 
 /// Writes to the current VMCS.
 unsafe fn vmwrite32(field: VmcsCtrl32, value: u32) -> Result<(), VmxError> {
+    let field: u64 = field as u64;
+    let value: u64 = value as u64;
+    asm!("vmwrite {1}, {0}", in(reg) field, in(reg) value, options(att_syntax));
+    vmx_capture_status()
+}
+
+/// Writes to the current VMCS.
+unsafe fn vmwrite_nat_width(field: VmcsHostState, value: usize) -> Result<(), VmxError> {
     let field: u64 = field as u64;
     let value: u64 = value as u64;
     asm!("vmwrite {1}, {0}", in(reg) field, in(reg) value, options(att_syntax));
@@ -368,9 +396,27 @@ impl VmcsRegion {
         }
     }
 
+    /// Sets the exception bitmap.
+    ///
+    /// WARNING: the region must be active, otherwise this function might modify another VMCS.
     pub fn set_exception_bitmap(&mut self, bitmap: ExceptionBitmap) -> Result<(), VmxError> {
         // TODO: is there a list of allowed settings?
         unsafe { vmwrite32(VmcsCtrl32::ExceptionBitmap, bitmap.bits()) }
+    }
+
+    /// Saves the host control registers, so that they are restored on VM Exit.
+    ///
+    /// WARNING: the region must be active, otherwise this function might modify another VMCS.
+    pub fn save_control_register(&mut self) -> Result<(), VmxError> {
+        let cr0 = Cr0::read();
+        let (_, cr3) = Cr3::read();
+        let cr4 = Cr4::read();
+
+        unsafe {
+            vmwrite_nat_width(VmcsHostState::Cr0, cr0.bits() as usize)?;
+            vmwrite_nat_width(VmcsHostState::Cr3, cr3.bits() as usize)?;
+            vmwrite_nat_width(VmcsHostState::Cr4, cr4.bits() as usize)
+        }
     }
 
     /// Sets a control setting for the current VMCS.
