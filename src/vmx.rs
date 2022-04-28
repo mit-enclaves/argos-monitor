@@ -8,8 +8,11 @@ use core::arch;
 use core::arch::asm;
 
 use bitflags::bitflags;
+use x86_64::instructions::tables::{sgdt, sidt};
 use x86_64::registers::control::{Cr0, Cr3, Cr4, Cr4Flags};
 use x86_64::registers::rflags::RFlags;
+use x86_64::registers::segmentation;
+use x86_64::registers::segmentation::{Segment, Segment64, FS, GS};
 use x86_64::PhysAddr;
 
 use crate::memory::{VirtualMemoryArea, VirtualMemoryAreaAllocator};
@@ -25,6 +28,9 @@ pub mod msr {
     pub use x86_64::registers::model_specific::Msr;
 
     pub const FEATURE_CONTROL: Msr = Msr::new(0x3A);
+    pub const SYSENTER_CS: Msr = Msr::new(0x174);
+    pub const SYSENTER_ESP: Msr = Msr::new(0x175);
+    pub const SYSENTER_EIP: Msr = Msr::new(0x176);
     pub const VMX_BASIC: Msr = Msr::new(0x480);
     pub const VMX_PINBASED_CTLS: Msr = Msr::new(0x481);
     pub const VMX_PROCBASED_CTL: Msr = Msr::new(0x482);
@@ -36,10 +42,51 @@ pub mod msr {
     pub const VMX_TRUE_ENTRY_CTLS: Msr = Msr::new(0x490);
 }
 
+/// A VMCS field containing a 64 bits value.
+pub trait VmcsField64 {
+    fn raw(&self) -> u32;
+
+    /// Writes a field to the current VMCS.
+    unsafe fn vmwrite(&self, value: u64) -> Result<(), VmxError> {
+        raw_vmwrite(self.raw() as u64, value)
+    }
+}
+
+/// A VMCS field containing a 32 bits value.
+pub trait VmcsField32 {
+    fn raw(&self) -> u32;
+
+    /// Writes a field to the current VMCS.
+    unsafe fn vmwrite(&self, value: u32) -> Result<(), VmxError> {
+        raw_vmwrite(self.raw() as u64, value as u64)
+    }
+}
+
+pub trait VmcsField16 {
+    fn raw(&self) -> u32;
+
+    /// Writes a field to the current VMCS.
+    unsafe fn vmwrite(&self, value: u16) -> Result<(), VmxError> {
+        raw_vmwrite(self.raw() as u64, value as u64)
+    }
+}
+
+/// A VMCS field containing a natural width value (i.e. 32 bits on 32 bits systems, 64 bits on 64
+/// bits systems).
+pub trait VmcsFieldNatWidth {
+    fn raw(&self) -> u32;
+
+    /// Writes a field to the current VMCS.
+    unsafe fn vmwrite(&self, value: usize) -> Result<(), VmxError> {
+        raw_vmwrite(self.raw() as u64, value as u64)
+    }
+}
+
 /// VMCS fields encoding.of 64 bits control fields.
 ///
 /// See appendix B.
 #[rustfmt::skip]
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum VmcsCtrl64 {
     IoBitmapA         = 0x00002000,
@@ -69,10 +116,17 @@ pub enum VmcsCtrl64 {
     TscMultiplier     = 0x00002032,
 }
 
+impl VmcsField64 for VmcsCtrl64 {
+    fn raw(&self) -> u32 {
+        *self as u32
+    }
+}
+
 /// VMCS fields encoding.of 32 bits control fields.
 ///
 /// See appendix B.
 #[rustfmt::skip]
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum VmcsCtrl32 {
     PinBasedExecCtrls             = 0x00004000,
@@ -95,12 +149,57 @@ pub enum VmcsCtrl32 {
     PleWindow                     = 0x00004022,
 }
 
+impl VmcsField32 for VmcsCtrl32 {
+    fn raw(&self) -> u32 {
+        *self as u32
+    }
+}
+
 /// VMCS fields containing host state fields.
 ///
 /// See appendix B.
 #[rustfmt::skip]
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
-pub enum VmcsHostState {
+pub enum VmcsHostState16 {
+    EsSelector = 0x00000C00,
+    CsSelector = 0x00000C02,
+    SsSelector = 0x00000C04,
+    DsSelector = 0x00000C06,
+    FsSelector = 0x00000C08,
+    GsSelector = 0x00000C0A,
+    TrSelector = 0x00000C0C,
+}
+
+impl VmcsField16 for VmcsHostState16 {
+    fn raw(&self) -> u32 {
+        *self as u32
+    }
+}
+
+/// VMCS fields containing host state fields.
+///
+/// See appendix B.
+#[rustfmt::skip]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum VmcsHostState32 {
+    Ia32SysenterCs = 0x00004C00,
+}
+
+impl VmcsField32 for VmcsHostState32 {
+    fn raw(&self) -> u32 {
+        *self as u32
+    }
+}
+
+/// VMCS fields containing host state fields.
+///
+/// See appendix B.
+#[rustfmt::skip]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum VmcsHostStateNat {
     Cr0             = 0x00006C00,
     Cr3             = 0x00006C02,
     Cr4             = 0x00006C04,
@@ -113,6 +212,12 @@ pub enum VmcsHostState {
     Ia32SysenterEip = 0x00006C12,
     Rsp             = 0x00006C14,
     Rip             = 0x00006C16,
+}
+
+impl VmcsFieldNatWidth for VmcsHostStateNat {
+    fn raw(&self) -> u32 {
+        *self as u32
+    }
 }
 
 /// Basic VMX Information.
@@ -220,24 +325,7 @@ unsafe fn vmclear(addr: PhysAddr) -> Result<(), VmxError> {
 }
 
 /// Writes to the current VMCS.
-unsafe fn vmwrite64(field: VmcsCtrl64, value: u64) -> Result<(), VmxError> {
-    let field: u64 = field as u64;
-    asm!("vmwrite {1}, {0}", in(reg) field, in(reg) value, options(att_syntax));
-    vmx_capture_status()
-}
-
-/// Writes to the current VMCS.
-unsafe fn vmwrite32(field: VmcsCtrl32, value: u32) -> Result<(), VmxError> {
-    let field: u64 = field as u64;
-    let value: u64 = value as u64;
-    asm!("vmwrite {1}, {0}", in(reg) field, in(reg) value, options(att_syntax));
-    vmx_capture_status()
-}
-
-/// Writes to the current VMCS.
-unsafe fn vmwrite_nat_width(field: VmcsHostState, value: usize) -> Result<(), VmxError> {
-    let field: u64 = field as u64;
-    let value: u64 = value as u64;
+unsafe fn raw_vmwrite(field: u64, value: u64) -> Result<(), VmxError> {
     asm!("vmwrite {1}, {0}", in(reg) field, in(reg) value, options(att_syntax));
     vmx_capture_status()
 }
@@ -401,21 +489,68 @@ impl VmcsRegion {
     /// WARNING: the region must be active, otherwise this function might modify another VMCS.
     pub fn set_exception_bitmap(&mut self, bitmap: ExceptionBitmap) -> Result<(), VmxError> {
         // TODO: is there a list of allowed settings?
-        unsafe { vmwrite32(VmcsCtrl32::ExceptionBitmap, bitmap.bits()) }
+        unsafe { VmcsCtrl32::ExceptionBitmap.vmwrite(bitmap.bits()) }
     }
 
-    /// Saves the host control registers, so that they are restored on VM Exit.
+    /// Saves the host state (control registers, segments...), so that they are restored on VM Exit.
     ///
     /// WARNING: the region must be active, otherwise this function might modify another VMCS.
-    pub fn save_control_register(&mut self) -> Result<(), VmxError> {
+    pub fn save_host_state(&mut self) -> Result<(), VmxError> {
+        // NOTE: See section 24.5 of volume 3C.
+
+        // Segments
+        let cs = segmentation::CS::get_reg();
+        let ds = segmentation::DS::get_reg();
+        let es = segmentation::ES::get_reg();
+        let fs = segmentation::FS::get_reg();
+        let gs = segmentation::GS::get_reg();
+        let ss = segmentation::SS::get_reg();
+        let tr: u16;
+        let gdt = sgdt().base.as_u64() as usize;
+        let idt = sidt().base.as_u64() as usize;
+
+        unsafe {
+            // There is no nice wrapper to read `tr` in the x86_64 crate.
+            asm!("str {0:x}",
+                out(reg) tr,
+                options(att_syntax, nostack, nomem, preserves_flags));
+        }
+
+        unsafe {
+            VmcsHostState16::CsSelector.vmwrite(cs.0)?;
+            VmcsHostState16::DsSelector.vmwrite(ds.0)?;
+            VmcsHostState16::EsSelector.vmwrite(es.0)?;
+            VmcsHostState16::FsSelector.vmwrite(fs.0)?;
+            VmcsHostState16::GsSelector.vmwrite(gs.0)?;
+            VmcsHostState16::SsSelector.vmwrite(ss.0)?;
+            VmcsHostState16::TrSelector.vmwrite(tr)?;
+
+            // NOTE: those might throw an exception depending on the CPU features, let's just
+            // ignore them for now.
+            // VmcsHostStateNat::FsBase.vmwrite(FS::read_base().as_u64() as usize)?;
+            // VmcsHostStateNat::GsBase.vmwrite(GS::read_base().as_u64() as usize)?;
+
+            VmcsHostStateNat::IdtrBase.vmwrite(idt)?;
+            VmcsHostStateNat::GdtrBase.vmwrite(gdt)?;
+            // TODO: save TR base
+        }
+
+        // MSRs
+        unsafe {
+            VmcsHostStateNat::Ia32SysenterEsp.vmwrite(msr::SYSENTER_ESP.read() as usize)?;
+            VmcsHostStateNat::Ia32SysenterEip.vmwrite(msr::SYSENTER_EIP.read() as usize)?;
+            VmcsHostState32::Ia32SysenterCs.vmwrite(msr::SYSENTER_CS.read() as u32)?;
+        }
+
+        // Control registers
         let cr0 = Cr0::read();
         let (_, cr3) = Cr3::read();
         let cr4 = Cr4::read();
 
         unsafe {
-            vmwrite_nat_width(VmcsHostState::Cr0, cr0.bits() as usize)?;
-            vmwrite_nat_width(VmcsHostState::Cr3, cr3.bits() as usize)?;
-            vmwrite_nat_width(VmcsHostState::Cr4, cr4.bits() as usize)
+            VmcsHostStateNat::Cr0.vmwrite(cr0.bits() as usize)?;
+            VmcsHostStateNat::Cr3.vmwrite(cr3.bits() as usize)?;
+            VmcsHostStateNat::Cr4.vmwrite(cr4.bits() as usize)
         }
     }
 
@@ -441,7 +576,7 @@ impl VmcsRegion {
             Self::get_ctls(raw_flags, spec, known)?
         };
 
-        vmwrite32(control, new_flags)
+        control.vmwrite(new_flags)
     }
 
     /// Computes the control bits when there is no support for true controls.
