@@ -26,6 +26,65 @@ const MSR_IA32_VMX_BASIC: Msr = Msr::new(0x480);
 const MSR_IA32_VMX_PINBASED_CTLS: Msr = Msr::new(0x481);
 const MSR_IA32_VMX_TRUE_PINBASED_CTLS: Msr = Msr::new(0x48D);
 
+/// VMCS fields encoding.of 64 bits control fields.
+///
+/// See appendix B.
+#[rustfmt::skip]
+#[repr(u32)]
+pub enum VmcsCtrl64 {
+    IoBitmapA         = 0x00002000,
+    IoBitmapB         = 0x00002002,
+    MsrBitmaps        = 0x00002004,
+    VmExitStoreAddr   = 0x00002006,
+    VmExitLoadAddr    = 0x00002008,
+    VmEntryLoadAddr   = 0x0000200A,
+    ExecVmcsPtr       = 0x0000200C,
+    PmlAddr           = 0x0000200E,
+    TscOffset         = 0x00002010,
+    VirtApicAddr      = 0x00002012,
+    ApicAccessAddr    = 0x00002014,
+    PostedIntDescAddr = 0x00002016,
+    VmFuncCtrls       = 0x00002018,
+    EptPtr            = 0x0000201A,
+    EoiExitBitmap0    = 0x0000201C,
+    EoiExitBitmap1    = 0x0000201E,
+    EoiExitBitmap2    = 0x00002020,
+    EoiExitBitmap3    = 0x00002022,
+    EptpListAddr      = 0x00002024,
+    VmreadBitmapAddr  = 0x00002026,
+    VmwriteBitmapAddr = 0x00002028,
+    VirtExceptInfAddr = 0x0000202A,
+    XssExitBitmap     = 0x0000202C,
+    EnclsExitBitmap   = 0x0000202E,
+    TscMultiplier     = 0x00002032,
+}
+
+/// VMCS fields encoding.of 32 bits control fields.
+///
+/// See appendix B.
+#[rustfmt::skip]
+#[repr(u32)]
+pub enum VmcsCtrl32 {
+    PinBasedExecCtrls             = 0x00004000,
+    PrimaryProcBasedExecCtrls     = 0x00004002,
+    ExceptionBitmap               = 0x00004004,
+    PageFaultErrCodeMask          = 0x00004006,
+    PageFaultErrCodeMatch         = 0x00004008,
+    Cr3TargetCount                = 0x0000400A,
+    VmExitCtrls                   = 0x0000400C,
+    VmExitMsrStoreCount           = 0x0000400E,
+    VmExitMsrLoadCount            = 0x00004010,
+    VmEntryCtrls                  = 0x00004012,
+    VmEntryMsrLoadCount           = 0x00004014,
+    VmEntryIntInfoField           = 0x00004016,
+    VmEntryExceptErrCode          = 0x00004018,
+    VmEntryInstrLenght            = 0x0000401A,
+    TprThreshold                  = 0x0000401C,
+    SecondaryProcBasedVmExecCtrls = 0x0000401E,
+    PleGap                        = 0x00004020,
+    PleWindow                     = 0x00004022,
+}
+
 /// Basic VMX Information.
 ///
 /// See Intel SDM Vol. 3D Appendix A-1.
@@ -117,16 +176,31 @@ pub unsafe fn vmxon(allocator: &VirtualMemoryAreaAllocator) -> Result<(), VmxErr
     vmx_capture_status()
 }
 
-/// Exit VMX operations
+/// Exits VMX operations
 pub unsafe fn vmxoff() -> Result<(), VmxError> {
     asm!("vmxoff");
     vmx_capture_status()
 }
 
-/// Clear the VMCS at the provided physical address.
+/// Clears the VMCS at the provided physical address.
 unsafe fn vmclear(addr: PhysAddr) -> Result<(), VmxError> {
     let addr = addr.as_u64();
     asm! {"vmclear ({0})", in(reg) &addr, options(att_syntax)};
+    vmx_capture_status()
+}
+
+/// Writes to the current VMCS.
+unsafe fn vmwrite64(field: VmcsCtrl64, value: u64) -> Result<(), VmxError> {
+    let field: u64 = field as u64;
+    asm!("vmwrite {1}, {0}", in(reg) field, in(reg) value, options(att_syntax));
+    vmx_capture_status()
+}
+
+/// Writes to the current VMCS.
+unsafe fn vmwrite32(field: VmcsCtrl32, value: u32) -> Result<(), VmxError> {
+    let field: u64 = field as u64;
+    let value: u64 = value as u64;
+    asm!("vmwrite {1}, {0}", in(reg) field, in(reg) value, options(att_syntax));
     vmx_capture_status()
 }
 
@@ -187,7 +261,7 @@ pub struct VmcsRegion {
     /// The physical address of the region, corresponds to the VMCS pointer.
     phys_addr: PhysAddr,
     /// The VMA used by the region.
-    vma: VirtualMemoryArea,
+    _vma: VirtualMemoryArea,
 }
 
 impl VmcsRegion {
@@ -209,13 +283,14 @@ impl VmcsRegion {
 
         Ok(VmcsRegion {
             phys_addr,
-            vma: vmcs_vma,
+            _vma: vmcs_vma,
         })
     }
 
-    pub unsafe fn set_as_active() {
-        // Use VMPTRLD
-        todo!()
+    /// Makes this region the current active region.
+    pub unsafe fn set_as_active(&self) -> Result<(), VmxError> {
+        asm!("vmptrld ({0})", in(reg) &self.phys_addr, options(att_syntax));
+        vmx_capture_status()
     }
 
     pub unsafe fn deactivate() {
@@ -224,6 +299,8 @@ impl VmcsRegion {
     }
 
     /// Set the pin-based controls.
+    ///
+    /// WARNING: the region must be active, otherwise this function might modify another VMCS.
     pub fn set_pin_based_ctls(&mut self, flags: PinbasedControls) -> Result<(), VmxError> {
         // NOTE: see Intel SDM Vol 3D Appending A.3.1 for allowed settings explanation.
         let raw_flags = flags.bits();
@@ -237,7 +314,7 @@ impl VmcsRegion {
             Self::get_ctls(raw_flags, spec, known)?
         };
 
-        todo!();
+        unsafe { vmwrite32(VmcsCtrl32::PinBasedExecCtrls, new_flags) }
     }
 
     /// Computes the control bits when there is no support for true controls.
@@ -290,13 +367,13 @@ bitflags! {
         /// External-interrupt exiting.
         const EXTERNAL_INTERRUPT_EXITING = 1 << 0;
         /// NMI exiting.
-        const NMI_EXITING = 1 << 3;
+        const NMI_EXITING                = 1 << 3;
         /// Virtual NMIs.
-        const VIRTUAL_NMIS = 1 << 5;
+        const VIRTUAL_NMIS               = 1 << 5;
         /// Activate VMX-preemption timer.
-        const VMX_PREEMPTION_TIMER = 1 << 6;
+        const VMX_PREEMPTION_TIMER       = 1 << 6;
         /// Process posted interrupts.
-        const POSTED_INTERRUPTS = 1 << 7;
+        const POSTED_INTERRUPTS          = 1 << 7;
     }
 }
 

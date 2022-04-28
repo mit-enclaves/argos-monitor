@@ -7,6 +7,7 @@
 use core::panic::PanicInfo;
 
 use kernel::println;
+use kernel::qemu;
 use kernel::vmx;
 
 use bootloader::{entry_point, BootInfo};
@@ -24,13 +25,22 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         println!("VMX:    {:?}", vmx::vmx_available());
         println!("VMXON:  {:?}", vmx::vmxon(&vma_allocator));
 
-        let vmcs = vmx::VmcsRegion::new(&vma_allocator);
-        if let Err(err) = vmcs {
-            println!("VMCS:   Err({:?})", err);
-        } else {
-            println!("VMCS:   Ok(())");
-        }
+        let mut vmcs = match vmx::VmcsRegion::new(&vma_allocator) {
+            Err(err) => {
+                println!("VMCS:   Err({:?})", err);
+                qemu::exit(qemu::ExitCode::Failure);
+            }
+            Ok(vmcs) => {
+                println!("VMCS:   Ok(())");
+                vmcs
+            }
+        };
 
+        println!("LOAD:   {:?}", vmcs.set_as_active());
+        println!(
+            "Ctrls1: {:?}",
+            vmcs.set_pin_based_ctls(vmx::PinbasedControls::empty())
+        );
         println!("VMXOFF: {:?}", vmx::vmxoff());
     }
 
