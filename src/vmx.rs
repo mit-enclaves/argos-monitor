@@ -24,7 +24,9 @@ const CPUID_ECX_VMX_MASK: u32 = 1 << 5;
 const MSR_IA32_FEATURE_CONTROL: Msr = Msr::new(0x3A);
 const MSR_IA32_VMX_BASIC: Msr = Msr::new(0x480);
 const MSR_IA32_VMX_PINBASED_CTLS: Msr = Msr::new(0x481);
+const MSR_IA32_VMX_PROCBASED_CTL: Msr = Msr::new(0x482);
 const MSR_IA32_VMX_TRUE_PINBASED_CTLS: Msr = Msr::new(0x48D);
+const MSR_IA32_VMX_TRUE_PROCBASED_CTLS: Msr = Msr::new(0x48E);
 
 /// VMCS fields encoding.of 64 bits control fields.
 ///
@@ -301,7 +303,7 @@ impl VmcsRegion {
     /// Set the pin-based controls.
     ///
     /// WARNING: the region must be active, otherwise this function might modify another VMCS.
-    pub fn set_pin_based_ctls(&mut self, flags: PinbasedControls) -> Result<(), VmxError> {
+    pub fn set_pin_based_ctrls(&mut self, flags: PinbasedControls) -> Result<(), VmxError> {
         // NOTE: see Intel SDM Vol 3D Appending A.3.1 for allowed settings explanation.
         let raw_flags = flags.bits();
         let vmx_info = unsafe { get_vmx_info() };
@@ -315,6 +317,25 @@ impl VmcsRegion {
         };
 
         unsafe { vmwrite32(VmcsCtrl32::PinBasedExecCtrls, new_flags) }
+    }
+
+    /// Set the primary processor-based controls.
+    ///
+    /// WARNING: the region must be active, otherwise this function might modify another VMCS.
+    pub fn set_primary_ctrls(&mut self, flags: PrimaryControls) -> Result<(), VmxError> {
+        // NOTE: see Intel SDM Vol 3D Appending A.3.1 for allowed settings explanation.
+        let raw_flags = flags.bits();
+        let vmx_info = unsafe { get_vmx_info() };
+        let spec = unsafe { MSR_IA32_VMX_PROCBASED_CTL.read() };
+        let known = PrimaryControls::all().bits();
+        let new_flags = if vmx_info.support_true_ctls {
+            let true_spec = unsafe { MSR_IA32_VMX_TRUE_PROCBASED_CTLS.read() };
+            Self::get_true_ctls(raw_flags, spec, true_spec, known)?
+        } else {
+            Self::get_ctls(raw_flags, spec, known)?
+        };
+
+        unsafe { vmwrite32(VmcsCtrl32::PrimaryProcBasedExecCtrls, new_flags) }
     }
 
     /// Computes the control bits when there is no support for true controls.
@@ -374,6 +395,56 @@ bitflags! {
         const VMX_PREEMPTION_TIMER       = 1 << 6;
         /// Process posted interrupts.
         const POSTED_INTERRUPTS          = 1 << 7;
+    }
+
+    /// Primary processor-based VM-execution controls.
+    ///
+    /// A set of bitmask flags useful when setting up [`PRIMARY_PROCBASED_EXEC_CONTROLS`] VMCS field.
+    ///
+    /// See Intel SDM, Volume 3C, Section 24.6.2, Table 24-6.
+    pub struct PrimaryControls: u32 {
+        /// Interrupt-window exiting.
+        const INTERRUPT_WINDOW_EXITING = 1 << 2;
+        /// Use TSC offsetting.
+        const USE_TSC_OFFSETTING       = 1 << 3;
+        /// HLT exiting.
+        const HLT_EXITING              = 1 << 7;
+        /// INVLPG exiting.
+        const INVLPG_EXITING           = 1 << 9;
+        /// MWAIT exiting.
+        const MWAIT_EXITING            = 1 << 10;
+        /// RDPMC exiting.
+        const RDPMC_EXITING            = 1 << 11;
+        /// RDTSC exiting.
+        const RDTSC_EXITING            = 1 << 12;
+        /// CR3-load exiting.
+        const CR3_LOAD_EXITING         = 1 << 15;
+        /// CR3-store exiting.
+        const CR3_STORE_EXITING        = 1 << 16;
+        /// CR8-load exiting.
+        const CR8_LOAD_EXITING         = 1 << 19;
+        /// CR8-store exiting.
+        const CR8_STORE_EXITING        = 1 << 20;
+        /// Use TPR shadow.
+        const USE_TPR_SHADOW           = 1 << 21;
+        /// NMI-window exiting.
+        const NMI_WINDOW_EXITING       = 1 << 22;
+        /// MOV-DR exiting
+        const MOV_DR_EXITING           = 1 << 23;
+        /// Unconditional I/O exiting.
+        const UNCOND_IO_EXITING        = 1 << 24;
+        /// Use I/O bitmaps.
+        const USE_IO_BITMAPS           = 1 << 25;
+        /// Monitor trap flag.
+        const MONITOR_TRAP_FLAG        = 1 << 27;
+        /// Use MSR bitmaps.
+        const USE_MSR_BITMAPS          = 1 << 28;
+        /// MONITOR exiting.
+        const MONITOR_EXITING          = 1 << 29;
+        /// PAUSE exiting.
+        const PAUSE_EXITING            = 1 << 30;
+        /// Activate secondary controls.
+        const SECONDARY_CONTROLS       = 1 << 31;
     }
 }
 

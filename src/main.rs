@@ -39,7 +39,11 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         println!("LOAD:   {:?}", vmcs.set_as_active());
         println!(
             "Ctrls1: {:?}",
-            vmcs.set_pin_based_ctls(vmx::PinbasedControls::empty())
+            vmcs.set_pin_based_ctrls(vmx::PinbasedControls::empty())
+        );
+        println!(
+            "Ctrls2: {:?}",
+            vmcs.set_primary_ctrls(vmx::PrimaryControls::empty())
         );
         println!("VMXOFF: {:?}", vmx::vmxoff());
     }
