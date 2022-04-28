@@ -47,11 +47,11 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         );
         println!(
             "VMExit: {:?}",
-            vmcs.set_vm_exit_ctrls(
-                vmx::ExitControls::HOST_ADDRESS_SPACE_SIZE
-                    | vmx::ExitControls::SAVE_DEBUG_CONTROLS
-                    | vmx::ExitControls::LOAD_IA32_PERF_GLOBAL_CTRL
-            )
+            vmcs.set_vm_exit_ctrls(vmx::ExitControls::HOST_ADDRESS_SPACE_SIZE)
+        );
+        println!(
+            "VMEntr: {:?}",
+            vmcs.set_vm_entry_ctrls(vmx::EntryControls::IA32E_MODE_GUEST)
         );
         println!(
             "Bitm:   {:?}",

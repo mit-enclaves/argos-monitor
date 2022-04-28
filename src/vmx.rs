@@ -29,9 +29,11 @@ pub mod msr {
     pub const VMX_PINBASED_CTLS: Msr = Msr::new(0x481);
     pub const VMX_PROCBASED_CTL: Msr = Msr::new(0x482);
     pub const VMX_EXIT_CTLS: Msr = Msr::new(0x483);
-    pub const VMX_TRUE_EXIT_CTLS: Msr = Msr::new(0x484);
+    pub const VMX_ENTRY_CTLS: Msr = Msr::new(0x484);
     pub const VMX_TRUE_PINBASED_CTLS: Msr = Msr::new(0x48D);
     pub const VMX_TRUE_PROCBASED_CTLS: Msr = Msr::new(0x48E);
+    pub const VMX_TRUE_EXIT_CTLS: Msr = Msr::new(0x48F);
+    pub const VMX_TRUE_ENTRY_CTLS: Msr = Msr::new(0x490);
 }
 
 /// VMCS fields encoding.of 64 bits control fields.
@@ -351,6 +353,21 @@ impl VmcsRegion {
         }
     }
 
+    /// Sets the VM entry controls.
+    ///
+    /// WARNING: the region must be active, otherwise this function might modify another VMCS.
+    pub fn set_vm_entry_ctrls(&mut self, flags: EntryControls) -> Result<(), VmxError> {
+        unsafe {
+            Self::set_ctrls(
+                flags.bits(),
+                EntryControls::all().bits(),
+                msr::VMX_ENTRY_CTLS,
+                msr::VMX_TRUE_ENTRY_CTLS,
+                VmcsCtrl32::VmEntryCtrls,
+            )
+        }
+    }
+
     pub fn set_exception_bitmap(&mut self, bitmap: ExceptionBitmap) -> Result<(), VmxError> {
         // TODO: is there a list of allowed settings?
         unsafe { vmwrite32(VmcsCtrl32::ExceptionBitmap, bitmap.bits()) }
@@ -520,6 +537,34 @@ bitflags! {
         const CONCEAL_VMX_FROM_PT        = 1 << 24;
         /// Clear IA32_RTIT_CTL.
         const CLEAR_IA32_RTIT_CTL        = 1 << 25;
+    }
+
+    /// VM-entry controls.
+    ///
+    /// A set of bitmask flags useful when setting up [`VMENTRY_CONTROLS`] VMCS field.
+    ///
+    /// See Intel SDM, Volume 3C, Section 24.8.
+    pub struct EntryControls: u32 {
+        /// Load debug controls.
+        const LOAD_DEBUG_CONTROLS        = 1 << 2;
+        /// IA-32e mode guest.
+        const IA32E_MODE_GUEST           = 1 << 9;
+        /// Entry to SMM.
+        const ENTRY_TO_SMM               = 1 << 10;
+        /// Deactivate dual-monitor treatment.
+        const DEACTIVATE_DUAL_MONITOR    = 1 << 11;
+        /// Load IA32_PERF_GLOBAL_CTRL.
+        const LOAD_IA32_PERF_GLOBAL_CTRL = 1 << 13;
+        /// Load IA32_PAT.
+        const LOAD_IA32_PAT              = 1 << 14;
+        /// Load IA32_EFER.
+        const LOAD_IA32_EFER             = 1 << 15;
+        /// Load IA32_BNDCFGS.
+        const LOAD_IA32_BNDCFGS          = 1 << 16;
+        /// Conceal VMX from PT.
+        const CONCEAL_VMX_FROM_PT        = 1 << 17;
+        /// Load IA32_RTIT_CTL.
+        const LOAD_IA32_RTIT_CTL         = 1 << 18;
     }
 
     pub struct ExceptionBitmap: u32 {
