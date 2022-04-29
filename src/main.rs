@@ -9,6 +9,7 @@ use core::panic::PanicInfo;
 use kernel::println;
 use kernel::qemu;
 use kernel::vmx;
+use kernel::vmx::bitmaps;
 
 use bootloader::{entry_point, BootInfo};
 
@@ -39,26 +40,26 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         println!("LOAD:   {:?}", vmcs.set_as_active());
         println!(
             "Ctrls1: {:?}",
-            vmcs.set_pin_based_ctrls(vmx::PinbasedControls::empty())
+            vmcs.set_pin_based_ctrls(bitmaps::PinbasedControls::empty())
         );
         println!(
             "Ctrls2: {:?}",
-            vmcs.set_primary_ctrls(vmx::PrimaryControls::empty())
+            vmcs.set_primary_ctrls(bitmaps::PrimaryControls::empty())
         );
         println!(
             "VMExit: {:?}",
-            vmcs.set_vm_exit_ctrls(vmx::ExitControls::HOST_ADDRESS_SPACE_SIZE)
+            vmcs.set_vm_exit_ctrls(bitmaps::ExitControls::HOST_ADDRESS_SPACE_SIZE)
         );
         println!(
             "VMEntr: {:?}",
-            vmcs.set_vm_entry_ctrls(vmx::EntryControls::IA32E_MODE_GUEST)
+            vmcs.set_vm_entry_ctrls(bitmaps::EntryControls::IA32E_MODE_GUEST)
         );
         println!(
             "Bitm:   {:?}",
-            vmcs.set_exception_bitmap(vmx::ExceptionBitmap::empty())
+            vmcs.set_exception_bitmap(bitmaps::ExceptionBitmap::empty())
         );
         println!("Host:   {:?}", vmcs.save_host_state());
-        println!("VMXOFF: {:?}", vmx::vmxoff());
+        println!("VMXOFF: {:?}", vmx::raw::vmxoff());
     }
 
     #[cfg(test)]
