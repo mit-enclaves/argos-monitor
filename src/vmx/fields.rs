@@ -6,7 +6,7 @@
 //! - 16 bits
 //! - 32 bits
 //! - 64 bits
-//! - Natural with (32 or 64 bits depending on the architecture)
+//! - Natural width (32 or 64 bits depending on the architecture)
 //!
 //! In addition, there a four distinct categories of fields:
 //! - Control fields
@@ -66,6 +66,7 @@ pub mod traits {
         }
     }
 
+    /// A VMCS field containing a 16 bits value.
     pub trait VmcsField16 {
         fn raw(&self) -> u32;
 

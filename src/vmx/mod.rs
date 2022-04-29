@@ -22,6 +22,7 @@ use crate::memory::{VirtualMemoryArea, VirtualMemoryAreaAllocator};
 use bitmaps::{EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls};
 use fields::traits::*;
 
+/// Mask for keeping only the 32 lower bits.
 const LOW_32_BITS_MASK: u64 = (1 << 32) - 1;
 
 /// CPUID mask for VMX support
@@ -43,6 +44,7 @@ pub struct VmxBasicInfo {
     // TODO: list supported memory types.
 }
 
+/// A error that occured during VMX operations.
 #[derive(Debug, PartialEq, Eq)]
 pub enum VmxError {
     /// VMCS pointer is valid, but some other error was encountered. Read VM-instruction error
@@ -137,6 +139,7 @@ pub unsafe fn get_vmx_info() -> VmxBasicInfo {
 
 // —————————————————————————————————— VMCS —————————————————————————————————— //
 
+/// A region containing information about a VM.
 pub struct VmcsRegion {
     /// The physical address of the region, corresponds to the VMCS pointer.
     phys_addr: PhysAddr,

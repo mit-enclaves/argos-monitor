@@ -133,6 +133,13 @@ bitflags! {
         const LOAD_IA32_RTIT_CTL         = 1 << 18;
     }
 
+    /// The exception bitmap.
+    ///
+    /// Setting a bit to 1 will cause the corresponding exception to trigger a VMExit instead of
+    /// being delivered to the guests.
+    ///
+    /// NOTE: Some exceptions might have higher priority than VMExits, see Intel manual for
+    /// details.
     pub struct ExceptionBitmap: u32 {
         // Dive Error #DE
         const DIVIDE_ERROR             = 1 << 0;
