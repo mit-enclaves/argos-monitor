@@ -386,19 +386,19 @@ pub struct VCpu {
 }
 
 impl VCpu {
-    pub fn set16(field: fields::GuestState16, value: u16) -> Result<(), VmxError> {
+    pub fn set16(&mut self, field: fields::GuestState16, value: u16) -> Result<(), VmxError> {
         unsafe { field.vmwrite(value) }
     }
 
-    pub fn set32(field: fields::GuestState32, value: u32) -> Result<(), VmxError> {
+    pub fn set32(&mut self, field: fields::GuestState32, value: u32) -> Result<(), VmxError> {
         unsafe { field.vmwrite(value) }
     }
 
-    pub fn set64(field: fields::GuestState64, value: u64) -> Result<(), VmxError> {
+    pub fn set64(&mut self, field: fields::GuestState64, value: u64) -> Result<(), VmxError> {
         unsafe { field.vmwrite(value) }
     }
 
-    pub fn set_nat(field: fields::GuestStateNat, value: usize) -> Result<(), VmxError> {
+    pub fn set_nat(&mut self, field: fields::GuestStateNat, value: usize) -> Result<(), VmxError> {
         unsafe { field.vmwrite(value) }
     }
 }

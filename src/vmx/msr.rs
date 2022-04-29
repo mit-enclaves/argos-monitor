@@ -5,6 +5,8 @@
 pub use x86_64::registers::model_specific::Msr;
 
 pub const FEATURE_CONTROL: Msr = Msr::new(0x3A);
+pub const IA32_FS_BASE: Msr = Msr::new(0x100); // if CPUID.80000001:EDX.[29] = 1
+pub const IA32_GS_BASE: Msr = Msr::new(0x101); // if CPUID.80000001:EDX.[29] = 1
 pub const SYSENTER_CS: Msr = Msr::new(0x174);
 pub const SYSENTER_ESP: Msr = Msr::new(0x175);
 pub const SYSENTER_EIP: Msr = Msr::new(0x176);
