@@ -86,6 +86,16 @@ pub mod traits {
             raw::vmwrite(self.raw() as u64, value as u64)
         }
     }
+
+    /// A VMCS read-only field containing a 32 bits value.
+    pub trait VmcsField32Ro {
+        fn raw(&self) -> u32;
+
+        /// Writes a field to the current VMCS.
+        unsafe fn vmread(&self) -> Result<u32, VmxError> {
+            raw::vmread(self.raw() as u64).map(|value| value as u32)
+        }
+    }
 }
 
 // ————————————————————————————— Control Fields ————————————————————————————— //
@@ -245,7 +255,7 @@ impl VmcsField16 for GuestState16 {
     }
 }
 
-/// VMCS fields encoding of 16 bits guest state fields.
+/// VMCS fields encoding of 32 bits guest state fields.
 #[rustfmt::skip]
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
@@ -277,6 +287,27 @@ pub enum GuestState32 {
 }
 
 impl VmcsField32 for GuestState32 {
+    fn raw(&self) -> u32 {
+        *self as u32
+    }
+}
+
+/// VMCS fields encoding of 32 bits read-only guest state fields.
+#[rustfmt::skip]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum GuestState32Ro {
+    VmInstructionError      = 0x00004400,
+    ExitReason              = 0x00004402,
+    VmExitInterruptInfo     = 0x00004404,
+    VmExitInterruptErrCode  = 0x00004406,
+    IdtVecoringInfoField    = 0x00004408,
+    IdtVectoringErrCode     = 0x0000440A,
+    VmExitInstructionLenght = 0x0000440C,
+    VmExitInstructionInfo   = 0x0000440E,
+}
+
+impl VmcsField32Ro for GuestState32Ro {
     fn raw(&self) -> u32 {
         *self as u32
     }
@@ -325,7 +356,7 @@ pub enum GuestStateNat {
     IdtrBase           = 0x00006818,
     Dr7                = 0x0000681A,
     Rsp                = 0x0000681C,
-    Rip                = 0x000068AE,
+    Rip                = 0x0000681E,
     Rflags             = 0x00006820,
     PendingDebugExcept = 0x00006822,
     Ia32SysenterEsp    = 0x00006824,

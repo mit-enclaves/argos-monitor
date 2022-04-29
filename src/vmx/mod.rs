@@ -401,6 +401,12 @@ impl VCpu {
     pub fn set_nat(&mut self, field: fields::GuestStateNat, value: usize) -> Result<(), VmxError> {
         unsafe { field.vmwrite(value) }
     }
+
+    pub fn exit_reason(&self) -> Result<(), VmxError> {
+        let reason = unsafe { fields::GuestState32Ro::ExitReason.vmread() }?;
+        crate::println!("0b{:b}", reason);
+        Ok(())
+    }
 }
 
 // ————————————————————————————————— Tests —————————————————————————————————— //

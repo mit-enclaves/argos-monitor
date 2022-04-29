@@ -44,6 +44,15 @@ pub unsafe fn vmwrite(field: u64, value: u64) -> Result<(), VmxError> {
     vmx_capture_status()
 }
 
+/// Executes VMREAD.
+///
+/// This will read a field from the current VMCS and return its value.
+pub unsafe fn vmread(field: u64) -> Result<u64, VmxError> {
+    let value: u64;
+    asm!("vmread {0}, {1}", in(reg) field, out(reg) value, options(att_syntax));
+    vmx_capture_status().and(Ok(value))
+}
+
 /// Executes VMPTRLD.
 ///
 /// This loads a VMCS and mark it as active. All further VMWRITE and VMREAD operations will operate
