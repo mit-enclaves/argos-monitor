@@ -143,6 +143,8 @@ pub unsafe fn get_vmx_info() -> VmxBasicInfo {
 pub struct VmcsRegion {
     /// The physical address of the region, corresponds to the VMCS pointer.
     phys_addr: PhysAddr,
+    /// Virtual CPU, contains guest state.
+    pub vcpu: VCpu,
     /// The VMA used by the region.
     _vma: VirtualMemoryArea,
 }
@@ -166,6 +168,7 @@ impl VmcsRegion {
 
         Ok(VmcsRegion {
             phys_addr,
+            vcpu: VCpu { _private: () },
             _vma: vmcs_vma,
         })
     }
@@ -376,13 +379,29 @@ impl VmcsRegion {
 // —————————————————————————————— Virtual CPU ——————————————————————————————— //
 
 /// A virtual CPU.
-struct VCpu {
+pub struct VCpu {
     // This field prevents a VCpu from being instantiated outside of this module, by not marking it
     // public.
     _private: (),
 }
 
-impl VCpu {}
+impl VCpu {
+    pub fn set16(field: fields::GuestState16, value: u16) -> Result<(), VmxError> {
+        unsafe { field.vmwrite(value) }
+    }
+
+    pub fn set32(field: fields::GuestState32, value: u32) -> Result<(), VmxError> {
+        unsafe { field.vmwrite(value) }
+    }
+
+    pub fn set64(field: fields::GuestState64, value: u64) -> Result<(), VmxError> {
+        unsafe { field.vmwrite(value) }
+    }
+
+    pub fn set_nat(field: fields::GuestStateNat, value: usize) -> Result<(), VmxError> {
+        unsafe { field.vmwrite(value) }
+    }
+}
 
 // ————————————————————————————————— Tests —————————————————————————————————— //
 

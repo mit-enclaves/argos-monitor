@@ -181,7 +181,7 @@ impl VmcsField16 for HostState16 {
     }
 }
 
-/// VMCS fields encodinf of 32 bits host state fields.
+/// VMCS fields encoding of 32 bits host state fields.
 #[rustfmt::skip]
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
@@ -215,6 +215,124 @@ pub enum HostStateNat {
 }
 
 impl VmcsFieldNatWidth for HostStateNat {
+    fn raw(&self) -> u32 {
+        *self as u32
+    }
+}
+
+// ——————————————————————————— Guest State Fields ——————————————————————————— //
+
+/// VMCS fields encoding of 16 bits guest state fields.
+#[rustfmt::skip]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum GuestState16 {
+    EsSelector      = 0x00000800,
+    CsSelector      = 0x00000802,
+    SsSelector      = 0x00000804,
+    DsSelector      = 0x00000806,
+    FsSelector      = 0x00000808,
+    GsSelector      = 0x0000080A,
+    LdtrSelector    = 0x0000080C,
+    TrSelector      = 0x0000080E,
+    InterruptStatus = 0x00000810,
+    PmlIndex        = 0x00000812,
+}
+
+impl VmcsField16 for GuestState16 {
+    fn raw(&self) -> u32 {
+        *self as u32
+    }
+}
+
+/// VMCS fields encoding of 16 bits guest state fields.
+#[rustfmt::skip]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum GuestState32 {
+    EsLimit                 = 0x00004800,
+    CsLimit                 = 0x00004802,
+    SsLimit                 = 0x00004804,
+    DsLimit                 = 0x00004806,
+    FsLimit                 = 0x00004808,
+    GsLimit                 = 0x0000480A,
+    LdtrLimit               = 0x0000480C,
+    TrLimit                 = 0x0000480E,
+    GdtrLimit               = 0x00004810,
+    IdtrLimit               = 0x00004812,
+    EsAccessRights          = 0x00004814,
+    CsAccessRights          = 0x00004816,
+    SsAccessRights          = 0x00004818,
+    DsAccessRights          = 0x0000481A,
+    FsAccessRights          = 0x0000481C,
+    GsAccessRights          = 0x0000481E,
+    LdtrAccessRights        = 0x00004820,
+    TrAccessRights          = 0x00004822,
+    InterruptibilityState   = 0x00004824,
+    ActivityState           = 0x00004826,
+    Smbase                  = 0x00004828,
+    Ia32SysenterCs          = 0x0000482A,
+    /// Only exists if processor support VMX preemption timer.
+    VmxPreemptionTimerValue = 0x0000482E,
+}
+
+impl VmcsField32 for GuestState32 {
+    fn raw(&self) -> u32 {
+        *self as u32
+    }
+}
+
+/// VMCS fields encoding of 64 bits guest state fields.
+#[rustfmt::skip]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum GuestState64 {
+    VmcsLinkPtr        = 0x00002800,
+    Ia32Debugctl       = 0x00002802,
+    Ia32pat            = 0x00002804,
+    Ia32Efer           = 0x00002806,
+    Ia32PerfGlobalCtrl = 0x00002808,
+    Pdpte0             = 0x0000280A,
+    Pdpte1             = 0x0000280C,
+    Ptpte2             = 0x0000280E,
+    Pdpte3             = 0x00002810,
+    Ia32Binddfgs       = 0x00002812,
+}
+
+impl VmcsField64 for GuestState64 {
+    fn raw(&self) -> u32 {
+        *self as u32
+    }
+}
+
+/// VMCS fields encoding of natural width guest state fields.
+#[rustfmt::skip]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum GuestStateNat {
+    Cr0                = 0x00006800,
+    Cr3                = 0x00006802,
+    Cr4                = 0x00006804,
+    EsBase             = 0x00006806,
+    CsBase             = 0x00006808,
+    SsBase             = 0x0000680A,
+    DsBase             = 0x0000680C,
+    FsBase             = 0x0000680E,
+    GsBase             = 0x00006810,
+    LdtrBase           = 0x00006812,
+    TrBase             = 0x00006814,
+    GdtrBase           = 0x00006816,
+    IdtrBase           = 0x00006818,
+    Dr7                = 0x0000681A,
+    Rsp                = 0x0000681C,
+    Rip                = 0x000068AE,
+    Rflags             = 0x00006820,
+    PendingDebugExcept = 0x00006822,
+    Ia32SysenterEsp    = 0x00006824,
+    Ia32SysenterEip    = 0x00006826,
+}
+
+impl VmcsFieldNatWidth for GuestStateNat {
     fn raw(&self) -> u32 {
         *self as u32
     }
