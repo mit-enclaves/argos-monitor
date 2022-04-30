@@ -8,6 +8,7 @@ pub mod bitmaps;
 pub mod fields;
 pub mod msr;
 pub mod raw;
+pub mod errors;
 
 use core::arch;
 use core::arch::asm;
@@ -21,6 +22,7 @@ use x86_64::PhysAddr;
 use crate::memory::{VirtualMemoryArea, VirtualMemoryAreaAllocator};
 use bitmaps::{EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls};
 use fields::traits::*;
+pub use errors::VmxError;
 
 /// Mask for keeping only the 32 lower bits.
 const LOW_32_BITS_MASK: u64 = (1 << 32) - 1;
@@ -42,29 +44,6 @@ pub struct VmxBasicInfo {
     /// Support the VMX_TRUE_CTLS registers.
     pub support_true_ctls: bool,
     // TODO: list supported memory types.
-}
-
-/// A error that occured during VMX operations.
-#[derive(Debug, PartialEq, Eq)]
-pub enum VmxError {
-    /// VMCS pointer is valid, but some other error was encountered. Read VM-instruction error
-    /// field of VMCS for more details.
-    VmFailValid,
-
-    /// VMCS pointer is invalid.
-    VmFailInvalid,
-
-    /// VMX is not supported by the current CPU.
-    VmxNotSupported,
-
-    /// VMX is supported by the CPU but not enabled. See IA_32_FEATURE_CONTROL MSR.
-    VmxNotEnabled,
-
-    /// Value 1 is not supported for one of the configuration bits for which it was requested.
-    Disallowed1,
-
-    /// Value 0 is not supported for one of the configuration bits for which it was requested.
-    Disallowed0,
 }
 
 /// Returns Ok is VMX is available, otherwise returns the reason it's not.
@@ -404,7 +383,7 @@ impl VCpu {
 
     pub fn exit_reason(&self) -> Result<(), VmxError> {
         let reason = unsafe { fields::GuestState32Ro::ExitReason.vmread() }?;
-        crate::println!("0b{:b}", reason);
+        crate::println!("Exit reason: 0b{:b}", reason);
         Ok(())
     }
 }

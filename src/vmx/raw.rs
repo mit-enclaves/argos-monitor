@@ -8,7 +8,8 @@ use core::arch::asm;
 
 use x86_64::registers::rflags::RFlags;
 
-use super::VmxError;
+use super::errors::{VmxError, VmxInstructionError};
+use super::fields;
 
 /// Executes VMXON.
 ///
@@ -62,6 +63,14 @@ pub unsafe fn vmptrld(addr: u64) -> Result<(), VmxError> {
     vmx_capture_status()
 }
 
+/// Executes VMLAUNCH.
+///
+/// On success, this will switch to non-root mode and load guest state from current VMCS.
+pub unsafe fn vmlaunch() -> Result<(), VmxError> {
+    asm!("vmlaunch");
+    vmx_capture_status()
+}
+
 /// Helper used to extract VMX-specific Result in accordance with
 /// conventions described in Intel SDM, Volume 3C, Section 30.2.
 //  We inline this to provide an obstruction-free path from this function's
@@ -69,11 +78,23 @@ pub unsafe fn vmptrld(addr: u64) -> Result<(), VmxError> {
 //  possible for RFLAGS register to be clobbered by a function prologue,
 //  see https://github.com/gz/rust-x86/pull/50.
 #[inline(always)]
-pub(crate) fn vmx_capture_status() -> Result<(), VmxError> {
+pub(crate) unsafe fn vmx_capture_status() -> Result<(), VmxError> {
     let flags = rflags_read();
 
     if flags.contains(RFlags::ZERO_FLAG) {
-        Err(VmxError::VmFailValid)
+        // A valid VMCS is installed, we can read the error field
+        let instr_err_field = fields::GuestState32Ro::VmInstructionError as u64;
+        let err: u64;
+        asm!("vmread {0}, {1}", in(reg) instr_err_field, out(reg) err, options(att_syntax));
+        let flags = rflags_read();
+        let error = if flags.intersects(RFlags::ZERO_FLAG | RFlags::CARRY_FLAG) {
+            // An error occured during VMREAD
+            VmxInstructionError::Unknown
+        } else {
+            VmxInstructionError::from_u64(err)
+        };
+
+        Err(VmxError::VmFailValid(error))
     } else if flags.contains(RFlags::CARRY_FLAG) {
         Err(VmxError::VmFailInvalid)
     } else {

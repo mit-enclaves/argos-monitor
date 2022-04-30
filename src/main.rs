@@ -14,6 +14,7 @@ use kernel::vmx::bitmaps;
 use kernel::vmx::fields;
 use kernel::vmx::fields::traits::VmcsField32Ro;
 use kernel::vmx::msr;
+use kernel::vmx::raw;
 
 use bootloader::{entry_point, BootInfo};
 use x86_64::instructions::tables::{sgdt, sidt};
@@ -66,10 +67,6 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         println!("Host:   {:?}", vmcs.save_host_state());
         println!("Guest:  {:?}", setup_guest(&mut vmcs.vcpu));
         println!("Launch: {:?}", launch_guest(&mut vmcs.vcpu));
-        println!(
-            "Err {:?}",
-            fields::GuestState32Ro::VmInstructionError.vmread().unwrap()
-        );
         println!("Exit:   {:?}", vmcs.vcpu.exit_reason());
         println!("VMXOFF: {:?}", vmx::raw::vmxoff());
     }
@@ -87,11 +84,7 @@ fn launch_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
     vcpu.set_nat(fields::GuestStateNat::Rip, entry_point as usize)?;
     vcpu.set_nat(fields::GuestStateNat::Rsp, stack_ptr as usize)?;
 
-    unsafe {
-        asm!("vmlaunch");
-    }
-
-    Ok(())
+    unsafe { raw::vmlaunch() }
 }
 
 fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
