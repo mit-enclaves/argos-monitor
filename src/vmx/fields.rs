@@ -54,6 +54,11 @@ pub mod traits {
         unsafe fn vmwrite(&self, value: u64) -> Result<(), VmxError> {
             raw::vmwrite(self.raw() as u64, value)
         }
+
+        /// Reads a field to the current VMCS.
+        unsafe fn vmread(&self) -> Result<u16, VmxError> {
+            raw::vmread(self.raw() as u64).map(|value| value as u16)
+        }
     }
 
     /// A VMCS field containing a 32 bits value.
@@ -63,6 +68,11 @@ pub mod traits {
         /// Writes a field to the current VMCS.
         unsafe fn vmwrite(&self, value: u32) -> Result<(), VmxError> {
             raw::vmwrite(self.raw() as u64, value as u64)
+        }
+
+        /// Reads a field to the current VMCS.
+        unsafe fn vmread(&self) -> Result<u32, VmxError> {
+            raw::vmread(self.raw() as u64).map(|value| value as u32)
         }
     }
 
@@ -74,16 +84,36 @@ pub mod traits {
         unsafe fn vmwrite(&self, value: u16) -> Result<(), VmxError> {
             raw::vmwrite(self.raw() as u64, value as u64)
         }
+
+        /// Reads a field to the current VMCS.
+        unsafe fn vmread(&self) -> Result<u64, VmxError> {
+            raw::vmread(self.raw() as u64)
+        }
     }
 
     /// A VMCS field containing a natural width value (i.e. 32 bits on 32 bits systems, 64 bits on 64
     /// bits systems).
-    pub trait VmcsFieldNatWidth {
+    pub trait VmcsFieldNat {
         fn raw(&self) -> u32;
 
         /// Writes a field to the current VMCS.
         unsafe fn vmwrite(&self, value: usize) -> Result<(), VmxError> {
             raw::vmwrite(self.raw() as u64, value as u64)
+        }
+
+        /// Reads a field to the current VMCS.
+        unsafe fn vmread(&self) -> Result<usize, VmxError> {
+            raw::vmread(self.raw() as u64).map(|value| value as usize)
+        }
+    }
+
+    /// A VMCS read-only field containing a 16 bits value.
+    pub trait VmcsField16Ro {
+        fn raw(&self) -> u32;
+
+        /// Reads a field to the current VMCS.
+        unsafe fn vmread(&self) -> Result<u16, VmxError> {
+            raw::vmread(self.raw() as u64).map(|value| value as u16)
         }
     }
 
@@ -91,14 +121,46 @@ pub mod traits {
     pub trait VmcsField32Ro {
         fn raw(&self) -> u32;
 
-        /// Writes a field to the current VMCS.
+        /// Reads a field to the current VMCS.
         unsafe fn vmread(&self) -> Result<u32, VmxError> {
             raw::vmread(self.raw() as u64).map(|value| value as u32)
+        }
+    }
+
+    /// A VMCS read-only field containing a 64 bits value.
+    pub trait VmcsField64Ro {
+        fn raw(&self) -> u64;
+
+        /// reads a field to the current VMCS.
+        unsafe fn vmread(&self) -> Result<u64, VmxError> {
+            raw::vmread(self.raw() as u64)
+        }
+    }
+
+    /// A VMCS read-only field containing a natural-width value.
+    pub trait VmcsFieldNatRo {
+        fn raw(&self) -> u32;
+
+        /// Reads a field to the current VMCS.
+        unsafe fn vmread(&self) -> Result<usize, VmxError> {
+            raw::vmread(self.raw() as u64).map(|value| value as usize)
         }
     }
 }
 
 // ————————————————————————————— Control Fields ————————————————————————————— //
+
+/// Implements the given field trait for a `#[repr(32)]` struct.
+macro_rules! impl_field_for {
+    ($field:ident, $struc:ident) => {
+        impl $field for $struc {
+            #[inline]
+            fn raw(&self) -> u32 {
+                *self as u32
+            }
+        }
+    };
+}
 
 /// VMCS fields encoding of 32 bits control fields.
 #[rustfmt::skip]
@@ -125,11 +187,7 @@ pub enum Ctrl32 {
     PleWindow                     = 0x00004022,
 }
 
-impl VmcsField32 for Ctrl32 {
-    fn raw(&self) -> u32 {
-        *self as u32
-    }
-}
+impl_field_for!(VmcsField32, Ctrl32);
 
 /// VMCS fields encoding of 64 bits control fields.
 #[rustfmt::skip]
@@ -163,11 +221,7 @@ pub enum Ctrl64 {
     TscMultiplier     = 0x00002032,
 }
 
-impl VmcsField64 for Ctrl64 {
-    fn raw(&self) -> u32 {
-        *self as u32
-    }
-}
+impl_field_for!(VmcsField64, Ctrl64);
 
 // ——————————————————————————— Host State Fields ———————————————————————————— //
 
@@ -185,11 +239,7 @@ pub enum HostState16 {
     TrSelector = 0x00000C0C,
 }
 
-impl VmcsField16 for HostState16 {
-    fn raw(&self) -> u32 {
-        *self as u32
-    }
-}
+impl_field_for!(VmcsField16, HostState16);
 
 /// VMCS fields encoding of 32 bits host state fields.
 #[rustfmt::skip]
@@ -199,11 +249,7 @@ pub enum HostState32 {
     Ia32SysenterCs = 0x00004C00,
 }
 
-impl VmcsField32 for HostState32 {
-    fn raw(&self) -> u32 {
-        *self as u32
-    }
-}
+impl_field_for!(VmcsField32, HostState32);
 
 /// VMCS fields encoding of natural width host state fields.
 #[rustfmt::skip]
@@ -224,11 +270,7 @@ pub enum HostStateNat {
     Rip             = 0x00006C16,
 }
 
-impl VmcsFieldNatWidth for HostStateNat {
-    fn raw(&self) -> u32 {
-        *self as u32
-    }
-}
+impl_field_for!(VmcsFieldNat, HostStateNat);
 
 // ——————————————————————————— Guest State Fields ——————————————————————————— //
 
@@ -249,11 +291,7 @@ pub enum GuestState16 {
     PmlIndex        = 0x00000812,
 }
 
-impl VmcsField16 for GuestState16 {
-    fn raw(&self) -> u32 {
-        *self as u32
-    }
-}
+impl_field_for!(VmcsField16, GuestState16);
 
 /// VMCS fields encoding of 32 bits guest state fields.
 #[rustfmt::skip]
@@ -286,11 +324,7 @@ pub enum GuestState32 {
     VmxPreemptionTimerValue = 0x0000482E,
 }
 
-impl VmcsField32 for GuestState32 {
-    fn raw(&self) -> u32 {
-        *self as u32
-    }
-}
+impl_field_for!(VmcsField32, GuestState32);
 
 /// VMCS fields encoding of 32 bits read-only guest state fields.
 #[rustfmt::skip]
@@ -307,11 +341,7 @@ pub enum GuestState32Ro {
     VmExitInstructionInfo   = 0x0000440E,
 }
 
-impl VmcsField32Ro for GuestState32Ro {
-    fn raw(&self) -> u32 {
-        *self as u32
-    }
-}
+impl_field_for!(VmcsField32Ro, GuestState32Ro);
 
 /// VMCS fields encoding of 64 bits guest state fields.
 #[rustfmt::skip]
@@ -330,11 +360,7 @@ pub enum GuestState64 {
     Ia32Binddfgs       = 0x00002812,
 }
 
-impl VmcsField64 for GuestState64 {
-    fn raw(&self) -> u32 {
-        *self as u32
-    }
-}
+impl_field_for!(VmcsField64, GuestState64);
 
 /// VMCS fields encoding of natural width guest state fields.
 #[rustfmt::skip]
@@ -363,8 +389,4 @@ pub enum GuestStateNat {
     Ia32SysenterEip    = 0x00006826,
 }
 
-impl VmcsFieldNatWidth for GuestStateNat {
-    fn raw(&self) -> u32 {
-        *self as u32
-    }
-}
+impl_field_for!(VmcsFieldNat, GuestStateNat);

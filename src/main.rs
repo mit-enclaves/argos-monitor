@@ -12,7 +12,6 @@ use kernel::qemu;
 use kernel::vmx;
 use kernel::vmx::bitmaps;
 use kernel::vmx::fields;
-use kernel::vmx::fields::traits::VmcsField32Ro;
 use kernel::vmx::msr;
 use kernel::vmx::raw;
 
