@@ -5,13 +5,13 @@
 //! [x86]: https://hermitcore.github.io/libhermit-rs/x86/bits64/vmx/index.html
 
 pub mod bitmaps;
+pub mod errors;
 pub mod fields;
 pub mod msr;
 pub mod raw;
-pub mod errors;
 
-use core::arch;
 use core::arch::asm;
+use core::{arch, usize};
 
 use x86_64::instructions::tables::{sgdt, sidt};
 use x86_64::registers::control::{Cr0, Cr3, Cr4, Cr4Flags};
@@ -21,14 +21,19 @@ use x86_64::PhysAddr;
 
 use crate::memory::{VirtualMemoryArea, VirtualMemoryAreaAllocator};
 use bitmaps::{EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls};
+pub use errors::{VmxError, VmxFieldError};
 use fields::traits::*;
-pub use errors::VmxError;
 
 /// Mask for keeping only the 32 lower bits.
 const LOW_32_BITS_MASK: u64 = (1 << 32) - 1;
 
 /// CPUID mask for VMX support
 const CPUID_ECX_VMX_MASK: u32 = 1 << 5;
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum VmcsCheck {
+    Ok,
+}
 
 /// Basic VMX Information.
 ///
@@ -173,7 +178,7 @@ impl VmcsRegion {
                 msr::VMX_PINBASED_CTLS,
                 msr::VMX_TRUE_PINBASED_CTLS,
                 fields::Ctrl32::PinBasedExecCtrls,
-            )
+            ).map_err(|err| err.set_field(VmxFieldError::PinBasedControls))
         }
     }
 
@@ -188,7 +193,7 @@ impl VmcsRegion {
                 msr::VMX_PROCBASED_CTL,
                 msr::VMX_TRUE_PROCBASED_CTLS,
                 fields::Ctrl32::PrimaryProcBasedExecCtrls,
-            )
+            ).map_err(|err| err.set_field(VmxFieldError::PrimaryControls))
         }
     }
 
@@ -203,7 +208,7 @@ impl VmcsRegion {
                 msr::VMX_EXIT_CTLS,
                 msr::VMX_TRUE_EXIT_CTLS,
                 fields::Ctrl32::VmExitCtrls,
-            )
+            ).map_err(|err| err.set_field(VmxFieldError::ExitControls))
         }
     }
 
@@ -218,7 +223,7 @@ impl VmcsRegion {
                 msr::VMX_ENTRY_CTLS,
                 msr::VMX_TRUE_ENTRY_CTLS,
                 fields::Ctrl32::VmEntryCtrls,
-            )
+            ).map_err(|err| err.set_field(VmxFieldError::EntryControls))
         }
     }
 
@@ -228,6 +233,22 @@ impl VmcsRegion {
     pub fn set_exception_bitmap(&mut self, bitmap: ExceptionBitmap) -> Result<(), VmxError> {
         // TODO: is there a list of allowed settings?
         unsafe { fields::Ctrl32::ExceptionBitmap.vmwrite(bitmap.bits()) }
+    }
+
+    pub fn check(&self) -> Result<(), VmxError> {
+        todo!();
+    }
+
+    /// Validate CR0 register.
+    ///
+    /// See Intel Manual volume 3 annex A.7.
+    fn validate_cr0(cr0: usize) {
+        let fixed_0 = unsafe { msr::VMX_CR0_FIXED0.read() } as usize;
+        let fixed_1 = unsafe { msr::VMX_CR0_FIXED1.read() } as usize;
+
+        if fixed_0 & cr0 != fixed_0 {
+            // TODO: unsupported 0 setting
+        }
     }
 
     /// Saves the host state (control registers, segments...), so that they are restored on VM Exit.
@@ -318,16 +339,22 @@ impl VmcsRegion {
     }
 
     /// Computes the control bits when there is no support for true controls.
+    ///
+    /// In case of error, returns the index of a bit
     fn get_ctls(user: u32, spec: u64, known: u32) -> Result<u32, VmxError> {
         // NOTE: see Intel SDM Vol 3C Section 31.5.1, algorithm 3
         let allowed_zeros = (spec & LOW_32_BITS_MASK) as u32;
         let allowed_ones = (spec >> 32) as u32;
 
-        if !user & allowed_zeros & known != 0 {
-            return Err(VmxError::Disallowed0);
+        let must_be_0 = !user & allowed_zeros & known;
+        if must_be_0 != 0 {
+            let idx = must_be_0.trailing_zeros() as u8;
+            return Err(VmxError::Disallowed0(VmxFieldError::Unknown, idx));
         }
-        if user & !allowed_ones & known != 0 {
-            return Err(VmxError::Disallowed1);
+        let must_be_0 = user & !allowed_ones & known;
+        if must_be_0 != 0 {
+            let idx = must_be_0.trailing_zeros() as u8;
+            return Err(VmxError::Disallowed1(VmxFieldError::Unknown, idx));
         }
 
         let default_value = allowed_zeros & allowed_ones;
@@ -341,11 +368,15 @@ impl VmcsRegion {
         let true_allowed_zeros = (true_spec & LOW_32_BITS_MASK) as u32;
         let true_allowed_ones = (true_spec >> 32) as u32;
 
-        if !user & true_allowed_zeros & known != 0 {
-            return Err(VmxError::Disallowed0);
+        let must_be_0 = !user & true_allowed_zeros & known;
+        if must_be_0 != 0 {
+            let idx = must_be_0.trailing_zeros() as u8;
+            return Err(VmxError::Disallowed0(VmxFieldError::Unknown, idx));
         }
-        if user & !true_allowed_ones & known != 0 {
-            return Err(VmxError::Disallowed1);
+        let must_be_0 = user & !true_allowed_ones & known;
+        if must_be_0 != 0 {
+            let idx = must_be_0.trailing_zeros() as u8;
+            return Err(VmxError::Disallowed1(VmxFieldError::Unknown, idx));
         }
 
         let default_value = true_allowed_zeros & true_allowed_ones;
@@ -409,13 +440,13 @@ mod test {
         assert_eq!(VmcsRegion::get_ctls(user_request, spec, known), Ok(expected));
 
         // testing disallowed one
-        let spec_0_setting: u64 = 0b0;
-        let spec_1_setting: u64 = 0b0;
-        let user_request:   u32 = 0b1;
-        let known:          u32 = 0b1;
+        let spec_0_setting: u64 = 0b0_1;
+        let spec_1_setting: u64 = 0b0_1;
+        let user_request:   u32 = 0b1_1;
+        let known:          u32 = 0b1_1;
 
         let spec = (spec_1_setting << 32) + spec_0_setting;
-        assert_eq!(VmcsRegion::get_ctls(user_request, spec, known), Err(VmxError::Disallowed1));
+        assert_eq!(VmcsRegion::get_ctls(user_request, spec, known), Err(VmxError::Disallowed1(VmxFieldError::Unknown, 1)));
 
         // testing disallowed zero
         let spec_0_setting: u64 = 0b1;
@@ -424,7 +455,7 @@ mod test {
         let known:          u32 = 0b1;
 
         let spec = (spec_1_setting << 32) + spec_0_setting;
-        assert_eq!(VmcsRegion::get_ctls(user_request, spec, known), Err(VmxError::Disallowed0));
+        assert_eq!(VmcsRegion::get_ctls(user_request, spec, known), Err(VmxError::Disallowed0(VmxFieldError::Unknown, 0)));
     }
 
     /// See manual Annex A.3.
@@ -444,17 +475,17 @@ mod test {
         assert_eq!(VmcsRegion::get_true_ctls(user_request, spec, true_spec, known), Ok(expected));
 
         // testing disallowed one
-        let spec_0_setting:      u64 = 0b0;
-        let true_spec_0_setting: u64 = 0b0;
-        let true_spec_1_setting: u64 = 0b0;
-        let user_request:        u32 = 0b1;
-        let known:               u32 = 0b1;
+        let spec_0_setting:      u64 = 0b0_1;
+        let true_spec_0_setting: u64 = 0b0_0;
+        let true_spec_1_setting: u64 = 0b0_1;
+        let user_request:        u32 = 0b1_1;
+        let known:               u32 = 0b1_1;
 
         let spec = spec_0_setting;
         let true_spec = (true_spec_1_setting << 32) + true_spec_0_setting;
         assert_eq!(
             VmcsRegion::get_true_ctls(user_request, spec, true_spec, known),
-            Err(VmxError::Disallowed1),
+            Err(VmxError::Disallowed1(VmxFieldError::Unknown, 1)),
         );
 
         // testing disallowed zero
@@ -468,7 +499,7 @@ mod test {
         let true_spec = (true_spec_1_setting << 32) + true_spec_0_setting;
         assert_eq!(
             VmcsRegion::get_true_ctls(user_request, spec, true_spec, known),
-            Err(VmxError::Disallowed0),
+            Err(VmxError::Disallowed0(VmxFieldError::Unknown, 0)),
         );
     }
 }

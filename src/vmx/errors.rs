@@ -1,7 +1,7 @@
 //! VMX Errors
 
 /// An error that occured during VMX operations.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum VmxError {
     /// VMCS pointer is valid, but some other error was encountered. Read VM-instruction error
     /// field of VMCS for more details.
@@ -17,16 +17,27 @@ pub enum VmxError {
     VmxNotEnabled,
 
     /// Value 1 is not supported for one of the configuration bits for which it was requested.
-    Disallowed1,
+    Disallowed1(VmxFieldError, u8),
 
     /// Value 0 is not supported for one of the configuration bits for which it was requested.
-    Disallowed0,
+    Disallowed0(VmxFieldError, u8),
+}
+
+impl VmxError {
+    /// If the error is either a disallowed 0 or a disallowed 1, override the faulty VMX field.
+    pub(crate) fn set_field(self, field: VmxFieldError) -> Self {
+        match self {
+            Self::Disallowed0(_, idx) => Self::Disallowed0(field, idx),
+            Self::Disallowed1(_, idx) => Self::Disallowed1(field, idx),
+            _ => self,
+        }
+    }
 }
 
 /// An error resulting from the execution of a VMX instruction.
 ///
 /// See Intel Manual 3C Section 30.4.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum VmxInstructionError {
     /// VMCA executed in VMX-root operation.
     VmCallRoot,
@@ -113,4 +124,16 @@ impl VmxInstructionError {
             _ => Self::Unknown,
         }
     }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum VmxFieldError {
+    HostCr0,
+    HostCr4,
+    PinBasedControls,
+    PrimaryControls,
+    SecondaryControls,
+    ExitControls,
+    EntryControls,
+    Unknown,
 }
