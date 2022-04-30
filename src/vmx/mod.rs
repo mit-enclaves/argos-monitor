@@ -178,7 +178,8 @@ impl VmcsRegion {
                 msr::VMX_PINBASED_CTLS,
                 msr::VMX_TRUE_PINBASED_CTLS,
                 fields::Ctrl32::PinBasedExecCtrls,
-            ).map_err(|err| err.set_field(VmxFieldError::PinBasedControls))
+            )
+            .map_err(|err| err.set_field(VmxFieldError::PinBasedControls))
         }
     }
 
@@ -193,7 +194,8 @@ impl VmcsRegion {
                 msr::VMX_PROCBASED_CTL,
                 msr::VMX_TRUE_PROCBASED_CTLS,
                 fields::Ctrl32::PrimaryProcBasedExecCtrls,
-            ).map_err(|err| err.set_field(VmxFieldError::PrimaryControls))
+            )
+            .map_err(|err| err.set_field(VmxFieldError::PrimaryControls))
         }
     }
 
@@ -208,7 +210,8 @@ impl VmcsRegion {
                 msr::VMX_EXIT_CTLS,
                 msr::VMX_TRUE_EXIT_CTLS,
                 fields::Ctrl32::VmExitCtrls,
-            ).map_err(|err| err.set_field(VmxFieldError::ExitControls))
+            )
+            .map_err(|err| err.set_field(VmxFieldError::ExitControls))
         }
     }
 
@@ -223,7 +226,8 @@ impl VmcsRegion {
                 msr::VMX_ENTRY_CTLS,
                 msr::VMX_TRUE_ENTRY_CTLS,
                 fields::Ctrl32::VmEntryCtrls,
-            ).map_err(|err| err.set_field(VmxFieldError::EntryControls))
+            )
+            .map_err(|err| err.set_field(VmxFieldError::EntryControls))
         }
     }
 
@@ -235,20 +239,56 @@ impl VmcsRegion {
         unsafe { fields::Ctrl32::ExceptionBitmap.vmwrite(bitmap.bits()) }
     }
 
+    /// Check that the current VMCS is in a valid stat, such that VMLAUNCh or VMRESUME can
+    /// successfully complete.
     pub fn check(&self) -> Result<(), VmxError> {
-        todo!();
+        // Validate host settings
+        let host_cr0 = unsafe { fields::GuestStateNat::Cr0.vmread()? } as usize;
+        Self::validate_cr0(host_cr0)?;
+        let host_cr4 = unsafe { fields::GuestStateNat::Cr4.vmread()? } as usize;
+        Self::validate_cr4(host_cr4)?;
+
+        // TODO
+        // - guest CR0 & CR3
+        // - ...
+        Ok(())
     }
 
-    /// Validate CR0 register.
-    ///
-    /// See Intel Manual volume 3 annex A.7.
-    fn validate_cr0(cr0: usize) {
+    /// Validates CR0 register.
+    fn validate_cr0(cr0: usize) -> Result<(), VmxError> {
         let fixed_0 = unsafe { msr::VMX_CR0_FIXED0.read() } as usize;
         let fixed_1 = unsafe { msr::VMX_CR0_FIXED1.read() } as usize;
+        crate::println!("fixed0: 0b{:b}", fixed_0);
+        crate::println!("fixed1: 0b{:b}", fixed_1);
+        Self::validate_cr(cr0, fixed_0, fixed_1)
+            .map_err(|err| err.set_field(VmxFieldError::HostCr0))
+    }
 
-        if fixed_0 & cr0 != fixed_0 {
-            // TODO: unsupported 0 setting
+    /// Validates CR4 register.
+    fn validate_cr4(cr4: usize) -> Result<(), VmxError> {
+        let fixed_0 = unsafe { msr::VMX_CR4_FIXED0.read() } as usize;
+        let fixed_1 = unsafe { msr::VMX_CR4_FIXED1.read() } as usize;
+        Self::validate_cr(cr4, fixed_0, fixed_1)
+            .map_err(|err| err.set_field(VmxFieldError::HostCr4))
+    }
+
+    /// Validates a control register (CR0 or CR4) against its valid state.
+    ///
+    /// See Intel Manual volume 3 annex A.7 & A.8.
+    fn validate_cr(cr: usize, fixed_0: usize, fixed_1: usize) -> Result<(), VmxError> {
+        let must_be_zero = fixed_0 & !cr;
+        if must_be_zero != 0 {
+            let idx = must_be_zero.trailing_zeros() as u8;
+            return Err(VmxError::Disallowed0(VmxFieldError::Unknown, idx));
         }
+
+        let must_be_zero = (!fixed_1) & cr;
+        if must_be_zero != 0 {
+            let idx = must_be_zero.trailing_zeros() as u8;
+            return Err(VmxError::Disallowed1(VmxFieldError::Unknown, idx));
+        }
+
+        Ok(())
     }
 
     /// Saves the host state (control registers, segments...), so that they are restored on VM Exit.
@@ -500,6 +540,38 @@ mod test {
         assert_eq!(
             VmcsRegion::get_true_ctls(user_request, spec, true_spec, known),
             Err(VmxError::Disallowed0(VmxFieldError::Unknown, 0)),
+        );
+    }
+
+    /// See manual Annex A.7 & A.8
+    #[rustfmt::skip]
+    #[test_case]
+    fn validate_cr() {
+        // Testing valid combinations
+        let fixed_0: usize = 0b001_000;
+        let fixed_1: usize = 0b111_011;
+        let cr:      usize = 0b011_010;
+
+        assert_eq!(VmcsRegion::validate_cr(cr, fixed_0, fixed_1), Ok(()));
+
+        // testing disallowed one
+        let fixed_0: usize = 0b0_001;
+        let fixed_1: usize = 0b0_111;
+        let cr:      usize = 0b1_011;
+
+        assert_eq!(
+            VmcsRegion::validate_cr(cr, fixed_0, fixed_1),
+            Err(VmxError::Disallowed1(VmxFieldError::Unknown, 3))
+        );
+
+        // testing disallowed one
+        let fixed_0: usize = 0b1_01;
+        let fixed_1: usize = 0b1_11;
+        let cr:      usize = 0b0_11;
+
+        assert_eq!(
+            VmcsRegion::validate_cr(cr, fixed_0, fixed_1),
+            Err(VmxError::Disallowed0(VmxFieldError::Unknown, 2))
         );
     }
 }
