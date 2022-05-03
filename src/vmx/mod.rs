@@ -20,6 +20,7 @@ use x86_64::registers::segmentation::Segment;
 use x86_64::PhysAddr;
 
 use crate::memory::{VirtualMemoryArea, VirtualMemoryAreaAllocator};
+use crate::{gdt, println};
 use bitmaps::{EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls};
 pub use errors::{VmxError, VmxFieldError};
 use fields::traits::*;
@@ -303,8 +304,8 @@ impl VmcsRegion {
         let gs = segmentation::GS::get_reg();
         let ss = segmentation::SS::get_reg();
         let tr: u16;
-        let gdt = sgdt().base.as_u64() as usize;
-        let idt = sidt().base.as_u64() as usize;
+        let gdt = sgdt();
+        let idt = sidt();
 
         unsafe {
             // There is no nice wrapper to read `tr` in the x86_64 crate.
@@ -327,9 +328,21 @@ impl VmcsRegion {
             // VmcsHostStateNat::FsBase.vmwrite(FS::read_base().as_u64() as usize)?;
             // VmcsHostStateNat::GsBase.vmwrite(GS::read_base().as_u64() as usize)?;
 
-            fields::HostStateNat::IdtrBase.vmwrite(idt)?;
-            fields::HostStateNat::GdtrBase.vmwrite(gdt)?;
-            // TODO: save TR base
+            fields::HostStateNat::IdtrBase.vmwrite(idt.base.as_u64() as usize)?;
+            fields::HostStateNat::GdtrBase.vmwrite(gdt.base.as_u64() as usize)?;
+
+            // Save TR base
+            let tr_offset = (tr >> 3) as usize;
+            let gdt = gdt::gdt().as_raw_slice();
+            let low = gdt[tr_offset];
+            let high = gdt[tr_offset + 1];
+            let tr_base = get_tr_base(high, low);
+            // println!("TR base:  0x{:8x}", tr_base);
+            // println!("tridx:  {}", tr_offset);
+            // println!("high: 0b{:b}", high);
+            // println!("low:  0b{:b}", low);
+            // println!("GDT: {:?}", gdt);
+            fields::HostStateNat::TrBase.vmwrite(tr_base as usize)?;
         }
 
         // MSRs
@@ -340,14 +353,16 @@ impl VmcsRegion {
         }
 
         // Control registers
-        let cr0 = Cr0::read();
-        let (_, cr3) = Cr3::read();
-        let cr4 = Cr4::read();
-
+        let cr0: usize;
+        let cr3: usize;
+        let cr4: usize;
         unsafe {
-            fields::HostStateNat::Cr0.vmwrite(cr0.bits() as usize)?;
-            fields::HostStateNat::Cr3.vmwrite(cr3.bits() as usize)?;
-            fields::HostStateNat::Cr4.vmwrite(cr4.bits() as usize)
+            asm!("mov {}, cr0", out(reg) cr0, options(nomem, nostack, preserves_flags));
+            asm!("mov {}, cr3", out(reg) cr3, options(nomem, nostack, preserves_flags));
+            asm!("mov {}, cr4", out(reg) cr4, options(nomem, nostack, preserves_flags));
+            fields::HostStateNat::Cr0.vmwrite(cr0)?;
+            fields::HostStateNat::Cr3.vmwrite(cr3)?;
+            fields::HostStateNat::Cr4.vmwrite(cr4)
         }
     }
 
@@ -455,6 +470,22 @@ impl VCpu {
         crate::println!("Exit reason: 0b{:b}", reason);
         Ok(())
     }
+}
+
+// ———————————————————————————— Helper Functions ———————————————————————————— //
+
+/// Construct the TR base from its system segment descriptor.
+///
+/// See Intel manual 7.2.3.
+fn get_tr_base(desc_high: u64, desc_low: u64) -> u64 {
+    const BASE_2_MASK: u64 = ((1 << 8) - 1) << 24;
+    const BASE_1_MASK: u64 = ((1 << 24) - 1) << 16;
+
+    let mut ptr = 0;
+    ptr |= (desc_high & LOW_32_BITS_MASK) << 32;
+    ptr |= (desc_low & BASE_2_MASK) >> 32;
+    ptr |= (desc_low & BASE_1_MASK) >> 16;
+    ptr
 }
 
 // ————————————————————————————————— Tests —————————————————————————————————— //

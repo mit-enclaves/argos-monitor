@@ -49,3 +49,7 @@ pub fn init() {
         load_tss(GDT.1.tss_selector);
     }
 }
+
+pub fn gdt() -> &'static GlobalDescriptorTable {
+    &GDT.0
+}

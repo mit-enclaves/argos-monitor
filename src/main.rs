@@ -13,12 +13,11 @@ use kernel::vmx;
 use kernel::vmx::bitmaps;
 use kernel::vmx::fields;
 use kernel::vmx::fields::traits::*;
-use kernel::vmx::msr;
 use kernel::vmx::raw;
 
 use bootloader::{entry_point, BootInfo};
-use x86_64::instructions::tables::{sgdt, sidt};
 use x86_64::registers::control::{Cr0, Cr0Flags};
+use x86_64::registers::model_specific::Efer;
 
 entry_point!(kernel_main);
 
@@ -69,8 +68,8 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         println!("Host:   {:?}", vmcs.save_host_state());
         println!("Guest:  {:?}", setup_guest(&mut vmcs.vcpu));
         println!("Check:  {:?}", vmcs.check());
-        // println!("Launch: {:?}", launch_guest(&mut vmcs.vcpu));
-        // println!("Exit:   {:?}", vmcs.vcpu.exit_reason());
+        println!("Launch: {:?}", launch_guest(&mut vmcs.vcpu));
+        println!("Exit:   {:?}", vmcs.vcpu.exit_reason());
         println!("VMXOFF: {:?}", vmx::raw::vmxoff());
     }
 
@@ -88,11 +87,11 @@ fn initialize_cpu() {
 
 fn launch_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
     let entry_point = guest_code as *const u8;
-    let mut guest_stack = [0; 128];
+    let mut guest_stack = [0; 256];
     let stack_ptr = guest_stack.as_mut_ptr();
     let landing_pad = host_landing_pad as *const u8;
     vcpu.set_nat(fields::GuestStateNat::Rip, entry_point as usize)?;
-    vcpu.set_nat(fields::GuestStateNat::Rsp, stack_ptr as usize)?;
+    vcpu.set_nat(fields::GuestStateNat::Rsp, stack_ptr as usize + 128)?;
     unsafe {
         fields::HostStateNat::Rip.vmwrite(landing_pad as usize)?;
         fields::HostStateNat::Rsp.vmwrite(stack_ptr as usize)?;
@@ -139,7 +138,7 @@ fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
         vcpu.set16(fields::GuestState16::FsSelector, fs)?;
         asm!("mov {:x}, gs", out(reg) gs, options(nomem, nostack, preserves_flags));
         vcpu.set16(fields::GuestState16::GsSelector, gs)?;
-        asm!("str {:x}", out(reg) tr, options(nomem, nostack, preserves_flags));
+        asm!("str {:x}", out(reg) tr, options(nostack, preserves_flags));
         vcpu.set16(fields::GuestState16::TrSelector, tr)?;
         vcpu.set16(fields::GuestState16::LdtrSelector, 0)?;
     }
@@ -160,7 +159,7 @@ fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
     vcpu.set32(fields::GuestState32::LdtrAccessRights, 0x10000)?;
     vcpu.set32(fields::GuestState32::TrAccessRights, 0x8B)?;
 
-    let limit = u32::max_value();
+    let limit = 0xFFFF;
     vcpu.set32(fields::GuestState32::EsLimit, limit)?;
     vcpu.set32(fields::GuestState32::CsLimit, limit)?;
     vcpu.set32(fields::GuestState32::SsLimit, limit)?;
@@ -168,7 +167,7 @@ fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
     vcpu.set32(fields::GuestState32::FsLimit, limit)?;
     vcpu.set32(fields::GuestState32::GsLimit, limit)?;
     vcpu.set32(fields::GuestState32::LdtrLimit, limit)?;
-    vcpu.set32(fields::GuestState32::TrLimit, 0x67)?;
+    vcpu.set32(fields::GuestState32::TrLimit, 0xff)?; // At least 0x67
     vcpu.set32(fields::GuestState32::GdtrLimit, 0xffff)?;
     vcpu.set32(fields::GuestState32::IdtrLimit, 0xffff)?;
 
@@ -182,27 +181,33 @@ fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
     // vcpu.set_nat(fields::GuestStateNat::TrBase, 0)?; // TODO
     vcpu.set_nat(
         fields::GuestStateNat::GdtrBase,
-        sgdt().base.as_u64() as usize,
+        // sgdt().base.as_u64() as usize,
+        0,
     )?;
     vcpu.set_nat(
         fields::GuestStateNat::IdtrBase,
-        sidt().base.as_u64() as usize,
+        // sidt().base.as_u64() as usize,
+        0,
     )?;
 
     // MSRs
     unsafe {
         vcpu.set_nat(
             fields::GuestStateNat::Ia32SysenterEsp,
-            msr::SYSENTER_ESP.read() as usize,
+            // msr::SYSENTER_ESP.read() as usize,
+            0,
         )?;
         vcpu.set_nat(
             fields::GuestStateNat::Ia32SysenterEip,
-            msr::SYSENTER_EIP.read() as usize,
+            // msr::SYSENTER_EIP.read() as usize,
+            0,
         )?;
         vcpu.set32(
             fields::GuestState32::Ia32SysenterCs,
-            msr::SYSENTER_CS.read() as u32,
+            // msr::SYSENTER_CS.read() as u32,
+            0,
         )?;
+        vcpu.set64(fields::GuestState64::Ia32Efer, Efer::read().bits())?;
 
         // TODO: more MSRs?
     }
@@ -217,17 +222,12 @@ fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
 }
 
 unsafe fn guest_code() {
+    println!("Hello from guest!");
     asm!("vmcall");
 }
 
 unsafe fn host_landing_pad() {
-    asm!(
-        "nop",
-        "nop",
-        "nop",
-        "nop",
-        "nop",
-    );
+    asm!("nop", "nop", "nop", "nop", "nop",);
     println!("Exited VM");
 }
 
