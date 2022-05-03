@@ -258,8 +258,6 @@ impl VmcsRegion {
     fn validate_cr0(cr0: usize) -> Result<(), VmxError> {
         let fixed_0 = unsafe { msr::VMX_CR0_FIXED0.read() } as usize;
         let fixed_1 = unsafe { msr::VMX_CR0_FIXED1.read() } as usize;
-        crate::println!("fixed0: 0b{:b}", fixed_0);
-        crate::println!("fixed1: 0b{:b}", fixed_1);
         Self::validate_cr(cr0, fixed_0, fixed_1)
             .map_err(|err| err.set_field(VmxFieldError::HostCr0))
     }
