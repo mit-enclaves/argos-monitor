@@ -63,11 +63,31 @@ pub unsafe fn vmptrld(addr: u64) -> Result<(), VmxError> {
     vmx_capture_status()
 }
 
-/// Executes VMLAUNCH.
+/// Executes save host state and VMLAUNCH.
 ///
-/// On success, this will switch to non-root mode and load guest state from current VMCS.
+/// On success, this will switch to non-root mode and load guest state from current VMCS and return
+/// the exit reason.
+/// In addition to VMLAUNCH, this function save the minimal required state to resume execution
+/// after VMLAUNCH: it saves ¨%rbp on the stack, compute an save suitable %rip and %rsp in the VMCS
+/// to contiunue execution of the function afer VM Exit. On Vmexit,
 pub unsafe fn vmlaunch() -> Result<(), VmxError> {
-    asm!("vmlaunch");
+    let rip_field = fields::HostStateNat::Rip as u64;
+    let rsp_field = fields::HostStateNat::Rsp as u64;
+    asm!(
+        "push rbp",                   // Save %rbp
+        "vmwrite {rsp_field}, rsp",   // Write %rsp to VMCS
+        "lea {tmp}, [rip + 6]",       // Compute the address of the next instruction after vmlaunch
+        "vmwrite {rip_field}, {tmp}", // Write tha value to VMCS
+        "vmlaunch",                   // Launch the VM
+        "nop",                        // After VM Exit we land here
+        "pop rbp",                    // Restore %rbp
+        tmp = out(reg) _,
+        rip_field = in(reg) rip_field,
+        rsp_field = in(reg) rsp_field,
+        // TODO: mark clobbered registers (all of general purpose ones)
+    );
+    // NOTE: it is correct to check the flag even after a nop and pop instructions since none of
+    // them modifies any flags.
     vmx_capture_status()
 }
 

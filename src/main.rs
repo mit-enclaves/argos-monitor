@@ -88,17 +88,11 @@ fn initialize_cpu() {
 fn launch_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
     let entry_point = guest_code as *const u8;
     let mut guest_stack = [0; 256];
-    let stack_ptr = guest_stack.as_mut_ptr();
-    let landing_pad = host_landing_pad as *const u8;
+    let guest_rsp = guest_stack.as_mut_ptr() as usize + 128;
     vcpu.set_nat(fields::GuestStateNat::Rip, entry_point as usize)?;
-    vcpu.set_nat(fields::GuestStateNat::Rsp, stack_ptr as usize + 128)?;
-    unsafe {
-        fields::HostStateNat::Rip.vmwrite(landing_pad as usize)?;
-        fields::HostStateNat::Rsp.vmwrite(stack_ptr as usize)?;
-    }
+    vcpu.set_nat(fields::GuestStateNat::Rsp, guest_rsp)?;
 
     unsafe { raw::vmlaunch() }
-    // Ok(())
 }
 
 fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
@@ -224,11 +218,6 @@ fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
 unsafe fn guest_code() {
     println!("Hello from guest!");
     asm!("vmcall");
-}
-
-unsafe fn host_landing_pad() {
-    asm!("nop", "nop", "nop", "nop", "nop",);
-    println!("Exited VM");
 }
 
 #[cfg(not(test))]
