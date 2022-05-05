@@ -63,7 +63,7 @@ pub unsafe fn vmptrld(addr: u64) -> Result<(), VmxError> {
     vmx_capture_status()
 }
 
-/// Executes save host state and VMLAUNCH.
+/// Save host state and executes VMLAUNCH.
 ///
 /// On success, this will switch to non-root mode and load guest state from current VMCS and return
 /// the exit reason.

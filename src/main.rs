@@ -184,7 +184,7 @@ fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
         )?;
         vcpu.set_nat(
             fields::GuestStateNat::IdtrBase,
-            fields::HostStateNat::GdtrBase.vmread()?,
+            fields::HostStateNat::IdtrBase.vmread()?,
         )?;
 
         // MSRs
