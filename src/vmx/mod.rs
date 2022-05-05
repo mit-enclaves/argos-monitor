@@ -14,15 +14,15 @@ use core::arch::asm;
 use core::{arch, usize};
 
 use x86_64::instructions::tables::{sgdt, sidt};
-use x86_64::registers::control::{Cr0, Cr3, Cr4, Cr4Flags};
+use x86_64::registers::control::{Cr4, Cr4Flags};
 use x86_64::registers::segmentation;
 use x86_64::registers::segmentation::Segment;
 use x86_64::PhysAddr;
 
+use crate::gdt;
 use crate::memory::{VirtualMemoryArea, VirtualMemoryAreaAllocator};
-use crate::{gdt, println};
 use bitmaps::{EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls};
-pub use errors::{VmxError, VmxFieldError};
+pub use errors::{VmxError, VmxExitReason, VmxFieldError};
 use fields::traits::*;
 
 /// Mask for keeping only the 32 lower bits.
@@ -166,6 +166,16 @@ impl VmcsRegion {
     pub unsafe fn deactivate() {
         // Use VMCLEAR
         todo!()
+    }
+
+    /// Run the VM.
+    ///
+    /// SAFETY: the VMCS must be properly configured so that the host can resume execution in a
+    /// sensible environment. A simple way of ensuring that is to save the current environment as
+    /// host state.
+    pub unsafe fn run(&mut self) -> Result<VmxExitReason, VmxError> {
+        raw::vmlaunch()?;
+        self.vcpu.exit_reason()
     }
 
     /// Sets the pin-based controls.
@@ -465,10 +475,9 @@ impl VCpu {
         unsafe { field.vmwrite(value) }
     }
 
-    pub fn exit_reason(&self) -> Result<(), VmxError> {
+    pub fn exit_reason(&self) -> Result<VmxExitReason, VmxError> {
         let reason = unsafe { fields::GuestState32Ro::ExitReason.vmread() }?;
-        crate::println!("Exit reason: 0b{:b}", reason);
-        Ok(())
+        Ok(VmxExitReason::from_u16((reason & 0xFFFF) as u16))
     }
 }
 

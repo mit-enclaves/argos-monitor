@@ -12,8 +12,6 @@ use kernel::qemu;
 use kernel::vmx;
 use kernel::vmx::bitmaps;
 use kernel::vmx::fields;
-use kernel::vmx::fields::traits::*;
-use kernel::vmx::raw;
 
 use bootloader::{entry_point, BootInfo};
 use x86_64::registers::control::{Cr0, Cr0Flags};
@@ -68,8 +66,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         println!("Host:   {:?}", vmcs.save_host_state());
         println!("Guest:  {:?}", setup_guest(&mut vmcs.vcpu));
         println!("Check:  {:?}", vmcs.check());
-        println!("Launch: {:?}", launch_guest(&mut vmcs.vcpu));
-        println!("Exit:   {:?}", vmcs.vcpu.exit_reason());
+        println!("Launch: {:?}", launch_guest(&mut vmcs));
         println!("VMXOFF: {:?}", vmx::raw::vmxoff());
     }
 
@@ -85,14 +82,14 @@ fn initialize_cpu() {
     unsafe { Cr0::write(cr0 | Cr0Flags::NUMERIC_ERROR) };
 }
 
-fn launch_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
+fn launch_guest(vmcs: &mut vmx::VmcsRegion) -> Result<vmx::VmxExitReason, vmx::VmxError> {
     let entry_point = guest_code as *const u8;
     let mut guest_stack = [0; 256];
     let guest_rsp = guest_stack.as_mut_ptr() as usize + 128;
-    vcpu.set_nat(fields::GuestStateNat::Rip, entry_point as usize)?;
-    vcpu.set_nat(fields::GuestStateNat::Rsp, guest_rsp)?;
+    vmcs.vcpu.set_nat(fields::GuestStateNat::Rip, entry_point as usize)?;
+    vmcs.vcpu.set_nat(fields::GuestStateNat::Rsp, guest_rsp)?;
 
-    unsafe { raw::vmlaunch() }
+    unsafe { vmcs.run() }
 }
 
 fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
