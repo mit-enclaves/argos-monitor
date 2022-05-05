@@ -350,7 +350,7 @@ impl_field_for!(VmcsField32Ro, GuestState32Ro);
 pub enum GuestState64 {
     VmcsLinkPtr        = 0x00002800,
     Ia32Debugctl       = 0x00002802,
-    Ia32pat            = 0x00002804,
+    Ia32Pat            = 0x00002804,
     Ia32Efer           = 0x00002806,
     Ia32PerfGlobalCtrl = 0x00002808,
     Pdpte0             = 0x0000280A,

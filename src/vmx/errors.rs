@@ -21,6 +21,14 @@ pub enum VmxError {
 
     /// Value 0 is not supported for one of the configuration bits for which it was requested.
     Disallowed0(VmxFieldError, u8),
+
+    /// Current value of the bit is not valid. This can be caused by an equality requirement
+    /// between two fields for instance.
+    MisconfiguredBit(VmxFieldError, u8),
+
+    /// Current value of the field is not valid. This might be due to restrictions on multiple
+    /// bits, for instance a range of the bits might have fixed possible values.
+    Misconfigured(VmxFieldError),
 }
 
 impl VmxError {
@@ -29,6 +37,7 @@ impl VmxError {
         match self {
             Self::Disallowed0(_, idx) => Self::Disallowed0(field, idx),
             Self::Disallowed1(_, idx) => Self::Disallowed1(field, idx),
+            Self::MisconfiguredBit(_, idx) => Self::MisconfiguredBit(field, idx),
             _ => self,
         }
     }
@@ -128,13 +137,34 @@ impl VmxInstructionError {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum VmxFieldError {
+    // Host
     HostCr0,
     HostCr4,
+
+    // Guest
+    GuestCr0,
+    GuestCr4,
+    GuestTrSelector,
+    GuestSsSelector,
+    GuestCsAccessRights,
+    GuestSsAccessRights,
+    GuestDsAccessRights,
+    GuestEsAccessRights,
+    GuestFsAccessRights,
+    GuestGsAccessRights,
+    GuestTrAccessRights,
+    GuestGdtrLimit,
+    GuestIdtrLimit,
+    GuestRflags,
+
+    // Controls
     PinBasedControls,
     PrimaryControls,
     SecondaryControls,
     ExitControls,
     EntryControls,
+
+    // Other
     Unknown,
 }
 

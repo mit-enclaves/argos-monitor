@@ -10,10 +10,11 @@ use core::panic::PanicInfo;
 use kernel::println;
 use kernel::qemu;
 use kernel::vmx;
-use kernel::vmx::bitmaps;
+use kernel::vmx::bitmaps::{ExitControls, EntryControls, PinbasedControls, PrimaryControls, ExceptionBitmap};
 use kernel::vmx::fields;
 
 use bootloader::{entry_point, BootInfo};
+use kernel::vmx::fields::traits::*;
 use x86_64::registers::control::{Cr0, Cr0Flags};
 use x86_64::registers::model_specific::Efer;
 
@@ -45,23 +46,25 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         println!("LOAD:   {:?}", vmcs.set_as_active());
         println!(
             "Ctrls1: {:?}",
-            vmcs.set_pin_based_ctrls(bitmaps::PinbasedControls::empty())
+            vmcs.set_pin_based_ctrls(PinbasedControls::empty())
         );
         println!(
             "Ctrls2: {:?}",
-            vmcs.set_primary_ctrls(bitmaps::PrimaryControls::empty())
+            vmcs.set_primary_ctrls(PrimaryControls::empty())
         );
         println!(
             "VMExit: {:?}",
-            vmcs.set_vm_exit_ctrls(bitmaps::ExitControls::HOST_ADDRESS_SPACE_SIZE)
+            vmcs.set_vm_exit_ctrls(ExitControls::HOST_ADDRESS_SPACE_SIZE)
         );
         println!(
             "VMEntr: {:?}",
-            vmcs.set_vm_entry_ctrls(bitmaps::EntryControls::IA32E_MODE_GUEST)
+            vmcs.set_vm_entry_ctrls(
+                EntryControls::IA32E_MODE_GUEST | EntryControls::LOAD_IA32_EFER
+            )
         );
         println!(
             "Bitmap: {:?}",
-            vmcs.set_exception_bitmap(bitmaps::ExceptionBitmap::empty())
+            vmcs.set_exception_bitmap(ExceptionBitmap::empty())
         );
         println!("Host:   {:?}", vmcs.save_host_state());
         println!("Guest:  {:?}", setup_guest(&mut vmcs.vcpu));
@@ -86,7 +89,8 @@ fn launch_guest(vmcs: &mut vmx::VmcsRegion) -> Result<vmx::VmxExitReason, vmx::V
     let entry_point = guest_code as *const u8;
     let mut guest_stack = [0; 256];
     let guest_rsp = guest_stack.as_mut_ptr() as usize + 128;
-    vmcs.vcpu.set_nat(fields::GuestStateNat::Rip, entry_point as usize)?;
+    vmcs.vcpu
+        .set_nat(fields::GuestStateNat::Rip, entry_point as usize)?;
     vmcs.vcpu.set_nat(fields::GuestStateNat::Rsp, guest_rsp)?;
 
     unsafe { vmcs.run() }
@@ -162,52 +166,51 @@ fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
     vcpu.set32(fields::GuestState32::GdtrLimit, 0xffff)?;
     vcpu.set32(fields::GuestState32::IdtrLimit, 0xffff)?;
 
-    vcpu.set_nat(fields::GuestStateNat::EsBase, 0)?;
-    vcpu.set_nat(fields::GuestStateNat::CsBase, 0)?;
-    vcpu.set_nat(fields::GuestStateNat::SsBase, 0)?;
-    vcpu.set_nat(fields::GuestStateNat::DsBase, 0)?;
-    // vcpu.set_nat(fields::GuestStateNat::FsBase, 0)?; // TODO: is it supported by cpu?
-    // vcpu.set_nat(fields::GuestStateNat::GsBase, 0)?; // TODO: is it supported by cpu?
-    vcpu.set_nat(fields::GuestStateNat::LdtrBase, 0)?;
-    // vcpu.set_nat(fields::GuestStateNat::TrBase, 0)?; // TODO
-    vcpu.set_nat(
-        fields::GuestStateNat::GdtrBase,
-        // sgdt().base.as_u64() as usize,
-        0,
-    )?;
-    vcpu.set_nat(
-        fields::GuestStateNat::IdtrBase,
-        // sidt().base.as_u64() as usize,
-        0,
-    )?;
-
-    // MSRs
     unsafe {
+        vcpu.set_nat(fields::GuestStateNat::EsBase, 0)?;
+        vcpu.set_nat(fields::GuestStateNat::CsBase, 0)?;
+        vcpu.set_nat(fields::GuestStateNat::SsBase, 0)?;
+        vcpu.set_nat(fields::GuestStateNat::DsBase, 0)?;
+        vcpu.set_nat(fields::GuestStateNat::FsBase, 0)?;
+        vcpu.set_nat(fields::GuestStateNat::GsBase, 0)?;
+        vcpu.set_nat(fields::GuestStateNat::LdtrBase, 0)?;
+        vcpu.set_nat(
+            fields::GuestStateNat::TrBase,
+            fields::HostStateNat::TrBase.vmread()?,
+        )?;
+        vcpu.set_nat(
+            fields::GuestStateNat::GdtrBase,
+            fields::HostStateNat::GdtrBase.vmread()?,
+        )?;
+        vcpu.set_nat(
+            fields::GuestStateNat::IdtrBase,
+            fields::HostStateNat::GdtrBase.vmread()?,
+        )?;
+
+        // MSRs
         vcpu.set_nat(
             fields::GuestStateNat::Ia32SysenterEsp,
-            // msr::SYSENTER_ESP.read() as usize,
-            0,
+            fields::HostStateNat::Ia32SysenterEsp.vmread()?,
         )?;
         vcpu.set_nat(
             fields::GuestStateNat::Ia32SysenterEip,
-            // msr::SYSENTER_EIP.read() as usize,
-            0,
+            fields::HostStateNat::Ia32SysenterEip.vmread()?,
         )?;
         vcpu.set32(
             fields::GuestState32::Ia32SysenterCs,
-            // msr::SYSENTER_CS.read() as u32,
-            0,
+            fields::HostState32::Ia32SysenterCs.vmread()?,
         )?;
+        // vcpu.set64(fields::GuestState64::Ia32Pat, fields::HostState64)
         vcpu.set64(fields::GuestState64::Ia32Efer, Efer::read().bits())?;
-
-        // TODO: more MSRs?
+        vcpu.set64(fields::GuestState64::Ia32Debugctl, 0)?;
+        vcpu.set_nat(fields::GuestStateNat::Rflags, 0x2)?;
     }
 
     vcpu.set32(fields::GuestState32::ActivityState, 0)?;
     vcpu.set64(fields::GuestState64::VmcsLinkPtr, u64::max_value())?;
     vcpu.set16(fields::GuestState16::InterruptStatus, 0)?;
     vcpu.set16(fields::GuestState16::PmlIndex, 0)?;
-    // TODO: VMX preemption timer?
+    vcpu.set32(fields::GuestState32::VmxPreemptionTimerValue, 0)?;
 
     Ok(())
 }
