@@ -46,34 +46,25 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         };
 
         println!("LOAD:   {:?}", vmcs.set_as_active());
-        println!(
-            "Ctrls1: {:?}",
-            vmcs.set_pin_based_ctrls(PinbasedControls::empty())
-        );
-        println!(
-            "Ctrls2: {:?}",
-            vmcs.set_primary_ctrls(PrimaryControls::empty())
-        );
-        println!(
-            "VMExit: {:?}",
-            vmcs.set_vm_exit_ctrls(
-                ExitControls::HOST_ADDRESS_SPACE_SIZE
-                    | ExitControls::LOAD_IA32_EFER
-                    | ExitControls::SAVE_IA32_EFER
-            )
-        );
-        println!(
-            "VMEntr: {:?}",
-            vmcs.set_vm_entry_ctrls(
-                EntryControls::IA32E_MODE_GUEST | EntryControls::LOAD_IA32_EFER
-            )
-        );
-        println!(
-            "Bitmap: {:?}",
-            vmcs.set_exception_bitmap(ExceptionBitmap::empty())
-        );
-        println!("Host:   {:?}", vmcs.save_host_state());
-        println!("Guest:  {:?}", setup_guest(&mut vmcs.vcpu));
+        let err = vmcs
+            .set_pin_based_ctrls(PinbasedControls::empty())
+            .and_then(|_| vmcs.set_primary_ctrls(PrimaryControls::empty()))
+            .and_then(|_| {
+                vmcs.set_vm_exit_ctrls(
+                    ExitControls::HOST_ADDRESS_SPACE_SIZE
+                        | ExitControls::LOAD_IA32_EFER
+                        | ExitControls::SAVE_IA32_EFER,
+                )
+            })
+            .and_then(|_| {
+                vmcs.set_vm_entry_ctrls(
+                    EntryControls::IA32E_MODE_GUEST | EntryControls::LOAD_IA32_EFER,
+                )
+            })
+            .and_then(|_| vmcs.set_exception_bitmap(ExceptionBitmap::empty()))
+            .and_then(|_| vmcs.save_host_state())
+            .and_then(|_| setup_guest(&mut vmcs.vcpu));
+        println!("Config: {:?}", err);
         println!("Check:  {:?}", vmcs.check());
         println!("Launch: {:?}", launch_guest(&mut vmcs));
         println!("Info:   {:?}", vmcs.vcpu.interrupt_info());
