@@ -168,6 +168,42 @@ pub enum VmxFieldError {
     Unknown,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VmExitInterrupt {
+    /// Vector ID of interrupt or exception.
+    pub vector: u8,
+    /// Interruption type
+    pub int_type: InterruptionType,
+    /// Error code, if defined for the interrupt.
+    pub error_code: Option<u32>,
+}
+
+/// Interruption type.
+///
+/// Generated on VM exit due to an interruption with corresponding exception bitmap bit set to 1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InterruptionType {
+    ExternalInterrupt,
+    NonMaskableInterrupt,
+    HardwareException,
+    SoftwareException,
+    Unknown,
+}
+
+impl InterruptionType {
+    /// Return the interrupt type from the raw VM-exit interrupt information field.
+    pub fn from_raw(info: u32) -> Self {
+        let id = (info >> 8) & 0b111;
+        match id {
+            0 => Self::ExternalInterrupt,
+            2 => Self::NonMaskableInterrupt,
+            3 => Self::HardwareException,
+            6 => Self::SoftwareException,
+            _ => Self::Unknown,
+        }
+    }
+}
+
 /// The basic VM Exit reason.
 ///
 /// See Intel manual volule 3 annex C.

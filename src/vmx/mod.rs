@@ -22,7 +22,7 @@ use x86_64::PhysAddr;
 use crate::gdt;
 use crate::memory::{VirtualMemoryArea, VirtualMemoryAreaAllocator};
 use bitmaps::{EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls};
-pub use errors::{VmxError, VmxExitReason, VmxFieldError};
+pub use errors::{VmExitInterrupt, VmxError, VmxExitReason, VmxFieldError};
 use fields::traits::*;
 
 /// Mask for keeping only the 32 lower bits.
@@ -624,6 +624,26 @@ impl VCpu {
     pub fn exit_reason(&self) -> Result<VmxExitReason, VmxError> {
         let reason = unsafe { fields::GuestState32Ro::ExitReason.vmread() }?;
         Ok(VmxExitReason::from_u16((reason & 0xFFFF) as u16))
+    }
+
+    pub fn interrupt_info(&self) -> Result<Option<VmExitInterrupt>, VmxError> {
+        let info = unsafe { fields::GuestState32Ro::VmExitInterruptInfo.vmread()? };
+        if (info & (1 << 31)) == 0 {
+            return Ok(None);
+        }
+
+        let vector = (info & 0xFF) as u8;
+        let int_type = errors::InterruptionType::from_raw(info);
+        let error_code = if (info & (1 << 11)) != 0 {
+            Some(unsafe { fields::GuestState32Ro::VmExitInterruptErrCode.vmread()? })
+        } else {
+            None
+        };
+        Ok(Some(VmExitInterrupt {
+            vector,
+            int_type,
+            error_code,
+        }))
     }
 }
 

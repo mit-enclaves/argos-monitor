@@ -31,8 +31,20 @@ lazy_static! {
         let mut idt = InterruptDescriptorTable::new();
         idt.divide_error.set_handler_fn(divide_by_zero_handler);
         idt.breakpoint.set_handler_fn(breakpoint_handler);
+        idt.debug.set_handler_fn(debug_handler);
         idt.invalid_opcode.set_handler_fn(invalid_opcode_handler);
         idt.page_fault.set_handler_fn(page_fault_handler);
+        idt.invalid_tss.set_handler_fn(invalid_tss_handler);
+        idt.machine_check.set_handler_fn(machine_check_handler);
+        idt.virtualization.set_handler_fn(virtualization_handler);
+        idt.device_not_available
+            .set_handler_fn(device_not_available_handler);
+        idt.stack_segment_fault
+            .set_handler_fn(stack_segment_fault_handler);
+        idt.non_maskable_interrupt
+            .set_handler_fn(non_maskable_interrupt_handler);
+        idt.segment_not_present
+            .set_handler_fn(segment_not_present_handler);
         idt.general_protection_fault
             .set_handler_fn(general_protection_fault_handler);
         unsafe {
@@ -63,6 +75,44 @@ extern "x86-interrupt" fn general_protection_fault_handler(
     _error_code: u64,
 ) {
     panic!("EXCEPTION: GENERAL PROTECTION FAULT\n{:#?}", stack_frame);
+}
+
+extern "x86-interrupt" fn debug_handler(stack_frame: InterruptStackFrame) {
+    panic!("EXCEPTION: DEBUG\n{:#?}", stack_frame);
+}
+
+extern "x86-interrupt" fn non_maskable_interrupt_handler(stack_frame: InterruptStackFrame) {
+    panic!("EXCEPTION: NON MASKABLE INTERRUPT\n{:#?}", stack_frame);
+}
+
+extern "x86-interrupt" fn virtualization_handler(stack_frame: InterruptStackFrame) {
+    panic!("EXCEPTION: VIRTUALIZATION\n{:#?}", stack_frame);
+}
+
+extern "x86-interrupt" fn device_not_available_handler(stack_frame: InterruptStackFrame) {
+    panic!("EXCEPTION: DEVICE NOT AVAILABLE\n{:#?}", stack_frame);
+}
+
+extern "x86-interrupt" fn invalid_tss_handler(stack_frame: InterruptStackFrame, _error_code: u64) {
+    panic!("EXCEPTION: INVALID TSS\n{:#?}", stack_frame);
+}
+
+extern "x86-interrupt" fn stack_segment_fault_handler(
+    stack_frame: InterruptStackFrame,
+    _error_code: u64,
+) {
+    panic!("EXCEPTION: STACK SEGMENT FAULT\n{:#?}", stack_frame);
+}
+
+extern "x86-interrupt" fn segment_not_present_handler(
+    stack_frame: InterruptStackFrame,
+    _error_code: u64,
+) {
+    panic!("EXCEPTION: SEGMENT NOT PRESENT\n{:#?}", stack_frame);
+}
+
+extern "x86-interrupt" fn machine_check_handler(stack_frame: InterruptStackFrame) -> ! {
+    panic!("EXCEPTION: MACHINE CHECK\n{:#?}", stack_frame);
 }
 
 extern "x86-interrupt" fn double_fault_handler(

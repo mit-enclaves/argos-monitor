@@ -10,7 +10,9 @@ use core::panic::PanicInfo;
 use kernel::println;
 use kernel::qemu;
 use kernel::vmx;
-use kernel::vmx::bitmaps::{ExitControls, EntryControls, PinbasedControls, PrimaryControls, ExceptionBitmap};
+use kernel::vmx::bitmaps::{
+    EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
+};
 use kernel::vmx::fields;
 
 use bootloader::{entry_point, BootInfo};
@@ -64,12 +66,13 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         );
         println!(
             "Bitmap: {:?}",
-            vmcs.set_exception_bitmap(ExceptionBitmap::empty())
+            vmcs.set_exception_bitmap(ExceptionBitmap::all())
         );
         println!("Host:   {:?}", vmcs.save_host_state());
         println!("Guest:  {:?}", setup_guest(&mut vmcs.vcpu));
         println!("Check:  {:?}", vmcs.check());
         println!("Launch: {:?}", launch_guest(&mut vmcs));
+        println!("Info:   {:?}", vmcs.vcpu.interrupt_info());
         println!("VMXOFF: {:?}", vmx::raw::vmxoff());
     }
 
@@ -90,7 +93,7 @@ fn launch_guest(vmcs: &mut vmx::VmcsRegion) -> Result<vmx::VmxExitReason, vmx::V
     let mut guest_stack = [0; 256];
     let guest_rsp = guest_stack.as_mut_ptr() as usize + 128;
     vmcs.vcpu
-        .set_nat(fields::GuestStateNat::Rip, entry_point as usize)?;
+        .set_nat(fields::GuestStateNat::Rip, entry_point as usize + 2)?;
     vmcs.vcpu.set_nat(fields::GuestStateNat::Rsp, guest_rsp)?;
 
     unsafe { vmcs.run() }
@@ -216,8 +219,8 @@ fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
 }
 
 unsafe fn guest_code() {
-    println!("Hello from guest!");
-    asm!("vmcall");
+    // println!("Hello from guest!");
+    asm!("nop", "nop", "nop", "nop", "nop", "nop", "vmcall",);
 }
 
 #[cfg(not(test))]
