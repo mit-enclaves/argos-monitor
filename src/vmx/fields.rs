@@ -56,8 +56,8 @@ pub mod traits {
         }
 
         /// Reads a field to the current VMCS.
-        unsafe fn vmread(&self) -> Result<u16, VmxError> {
-            raw::vmread(self.raw() as u64).map(|value| value as u16)
+        unsafe fn vmread(&self) -> Result<u64, VmxError> {
+            raw::vmread(self.raw() as u64)
         }
     }
 
@@ -86,8 +86,8 @@ pub mod traits {
         }
 
         /// Reads a field to the current VMCS.
-        unsafe fn vmread(&self) -> Result<u64, VmxError> {
-            raw::vmread(self.raw() as u64)
+        unsafe fn vmread(&self) -> Result<u16, VmxError> {
+            raw::vmread(self.raw() as u64).map(|value| value as u16)
         }
     }
 
@@ -250,6 +250,18 @@ pub enum HostState32 {
 }
 
 impl_field_for!(VmcsField32, HostState32);
+
+/// VMCS fields encoding of 32 bits host state fields.
+#[rustfmt::skip]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum HostState64 {
+    Ia32Pat            = 0x00002C00,
+    Ia32Efer           = 0x00002C02,
+    Ia32PerfGlobalCtrl = 0x00002C04,
+}
+
+impl_field_for!(VmcsField64, HostState64);
 
 /// VMCS fields encoding of natural width host state fields.
 #[rustfmt::skip]

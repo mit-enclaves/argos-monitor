@@ -56,7 +56,11 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         );
         println!(
             "VMExit: {:?}",
-            vmcs.set_vm_exit_ctrls(ExitControls::HOST_ADDRESS_SPACE_SIZE)
+            vmcs.set_vm_exit_ctrls(
+                ExitControls::HOST_ADDRESS_SPACE_SIZE
+                    | ExitControls::LOAD_IA32_EFER
+                    | ExitControls::SAVE_IA32_EFER
+            )
         );
         println!(
             "VMEntr: {:?}",
@@ -66,7 +70,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         );
         println!(
             "Bitmap: {:?}",
-            vmcs.set_exception_bitmap(ExceptionBitmap::all())
+            vmcs.set_exception_bitmap(ExceptionBitmap::empty())
         );
         println!("Host:   {:?}", vmcs.save_host_state());
         println!("Guest:  {:?}", setup_guest(&mut vmcs.vcpu));
@@ -149,7 +153,7 @@ fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
     // println!("tr 0x{:04x}", tr);
 
     vcpu.set32(fields::GuestState32::EsAccessRights, 0xC093)?;
-    vcpu.set32(fields::GuestState32::CsAccessRights, 0xC09B)?;
+    vcpu.set32(fields::GuestState32::CsAccessRights, 0xA09B)?;
     vcpu.set32(fields::GuestState32::SsAccessRights, 0x10000)?;
     vcpu.set32(fields::GuestState32::DsAccessRights, 0xC093)?;
     vcpu.set32(fields::GuestState32::FsAccessRights, 0x10000)?;

@@ -15,6 +15,7 @@ use core::{arch, usize};
 
 use x86_64::instructions::tables::{sgdt, sidt};
 use x86_64::registers::control::{Cr4, Cr4Flags};
+use x86_64::registers::model_specific::Efer;
 use x86_64::registers::segmentation;
 use x86_64::registers::segmentation::Segment;
 use x86_64::PhysAddr;
@@ -506,6 +507,7 @@ impl VmcsRegion {
             fields::HostStateNat::Ia32SysenterEsp.vmwrite(msr::SYSENTER_ESP.read() as usize)?;
             fields::HostStateNat::Ia32SysenterEip.vmwrite(msr::SYSENTER_EIP.read() as usize)?;
             fields::HostState32::Ia32SysenterCs.vmwrite(msr::SYSENTER_CS.read() as u32)?;
+            fields::HostState64::Ia32Efer.vmwrite(Efer::read().bits())?;
         }
 
         // Control registers
