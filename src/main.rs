@@ -33,7 +33,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         test_main();
     }
 
-    // x86_64::instructions::interrupts::int3();
     let vma_allocator =
         unsafe { kernel::init_memory(boot_info).expect("Failed to initialize memory") };
     initialize_cpu();
