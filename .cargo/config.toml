@@ -1,9 +1,15 @@
-[unstable]
-build-std = ["core,alloc", "compiler_builtins"]
-build-std-features = ["compiler-builtins-mem"]
+# [unstable]
+# build-std = ["core,alloc", "compiler_builtins"]
+# build-std-features = ["compiler-builtins-mem"]
 
-[build]
-target = "x86-kernel.json"
+# [build]
+# target = "x86_64-kernel.json"
 
 [target.'cfg(target_os = "none")']
-runner = "bootimage runner"
+runner = "cargo run --package boot_toolchain --"
+
+[alias]
+kbuild = "build --target x86_64-kernel.json -Zbuild-std=core,alloc -Zbuild-std-features=compiler-builtins-mem"
+kimage = "run --target x86_64-kernel.json -Zbuild-std=core,alloc -Zbuild-std-features=compiler-builtins-mem -- --no-run"
+krun = "run --target x86_64-kernel.json -Zbuild-std=core,alloc -Zbuild-std-features=compiler-builtins-mem"
+ktest = "test --target x86_64-kernel.json -Zbuild-std=core,alloc -Zbuild-std-features=compiler-builtins-mem"

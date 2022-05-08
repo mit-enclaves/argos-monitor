@@ -3,7 +3,7 @@ use core::marker::PhantomData;
 use core::ops::DerefMut;
 use core::ptr::NonNull;
 
-use bootloader::bootinfo::{MemoryMap, MemoryRegionType};
+use bootloader::boot_info::{MemoryRegionKind, MemoryRegions};
 use bootloader::BootInfo;
 use spin::{Mutex, MutexGuard};
 use x86_64::registers::control::Cr3;
@@ -36,11 +36,16 @@ impl FrameAllocator for BootInfoFrameAllocator {}
 /// SAFETY: This function must be called **at most once**, and the boot info must contain a valid
 /// mapping of the physical memory.
 pub unsafe fn init(boot_info: &'static BootInfo) -> Result<VirtualMemoryAreaAllocator, ()> {
-    let physical_memory_offset = VirtAddr::new(boot_info.physical_memory_offset);
+    let physical_memory_offset = VirtAddr::new(
+        boot_info
+            .physical_memory_offset
+            .into_option()
+            .expect("The bootloader must be configured with 'map-physical-memory'"),
+    );
     let level_4_table = active_level_4_table(physical_memory_offset);
 
     // Initialize the frame allocator and the memory mapper.
-    let mut frame_allocator = BootInfoFrameAllocator::init(&boot_info.memory_map);
+    let mut frame_allocator = BootInfoFrameAllocator::init(&boot_info.memory_regions);
     let mut mapper = OffsetPageTable::new(level_4_table, physical_memory_offset);
 
     // Initialize the heap.
@@ -80,7 +85,7 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
 
 /// A FrameAllocator that returns usable frames from the bootloader's memory map.
 pub struct BootInfoFrameAllocator {
-    memory_map: &'static MemoryMap,
+    memory_map: &'static MemoryRegions,
     next: usize,
 }
 
@@ -90,7 +95,7 @@ impl BootInfoFrameAllocator {
     /// This function is unsafe because the caller must guarantee that the passed
     /// memory map is valid. The main requirement is that all frames that are marked
     /// as `USABLE` in it are really unused.
-    pub unsafe fn init(memory_map: &'static MemoryMap) -> Self {
+    pub unsafe fn init(memory_map: &'static MemoryRegions) -> Self {
         BootInfoFrameAllocator {
             memory_map,
             next: 0,
@@ -101,9 +106,9 @@ impl BootInfoFrameAllocator {
     fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {
         // get usable regions from memory map
         let regions = self.memory_map.iter();
-        let usable_regions = regions.filter(|r| r.region_type == MemoryRegionType::Usable);
+        let usable_regions = regions.filter(|r| r.kind == MemoryRegionKind::Usable);
         // map each region to its address range
-        let addr_ranges = usable_regions.map(|r| r.range.start_addr()..r.range.end_addr());
+        let addr_ranges = usable_regions.map(|r| r.start..r.end);
         // transform to an iterator of frame start addresses
         let frame_addresses = addr_ranges.flat_map(|r| r.step_by(4096));
         // create `PhysFrame` types from the start addresses

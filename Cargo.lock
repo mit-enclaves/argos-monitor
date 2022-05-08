@@ -15,10 +15,34 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
+name = "boot_toolchain"
+version = "0.1.0"
+dependencies = [
+ "bootloader-locator",
+ "locate-cargo-manifest",
+ "runner-utils",
+]
+
+[[package]]
 name = "bootloader"
-version = "0.9.22"
+version = "0.10.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de78decc37247c7cfac5dbf3495c7298c6ac97cb355161caa7e15969c6648e6c"
+checksum = "f2d9b14b92a825ecc3b24e4c163a578af473fbba5f190bfaf48092b29b604504"
+
+[[package]]
+name = "bootloader-locator"
+version = "0.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aaaa9db3339d32c2622f2e5d0731eb82a468d3439797c9d4fe426744fe2bd551"
+dependencies = [
+ "json",
+]
+
+[[package]]
+name = "json"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "078e285eafdfb6c4b434e0d31e8cfcb5115b651496faca5749b88fafd4f23bfd"
 
 [[package]]
 name = "kernel"
@@ -44,12 +68,55 @@ dependencies = [
 ]
 
 [[package]]
+name = "libc"
+version = "0.2.125"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5916d2ae698f6de9bfb891ad7a8d65c09d232dc58cc4ac433c7da3b2fd84bc2b"
+
+[[package]]
+name = "locate-cargo-manifest"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db985b63431fe09e8d71f50aeceffcc31e720cb86be8dad2f38d084c5a328466"
+dependencies = [
+ "json",
+]
+
+[[package]]
 name = "pic8259"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "24ec21f514e2e16e94649f1d041ca4a7069b512c037ac156360652a775e6229d"
 dependencies = [
  "x86_64",
+]
+
+[[package]]
+name = "proc-macro2"
+version = "1.0.38"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9027b48e9d4c9175fa2218adf3557f91c1137021739951d4932f5f8268ac48aa"
+dependencies = [
+ "unicode-xid",
+]
+
+[[package]]
+name = "quote"
+version = "1.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1feb54ed693b93a84e14094943b84b7c4eae204c512b7ccb95ab0c66d278ad1"
+dependencies = [
+ "proc-macro2",
+]
+
+[[package]]
+name = "runner-utils"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9dc6848b056990cd51e72aa5556bdbea4a96013e8b18635d183c84159c2988f"
+dependencies = [
+ "thiserror",
+ "wait-timeout",
 ]
 
 [[package]]
@@ -65,6 +132,37 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 
 [[package]]
+name = "syn"
+version = "1.0.92"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ff7c592601f11445996a06f8ad0c27f094a58857c2f89e97974ab9235b92c52"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-xid",
+]
+
+[[package]]
+name = "thiserror"
+version = "1.0.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd829fe32373d27f76265620b5309d0340cb8550f523c1dda251d6298069069a"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "1.0.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0396bc89e626244658bef819e22d0cc459e795a5ebe878e6ec336d1674a8d79a"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "uart_16550"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -73,6 +171,12 @@ dependencies = [
  "bitflags",
  "x86_64",
 ]
+
+[[package]]
+name = "unicode-xid"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "957e51f3646910546462e67d5f7599b9e4fb8acdd304b087a6494730f9eebf04"
 
 [[package]]
 name = "volatile"
@@ -85,6 +189,15 @@ name = "volatile"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4c2dbd44eb8b53973357e6e207e370f0c1059990df850aca1eca8947cf464f0"
+
+[[package]]
+name = "wait-timeout"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f200f5b12eb75f8c1ed65abd4b2db8a6e1b138a20de009dacee265a2498f3f6"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "x86_64"

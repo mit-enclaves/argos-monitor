@@ -22,10 +22,18 @@ use x86_64::registers::model_specific::Efer;
 
 entry_point!(kernel_main);
 
-fn kernel_main(boot_info: &'static BootInfo) -> ! {
+fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     println!("=========== Start QEMU ===========");
 
     kernel::init();
+
+    // Run tests and exit in test configuration
+    #[cfg(test)]
+    {
+        test_main();
+    }
+
+    // x86_64::instructions::interrupts::int3();
     let vma_allocator =
         unsafe { kernel::init_memory(boot_info).expect("Failed to initialize memory") };
     initialize_cpu();
@@ -70,9 +78,6 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         println!("Info:   {:?}", vmcs.vcpu.interrupt_info());
         println!("VMXOFF: {:?}", vmx::raw::vmxoff());
     }
-
-    #[cfg(test)]
-    test_main();
 
     kernel::qemu::exit(kernel::qemu::ExitCode::Success);
 }
