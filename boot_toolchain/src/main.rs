@@ -29,20 +29,24 @@ const TEST_ARGS: &[&str] = &[
 const TEST_TIMEOUT_SECS: u64 = 10;
 
 fn main() {
-    let mut args = std::env::args().skip(1); // skip executable name
+    let mut args = std::env::args().skip(1).peekable(); // skip executable name
 
     let kernel_binary_path = {
         let path = PathBuf::from(args.next().unwrap());
         path.canonicalize().unwrap()
     };
-    let no_boot = if let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--no-run" => true,
-            other => panic!("unexpected argument `{}`", other),
+    let no_boot = if let Some(arg) = args.peek() {
+        if arg.as_str() == "--no-run" {
+            args.next();
+            true
+        } else {
+            false
         }
     } else {
         false
     };
+
+    let args = args.collect::<Vec<String>>();
 
     let bios = create_disk_images(&kernel_binary_path);
 
@@ -67,14 +71,18 @@ fn main() {
         }
     } else {
         run_cmd.args(RUN_ARGS);
+        run_cmd.args(&args);
         println!(
             "Running:\n{} {}",
             run_cmd.get_program().to_str().unwrap(),
-            run_cmd.get_args().fold(String::new(), |mut acc, cmd| {
-                acc.push_str(" ");
-                acc.push_str(cmd.to_str().unwrap());
-                acc
-            })
+            run_cmd
+                .get_args()
+                .map(|cmd| cmd.to_str().unwrap().to_owned())
+                .fold(String::new(), |mut acc, cmd| {
+                    acc.push_str(" ");
+                    acc.push_str(&cmd);
+                    acc
+                })
         );
 
         let exit_status = run_cmd.status().unwrap();
