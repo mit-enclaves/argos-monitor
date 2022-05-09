@@ -3,8 +3,7 @@ use core::marker::PhantomData;
 use core::ops::DerefMut;
 use core::ptr::NonNull;
 
-use bootloader::boot_info::{MemoryRegionKind, MemoryRegions};
-use bootloader::BootInfo;
+use bootloader::boot_info::{MemoryRegionKind, MemoryRegion};
 use spin::{Mutex, MutexGuard};
 use x86_64::registers::control::Cr3;
 use x86_64::structures::paging::frame::PhysFrame;
@@ -35,17 +34,11 @@ impl FrameAllocator for BootInfoFrameAllocator {}
 ///
 /// SAFETY: This function must be called **at most once**, and the boot info must contain a valid
 /// mapping of the physical memory.
-pub unsafe fn init(boot_info: &'static BootInfo) -> Result<VirtualMemoryAreaAllocator, ()> {
-    let physical_memory_offset = VirtAddr::new(
-        boot_info
-            .physical_memory_offset
-            .into_option()
-            .expect("The bootloader must be configured with 'map-physical-memory'"),
-    );
+pub unsafe fn init(physical_memory_offset: VirtAddr, regions: &'static [MemoryRegion]) -> Result<VirtualMemoryAreaAllocator, ()> {
     let level_4_table = active_level_4_table(physical_memory_offset);
 
     // Initialize the frame allocator and the memory mapper.
-    let mut frame_allocator = BootInfoFrameAllocator::init(&boot_info.memory_regions);
+    let mut frame_allocator = BootInfoFrameAllocator::init(regions);
     let mut mapper = OffsetPageTable::new(level_4_table, physical_memory_offset);
 
     // Initialize the heap.
@@ -85,7 +78,7 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
 
 /// A FrameAllocator that returns usable frames from the bootloader's memory map.
 pub struct BootInfoFrameAllocator {
-    memory_map: &'static MemoryRegions,
+    memory_map: &'static [MemoryRegion],
     next: usize,
 }
 
@@ -95,7 +88,7 @@ impl BootInfoFrameAllocator {
     /// This function is unsafe because the caller must guarantee that the passed
     /// memory map is valid. The main requirement is that all frames that are marked
     /// as `USABLE` in it are really unused.
-    pub unsafe fn init(memory_map: &'static MemoryRegions) -> Self {
+    pub unsafe fn init(memory_map: &'static [MemoryRegion]) -> Self {
         BootInfoFrameAllocator {
             memory_map,
             next: 0,

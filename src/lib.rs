@@ -12,15 +12,19 @@ extern crate alloc;
 
 use core::panic::PanicInfo;
 
+use bootloader::boot_info::FrameBuffer;
+
 pub mod allocator;
 pub mod gdt;
 pub mod interrupts;
 pub mod memory;
+pub mod print;
 pub mod qemu;
 pub mod serial;
 pub mod vmx;
+
+#[cfg(feature = "vga")]
 pub mod vga;
-pub mod print;
 
 pub use memory::init as init_memory;
 
@@ -43,6 +47,12 @@ pub fn init() {
     // Initialize hardware interrupt
     // unsafe { interrupts::PICS.lock().initialize() };
     // x86_64::instructions::interrupts::enable();
+}
+
+/// Initialize display device.
+pub fn init_display(_buffer: &'static mut FrameBuffer) {
+    #[cfg(feature = "vga")]
+    return vga::init(_buffer);
 }
 
 /// An infinite loop that causes the CPU to halt between interrupts.

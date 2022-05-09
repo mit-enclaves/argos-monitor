@@ -19,10 +19,14 @@ use bootloader::{entry_point, BootInfo};
 use kernel::vmx::fields::traits::*;
 use x86_64::registers::control::{Cr0, Cr0Flags};
 use x86_64::registers::model_specific::Efer;
+use x86_64::VirtAddr;
 
 entry_point!(kernel_main);
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
+    if let Some(buffer) = boot_info.framebuffer.as_mut().take() {
+        kernel::init_display(buffer);
+    }
     println!("=========== Start QEMU ===========");
 
     kernel::init();
@@ -33,8 +37,16 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         test_main();
     }
 
-    let vma_allocator =
-        unsafe { kernel::init_memory(boot_info).expect("Failed to initialize memory") };
+    let physical_memory_offset = VirtAddr::new(
+        boot_info
+            .physical_memory_offset
+            .into_option()
+            .expect("The bootloader must be configured with 'map-physical-memory'"),
+    );
+    let vma_allocator = unsafe {
+        kernel::init_memory(physical_memory_offset, &mut boot_info.memory_regions)
+            .expect("Failed to initialize memory")
+    };
     initialize_cpu();
 
     unsafe {
