@@ -7,7 +7,9 @@ use spin::Mutex;
 use x86_64::instructions::interrupts::without_interrupts;
 
 /// Additional vertical space between lines
-const LINE_SPACING: usize = 0;
+const LINE_SPACING: usize = 2;
+/// Zoom to make text big enough on screens with high pixel density
+const ZOOM_FACTOR: usize = 2;
 
 /// The global writer, must be initialized with a frame buffer, otherwise writes are ignored.
 pub static WRITER: Mutex<Option<Writer>> = Mutex::new(None);
@@ -16,7 +18,7 @@ pub static WRITER: Mutex<Option<Writer>> = Mutex::new(None);
 pub fn init(boot_info: &'static mut FrameBuffer) {
     let mut writer = WRITER.lock();
     let mut new_writer = Writer::new(boot_info);
-    new_writer.clear_screen();
+    new_writer.clear();
     writer.replace(new_writer);
 }
 
@@ -34,33 +36,33 @@ impl Writer {
         Writer {
             framebuffer,
             info,
-            x_pos: 0,
-            y_pos: 0,
+            x_pos: LINE_SPACING,
+            y_pos: LINE_SPACING,
         }
     }
 
-    fn clear_screen(&mut self) {
+    fn newline(&mut self) {
+        self.y_pos += (8 + LINE_SPACING) * ZOOM_FACTOR;
+        self.carriage_return()
+    }
+
+    fn carriage_return(&mut self) {
+        self.x_pos = LINE_SPACING;
+    }
+
+    /// Erases all text on the screen.
+    pub fn clear(&mut self) {
+        self.x_pos = LINE_SPACING;
+        self.y_pos = LINE_SPACING;
+
+        // TODO: can we use an optimized method?
+        // self.framebuffer.fill(0);
+
         for y in 0..self.info.vertical_resolution {
             for x in 0..self.info.horizontal_resolution {
                 self.write_pixel(x, y, 0);
             }
         }
-    }
-
-    fn newline(&mut self) {
-        self.y_pos += 8 + LINE_SPACING;
-        self.carriage_return()
-    }
-
-    fn carriage_return(&mut self) {
-        self.x_pos = 0;
-    }
-
-    /// Erases all text on the screen.
-    pub fn clear(&mut self) {
-        self.x_pos = 0;
-        self.y_pos = 0;
-        self.framebuffer.fill(0);
     }
 
     fn width(&self) -> usize {
@@ -79,7 +81,7 @@ impl Writer {
                 if self.x_pos >= self.width() {
                     self.newline();
                 }
-                if self.y_pos >= (self.height() - 8) {
+                if self.y_pos >= (self.height() - 8 * ZOOM_FACTOR) {
                     self.clear();
                 }
                 let rendered = font8x8::BASIC_FONTS
@@ -94,10 +96,18 @@ impl Writer {
         for (y, byte) in rendered_char.iter().enumerate() {
             for (x, bit) in (0..8).enumerate() {
                 let alpha = if *byte & (1 << bit) == 0 { 0 } else { 255 };
-                self.write_pixel(self.x_pos + x, self.y_pos + y, alpha);
+                for i in 0..ZOOM_FACTOR {
+                    for j in 0..ZOOM_FACTOR {
+                        self.write_pixel(
+                            self.x_pos + x * ZOOM_FACTOR + i,
+                            self.y_pos + y * ZOOM_FACTOR + j,
+                            alpha,
+                        );
+                    }
+                }
             }
         }
-        self.x_pos += 8;
+        self.x_pos += 8 * ZOOM_FACTOR;
     }
 
     fn write_pixel(&mut self, x: usize, y: usize, intensity: u8) {
