@@ -24,11 +24,13 @@ use x86_64::VirtAddr;
 entry_point!(kernel_main);
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
+    // Initialize display, if any
     if let Some(buffer) = boot_info.framebuffer.as_mut().take() {
         kernel::init_display(buffer);
     }
     println!("=========== Start QEMU ===========");
 
+    // Initialize kernel structures
     kernel::init();
 
     // Run tests and exit in test configuration
@@ -37,6 +39,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         test_main();
     }
 
+    // Initialize memory management
     let physical_memory_offset = VirtAddr::new(
         boot_info
             .physical_memory_offset
@@ -47,9 +50,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         kernel::init_memory(physical_memory_offset, &mut boot_info.memory_regions)
             .expect("Failed to initialize memory")
     };
-    initialize_cpu();
 
+    // Start doing VMX things
     unsafe {
+        initialize_cpu();
         println!("VMX:    {:?}", vmx::vmx_available());
         println!("VMXON:  {:?}", vmx::vmxon(&vma_allocator));
 

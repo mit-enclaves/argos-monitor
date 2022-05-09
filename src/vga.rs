@@ -102,17 +102,25 @@ impl Writer {
 
     fn write_pixel(&mut self, x: usize, y: usize, intensity: u8) {
         let pixel_offset = y * self.info.stride + x;
-        let color = match self.info.pixel_format {
-            PixelFormat::RGB => [intensity, intensity, intensity / 2, 0],
-            PixelFormat::BGR => [intensity / 2, intensity, intensity, 0],
-            PixelFormat::U8 => [if intensity > 200 { 0xf } else { 0 }, 0, 0, 0],
-            _ => [intensity, intensity, intensity / 2, 0],
-        };
+        let color = self.get_color(intensity);
         let bytes_per_pixel = self.info.bytes_per_pixel;
         let byte_offset = pixel_offset * bytes_per_pixel;
         self.framebuffer[byte_offset..(byte_offset + bytes_per_pixel)]
             .copy_from_slice(&color[..bytes_per_pixel]);
         let _ = unsafe { ptr::read_volatile(&self.framebuffer[byte_offset]) };
+    }
+
+    fn get_color(&self, intensity: u8) -> [u8; 4] {
+        if intensity > 200 {
+            [255, 255, 255, 0]
+        } else {
+            match self.info.pixel_format {
+                PixelFormat::RGB => [171, 0, 171, 0],
+                PixelFormat::BGR => [171, 0, 171, 0],
+                PixelFormat::U8 => [255, 0, 0, 0],
+                _ => [171, 0, 171, 0],
+            }
+        }
     }
 }
 
