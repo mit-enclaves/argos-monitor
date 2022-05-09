@@ -9,6 +9,10 @@ members = [
     "boot_toolchain",
 ]
 
+[features]
+# Print to VGA text mode
+vga = []
+
 [dependencies]
 bootloader = { version = "0.10.12" }
 volatile = "0.2.6"

@@ -19,6 +19,8 @@ pub mod memory;
 pub mod qemu;
 pub mod serial;
 pub mod vmx;
+pub mod vga;
+pub mod print;
 
 pub use memory::init as init_memory;
 

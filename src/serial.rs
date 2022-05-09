@@ -13,20 +13,6 @@ lazy_static! {
     };
 }
 
-#[macro_export]
-macro_rules! print {
-    ($($args:tt)*) => {
-        $crate::serial::_print(format_args!($($args)*))
-    };
-}
-
-#[macro_export]
-macro_rules! println {
-    () => ($crate::serial_print!("\n"));
-    ($fmt:expr) => ($crate::print!(concat!($fmt, "\n")));
-    ($fmt:expr, $($arg:tt)*) => ($crate::print!(concat!($fmt, "\n"), $($arg)*));
-}
-
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     without_interrupts(|| {
