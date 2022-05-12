@@ -16,6 +16,9 @@ pub enum VmxError {
     /// VMX is supported by the CPU but not enabled. See IA_32_FEATURE_CONTROL MSR.
     VmxNotEnabled,
 
+    /// A particular feature is not supported.
+    FeatureNotSupported,
+
     /// Value 1 is not supported for one of the configuration bits for which it was requested.
     Disallowed1(VmxFieldError, u8),
 

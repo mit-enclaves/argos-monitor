@@ -84,6 +84,54 @@ pub fn vmx_available() -> Result<(), VmxError> {
     Ok(())
 }
 
+/// Return the EPT and VPID capabilities.
+///
+/// See Intel manual volume 3 annex A.10.
+pub fn ept_capabilities() -> Result<bitmaps::EptCapability, VmxError> {
+    // Check that VMX is available
+    vmx_available()?;
+
+    // SAFETY: MSR exists if vmx is available.
+    let procbased_ctls = unsafe { msr::VMX_PROCBASED_CTLS.read() };
+    if procbased_ctls & (1 << 63) == 0 {
+        return Err(VmxError::FeatureNotSupported);
+    }
+
+    // SAFETY: MSR exists if bit 63 of procbased_ctls is 1.
+    let second_procbased_ctrl = unsafe { msr::VMX_PROCBASED_CTLS2.read() };
+    if second_procbased_ctrl & (1 << 33) == 0 {
+        return Err(VmxError::FeatureNotSupported);
+    }
+
+    // SAFETY: MSR exists if bit 33 of second_procbased_ctrl is 1.
+    let capabilities = unsafe { msr::VMX_EPT_VPID_CAP.read() };
+    Ok(bitmaps::EptCapability::from_bits_truncate(capabilities))
+}
+
+/// Return available VM functions.
+///
+/// See Intel manual volume 3 section 24.6.14.
+pub fn available_vmfuncs() -> Result<bitmaps::VmFuncControls, VmxError> {
+    // Check that VMX is available
+    vmx_available()?;
+
+    // SAFETY: MSR exists if vmx is available.
+    let procbased_ctls = unsafe { msr::VMX_PROCBASED_CTLS.read() };
+    if procbased_ctls & (1 << 63) == 0 {
+        return Err(VmxError::FeatureNotSupported);
+    }
+
+    // SAFETY: MSR exists if bit 63 of procbased_ctls is 1.
+    let second_procbased_ctrl = unsafe { msr::VMX_PROCBASED_CTLS2.read() };
+    if second_procbased_ctrl & (1 << 45) == 0 {
+        return Err(VmxError::FeatureNotSupported);
+    }
+
+    // SAFETY: MSR exists if bit 45 of second_procbased_ctrl is 1.
+    let capabilities = unsafe { msr::VMX_VMFUNC.read() };
+    Ok(bitmaps::VmFuncControls::from_bits_truncate(capabilities))
+}
+
 /// Enter VMX operations.
 ///
 /// SAFETY: This function assumes that VMX is available, otherwise its behavior is unefined.
@@ -108,7 +156,7 @@ pub unsafe fn vmxon(allocator: &VirtualMemoryAreaAllocator) -> Result<(), VmxErr
 /// Return basic info about VMX CPU-defined structures.
 ///
 /// SAFETY: This function assumes that VMX is available, otherwise its behavior is undefined.
-pub unsafe fn get_vmx_info() -> VmxBasicInfo {
+unsafe fn get_vmx_info() -> VmxBasicInfo {
     // SAFETY: this register can be read if VMX is available.
     let raw_info = msr::VMX_BASIC.read();
     let revision = raw_info & ((1 << 32) - 1); // bits 31:0
@@ -203,7 +251,7 @@ impl VmcsRegion {
             Self::set_ctrls(
                 flags.bits(),
                 PrimaryControls::all().bits(),
-                msr::VMX_PROCBASED_CTL,
+                msr::VMX_PROCBASED_CTLS,
                 msr::VMX_TRUE_PROCBASED_CTLS,
                 fields::Ctrl32::PrimaryProcBasedExecCtrls,
             )

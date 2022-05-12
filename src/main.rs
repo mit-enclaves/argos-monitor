@@ -55,6 +55,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     unsafe {
         initialize_cpu();
         println!("VMX:    {:?}", vmx::vmx_available());
+        println!("EPT:    {:?}", vmx::ept_capabilities());
+        println!("VMFunc: {:?}", vmx::available_vmfuncs());
         println!("VMXON:  {:?}", vmx::vmxon(&vma_allocator));
 
         let mut vmcs = match vmx::VmcsRegion::new(&vma_allocator) {
@@ -219,7 +221,7 @@ fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
             fields::HostState32::Ia32SysenterCs.vmread()?,
         )?;
 
-        if !fields::GuestState64::Ia32Efer.is_supported() {
+        if fields::GuestState64::Ia32Efer.is_unsupported() {
             println!("Ia32Efer field is not supported");
         }
         // vcpu.set64(fields::GuestState64::Ia32Pat, fields::HostState64)

@@ -73,6 +73,68 @@ bitflags! {
         const SECONDARY_CONTROLS       = 1 << 31;
     }
 
+    /// Secondary processor-based VM-execution controls.
+    ///
+    /// A set of bitmask flags useful when setting up [`SECONDARY_PROCBASED_EXEC_CONTROLS`] VMCS field.
+    ///
+    /// See Intel SDM, Volume 3C, Section 24.6.2, Table 24-7.
+    pub struct SecondaryControls: u32 {
+        /// Virtualize APIC accesses.
+        const VIRTUALIZE_APIC = 1 << 0;
+        /// Enable EPT.
+        const ENABLE_EPT = 1 << 1;
+        /// Descriptor-table exiting.
+        const DTABLE_EXITING = 1 << 2;
+        /// Enable RDTSCP.
+        const ENABLE_RDTSCP = 1 << 3;
+        /// Virtualize x2APIC mode.
+        const VIRTUALIZE_X2APIC = 1 << 4;
+        /// Enable VPID.
+        const ENABLE_VPID = 1 << 5;
+        /// WBINVD exiting.
+        const WBINVD_EXITING = 1 << 6;
+        /// Unrestricted guest.
+        const UNRESTRICTED_GUEST = 1 << 7;
+        /// APIC-register virtualization.
+        const VIRTUALIZE_APIC_REGISTER = 1 << 8;
+        /// Virtual-interrupt delivery.
+        const VIRTUAL_INTERRUPT_DELIVERY = 1 << 9;
+        /// PAUSE-loop exiting.
+        const PAUSE_LOOP_EXITING = 1 << 10;
+        /// RDRAND exiting.
+        const RDRAND_EXITING = 1 << 11;
+        /// Enable INVPCID.
+        const ENABLE_INVPCID = 1 << 12;
+        /// Enable VM functions.
+        const ENABLE_VM_FUNCTIONS = 1 << 13;
+        /// VMCS shadowing.
+        const VMCS_SHADOWING = 1 << 14;
+        /// Enable ENCLS exiting.
+        const ENCLS_EXITING = 1 << 15;
+        /// RDSEED exiting.
+        const RDSEED_EXITING = 1 << 16;
+        /// Enable PML.
+        const ENABLE_PML = 1 << 17;
+        /// EPT-violation #VE.
+        const EPT_VIOLATION_VE = 1 << 18;
+        /// Conceal VMX from PT.
+        const CONCEAL_VMX_FROM_PT = 1 << 19;
+        /// Enable XSAVES/XRSTORS.
+        const ENABLE_XSAVES_XRSTORS = 1 << 20;
+        /// Mode-based execute control for EPT.
+        const MODE_BASED_EPT = 1 << 22;
+        /// Sub-page write permissions for EPT.
+        const SUB_PAGE_EPT = 1 << 23;
+        /// Intel PT uses guest physical addresses.
+        const INTEL_PT_GUEST_PHYSICAL = 1 << 24;
+        /// Use TSC scaling.
+        const USE_TSC_SCALING = 1 << 25;
+        /// Enable user wait and pause.
+        const ENABLE_USER_WAIT_PAUSE = 1 << 26;
+        /// Enable ENCLV exiting.
+        const ENCLV_EXITING = 1 << 28;
+    }
+
     /// VM-exit controls.
     ///
     /// A set of bitmask flags useful when setting up [`VMEXIT_CONTROLS`] VMCS field.
@@ -141,47 +203,93 @@ bitflags! {
     /// NOTE: Some exceptions might have higher priority than VMExits, see Intel manual for
     /// details.
     pub struct ExceptionBitmap: u32 {
-        // Dive Error #DE
+        /// Dive Error #DE
         const DIVIDE_ERROR             = 1 << 0;
-        // Debug #DB
+        /// Debug #DB
         const DEBUG                    = 1 << 1;
-        // Non Maskable Interrupt (NMI)
+        /// Non Maskable Interrupt (NMI)
         const NMI                      = 1 << 2;
-        // Breakpoint #BP
+        /// Breakpoint #BP
         const BREAKPOINT               = 1 << 3;
-        // Overflow #OF
+        /// Overflow #OF
         const OVERFLOW                 = 1 << 4;
-        // Bound range exceeded #BR
+        /// Bound range exceeded #BR
         const BOUND_RANGE_EXCEEDED     = 1 << 5;
-        // Invalid Opcode #UD
+        /// Invalid Opcode #UD
         const INVALID_OPCODE           = 1 << 6;
-        // Device not available #NM
+        /// Device not available #NM
         const DEVICE_NOT_AVAILABLE     = 1 << 7;
-        // Double fault
+        /// Double fault
         const DOUBLE_FAULT             = 1 << 8;
-        // Invalid TSS exception #TS
+        /// Invalid TSS exception #TS
         const INVALID_TSS              = 1 << 10;
-        // Segment not present #NP
+        /// Segment not present #NP
         const SEGMENT_NOT_PRESENT      = 1 << 11;
-        // Stack segment #SS
+        /// Stack segment #SS
         const STACK_SEGMENT_FAULT      = 1 << 12;
-        // General protection fault #GP
+        /// General protection fault #GP
         const GENERAL_PROTECTION_FAULT = 1 << 13;
-        // Page fault #PF
+        /// Page fault #PF
         const PAGE_FAULT               = 1 << 14;
-        // x87 floating point #MF
+        /// x87 floating point #MF
         const X87_FLOATING_POINT       = 1 << 16;
-        // Alignment check #AC
+        /// Alignment check #AC
         const ALIGNMENT_CHECK          = 1 << 17;
-        // Machine check #MC
+        /// Machine check #MC
         const MACHINE_CHECK            = 1 << 18;
-        // SIMD floating point #XF
+        /// SIMD floating point #XF
         const SIMD_FLOATING_POINT      = 1 << 19;
-        // ?
+        /// ?
         const VIRTUALIZATION           = 1 << 20;
-        // VMM communication #VC
+        /// VMM communication #VC
         const VMM_COMMUNICATION        = 1 << 29;
-        // Security #SX
+        /// Security #SX
         const SECURITY_EXCEPTION       = 1 << 30;
+    }
+
+    /// EPT and VPID capabilities.
+    ///
+    /// See Intel manual volume 3 annex A.10 for details.
+    pub struct EptCapability: u64 {
+        // Support execute-only entries.
+        const EXECUTE_ONLY             = 1 << 0;
+        /// Support page walk of lenght 4.
+        const PAGE_WALK_4              = 1 << 6;
+        /// Support uncacheable entries.
+        const UNCACHEABLE              = 1 << 8;
+        /// Support write-back entries.
+        const WRITE_BACK               = 1 << 14;
+        /// Support 2Mb pages.
+        const PAGE_2MB                 = 1 << 16;
+        /// Support 1Gb pages.
+        const PAGE_1GB                 = 1 << 17;
+        /// Support INVEPT instruction.
+        const INVEPT                   = 1 << 20;
+        /// Support accessed and dirty flags for EPT.
+        const ACCESS_DIRTY             = 1 << 21;
+        /// Support advanced VM exit information on EPT violation.
+        const ADVANCED_VMEXIT          = 1 << 22;
+        /// Support single-context INVEPT.
+        const SINGLE_CTX_INVEPT        = 1 << 25;
+        /// Support all-context INVEPT.
+        const ALL_CTX_INVEPT           = 1 << 26;
+        /// Support INVVPID.
+        const INVVPID                  = 1 << 32;
+        /// Support individual-address INVVPID.
+        const INDIVIDUAL_ADDR_INVVPID  = 1 << 40;
+        /// Support single-context INVVPID.
+        const SINGLE_CTX_INVVPID       = 1 << 41;
+        /// Support all-context INVVPID.
+        const ALL_CTX_INVVPID          = 1 << 42;
+        /// Support single-context-retaining-global INVVPID.
+        const RETAINING_GLOBAL_INVVPID = 1 << 43;
+    }
+
+    /// VM Functions control.
+    ///
+    /// See Intel manual volume 3 section 24.6.14.
+    pub struct VmFuncControls: u64 {
+        /// EPTP siwtching.
+        const EPTP_SWITCHING = 1 << 0;
     }
 }

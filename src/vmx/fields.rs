@@ -138,13 +138,17 @@ pub mod traits {
 
     /// A trait to check if a given field is supported by the hardware.
     pub trait VmcsFieldSupport: VmcsField {
-        /// Returns true if the field is supported by the current hardware.
-        fn is_supported(&self) -> bool {
+        /// Returns true if the field is for sure not supported by the current hardware.
+        /// Note that the field might still be unsupported if false is returned.
+        ///
+        /// TODO: Can we in fact precisely predict which field is supported? I'm not sure with the
+        /// manual's wording.
+        fn is_unsupported(&self) -> bool {
             // SAFETY: This MSR is always supported
             let vmcs_enum = unsafe { VMX_VMCS_ENUM.read() };
             // the bits 9:1 of the MSR must be greater than bits 9:1 of the field encoding.
             // See Intel manual volume 3 annex A.9.
-            (self.raw() as u64 & 0b1111111110) <= vmcs_enum
+            (self.raw() as u64 & 0b1111111110) > vmcs_enum
         }
     }
 }
