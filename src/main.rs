@@ -218,9 +218,13 @@ fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
             fields::GuestState32::Ia32SysenterCs,
             fields::HostState32::Ia32SysenterCs.vmread()?,
         )?;
+
+        if !fields::GuestState64::Ia32Efer.is_supported() {
+            println!("Ia32Efer field is not supported");
+        }
         // vcpu.set64(fields::GuestState64::Ia32Pat, fields::HostState64)
+        // vcpu.set64(fields::GuestState64::Ia32Debugctl, 0)?;
         vcpu.set64(fields::GuestState64::Ia32Efer, Efer::read().bits())?;
-        vcpu.set64(fields::GuestState64::Ia32Debugctl, 0)?;
         vcpu.set_nat(fields::GuestStateNat::Rflags, 0x2)?;
     }
 

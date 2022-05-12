@@ -35,6 +35,7 @@
 //!
 //! See Intel 3D Appendix B.
 
+use super::msr::VMX_VMCS_ENUM;
 use super::raw;
 use super::VmxError;
 
@@ -46,10 +47,12 @@ use traits::*;
 pub mod traits {
     use super::*;
 
-    /// A VMCS field containing a 64 bits value.
-    pub trait VmcsField64 {
+    pub trait VmcsField {
         fn raw(&self) -> u32;
+    }
 
+    /// A VMCS field containing a 64 bits value.
+    pub trait VmcsField64: VmcsField {
         /// Writes a field to the current VMCS.
         unsafe fn vmwrite(&self, value: u64) -> Result<(), VmxError> {
             raw::vmwrite(self.raw() as u64, value)
@@ -62,9 +65,7 @@ pub mod traits {
     }
 
     /// A VMCS field containing a 32 bits value.
-    pub trait VmcsField32 {
-        fn raw(&self) -> u32;
-
+    pub trait VmcsField32: VmcsField {
         /// Writes a field to the current VMCS.
         unsafe fn vmwrite(&self, value: u32) -> Result<(), VmxError> {
             raw::vmwrite(self.raw() as u64, value as u64)
@@ -77,9 +78,7 @@ pub mod traits {
     }
 
     /// A VMCS field containing a 16 bits value.
-    pub trait VmcsField16 {
-        fn raw(&self) -> u32;
-
+    pub trait VmcsField16: VmcsField {
         /// Writes a field to the current VMCS.
         unsafe fn vmwrite(&self, value: u16) -> Result<(), VmxError> {
             raw::vmwrite(self.raw() as u64, value as u64)
@@ -93,9 +92,7 @@ pub mod traits {
 
     /// A VMCS field containing a natural width value (i.e. 32 bits on 32 bits systems, 64 bits on 64
     /// bits systems).
-    pub trait VmcsFieldNat {
-        fn raw(&self) -> u32;
-
+    pub trait VmcsFieldNat: VmcsField {
         /// Writes a field to the current VMCS.
         unsafe fn vmwrite(&self, value: usize) -> Result<(), VmxError> {
             raw::vmwrite(self.raw() as u64, value as u64)
@@ -108,9 +105,7 @@ pub mod traits {
     }
 
     /// A VMCS read-only field containing a 16 bits value.
-    pub trait VmcsField16Ro {
-        fn raw(&self) -> u32;
-
+    pub trait VmcsField16Ro: VmcsField {
         /// Reads a field to the current VMCS.
         unsafe fn vmread(&self) -> Result<u16, VmxError> {
             raw::vmread(self.raw() as u64).map(|value| value as u16)
@@ -118,9 +113,7 @@ pub mod traits {
     }
 
     /// A VMCS read-only field containing a 32 bits value.
-    pub trait VmcsField32Ro {
-        fn raw(&self) -> u32;
-
+    pub trait VmcsField32Ro: VmcsField {
         /// Reads a field to the current VMCS.
         unsafe fn vmread(&self) -> Result<u32, VmxError> {
             raw::vmread(self.raw() as u64).map(|value| value as u32)
@@ -128,9 +121,7 @@ pub mod traits {
     }
 
     /// A VMCS read-only field containing a 64 bits value.
-    pub trait VmcsField64Ro {
-        fn raw(&self) -> u64;
-
+    pub trait VmcsField64Ro: VmcsField {
         /// reads a field to the current VMCS.
         unsafe fn vmread(&self) -> Result<u64, VmxError> {
             raw::vmread(self.raw() as u64)
@@ -138,12 +129,22 @@ pub mod traits {
     }
 
     /// A VMCS read-only field containing a natural-width value.
-    pub trait VmcsFieldNatRo {
-        fn raw(&self) -> u32;
-
+    pub trait VmcsFieldNatRo: VmcsField {
         /// Reads a field to the current VMCS.
         unsafe fn vmread(&self) -> Result<usize, VmxError> {
             raw::vmread(self.raw() as u64).map(|value| value as usize)
+        }
+    }
+
+    /// A trait to check if a given field is supported by the hardware.
+    pub trait VmcsFieldSupport: VmcsField {
+        /// Returns true if the field is supported by the current hardware.
+        fn is_supported(&self) -> bool {
+            // SAFETY: This MSR is always supported
+            let vmcs_enum = unsafe { VMX_VMCS_ENUM.read() };
+            // the bits 9:1 of the MSR must be greater than bits 9:1 of the field encoding.
+            // See Intel manual volume 3 annex A.9.
+            (self.raw() as u64 & 0b1111111110) <= vmcs_enum
         }
     }
 }
@@ -153,12 +154,15 @@ pub mod traits {
 /// Implements the given field trait for a `#[repr(32)]` struct.
 macro_rules! impl_field_for {
     ($field:ident, $struc:ident) => {
-        impl $field for $struc {
+        impl VmcsField for $struc {
             #[inline]
             fn raw(&self) -> u32 {
                 *self as u32
             }
         }
+
+        impl $field for $struc {}
+        impl VmcsFieldSupport for $struc {}
     };
 }
 
