@@ -152,34 +152,3 @@ pub fn _print(args: fmt::Arguments) {
         }
     });
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test_case]
-    fn print_simple() {
-        _print(core::format_args!("test_println_simple output\n"));
-    }
-
-    #[test_case]
-    fn println_many() {
-        for _ in 0..200 {
-            _print(core::format_args!("test_println many output\n"));
-        }
-    }
-
-    // #[test_case]
-    // fn println_output() {
-    //     let s = "Some test string that fits on a single line";
-    //     without_interrupts(|| {
-    //         let mut writer = WRITER.lock();
-    //         writeln!(writer, "\n").expect("writeln failed"); // Clear the current line
-    //         writeln!(writer, "{}", s).expect("writeln failed");
-    //         for (i, c) in s.chars().enumerate() {
-    //             let screen_char = writer.buffer.chars[BUFFER_HEIGHT - 2][i].read();
-    //             assert_eq!(char::from(screen_char.ascii_character), c);
-    //         }
-    //     });
-    // }
-}
