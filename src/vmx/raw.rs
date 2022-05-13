@@ -74,17 +74,30 @@ pub unsafe fn vmlaunch() -> Result<(), VmxError> {
     let rip_field = fields::HostStateNat::Rip as u64;
     let rsp_field = fields::HostStateNat::Rsp as u64;
     asm!(
+        "push rbx",                   // Save %rbx, see https://stackoverflow.com/a/71481425
         "push rbp",                   // Save %rbp
-        "vmwrite {rsp_field}, rsp",   // Write %rsp to VMCS
-        "lea {tmp}, [rip + 6]",       // Compute the address of the next instruction after vmlaunch
-        "vmwrite {rip_field}, {tmp}", // Write tha value to VMCS
+        "vmwrite rcx, rsp",           // Write %rsp to VMCS
+        "lea rax, [rip + 6]",         // Compute the address of the next instruction after vmlaunch
+        "vmwrite rdx, rax",           // Write tha value to VMCS
         "vmlaunch",                   // Launch the VM
         "nop",                        // After VM Exit we land here
         "pop rbp",                    // Restore %rbp
-        tmp = out(reg) _,
-        rip_field = in(reg) rip_field,
-        rsp_field = in(reg) rsp_field,
-        // TODO: mark clobbered registers (all of general purpose ones)
+        "pop rbx",
+        // Registers used
+        out("rax") _,                 // Temporary register
+        inout("rcx") rsp_field => _,  // RSP host VMCS field
+        inout("rdx") rip_field => _,  // RIP host VMCS field
+        // Clobbered registers, might be modified by guest
+        out("rsi") _,
+        out("rdi") _,
+        out("r8") _,
+        out("r9") _,
+        out("r10") _,
+        out("r11") _,
+        out("r12") _,
+        out("r13") _,
+        out("r14") _,
+        out("r15") _,
     );
     // NOTE: it is correct to check the flag even after a nop and pop instructions since none of
     // them modifies any flags.

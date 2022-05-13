@@ -107,10 +107,10 @@ fn initialize_cpu() {
 
 fn launch_guest(vmcs: &mut vmx::VmcsRegion) -> Result<vmx::VmxExitReason, vmx::VmxError> {
     let entry_point = guest_code as *const u8;
-    let mut guest_stack = [0; 256];
-    let guest_rsp = guest_stack.as_mut_ptr() as usize + 128;
+    let mut guest_stack = [0; 2048];
+    let guest_rsp = guest_stack.as_mut_ptr() as usize + 1024;
     vmcs.vcpu
-        .set_nat(fields::GuestStateNat::Rip, entry_point as usize + 2)?;
+        .set_nat(fields::GuestStateNat::Rip, entry_point as usize)?;
     vmcs.vcpu.set_nat(fields::GuestStateNat::Rsp, guest_rsp)?;
 
     unsafe { vmcs.run() }
@@ -240,6 +240,8 @@ fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
 }
 
 unsafe fn guest_code() {
+    asm!("nop", "nop", "nop", "nop", "nop", "nop");
+    asm!("nop", "nop", "nop", "nop", "nop", "nop");
     // println!("Hello from guest!");
     asm!("nop", "nop", "nop", "nop", "nop", "nop", "vmcall",);
 }

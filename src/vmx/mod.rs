@@ -32,11 +32,6 @@ const LOW_32_BITS_MASK: u64 = (1 << 32) - 1;
 /// CPUID mask for VMX support
 const CPUID_ECX_VMX_MASK: u32 = 1 << 5;
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum VmcsCheck {
-    Ok,
-}
-
 /// Basic VMX Information.
 ///
 /// See Intel SDM Vol. 3D Appendix A-1.
