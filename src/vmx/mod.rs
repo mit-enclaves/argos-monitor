@@ -5,6 +5,7 @@
 //! [x86]: https://hermitcore.github.io/libhermit-rs/x86/bits64/vmx/index.html
 
 pub mod bitmaps;
+pub mod ept;
 pub mod errors;
 pub mod fields;
 pub mod msr;
@@ -18,10 +19,8 @@ use x86_64::registers::control::{Cr4, Cr4Flags};
 use x86_64::registers::model_specific::Efer;
 use x86_64::registers::segmentation;
 use x86_64::registers::segmentation::Segment;
-use x86_64::PhysAddr;
 
 use crate::gdt;
-use crate::memory::{VirtualMemoryArea, VirtualMemoryAreaAllocator};
 use bitmaps::{EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls};
 pub use errors::{VmExitInterrupt, VmxError, VmxExitReason, VmxFieldError};
 use fields::traits::*;
@@ -31,6 +30,34 @@ const LOW_32_BITS_MASK: u64 = (1 << 32) - 1;
 
 /// CPUID mask for VMX support
 const CPUID_ECX_VMX_MASK: u32 = 1 << 5;
+
+/// Representation of a physical frame.
+pub struct Frame {
+    /// The physical address of the frame.
+    pub phys_addr: u64,
+
+    /// the virtual adddress of the frame using the current mapping.
+    ///
+    /// WARNING: the mapping must stay stable for the whole duration of VMX operations.
+    pub virt_addr: *mut u8,
+}
+
+impl Frame {
+    fn as_mut(&mut self) -> &mut [u8] {
+        // SAFETY: we assume that the frame address is a valid virtual address exclusively owned by
+        // the Frame struct.
+        unsafe { core::slice::from_raw_parts_mut(self.virt_addr, 0x1000) }
+    }
+}
+
+/// A frame allocator, used to allocate frames for EPTs and VMX control structures.
+pub trait FrameAllocator {
+    /// Allocate a fresh frame.
+    ///
+    /// SAFETY: the frame must be exclusively owned by the caller for the whole duration of VMX
+    /// operations.
+    unsafe fn allocate_frame(&self) -> Option<Frame>;
+}
 
 /// Basic VMX Information.
 ///
@@ -131,21 +158,18 @@ pub fn available_vmfuncs() -> Result<bitmaps::VmFuncControls, VmxError> {
 ///
 /// SAFETY: This function assumes that VMX is available, otherwise its behavior is unefined.
 //  NOTE: see Intel SDM Vol 3C Section 24.11.5
-pub unsafe fn vmxon(allocator: &VirtualMemoryAreaAllocator) -> Result<(), VmxError> {
+pub unsafe fn vmxon(allocator: &impl FrameAllocator) -> Result<(), VmxError> {
     let vmcs_info = get_vmx_info();
 
-    // Allocate a VMXON region with the required capacity
-    let mut vmxon_vma = allocator
-        .with_capacity(vmcs_info.vmcs_width as usize)
+    // Allocate a VMXON region, at most the size of a frame.
+    let mut frame = allocator
+        .allocate_frame()
         .expect("Failed to allocate VMXON region");
 
     // Initialize the VMXON region by copying the revision ID into the 4 first bytes of VMXON
     // region
-    vmxon_vma.as_bytes_mut()[0..4].copy_from_slice(&vmcs_info.revision.to_le_bytes());
-
-    // SAFETY: VMAs are always allocated as page-aligned regions.
-    let phys_addr = vmxon_vma.as_phys_addr().as_u64();
-    raw::vmxon(phys_addr)
+    frame.as_mut()[0..4].copy_from_slice(&vmcs_info.revision.to_le_bytes());
+    raw::vmxon(frame.phys_addr)
 }
 
 /// Return basic info about VMX CPU-defined structures.
@@ -170,41 +194,35 @@ unsafe fn get_vmx_info() -> VmxBasicInfo {
 
 /// A region containing information about a VM.
 pub struct VmcsRegion {
-    /// The physical address of the region, corresponds to the VMCS pointer.
-    phys_addr: PhysAddr,
     /// Virtual CPU, contains guest state.
     pub vcpu: VCpu,
-    /// The VMA used by the region.
-    _vma: VirtualMemoryArea,
+    /// The frame used by the region.
+    pub frame: Frame,
 }
 
 impl VmcsRegion {
-    pub unsafe fn new(allocator: &VirtualMemoryAreaAllocator) -> Result<Self, VmxError> {
+    pub unsafe fn new(allocator: &impl FrameAllocator) -> Result<Self, VmxError> {
         let vmcs_info = get_vmx_info();
-
-        // Allocate a VMCS region with the required capacity
-        let mut vmcs_vma = allocator
-            .with_capacity(vmcs_info.vmcs_width as usize)
+        let mut frame = allocator
+            .allocate_frame()
             .expect("Failed to allocate VMXON region");
 
         // Initialize the VMCS region by copying the revision ID into the 4 first bytes of VMCS
         // region
-        vmcs_vma.as_bytes_mut()[0..4].copy_from_slice(&vmcs_info.revision.to_le_bytes());
+        frame.as_mut()[0..4].copy_from_slice(&vmcs_info.revision.to_le_bytes());
 
         // Use VMCLEAR to put the VMCS in a clear (valid) state.
-        let phys_addr = vmcs_vma.as_phys_addr();
-        raw::vmclear(phys_addr.as_u64())?;
+        raw::vmclear(frame.phys_addr)?;
 
         Ok(VmcsRegion {
-            phys_addr,
+            frame,
             vcpu: VCpu { _private: () },
-            _vma: vmcs_vma,
         })
     }
 
     /// Makes this region the current active region.
     pub unsafe fn set_as_active(&self) -> Result<(), VmxError> {
-        raw::vmptrld(self.phys_addr.as_u64())
+        raw::vmptrld(self.frame.phys_addr)
     }
 
     pub unsafe fn deactivate() {

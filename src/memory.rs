@@ -3,7 +3,7 @@ use core::marker::PhantomData;
 use core::ops::DerefMut;
 use core::ptr::NonNull;
 
-use bootloader::boot_info::{MemoryRegionKind, MemoryRegion};
+use bootloader::boot_info::{MemoryRegion, MemoryRegionKind};
 use spin::{Mutex, MutexGuard};
 use x86_64::registers::control::Cr3;
 use x86_64::structures::paging::frame::PhysFrame;
@@ -13,6 +13,7 @@ use x86_64::structures::paging::{Mapper, OffsetPageTable};
 use x86_64::{PhysAddr, VirtAddr};
 
 use crate::allocator;
+use crate::vmx;
 
 const PAGE_SIZE: usize = 0x1000;
 const NB_PTE_ENTRIES: usize = 512;
@@ -34,7 +35,10 @@ impl FrameAllocator for BootInfoFrameAllocator {}
 ///
 /// SAFETY: This function must be called **at most once**, and the boot info must contain a valid
 /// mapping of the physical memory.
-pub unsafe fn init(physical_memory_offset: VirtAddr, regions: &'static [MemoryRegion]) -> Result<VirtualMemoryAreaAllocator, ()> {
+pub unsafe fn init(
+    physical_memory_offset: VirtAddr,
+    regions: &'static [MemoryRegion],
+) -> Result<VirtualMemoryAreaAllocator, ()> {
     let level_4_table = active_level_4_table(physical_memory_offset);
 
     // Initialize the frame allocator and the memory mapper.
@@ -51,6 +55,7 @@ pub unsafe fn init(physical_memory_offset: VirtAddr, regions: &'static [MemoryRe
         mapper,
         memory_map,
         frame_allocator,
+        physical_memory_offset,
     ))
 }
 
@@ -285,11 +290,25 @@ impl Clone for VirtualMemoryAreaAllocator {
     }
 }
 
+impl vmx::FrameAllocator for VirtualMemoryAreaAllocator {
+    unsafe fn allocate_frame(&self) -> Option<vmx::Frame> {
+        let mut inner = self.0.lock();
+        let frame = inner.frame_allocator.allocate_frame()?;
+
+        Some(vmx::Frame {
+            phys_addr: frame.start_address().as_u64(),
+            virt_addr: (frame.start_address().as_u64() + inner.physical_memory_offset.as_u64())
+                as *mut u8,
+        })
+    }
+}
+
 /// Internal state of the `VirtualMemoryAreaAllocator`.
 struct LockedVirtualMemoryAreaAllocator {
     mapper: OffsetPageTable<'static>,
     memory_map: VirtualMemoryMap,
     frame_allocator: BootInfoFrameAllocator,
+    physical_memory_offset: VirtAddr,
 }
 
 impl VirtualMemoryAreaAllocator {
@@ -297,11 +316,13 @@ impl VirtualMemoryAreaAllocator {
         mapper: OffsetPageTable<'static>,
         memory_map: VirtualMemoryMap,
         frame_allocator: BootInfoFrameAllocator,
+        physical_memory_offset: VirtAddr,
     ) -> Self {
         let inner = Arc::new(Mutex::new(LockedVirtualMemoryAreaAllocator {
             mapper,
             memory_map,
             frame_allocator,
+            physical_memory_offset,
         }));
         Self(inner)
     }
