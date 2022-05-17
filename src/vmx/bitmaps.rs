@@ -292,4 +292,26 @@ bitflags! {
         /// EPTP siwtching.
         const EPTP_SWITCHING = 1 << 0;
     }
+
+    pub struct EptEntryFlags: u64 {
+        /// Enable read accesses.
+        const READ = 1 << 0;
+        /// Enable write accesses.
+        const WRITE = 1 << 1;
+        /// Enable supervisor-mode execution. If mode-based execute control bit is 0, also control
+        /// user-mode execution.
+        const SUPERVISOR_EXECUTE = 1 << 2;
+        /// ???
+        const IGNORE_PAT = 1 << 6;
+        /// If 1, points to a data page instead of a page table.
+        const PAGE = 1 << 7;
+        /// If bit 6 of EPTP is 1, accessed bit flag.
+        const ACCESSED = 1 << 8;
+        /// If bit 6 of EPTP is 1, dirty bit flag.
+        const DIRTY = 1 << 9;
+        /// Enable user-mode execution.
+        const USER_EXECUTE = 1 << 10;
+        /// Suppress EPT-violation faults (#VE).
+        const SUPPRESS_VE = 1 << 63;
+    }
 }
