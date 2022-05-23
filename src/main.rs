@@ -7,13 +7,16 @@
 use core::arch::asm;
 use core::panic::PanicInfo;
 
+use kernel::memory::VirtualMemoryAreaAllocator;
 use kernel::println;
 use kernel::qemu;
 use kernel::vmx;
 use kernel::vmx::bitmaps::{
-    EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
+    EntryControls, EptEntryFlags, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
 };
+use kernel::vmx::ept;
 use kernel::vmx::fields;
+use kernel::vmx::FrameAllocator;
 
 use bootloader::{entry_point, BootInfo};
 use kernel::vmx::fields::traits::*;
@@ -90,6 +93,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             .and_then(|_| vmcs.save_host_state())
             .and_then(|_| setup_guest(&mut vmcs.vcpu));
         println!("Config: {:?}", err);
+        println!(
+            "EPT:    {:?}",
+            setup_ept(physical_memory_offset, &vma_allocator)
+        );
         println!("Check:  {:?}", vmcs.check());
         println!("Launch: {:?}", launch_guest(&mut vmcs));
         println!("Info:   {:?}", vmcs.vcpu.interrupt_info());
@@ -103,6 +110,29 @@ fn initialize_cpu() {
     // Set CPU in a valid state for VMX operations.
     let cr0 = Cr0::read();
     unsafe { Cr0::write(cr0 | Cr0Flags::NUMERIC_ERROR) };
+}
+
+fn setup_ept(
+    physical_memory_offset: VirtAddr,
+    allocator: &VirtualMemoryAreaAllocator,
+) -> Result<(), ()> {
+    let translator = |addr: vmx::HostPhysAddr| {
+        vmx::HostVirtAddr::new(physical_memory_offset.as_u64() as usize + addr.as_usize())
+    };
+    let host_address_translator = unsafe { ept::HostAddressMapper::new(translator) };
+    let mut ept_mapper = ept::ExtendedPageTableMapper::new(allocator, host_address_translator)
+        .expect("Failed to build EPT mapper");
+    let frame = allocator
+        .allocate_frame()
+        .expect("Failed to allocate host frame");
+    unsafe {
+        ept_mapper.map(
+            vmx::GuestPhysAddr::new(0xdeadbeef),
+            frame.phys_addr,
+            EptEntryFlags::READ | EptEntryFlags::WRITE,
+        )
+    };
+    Ok(())
 }
 
 fn launch_guest(vmcs: &mut vmx::VmcsRegion) -> Result<vmx::VmxExitReason, vmx::VmxError> {

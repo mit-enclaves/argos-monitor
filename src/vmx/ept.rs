@@ -3,26 +3,27 @@
 use core::marker::PhantomData;
 
 use super::bitmaps::EptEntryFlags;
+use super::{FrameAllocator, GuestPhysAddr, HostPhysAddr, HostVirtAddr};
 
 pub const GIANT_PAGE_SIZE: usize = 1 << 30;
 pub const HUGE_PAGE_SIZE: usize = 1 << 21;
 pub const PAGE_SIZE: usize = 1 << 12;
 
+// ————————————————— Host Physical to Host Virtual Mapping —————————————————— //
+
 /// An physiscal to virtual address mapper.
 ///
 /// This trait only serves as an alias for `Fn(usize) -> usize`, it is implemented for all closures
 /// of that type.
-pub trait Mapper: Fn(usize) -> usize {}
-impl<T> Mapper for T where T: Fn(usize) -> usize {}
+pub trait Mapper: Clone + Fn(HostPhysAddr) -> HostVirtAddr {}
+impl<T> Mapper for T where T: Clone + Fn(HostPhysAddr) -> HostVirtAddr {}
 
 /// A mapping function, translating host physical addresses to host virtual addresses.
 ///
 /// This is used to convert the physical addresses encountered in CPU defined structures (such as
 /// page tables) to virtual addresses that can be used by the host to access those structures.
-pub struct HostAddressMapper<T>
-where
-    T: Mapper,
-{
+#[derive(Clone)]
+pub struct HostAddressMapper<T> {
     mapping: T,
 }
 
@@ -46,8 +47,8 @@ where
     ///
     /// SAFETY: This function returns unbounded references, the caller is responsible to bound the
     /// references lifetime so that it doesn't outlive the object it points to.
-    unsafe fn map<A>(&self, phys_addr: usize) -> &'static mut A {
-        &mut *((self.mapping)(phys_addr) as *mut A)
+    unsafe fn map<A>(&self, phys_addr: HostPhysAddr) -> &'static mut A {
+        &mut *((self.mapping)(phys_addr).as_usize() as *mut A)
     }
 }
 
@@ -64,6 +65,8 @@ impl ExtendedPageTablePointer {
         self.ptr
     }
 }
+
+// —————————————————————————————— Page Entries —————————————————————————————— //
 
 /// A page table entry, generic over its level.
 #[derive(Clone, Copy)]
@@ -148,8 +151,8 @@ impl<Level> Entry<Level> {
     }
 
     /// Returns the physical address pointed by the entry.
-    pub fn phys_addr(&self) -> usize {
-        (self.entry & 0x000f_ffff_ffff_f000) as usize
+    pub fn phys_addr(&self) -> HostPhysAddr {
+        HostPhysAddr::new((self.entry & 0x000f_ffff_ffff_f000) as usize)
     }
 
     /// Returns the falgs of the entry.
@@ -159,7 +162,7 @@ impl<Level> Entry<Level> {
 }
 
 impl Entry<L4> {
-    pub fn deref<T: Mapper>(&self, mapping: HostAddressMapper<T>) -> L3Ref {
+    pub fn deref<T: Mapper>(&self, mapping: &HostAddressMapper<T>) -> L3Ref {
         if self.is_unused() {
             L3Ref::NonPresent
         } else {
@@ -168,7 +171,7 @@ impl Entry<L4> {
         }
     }
 
-    pub fn deref_mut<T: Mapper>(&mut self, mapping: HostAddressMapper<T>) -> L3RefMut {
+    pub fn deref_mut<T: Mapper>(&mut self, mapping: &HostAddressMapper<T>) -> L3RefMut {
         if self.is_unused() {
             L3RefMut::NonPresent
         } else {
@@ -179,7 +182,7 @@ impl Entry<L4> {
 }
 
 impl Entry<L3> {
-    pub fn deref<T: Mapper>(&self, mapping: HostAddressMapper<T>) -> L2Ref {
+    pub fn deref<T: Mapper>(&self, mapping: &HostAddressMapper<T>) -> L2Ref {
         if self.is_unused() {
             L2Ref::NonPresent
         } else if self.flags().contains(EptEntryFlags::PAGE) {
@@ -191,7 +194,7 @@ impl Entry<L3> {
         }
     }
 
-    pub fn deref_mut<T: Mapper>(&mut self, mapping: HostAddressMapper<T>) -> L2RefMut {
+    pub fn deref_mut<T: Mapper>(&mut self, mapping: &HostAddressMapper<T>) -> L2RefMut {
         if self.is_unused() {
             L2RefMut::NonPresent
         } else if self.flags().contains(EptEntryFlags::PAGE) {
@@ -205,7 +208,7 @@ impl Entry<L3> {
 }
 
 impl Entry<L2> {
-    pub fn deref<T: Mapper>(&self, mapping: HostAddressMapper<T>) -> L1Ref {
+    pub fn deref<T: Mapper>(&self, mapping: &HostAddressMapper<T>) -> L1Ref {
         if self.is_unused() {
             L1Ref::NonPresent
         } else if self.flags().contains(EptEntryFlags::PAGE) {
@@ -217,7 +220,7 @@ impl Entry<L2> {
         }
     }
 
-    pub fn deref_mut<T: Mapper>(&mut self, mapping: HostAddressMapper<T>) -> L1RefMut {
+    pub fn deref_mut<T: Mapper>(&mut self, mapping: &HostAddressMapper<T>) -> L1RefMut {
         if self.is_unused() {
             L1RefMut::NonPresent
         } else if self.flags().contains(EptEntryFlags::PAGE) {
@@ -231,7 +234,7 @@ impl Entry<L2> {
 }
 
 impl Entry<L1> {
-    pub fn deref<T: Mapper>(&self, mapping: HostAddressMapper<T>) -> PageRef {
+    pub fn deref<T: Mapper>(&self, mapping: &HostAddressMapper<T>) -> PageRef {
         if self.is_unused() {
             PageRef::NonPresent
         } else {
@@ -240,7 +243,7 @@ impl Entry<L1> {
         }
     }
 
-    pub fn deref_mut<T: Mapper>(&mut self, mapping: HostAddressMapper<T>) -> PageRefMut {
+    pub fn deref_mut<T: Mapper>(&mut self, mapping: &HostAddressMapper<T>) -> PageRefMut {
         if self.is_unused() {
             PageRefMut::NonPresent
         } else {
@@ -248,7 +251,15 @@ impl Entry<L1> {
             unsafe { PageRefMut::Page(mapping.map(self.phys_addr())) }
         }
     }
+
+    pub unsafe fn set(&mut self, addr: HostPhysAddr, flags: EptEntryFlags) {
+        const ADDR_MAKS: u64 = ((1 << 36) - 1) << 12;
+        let addr = addr.as_u64() & ADDR_MAKS;
+        self.entry = addr | flags.bits();
+    }
 }
+
+// ——————————————————————————————— Page Table ——————————————————————————————— //
 
 /// An Extended Page Table (EPT).
 #[repr(align(0x1000))]
@@ -280,5 +291,56 @@ impl<Level> ExtendedPageTable<Level> {
     /// Set an entry, returning the previous value.
     pub fn set(&mut self, entry: Entry<Level>, index: usize) -> Entry<Level> {
         core::mem::replace(&mut self.entries[index], entry)
+    }
+}
+
+// ——————————————————————————— Page Table Mapper ———————————————————————————— //
+
+pub struct ExtendedPageTableMapper<T> {
+    root: &'static mut ExtendedPageTable<L4>,
+    translator: HostAddressMapper<T>,
+}
+
+impl<T: Mapper> ExtendedPageTableMapper<T> {
+    pub fn new(allocator: &impl FrameAllocator, translator: HostAddressMapper<T>) -> Option<Self> {
+        let root_phys_addr = allocator.allocate_frame()?.phys_addr;
+        // SAFETY: the root must **never** be exposed with static lifetime outside of this
+        // implementation.
+        let root = unsafe { translator.map(root_phys_addr) };
+        Some(Self { root, translator })
+    }
+
+    pub fn get_l4(&mut self) -> &mut ExtendedPageTable<L4> {
+        // WARNING: notice that the lifetime is bound to `self`, this is crutial for safety!
+        self.root
+    }
+
+    pub unsafe fn map(
+        &mut self,
+        guest_phys: GuestPhysAddr,
+        host_phys: HostPhysAddr,
+        flags: EptEntryFlags,
+    ) -> Result<(), ()> {
+        let entry = self.root.get_mut(guest_phys.l4_index());
+        let l3 = match entry.deref_mut(&self.translator) {
+            L3RefMut::L3(l3) => l3,
+            _ => return Err(()),
+        };
+
+        let entry = l3.get_mut(guest_phys.l3_index());
+        let l2 = match entry.deref_mut(&self.translator) {
+            L2RefMut::L2(l2) => l2,
+            _ => return Err(()),
+        };
+
+        let entry = l2.get_mut(guest_phys.l2_index());
+        let l1 = match entry.deref_mut(&self.translator) {
+            L1RefMut::L1(l1) => l1,
+            _ => return Err(()),
+        };
+
+        let entry = l1.get_mut(guest_phys.l1_index());
+        entry.set(host_phys, flags);
+        Ok(())
     }
 }

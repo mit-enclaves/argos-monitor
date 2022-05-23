@@ -31,10 +31,66 @@ const LOW_32_BITS_MASK: u64 = (1 << 32) - 1;
 /// CPUID mask for VMX support
 const CPUID_ECX_VMX_MASK: u32 = 1 << 5;
 
+// ————————————————————————————— Address Types —————————————————————————————— //
+
+/// Mask for the last 9 bits, corresponding to the size of page table indexes.
+const PAGE_TABLE_INDEX_MASK: usize = 0b111111111;
+
+/// A macro for implementing addresses types.
+///
+/// An address is just a wrapper around an `usize`, with getter and setter methods.
+macro_rules! addr_impl {
+    ($name:ident) => {
+        #[repr(transparent)]
+        #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+        pub struct $name(usize);
+
+        impl $name {
+            pub fn new(addr: usize) -> Self {
+                Self(addr)
+            }
+
+            pub fn as_usize(self) -> usize {
+                self.0
+            }
+
+            pub fn as_u64(self) -> u64 {
+                self.0 as u64
+            }
+
+            /// Returns this address' L4 index.
+            pub fn l4_index(self) -> usize {
+                (self.0 >> 39) & PAGE_TABLE_INDEX_MASK
+            }
+
+            /// Returns this address' L3 index.
+            pub fn l3_index(self) -> usize {
+                (self.0 >> 30) & PAGE_TABLE_INDEX_MASK
+            }
+
+            /// Returns this address' L2 index.
+            pub fn l2_index(self) -> usize {
+                (self.0 >> 21) & PAGE_TABLE_INDEX_MASK
+            }
+
+            /// Returns this address' L1 index.
+            pub fn l1_index(self) -> usize {
+                (self.0 >> 12) & PAGE_TABLE_INDEX_MASK
+            }
+        }
+    };
+}
+
+addr_impl!(GuestPhysAddr);
+addr_impl!(HostPhysAddr);
+addr_impl!(HostVirtAddr);
+
+// ———————————————————————————— Frame Allocator ————————————————————————————— //
+
 /// Representation of a physical frame.
 pub struct Frame {
     /// The physical address of the frame.
-    pub phys_addr: u64,
+    pub phys_addr: HostPhysAddr,
 
     /// the virtual adddress of the frame using the current mapping.
     ///
@@ -51,13 +107,15 @@ impl Frame {
 }
 
 /// A frame allocator, used to allocate frames for EPTs and VMX control structures.
-pub trait FrameAllocator {
+pub unsafe trait FrameAllocator {
     /// Allocate a fresh frame.
     ///
     /// SAFETY: the frame must be exclusively owned by the caller for the whole duration of VMX
     /// operations.
-    unsafe fn allocate_frame(&self) -> Option<Frame>;
+    fn allocate_frame(&self) -> Option<Frame>;
 }
+
+// ————————————————————————————— VMX Operations ————————————————————————————— //
 
 /// Basic VMX Information.
 ///
@@ -169,7 +227,7 @@ pub unsafe fn vmxon(allocator: &impl FrameAllocator) -> Result<(), VmxError> {
     // Initialize the VMXON region by copying the revision ID into the 4 first bytes of VMXON
     // region
     frame.as_mut()[0..4].copy_from_slice(&vmcs_info.revision.to_le_bytes());
-    raw::vmxon(frame.phys_addr)
+    raw::vmxon(frame.phys_addr.as_u64())
 }
 
 /// Return basic info about VMX CPU-defined structures.
@@ -212,7 +270,7 @@ impl VmcsRegion {
         frame.as_mut()[0..4].copy_from_slice(&vmcs_info.revision.to_le_bytes());
 
         // Use VMCLEAR to put the VMCS in a clear (valid) state.
-        raw::vmclear(frame.phys_addr)?;
+        raw::vmclear(frame.phys_addr.as_u64())?;
 
         Ok(VmcsRegion {
             frame,
@@ -222,7 +280,7 @@ impl VmcsRegion {
 
     /// Makes this region the current active region.
     pub unsafe fn set_as_active(&self) -> Result<(), VmxError> {
-        raw::vmptrld(self.frame.phys_addr)
+        raw::vmptrld(self.frame.phys_addr.as_u64())
     }
 
     pub unsafe fn deactivate() {

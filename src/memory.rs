@@ -290,13 +290,15 @@ impl Clone for VirtualMemoryAreaAllocator {
     }
 }
 
-impl vmx::FrameAllocator for VirtualMemoryAreaAllocator {
-    unsafe fn allocate_frame(&self) -> Option<vmx::Frame> {
+// TODO: comment about safety
+// For now our frame allocator never re-use frames, so that's all good.
+unsafe impl vmx::FrameAllocator for VirtualMemoryAreaAllocator {
+    fn allocate_frame(&self) -> Option<vmx::Frame> {
         let mut inner = self.0.lock();
         let frame = inner.frame_allocator.allocate_frame()?;
 
         Some(vmx::Frame {
-            phys_addr: frame.start_address().as_u64(),
+            phys_addr: vmx::HostPhysAddr::new(frame.start_address().as_u64() as usize),
             virt_addr: (frame.start_address().as_u64() + inner.physical_memory_offset.as_u64())
                 as *mut u8,
         })
