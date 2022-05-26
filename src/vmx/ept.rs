@@ -52,20 +52,6 @@ where
     }
 }
 
-/// The Extended Page Table Pointer (EPTP).
-///
-/// See Intel manual volume 3 section 24.6.11.
-#[repr(transparent)]
-pub struct ExtendedPageTablePointer {
-    ptr: usize,
-}
-
-impl ExtendedPageTablePointer {
-    pub fn as_usize(&self) -> usize {
-        self.ptr
-    }
-}
-
 // —————————————————————————————— Page Entries —————————————————————————————— //
 
 /// A page table entry, generic over its level.
@@ -158,6 +144,13 @@ impl<Level> Entry<Level> {
     /// Returns the falgs of the entry.
     pub fn flags(&self) -> EptEntryFlags {
         EptEntryFlags::from_bits_truncate(self.entry)
+    }
+
+    /// Set the entry value
+    pub unsafe fn set(&mut self, addr: HostPhysAddr, flags: EptEntryFlags) {
+        const ADDR_MAKS: u64 = ((1 << 36) - 1) << 12;
+        let addr = addr.as_u64() & ADDR_MAKS;
+        self.entry = addr | flags.bits();
     }
 }
 
@@ -252,11 +245,11 @@ impl Entry<L1> {
         }
     }
 
-    pub unsafe fn set(&mut self, addr: HostPhysAddr, flags: EptEntryFlags) {
+    /*pub unsafe fn set(&mut self, addr: HostPhysAddr, flags: EptEntryFlags) {
         const ADDR_MAKS: u64 = ((1 << 36) - 1) << 12;
         let addr = addr.as_u64() & ADDR_MAKS;
         self.entry = addr | flags.bits();
-    }
+    }*/
 }
 
 // ——————————————————————————————— Page Table ——————————————————————————————— //
@@ -298,6 +291,7 @@ impl<Level> ExtendedPageTable<Level> {
 
 pub struct ExtendedPageTableMapper<T> {
     root: &'static mut ExtendedPageTable<L4>,
+    root_phys_addr: HostPhysAddr,
     translator: HostAddressMapper<T>,
 }
 
@@ -307,40 +301,71 @@ impl<T: Mapper> ExtendedPageTableMapper<T> {
         // SAFETY: the root must **never** be exposed with static lifetime outside of this
         // implementation.
         let root = unsafe { translator.map(root_phys_addr) };
-        Some(Self { root, translator })
+        Some(Self {
+            root,
+            root_phys_addr,
+            translator,
+        })
+    }
+
+    pub unsafe fn map(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        guest_phys: GuestPhysAddr,
+        host_phys: HostPhysAddr,
+        flags: EptEntryFlags,
+    ) -> Result<(), ()> {
+        // TODO: figure out what flags to turn on during new frame allocation.
+
+        let pte_flags = EptEntryFlags::READ
+            | EptEntryFlags::WRITE
+            | EptEntryFlags::SUPERVISOR_EXECUTE
+            | EptEntryFlags::USER_EXECUTE;
+        let entry = self.root.get_mut(guest_phys.l4_index());
+        let l3 = match entry.deref_mut(&self.translator) {
+            L3RefMut::L3(l3) => l3,
+            L3RefMut::NonPresent => {
+                let phys_addr = allocator.allocate_frame().ok_or(())?.phys_addr;
+                entry.set(phys_addr, pte_flags);
+                self.translator.map(phys_addr)
+            }
+        };
+        let entry = l3.get_mut(guest_phys.l3_index());
+        let l2 = match entry.deref_mut(&self.translator) {
+            L2RefMut::L2(l2) => l2,
+            L2RefMut::NonPresent => {
+                let phys_addr = allocator.allocate_frame().ok_or(())?.phys_addr;
+                entry.set(phys_addr, pte_flags);
+                self.translator.map(phys_addr)
+            }
+            L2RefMut::GiantPage(_) => return Err(()),
+        };
+        let entry = l2.get_mut(guest_phys.l2_index());
+        let l1 = match entry.deref_mut(&self.translator) {
+            L1RefMut::L1(l1) => l1,
+            L1RefMut::NonPresent => {
+                let phys_addr = allocator.allocate_frame().ok_or(())?.phys_addr;
+                entry.set(phys_addr, pte_flags);
+                self.translator.map(phys_addr)
+            }
+            L1RefMut::HugePage(_) => return Err(()),
+        };
+        let entry = l1.get_mut(guest_phys.l1_index());
+        entry.set(host_phys, flags);
+        Ok(())
+    }
+}
+
+impl<T> ExtendedPageTableMapper<T> {
+    /// Returns the corresponding Extended Page Table Pointer (EPTP).
+    ///
+    /// See Intel manual volume 3 section 24.6.11.
+    pub fn get_ept_pointer(&self) -> u64 {
+        self.root_phys_addr.as_u64()
     }
 
     pub fn get_l4(&mut self) -> &mut ExtendedPageTable<L4> {
         // WARNING: notice that the lifetime is bound to `self`, this is crutial for safety!
         self.root
-    }
-
-    pub unsafe fn map(
-        &mut self,
-        guest_phys: GuestPhysAddr,
-        host_phys: HostPhysAddr,
-        flags: EptEntryFlags,
-    ) -> Result<(), ()> {
-        let entry = self.root.get_mut(guest_phys.l4_index());
-        let l3 = match entry.deref_mut(&self.translator) {
-            L3RefMut::L3(l3) => l3,
-            _ => return Err(()),
-        };
-
-        let entry = l3.get_mut(guest_phys.l3_index());
-        let l2 = match entry.deref_mut(&self.translator) {
-            L2RefMut::L2(l2) => l2,
-            _ => return Err(()),
-        };
-
-        let entry = l2.get_mut(guest_phys.l2_index());
-        let l1 = match entry.deref_mut(&self.translator) {
-            L1RefMut::L1(l1) => l1,
-            _ => return Err(()),
-        };
-
-        let entry = l1.get_mut(guest_phys.l1_index());
-        entry.set(host_phys, flags);
-        Ok(())
     }
 }

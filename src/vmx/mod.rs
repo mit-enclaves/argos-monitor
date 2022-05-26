@@ -21,7 +21,10 @@ use x86_64::registers::segmentation;
 use x86_64::registers::segmentation::Segment;
 
 use crate::gdt;
-use bitmaps::{EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls};
+use bitmaps::{
+    EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
+    SecondaryControls,
+};
 pub use errors::{VmExitInterrupt, VmxError, VmxExitReason, VmxFieldError};
 use fields::traits::*;
 
@@ -42,7 +45,7 @@ const PAGE_TABLE_INDEX_MASK: usize = 0b111111111;
 macro_rules! addr_impl {
     ($name:ident) => {
         #[repr(transparent)]
-        #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
         pub struct $name(usize);
 
         impl $name {
@@ -81,6 +84,7 @@ macro_rules! addr_impl {
     };
 }
 
+addr_impl!(GuestVirtAddr);
 addr_impl!(GuestPhysAddr);
 addr_impl!(HostPhysAddr);
 addr_impl!(HostVirtAddr);
@@ -330,6 +334,18 @@ impl VmcsRegion {
         }
     }
 
+    /// Sets the secondary processor-based controls.
+    ///
+    /// WARNING: the region must be active, otherwise this function might modify another VMCS.
+    pub fn set_secondary_ctrls(&mut self, flags: SecondaryControls) -> Result<(), VmxError> {
+        unsafe {
+            let spec = msr::VMX_PROCBASED_CTLS2.read();
+            let new_flags = Self::get_ctls(flags.bits(), spec, SecondaryControls::all().bits())
+                .map_err(|err| err.set_field(VmxFieldError::SecondaryControls))?;
+            fields::Ctrl32::SecondaryProcBasedVmExecCtrls.vmwrite(new_flags)
+        }
+    }
+
     /// Sets the VM exit controls.
     ///
     /// WARNING: the region must be active, otherwise this function might modify another VMCS.
@@ -374,6 +390,22 @@ impl VmcsRegion {
     pub fn set_exception_bitmap(&mut self, bitmap: ExceptionBitmap) -> Result<(), VmxError> {
         // TODO: is there a list of allowed settings?
         unsafe { fields::Ctrl32::ExceptionBitmap.vmwrite(bitmap.bits()) }
+    }
+
+    /// Sets the extended page table (EPT) pointer.
+    ///
+    /// WARNING: the region must be active, otherwise this function might modify another VMCS.
+    pub fn set_ept_ptr<T>(
+        &mut self,
+        mapper: &ept::ExtendedPageTableMapper<T>,
+    ) -> Result<(), VmxError> {
+        // See Intel manual Volume 3C section 24.6.11.
+        let memory_kind = 6 << 0; // write-back
+        let walk_lenght = 3 << 3; // walk lenght of 4
+        let ept_ptr = mapper.get_ept_pointer() | memory_kind | walk_lenght;
+
+        // SAFETY: the EPT pointer is valid
+        unsafe { fields::Ctrl64::EptPtr.vmwrite(ept_ptr) }
     }
 
     /// Check that the current VMCS is in a valid stat, such that VMLAUNCH or VMRESUME can
@@ -742,9 +774,34 @@ impl VCpu {
         unsafe { field.vmwrite(value) }
     }
 
+    /// Returns the exit reason.
     pub fn exit_reason(&self) -> Result<VmxExitReason, VmxError> {
         let reason = unsafe { fields::GuestState32Ro::ExitReason.vmread() }?;
         Ok(VmxExitReason::from_u16((reason & 0xFFFF) as u16))
+    }
+
+    /// Returns the exit qualification.
+    pub fn exit_qualification(&self) -> Result<VmxExitQualification, VmxError> {
+        let qualification = unsafe { fields::GuestStateNatRo::ExitQualification.vmread() }?;
+        Ok(VmxExitQualification { raw: qualification })
+    }
+
+    /// Returns the guest physical address.
+    ///
+    /// This field is set on VM exits due to EPT violations and EPT misconfigurations.
+    /// See section 27.2.1 for details of when and how this field is used.
+    pub fn guest_phys_addr(&self) -> Result<GuestPhysAddr, VmxError> {
+        let guest_phys_addr = unsafe { fields::GuestState64Ro::GuestPhysAddr.vmread() }?;
+        Ok(GuestPhysAddr::new(guest_phys_addr as usize))
+    }
+
+    /// Returns the guest virtual address.
+    ///
+    /// This field is set for some VM exits. See section 27.2.1 for details of when and how this
+    /// field is used.
+    pub fn guest_linear_addr(&self) -> Result<GuestVirtAddr, VmxError> {
+        let guest_virt_addr = unsafe { fields::GuestStateNatRo::GuestLinearAddr.vmread() }?;
+        Ok(GuestVirtAddr::new(guest_virt_addr))
     }
 
     pub fn interrupt_info(&self) -> Result<Option<VmExitInterrupt>, VmxError> {
@@ -765,6 +822,24 @@ impl VCpu {
             int_type,
             error_code,
         }))
+    }
+}
+
+// —————————————————————————— Exit Qualifications ——————————————————————————— //
+
+/// A bit vector containing information about VM exit reason.
+///
+/// The bits must be interpreted differently depending on the exit reason. This types provides a
+/// simple way of casting the bits based on the reason.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct VmxExitQualification {
+    pub raw: usize,
+}
+
+impl VmxExitQualification {
+    /// Interpretation due to EPT violations.
+    pub fn ept_violation(self) -> bitmaps::exit_qualification::EptViolation {
+        bitmaps::exit_qualification::EptViolation::from_bits_truncate(self.raw)
     }
 }
 

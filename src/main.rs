@@ -13,10 +13,10 @@ use kernel::qemu;
 use kernel::vmx;
 use kernel::vmx::bitmaps::{
     EntryControls, EptEntryFlags, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
+    SecondaryControls,
 };
 use kernel::vmx::ept;
 use kernel::vmx::fields;
-use kernel::vmx::FrameAllocator;
 
 use bootloader::{entry_point, BootInfo};
 use kernel::vmx::fields::traits::*;
@@ -49,6 +49,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             .into_option()
             .expect("The bootloader must be configured with 'map-physical-memory'"),
     );
+
     let vma_allocator = unsafe {
         kernel::init_memory(physical_memory_offset, &mut boot_info.memory_regions)
             .expect("Failed to initialize memory")
@@ -93,13 +94,34 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             .and_then(|_| vmcs.save_host_state())
             .and_then(|_| setup_guest(&mut vmcs.vcpu));
         println!("Config: {:?}", err);
-        println!(
-            "EPT:    {:?}",
-            setup_ept(physical_memory_offset, &vma_allocator)
-        );
+        if let Ok(_cap) = vmx::ept_capabilities() {
+            println!(
+                "Enable secondary: {:?}",
+                vmcs.set_primary_ctrls(PrimaryControls::SECONDARY_CONTROLS)
+            );
+            println!(
+                "EPT enabled: {:?}",
+                vmcs.set_secondary_ctrls(
+                    SecondaryControls::ENABLE_RDTSCP | SecondaryControls::ENABLE_EPT,
+                )
+            );
+            let ept_mapper = setup_ept(physical_memory_offset, &vma_allocator);
+            if let Ok(ept_mapper) = ept_mapper {
+                println!("EPT:    {:?}", vmcs.set_ept_ptr(&ept_mapper));
+            } else {
+                println!("EPT:    failed to setup EPTs");
+            }
+        }
+
         println!("Check:  {:?}", vmcs.check());
         println!("Launch: {:?}", launch_guest(&mut vmcs));
         println!("Info:   {:?}", vmcs.vcpu.interrupt_info());
+        println!(
+            "Qualif: {:?}",
+            vmcs.vcpu
+                .exit_qualification()
+                .map(|qualif| qualif.ept_violation())
+        );
         println!("VMXOFF: {:?}", vmx::raw::vmxoff());
     }
 
@@ -115,24 +137,34 @@ fn initialize_cpu() {
 fn setup_ept(
     physical_memory_offset: VirtAddr,
     allocator: &VirtualMemoryAreaAllocator,
-) -> Result<(), ()> {
-    let translator = |addr: vmx::HostPhysAddr| {
+) -> Result<vmx::ept::ExtendedPageTableMapper<impl vmx::ept::Mapper>, ()> {
+    let translator = move |addr: vmx::HostPhysAddr| {
         vmx::HostVirtAddr::new(physical_memory_offset.as_u64() as usize + addr.as_usize())
     };
     let host_address_translator = unsafe { ept::HostAddressMapper::new(translator) };
     let mut ept_mapper = ept::ExtendedPageTableMapper::new(allocator, host_address_translator)
         .expect("Failed to build EPT mapper");
-    let frame = allocator
-        .allocate_frame()
-        .expect("Failed to allocate host frame");
-    unsafe {
-        ept_mapper.map(
-            vmx::GuestPhysAddr::new(0xdeadbeef),
-            frame.phys_addr,
-            EptEntryFlags::READ | EptEntryFlags::WRITE,
-        )
-    };
-    Ok(())
+    let (start, end) = allocator
+        .get_boundaries()
+        .expect("Failed to retrieve memory boundaries");
+
+    // Just common checks on the boundaries.
+    assert!(start % 0x1000 == 0);
+    assert!(end % 0x1000 == 0);
+    assert!(start <= end);
+    println!("Boundaries {} {}", start, end);
+    for i in (0..end).step_by(0x1000) {
+        unsafe {
+            ept_mapper.map(
+                allocator,
+                vmx::GuestPhysAddr::new(i as usize),
+                vmx::HostPhysAddr::new(i as usize),
+                EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
+            )?
+        };
+    }
+
+    Ok(ept_mapper)
 }
 
 fn launch_guest(vmcs: &mut vmx::VmcsRegion) -> Result<vmx::VmxExitReason, vmx::VmxError> {

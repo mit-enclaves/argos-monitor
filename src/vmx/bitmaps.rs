@@ -315,3 +315,47 @@ bitflags! {
         const SUPPRESS_VE = 1 << 63;
     }
 }
+
+// —————————————————————————— Exit Qualifications ——————————————————————————— //
+
+pub mod exit_qualification {
+    use super::*;
+
+    bitflags! {
+        pub struct EptViolation: usize {
+            /// Violation due to a read operation.
+            const READ = 1 << 0;
+            /// Violation due to a write operation.
+            const WRITE = 1 << 1;
+            /// Violation due to an instruction fetch.
+            const EXECUTE = 1 << 2;
+            /// indicates wether the guest linear address was readable.
+            const GUEST_PHYS_READ = 1 << 3;
+            /// Indicate wether the guest linear address was writeable.
+            const GUEST_PHYS_WRITE = 1 << 4;
+            /// Indicate wether the guest linear address was executable.
+            const GUEST_PHYS_EXECUTE = 1 << 5;
+            /// If mode based execution control is set, indicate whether the guest user mode linear
+            /// address was executable.
+            const MODE_BASED_GUEST_PHYS_EXECUTE = 1 << 6;
+            /// the guest linear address field from the VMCS is valid.
+            const GUEST_LINEAR_IS_VALID = 1 << 7;
+            /// If guest linear is valid and set, indicate that the violation results from access
+            /// to the guest physical page obtained by translating the linear address. If the guest
+            /// linear is valid and this bit is not set, the violation is due to EPT page walk or
+            /// update of an access or dirty bit.
+            const CAUSED_BY_TRANSLATED_LINEAR_ADDR = 1 << 8;
+            /// If guest linear is valid and caused by access to the translated linear address,
+            /// indicate whether the address is supervisor-mode or user-mode.
+            const GUEST_SUPERVISOR = 1 << 9;
+            /// If guest linear is valid and caused by access to the translated linear address,
+            /// indicate whether the page is read/write within the guest.
+            const GUEST_READ_WRITE = 1 << 10;
+            /// If guest linear is valid and caused by access to the translated linear address,
+            /// indicate whether the execute access is disabled within the guest.
+            const GUEST_EXECUTE_DISABLED = 1 << 11;
+            /// NMI blocked due to IRET.
+            const NMI_BLOCKED = 1 << 12;
+        }
+    }
+}

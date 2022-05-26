@@ -382,6 +382,16 @@ pub enum GuestState64 {
 
 impl_field_for!(VmcsField64, GuestState64);
 
+/// VMCS fields encoding of 64 bits read-only guest state fields.
+#[rustfmt::skip]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum GuestState64Ro {
+    GuestPhysAddr = 0x00002400,
+}
+
+impl_field_for!(VmcsField64Ro, GuestState64Ro);
+
 /// VMCS fields encoding of natural width guest state fields.
 #[rustfmt::skip]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -410,3 +420,18 @@ pub enum GuestStateNat {
 }
 
 impl_field_for!(VmcsFieldNat, GuestStateNat);
+
+/// VMCS fields encoding of natural width guest state read-only fields.
+#[rustfmt::skip]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum GuestStateNatRo {
+    ExitQualification = 0x00006400,
+    IoRcx             = 0x00006402,
+    IoRsi             = 0x00006404,
+    IoRdi             = 0x00006406,
+    IoRip             = 0x00006408,
+    GuestLinearAddr   = 0x0000640A,
+}
+
+impl_field_for!(VmcsFieldNatRo, GuestStateNatRo);

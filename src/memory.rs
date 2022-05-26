@@ -118,6 +118,11 @@ impl BootInfoFrameAllocator {
         self.next += 1;
         frame
     }
+
+    pub fn get_boundaries(&self) -> (Option<PhysFrame>, Option<PhysFrame>) {
+        let mut frames = self.usable_frames();
+        (frames.nth(0), frames.last())
+    }
 }
 
 unsafe impl x86_64::structures::paging::FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
@@ -358,6 +363,18 @@ impl VirtualMemoryAreaAllocator {
             vma_allocator: self.clone(),
             marker: PhantomData,
         })
+    }
+
+    /// Returns the memory boundaries.
+    // TODO: make this more efficient when refactoring the allocator.
+    pub fn get_boundaries(&self) -> Option<(u64, u64)> {
+        let mut inner  = self.0.lock();
+        let inner = inner.deref_mut();
+        let frames = inner.frame_allocator.get_boundaries();
+        match frames {
+            (Some(first), Some(last)) => Some((first.start_address().as_u64(), last.start_address().as_u64())),
+            _ => None,
+        }
     }
 }
 
