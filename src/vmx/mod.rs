@@ -108,6 +108,10 @@ impl Frame {
         // the Frame struct.
         unsafe { core::slice::from_raw_parts_mut(self.virt_addr, 0x1000) }
     }
+
+    pub fn as_array_page(&mut self) -> &mut [u64] {
+        unsafe { core::slice::from_raw_parts_mut(self.virt_addr as *mut u64, 512) }
+    }
 }
 
 /// A frame allocator, used to allocate frames for EPTs and VMX control structures.
@@ -401,11 +405,26 @@ impl VmcsRegion {
     ) -> Result<(), VmxError> {
         // See Intel manual Volume 3C section 24.6.11.
         let memory_kind = 6 << 0; // write-back
-        let walk_lenght = 3 << 3; // walk lenght of 4
-        let ept_ptr = mapper.get_ept_pointer() | memory_kind | walk_lenght;
+        let walk_length = 3 << 3; // walk length of 4
+        let ept_ptr = mapper.get_ept_pointer() | memory_kind | walk_length;
 
         // SAFETY: the EPT pointer is valid
         unsafe { fields::Ctrl64::EptPtr.vmwrite(ept_ptr) }
+    }
+
+    /// Sets the eptp address list (kinda)
+    ///
+    /// WARNING: lol, I have no clue how to do it.
+    pub fn set_eptp_list(&mut self, addr: u64) -> Result<(), VmxError> {
+        //TODO more bits to set here?
+        //At least for entries:
+        //https://github.com/vusec/memsentry/blob/master/dune-vmfunc.patch#L35
+        unsafe { fields::Ctrl64::EptpListAddr.vmwrite(addr) }
+    }
+
+    /// Enable the vmfunc controls.
+    pub fn enable_vmfunc_ctrls(&mut self) -> Result<(), VmxError> {
+        unsafe { fields::Ctrl64::VmFuncCtrls.vmwrite(1) }
     }
 
     /// Check that the current VMCS is in a valid stat, such that VMLAUNCH or VMRESUME can

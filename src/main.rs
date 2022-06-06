@@ -24,6 +24,8 @@ use x86_64::registers::control::{Cr0, Cr0Flags};
 use x86_64::registers::model_specific::Efer;
 use x86_64::VirtAddr;
 
+use crate::vmx::FrameAllocator;
+
 entry_point!(kernel_main);
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
@@ -94,27 +96,60 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             .and_then(|_| vmcs.save_host_state())
             .and_then(|_| setup_guest(&mut vmcs.vcpu));
         println!("Config: {:?}", err);
+
+        let mut switching = false;
         if let Ok(_cap) = vmx::ept_capabilities() {
             println!(
                 "Enable secondary: {:?}",
                 vmcs.set_primary_ctrls(PrimaryControls::SECONDARY_CONTROLS)
             );
+
             println!(
                 "EPT enabled: {:?}",
                 vmcs.set_secondary_ctrls(
-                    SecondaryControls::ENABLE_RDTSCP | SecondaryControls::ENABLE_EPT,
+                    SecondaryControls::ENABLE_RDTSCP
+                        | SecondaryControls::ENABLE_EPT
+                        | SecondaryControls::ENABLE_VM_FUNCTIONS,
                 )
             );
             let ept_mapper = setup_ept(physical_memory_offset, &vma_allocator);
             if let Ok(ept_mapper) = ept_mapper {
                 println!("EPT:    {:?}", vmcs.set_ept_ptr(&ept_mapper));
+
+                // Let's see if we can duplicate the EPTs, and register them both
+                if let Ok(_vmfunc) = vmx::available_vmfuncs() {
+                    // TODO The documentation talks about a bit inside the VM-function
+                    // controls that needs to be set to one. This seems to be
+                    // the EPTP_SWITCHING one but not sure.
+                    let ept_mapper2 = setup_ept(physical_memory_offset, &vma_allocator);
+                    if let Ok(ept_mapper2) = ept_mapper2 {
+                        println!("EPT2: {:?}", vmcs.set_ept_ptr(&ept_mapper2));
+                        // Try to allocate a page table.
+                        if let Some(mut eptp_list) = vma_allocator.allocate_frame() {
+                            let writter = eptp_list.as_array_page();
+                            //TODO this requires flags probably
+                            let memory_kind = 6 << 0; // write-back
+                            let walk_length = 3 << 3; // walk length of 4
+                            writter[0] = ept_mapper.get_ept_pointer() | memory_kind | walk_length;
+                            writter[1] = ept_mapper2.get_ept_pointer() | memory_kind | walk_length;
+                            println!(
+                                "EPTP list: {:?}",
+                                vmcs.set_eptp_list(eptp_list.phys_addr.as_u64())
+                            );
+                            switching = true;
+                            println!("Enable vmfunc: {:?}", vmcs.enable_vmfunc_ctrls());
+                        }
+                    } else {
+                        println!("EPT2: failed to setup EPTs");
+                    }
+                }
             } else {
-                println!("EPT:    failed to setup EPTs");
+                println!("EPT: failed to setup EPTs");
             }
         }
 
         println!("Check:  {:?}", vmcs.check());
-        println!("Launch: {:?}", launch_guest(&mut vmcs));
+        println!("Launch: {:?}", launch_guest(&mut vmcs, switching));
         println!("Info:   {:?}", vmcs.vcpu.interrupt_info());
         println!(
             "Qualif: {:?}",
@@ -152,7 +187,6 @@ fn setup_ept(
     assert!(start % 0x1000 == 0);
     assert!(end % 0x1000 == 0);
     assert!(start <= end);
-    println!("Boundaries {} {}", start, end);
     for i in (0..end).step_by(0x1000) {
         unsafe {
             ept_mapper.map(
@@ -167,9 +201,17 @@ fn setup_ept(
     Ok(ept_mapper)
 }
 
-fn launch_guest(vmcs: &mut vmx::VmcsRegion) -> Result<vmx::VmxExitReason, vmx::VmxError> {
+fn launch_guest(
+    vmcs: &mut vmx::VmcsRegion,
+    switching: bool,
+) -> Result<vmx::VmxExitReason, vmx::VmxError> {
     const GUEST_STACK_SIZE: usize = 4096;
-    let entry_point = guest_code as *const u8;
+    let entry_point = if switching {
+        guest_code2 as *const u8
+    } else {
+        guest_code as *const u8
+    };
+
     let mut guest_stack = [0; GUEST_STACK_SIZE];
     let guest_rsp = guest_stack.as_mut_ptr() as usize + GUEST_STACK_SIZE;
     vmcs.vcpu
@@ -300,6 +342,15 @@ fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
     vcpu.set32(fields::GuestState32::VmxPreemptionTimerValue, 0)?;
 
     Ok(())
+}
+
+unsafe fn guest_code2() {
+    asm!("nop", "nop", "nop", "nop", "nop", "nop");
+    asm!("nop", "nop", "nop", "nop", "nop", "nop");
+    println!("Hello from guest!");
+    asm!("mov eax, 0", "mov ecx, 1", "vmfunc");
+    println!("After the vmfunc");
+    asm!("nop", "nop", "nop", "nop", "nop", "nop", "vmcall",);
 }
 
 unsafe fn guest_code() {
