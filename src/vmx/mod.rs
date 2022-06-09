@@ -200,9 +200,6 @@ pub fn ept_capabilities() -> Result<bitmaps::EptCapability, VmxError> {
 ///
 /// See Intel manual volume 3 section 24.6.14.
 pub fn available_vmfuncs() -> Result<bitmaps::VmFuncControls, VmxError> {
-    // Check that VMX is available
-    vmx_available()?;
-
     // SAFETY: MSR exists if vmx is available.
     let procbased_ctls = unsafe { msr::VMX_PROCBASED_CTLS.read() };
     if procbased_ctls & (1 << 63) == 0 {
@@ -403,27 +400,24 @@ impl VmcsRegion {
         &mut self,
         mapper: &ept::ExtendedPageTableMapper<T>,
     ) -> Result<(), VmxError> {
-        // See Intel manual Volume 3C section 24.6.11.
-        let memory_kind = 6 << 0; // write-back
-        let walk_length = 3 << 3; // walk length of 4
-        let ept_ptr = mapper.get_ept_pointer() | memory_kind | walk_length;
+        let ept_ptr = mapper.get_ept_pointer().as_u64();
 
         // SAFETY: the EPT pointer is valid
         unsafe { fields::Ctrl64::EptPtr.vmwrite(ept_ptr) }
     }
 
-    /// Sets the eptp address list (kinda)
+    /// Sets the EPTP address list.
     ///
-    /// WARNING: lol, I have no clue how to do it.
-    pub fn set_eptp_list(&mut self, addr: u64) -> Result<(), VmxError> {
-        //TODO more bits to set here?
-        //At least for entries:
-        //https://github.com/vusec/memsentry/blob/master/dune-vmfunc.patch#L35
-        unsafe { fields::Ctrl64::EptpListAddr.vmwrite(addr) }
+    /// WARNING: the region must be active, otherwise this function might modify another VMCS.
+    pub fn set_eptp_list(&mut self, eptp_list: &ept::EptpList) -> Result<(), VmxError> {
+        unsafe { fields::Ctrl64::EptpListAddr.vmwrite(eptp_list.get_ptr().as_u64()) }
     }
 
     /// Enable the vmfunc controls.
-    pub fn enable_vmfunc_ctrls(&mut self) -> Result<(), VmxError> {
+    pub fn set_vmfunc_ctrls(&mut self, flags: bitmaps::VmFuncControls) -> Result<(), VmxError> {
+        let allowed_vmfuncs = available_vmfuncs()?;
+        Self::validate_flags_allowed(flags.bits(), allowed_vmfuncs.bits())
+            .map_err(|err| err.set_field(VmxFieldError::VmFuncControls))?;
         unsafe { fields::Ctrl64::VmFuncCtrls.vmwrite(1) }
     }
 
@@ -764,6 +758,17 @@ impl VmcsRegion {
         let can_be_both = true_allowed_ones & !true_allowed_zeros;
         let must_be_ones = can_be_both & !known & allowed_zeros;
         Ok(default_value | user | must_be_ones)
+    }
+
+    /// Validates flags based on allowed one values.
+    fn validate_flags_allowed(flags: u64, allowed: u64) -> Result<(), VmxError> {
+        let must_be_0 = flags & (!allowed);
+        if must_be_0 != 0 {
+            let idx = must_be_0.trailing_zeros() as u8;
+            Err(VmxError::Disallowed1(VmxFieldError::Unknown, idx))
+        } else {
+            Ok(())
+        }
     }
 }
 

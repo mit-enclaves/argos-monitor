@@ -3,7 +3,7 @@
 use core::marker::PhantomData;
 
 use super::bitmaps::EptEntryFlags;
-use super::{FrameAllocator, GuestPhysAddr, HostPhysAddr, HostVirtAddr};
+use super::{Frame, FrameAllocator, GuestPhysAddr, HostPhysAddr, HostVirtAddr};
 
 pub const GIANT_PAGE_SIZE: usize = 1 << 30;
 pub const HUGE_PAGE_SIZE: usize = 1 << 21;
@@ -360,12 +360,52 @@ impl<T> ExtendedPageTableMapper<T> {
     /// Returns the corresponding Extended Page Table Pointer (EPTP).
     ///
     /// See Intel manual volume 3 section 24.6.11.
-    pub fn get_ept_pointer(&self) -> u64 {
-        self.root_phys_addr.as_u64()
+    pub fn get_ept_pointer(&self) -> HostPhysAddr {
+        let memory_kind = 6 << 0; // write-back
+        let walk_length = 3 << 3; // walk length of 4
+
+        HostPhysAddr(self.root_phys_addr.0 | memory_kind | walk_length)
     }
 
     pub fn get_l4(&mut self) -> &mut ExtendedPageTable<L4> {
         // WARNING: notice that the lifetime is bound to `self`, this is crutial for safety!
         self.root
+    }
+}
+
+// ——————————————————————————————— EPTP List ———————————————————————————————— //
+
+/// An EPTP list, used by the EPTP Switching VM function.
+pub struct EptpList {
+    frame: Frame,
+}
+
+impl EptpList {
+    /// Creates a fresh EPTP List with zeroed entries.
+    pub fn new(allocator: &impl FrameAllocator) -> Option<Self> {
+        let mut frame = allocator.allocate_frame()?;
+        for entry in frame.as_array_page() {
+            *entry = 0;
+        }
+        Some(Self { frame })
+    }
+
+    /// Returns the address of the EPTP list.
+    pub fn get_ptr(&self) -> HostPhysAddr {
+        self.frame.phys_addr
+    }
+
+    /// Sets an entry of the EPTP list.
+    ///
+    /// SAFETY: the mapping must stay alive for at least as long as the entries is used (i.e. until
+    /// it is overriten or the EPTP is never used again).
+    pub unsafe fn set_entry<T>(&mut self, index: usize, mapper: &ExtendedPageTableMapper<T>) {
+        let eptp = mapper.get_ept_pointer();
+        self.frame.as_array_page()[index] = eptp.as_u64();
+    }
+
+    /// Deletes an entry from the EPTP list.
+    pub fn delete_entry(&mut self, index: usize) {
+        self.frame.as_array_page()[index] = 0;
     }
 }

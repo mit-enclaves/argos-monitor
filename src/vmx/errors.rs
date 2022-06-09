@@ -166,6 +166,7 @@ pub enum VmxFieldError {
     SecondaryControls,
     ExitControls,
     EntryControls,
+    VmFuncControls,
 
     // Other
     Unknown,
