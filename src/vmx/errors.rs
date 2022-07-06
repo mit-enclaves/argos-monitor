@@ -143,6 +143,13 @@ pub enum VmxFieldError {
     // Host
     HostCr0,
     HostCr4,
+    HostCsSelector,
+    HostDsSelector,
+    HostEsSelector,
+    HostFsSelector,
+    HostGsSelector,
+    HostSsSelector,
+    HostTrSelector,
 
     // Guest
     GuestCr0,
@@ -167,6 +174,10 @@ pub enum VmxFieldError {
     ExitControls,
     EntryControls,
     VmFuncControls,
+    VmExitMsrStoreAddr,
+    VmExitMsrLoadAddr,
+    VmEntryIntInfoField,
+    VmEntryMsrLoadAddr,
 
     // Other
     Unknown,

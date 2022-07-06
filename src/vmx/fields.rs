@@ -202,31 +202,31 @@ impl_field_for!(VmcsField32, Ctrl32);
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum Ctrl64 {
-    IoBitmapA         = 0x00002000,
-    IoBitmapB         = 0x00002002,
-    MsrBitmaps        = 0x00002004,
-    VmExitStoreAddr   = 0x00002006,
-    VmExitLoadAddr    = 0x00002008,
-    VmEntryLoadAddr   = 0x0000200A,
-    ExecVmcsPtr       = 0x0000200C,
-    PmlAddr           = 0x0000200E,
-    TscOffset         = 0x00002010,
-    VirtApicAddr      = 0x00002012,
-    ApicAccessAddr    = 0x00002014,
-    PostedIntDescAddr = 0x00002016,
-    VmFuncCtrls       = 0x00002018,
-    EptPtr            = 0x0000201A,
-    EoiExitBitmap0    = 0x0000201C,
-    EoiExitBitmap1    = 0x0000201E,
-    EoiExitBitmap2    = 0x00002020,
-    EoiExitBitmap3    = 0x00002022,
-    EptpListAddr      = 0x00002024,
-    VmreadBitmapAddr  = 0x00002026,
-    VmwriteBitmapAddr = 0x00002028,
-    VirtExceptInfAddr = 0x0000202A,
-    XssExitBitmap     = 0x0000202C,
-    EnclsExitBitmap   = 0x0000202E,
-    TscMultiplier     = 0x00002032,
+    IoBitmapA          = 0x00002000,
+    IoBitmapB          = 0x00002002,
+    MsrBitmaps         = 0x00002004,
+    VmExitMsrStoreAddr = 0x00002006,
+    VmExitMsrLoadAddr  = 0x00002008,
+    VmEntryMsrLoadAddr = 0x0000200A,
+    ExecVmcsPtr        = 0x0000200C,
+    PmlAddr            = 0x0000200E,
+    TscOffset          = 0x00002010,
+    VirtApicAddr       = 0x00002012,
+    ApicAccessAddr     = 0x00002014,
+    PostedIntDescAddr  = 0x00002016,
+    VmFuncCtrls        = 0x00002018,
+    EptPtr             = 0x0000201A,
+    EoiExitBitmap0     = 0x0000201C,
+    EoiExitBitmap1     = 0x0000201E,
+    EoiExitBitmap2     = 0x00002020,
+    EoiExitBitmap3     = 0x00002022,
+    EptpListAddr       = 0x00002024,
+    VmreadBitmapAddr   = 0x00002026,
+    VmwriteBitmapAddr  = 0x00002028,
+    VirtExceptInfAddr  = 0x0000202A,
+    XssExitBitmap      = 0x0000202C,
+    EnclsExitBitmap    = 0x0000202E,
+    TscMultiplier      = 0x00002032,
 }
 
 impl_field_for!(VmcsField64, Ctrl64);
@@ -259,7 +259,7 @@ pub enum HostState32 {
 
 impl_field_for!(VmcsField32, HostState32);
 
-/// VMCS fields encoding of 32 bits host state fields.
+/// VMCS fields encoding of 64 bits host state fields.
 #[rustfmt::skip]
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]

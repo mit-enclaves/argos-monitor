@@ -10,6 +10,7 @@ pub mod errors;
 pub mod fields;
 pub mod msr;
 pub mod raw;
+pub mod check;
 
 use core::arch::asm;
 use core::{arch, usize};
@@ -256,7 +257,7 @@ pub unsafe fn vmxon(allocator: &impl FrameAllocator) -> Result<(), VmxError> {
 
     // Allocate a VMXON region, at most the size of a frame.
     let mut frame = allocator
-        .allocate_frame()
+        .allocate_zeroed_frame()
         .expect("Failed to allocate VMXON region");
 
     // Initialize the VMXON region by copying the revision ID into the 4 first bytes of VMXON
@@ -297,7 +298,7 @@ impl VmcsRegion {
     pub unsafe fn new(allocator: &impl FrameAllocator) -> Result<Self, VmxError> {
         let vmcs_info = get_vmx_info();
         let mut frame = allocator
-            .allocate_frame()
+            .allocate_zeroed_frame()
             .expect("Failed to allocate VMXON region");
 
         // Initialize the VMCS region by copying the revision ID into the 4 first bytes of VMCS
@@ -449,201 +450,6 @@ impl VmcsRegion {
         Self::validate_flags_allowed(flags.bits(), allowed_vmfuncs.bits())
             .map_err(|err| err.set_field(VmxFieldError::VmFuncControls))?;
         unsafe { fields::Ctrl64::VmFuncCtrls.vmwrite(1) }
-    }
-
-    /// Check that the current VMCS is in a valid stat, such that VMLAUNCH or VMRESUME can
-    /// successfully complete.
-    ///
-    /// WARNING: the checks are not (yet) complete!
-    pub fn check(&self) -> Result<(), VmxError> {
-        // Validate host state
-        let host_cr0 = unsafe { fields::HostStateNat::Cr0.vmread()? } as usize;
-        Self::validate_cr0(host_cr0).map_err(|err| err.set_field(VmxFieldError::HostCr0))?;
-        let host_cr4 = unsafe { fields::HostStateNat::Cr4.vmread()? } as usize;
-        Self::validate_cr4(host_cr4).map_err(|err| err.set_field(VmxFieldError::HostCr4))?;
-
-        // validate guest state
-        //
-        // See manual section 26.3
-        let guest_cr0 = unsafe { fields::GuestStateNat::Cr0.vmread()? } as usize;
-        Self::validate_cr0(guest_cr0).map_err(|err| err.set_field(VmxFieldError::GuestCr0))?;
-        let guest_cr4 = unsafe { fields::GuestStateNat::Cr4.vmread()? } as usize;
-        Self::validate_cr4(guest_cr4).map_err(|err| err.set_field(VmxFieldError::GuestCr4))?;
-
-        // If CR0.PG == 1, then CR0.PE must be 1
-        if (guest_cr0 & (1 << 31)) != 0 {
-            if (guest_cr0 & 1) != 1 {
-                return Err(VmxError::Disallowed0(VmxFieldError::GuestCr0, 0));
-            }
-        }
-
-        let entry_cntrls = self.get_vm_entry_cntrls()?;
-        if entry_cntrls.contains(bitmaps::EntryControls::IA32E_MODE_GUEST) {
-            if guest_cr0 & (1 << 31) == 0 {
-                return Err(VmxError::Disallowed0(VmxFieldError::GuestCr0, 31));
-            }
-            if guest_cr4 & (1 << 5) == 0 {
-                return Err(VmxError::Disallowed0(VmxFieldError::GuestCr4, 5));
-            }
-        } else {
-            if guest_cr4 & (1 << 17) != 0 {
-                return Err(VmxError::Disallowed1(VmxFieldError::GuestCr4, 17));
-            }
-        }
-
-        let tr = unsafe { fields::GuestState16::TrSelector.vmread()? };
-        let ss = unsafe { fields::GuestState16::SsSelector.vmread()? };
-        let cs = unsafe { fields::GuestState16::CsSelector.vmread()? };
-        if tr & (1 << 2) != 0 {
-            return Err(VmxError::Disallowed1(VmxFieldError::GuestTrSelector, 2));
-        }
-        if (ss & 0b01) != (cs & 0b01) {
-            return Err(VmxError::MisconfiguredBit(
-                VmxFieldError::GuestSsSelector,
-                0,
-            ));
-        }
-        if (ss & 0b10) != (cs & 0b10) {
-            return Err(VmxError::MisconfiguredBit(
-                VmxFieldError::GuestSsSelector,
-                1,
-            ));
-        }
-
-        let cs_ar = unsafe { fields::GuestState32::CsAccessRights.vmread()? };
-        let ss_ar = unsafe { fields::GuestState32::SsAccessRights.vmread()? };
-        let ds_ar = unsafe { fields::GuestState32::DsAccessRights.vmread()? };
-        let es_ar = unsafe { fields::GuestState32::EsAccessRights.vmread()? };
-        let fs_ar = unsafe { fields::GuestState32::FsAccessRights.vmread()? };
-        let gs_ar = unsafe { fields::GuestState32::GsAccessRights.vmread()? };
-        let tr_ar = unsafe { fields::GuestState32::TrAccessRights.vmread()? };
-        let ldtr_ar = unsafe { fields::GuestState32::LdtrAccessRights.vmread()? };
-        let tr_limit = unsafe { fields::GuestState32::TrLimit.vmread()? };
-        let gdtr_limit = unsafe { fields::GuestState32::GdtrLimit.vmread()? };
-        let idtr_limit = unsafe { fields::GuestState32::IdtrLimit.vmread()? };
-        let rflags = unsafe { fields::GuestStateNat::Rflags.vmread()? };
-
-        let cs_type = cs_ar & 0b1111;
-        let ss_type = ss_ar & 0b1111;
-        const UNUSABLE_MASK: u32 = 1 << 16;
-        if cs_type != 9 && cs_type != 11 && cs_type != 13 && cs_type != 15 {
-            // We assume "unrestricted guest" is set to 0
-            return Err(VmxError::Misconfigured(VmxFieldError::GuestCsAccessRights));
-        }
-        if ss_ar & UNUSABLE_MASK == 0 && ss_type != 3 && ss_type != 7 {
-            return Err(VmxError::Misconfigured(VmxFieldError::GuestSsAccessRights));
-        }
-        let check_segment_ar = |ar: u32, field: VmxFieldError| {
-            if ar & UNUSABLE_MASK == 0 {
-                if ar & 0b1 != 1 {
-                    return Err(VmxError::Disallowed0(field, 0));
-                }
-                if (ar & 0b1000 != 0) && (ar & 0b0010 == 0) {
-                    return Err(VmxError::MisconfiguredBit(field, 1));
-                }
-            }
-            Ok(())
-        };
-        check_segment_ar(ds_ar, VmxFieldError::GuestDsAccessRights)?;
-        check_segment_ar(es_ar, VmxFieldError::GuestEsAccessRights)?;
-        check_segment_ar(fs_ar, VmxFieldError::GuestFsAccessRights)?;
-        check_segment_ar(gs_ar, VmxFieldError::GuestGsAccessRights)?;
-        if (cs_ar & UNUSABLE_MASK == 0) && (cs_ar & (1 << 4) == 0) {
-            return Err(VmxError::Disallowed0(VmxFieldError::GuestCsAccessRights, 4));
-        }
-        if (tr_ar & 0b1111) != 11 {
-            return Err(VmxError::Misconfigured(VmxFieldError::GuestTrAccessRights));
-        }
-        if (tr_ar & (1 << 4)) != 0 {
-            return Err(VmxError::Disallowed1(VmxFieldError::GuestTrAccessRights, 4));
-        }
-        if (tr_ar & (1 << 7)) == 0 {
-            return Err(VmxError::Disallowed0(VmxFieldError::GuestTrAccessRights, 7));
-        }
-        if (tr_ar & ((1 << 8) | (1 << 9) | (1 << 10) | (1 << 11))) != 0 {
-            return Err(VmxError::Misconfigured(VmxFieldError::GuestTrAccessRights));
-        }
-        if ((tr_limit & 0b111111111111) != 0b111111111111) && (tr_ar & (1 << 15) != 0) {
-            return Err(VmxError::MisconfiguredBit(
-                VmxFieldError::GuestTrAccessRights,
-                15,
-            ));
-        }
-        if ((tr_limit & 0b11111111111100000000000000000000) != 0) && (tr & (1 << 15) == 0) {
-            return Err(VmxError::MisconfiguredBit(
-                VmxFieldError::GuestTrAccessRights,
-                15,
-            ));
-        }
-        if (tr_ar & UNUSABLE_MASK) != 0 {
-            return Err(VmxError::Disallowed1(
-                VmxFieldError::GuestTrAccessRights,
-                16,
-            ));
-        }
-        if (tr_ar >> 16) != 0 {
-            return Err(VmxError::Misconfigured(VmxFieldError::GuestTrAccessRights));
-        }
-        if (ldtr_ar & UNUSABLE_MASK) == 0 {
-            todo!();
-        }
-        if (gdtr_limit >> 16) != 0 {
-            return Err(VmxError::Misconfigured(VmxFieldError::GuestGdtrLimit));
-        }
-        if (idtr_limit >> 16) != 0 {
-            return Err(VmxError::Misconfigured(VmxFieldError::GuestIdtrLimit));
-        }
-        if (rflags >> 22) != 0 {
-            return Err(VmxError::Misconfigured(VmxFieldError::GuestRflags));
-        }
-        if (rflags & (1 << 15)) != 0 {
-            return Err(VmxError::Disallowed1(VmxFieldError::GuestRflags, 15));
-        }
-        if (rflags & (1 << 5)) != 0 {
-            return Err(VmxError::Disallowed1(VmxFieldError::GuestRflags, 5));
-        }
-        if (rflags & (1 << 3)) != 0 {
-            return Err(VmxError::Disallowed1(VmxFieldError::GuestRflags, 3));
-        }
-
-        if (rflags & (1 << 1)) == 0 {
-            return Err(VmxError::Disallowed0(VmxFieldError::GuestRflags, 1));
-        }
-
-        Ok(())
-    }
-
-    /// Validates CR0 register.
-    fn validate_cr0(cr0: usize) -> Result<(), VmxError> {
-        let fixed_0 = unsafe { msr::VMX_CR0_FIXED0.read() } as usize;
-        let fixed_1 = unsafe { msr::VMX_CR0_FIXED1.read() } as usize;
-        Self::validate_cr(cr0, fixed_0, fixed_1)
-    }
-
-    /// Validates CR4 register.
-    fn validate_cr4(cr4: usize) -> Result<(), VmxError> {
-        let fixed_0 = unsafe { msr::VMX_CR4_FIXED0.read() } as usize;
-        let fixed_1 = unsafe { msr::VMX_CR4_FIXED1.read() } as usize;
-        Self::validate_cr(cr4, fixed_0, fixed_1)
-    }
-
-    /// Validates a control register (CR0 or CR4) against its valid state.
-    ///
-    /// See Intel Manual volume 3 annex A.7 & A.8.
-    fn validate_cr(cr: usize, fixed_0: usize, fixed_1: usize) -> Result<(), VmxError> {
-        let must_be_zero = fixed_0 & !cr;
-        if must_be_zero != 0 {
-            let idx = must_be_zero.trailing_zeros() as u8;
-            return Err(VmxError::Disallowed0(VmxFieldError::Unknown, idx));
-        }
-
-        let must_be_zero = (!fixed_1) & cr;
-        if must_be_zero != 0 {
-            let idx = must_be_zero.trailing_zeros() as u8;
-            return Err(VmxError::Disallowed1(VmxFieldError::Unknown, idx));
-        }
-
-        Ok(())
     }
 
     /// Saves the host state (control registers, segments...), so that they are restored on VM Exit.
@@ -994,38 +800,6 @@ mod test {
         assert_eq!(
             VmcsRegion::get_true_ctls(user_request, spec, true_spec, known),
             Err(VmxError::Disallowed0(VmxFieldError::Unknown, 0)),
-        );
-    }
-
-    /// See manual Annex A.7 & A.8
-    #[rustfmt::skip]
-    #[test_case]
-    fn validate_cr() {
-        // Testing valid combinations
-        let fixed_0: usize = 0b001_000;
-        let fixed_1: usize = 0b111_011;
-        let cr:      usize = 0b011_010;
-
-        assert_eq!(VmcsRegion::validate_cr(cr, fixed_0, fixed_1), Ok(()));
-
-        // testing disallowed one
-        let fixed_0: usize = 0b0_001;
-        let fixed_1: usize = 0b0_111;
-        let cr:      usize = 0b1_011;
-
-        assert_eq!(
-            VmcsRegion::validate_cr(cr, fixed_0, fixed_1),
-            Err(VmxError::Disallowed1(VmxFieldError::Unknown, 3))
-        );
-
-        // testing disallowed one
-        let fixed_0: usize = 0b1_01;
-        let fixed_1: usize = 0b1_11;
-        let cr:      usize = 0b0_11;
-
-        assert_eq!(
-            VmcsRegion::validate_cr(cr, fixed_0, fixed_1),
-            Err(VmxError::Disallowed0(VmxFieldError::Unknown, 2))
         );
     }
 }
