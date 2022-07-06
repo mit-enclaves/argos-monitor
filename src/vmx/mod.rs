@@ -49,34 +49,41 @@ macro_rules! addr_impl {
         pub struct $name(usize);
 
         impl $name {
+            #[inline]
             pub fn new(addr: usize) -> Self {
                 Self(addr)
             }
 
+            #[inline]
             pub fn as_usize(self) -> usize {
                 self.0
             }
 
+            #[inline]
             pub fn as_u64(self) -> u64 {
                 self.0 as u64
             }
 
             /// Returns this address' L4 index.
+            #[inline]
             pub fn l4_index(self) -> usize {
                 (self.0 >> 39) & PAGE_TABLE_INDEX_MASK
             }
 
             /// Returns this address' L3 index.
+            #[inline]
             pub fn l3_index(self) -> usize {
                 (self.0 >> 30) & PAGE_TABLE_INDEX_MASK
             }
 
             /// Returns this address' L2 index.
+            #[inline]
             pub fn l2_index(self) -> usize {
                 (self.0 >> 21) & PAGE_TABLE_INDEX_MASK
             }
 
             /// Returns this address' L1 index.
+            #[inline]
             pub fn l1_index(self) -> usize {
                 (self.0 >> 12) & PAGE_TABLE_INDEX_MASK
             }
@@ -116,11 +123,34 @@ impl Frame {
 
 /// A frame allocator, used to allocate frames for EPTs and VMX control structures.
 pub unsafe trait FrameAllocator {
-    /// Allocate a fresh frame.
+    /// Allocates a fresh frame.
+    ///
+    /// The frame is not initialized, i.e. there is no guarantee that the content is zeroed out.
+    /// To allocate zeroed frames, use `allocate_zeroed_frame`.
     ///
     /// SAFETY: the frame must be exclusively owned by the caller for the whole duration of VMX
     /// operations.
     fn allocate_frame(&self) -> Option<Frame>;
+
+    /// Allocates a fresh frame and zero out its content.
+    ///
+    /// SAFETY: the frame must be exclusively owned by the caller for the whole duration of VMX
+    /// operations.
+    fn allocate_zeroed_frame(&self) -> Option<Frame> {
+        let frame = self.allocate_frame()?;
+
+        // SAFETY: if the frame is allocated sucessfully, we have full ownership and the mapping is
+        // valid.
+        unsafe {
+            // Interpret the frame as an array of u64
+            let content = &mut *(frame.virt_addr as *mut [u64; 512]);
+            // Zero out the content
+            for bytes in content {
+                *bytes = 0;
+            }
+        }
+        Some(frame)
+    }
 }
 
 // ————————————————————————————— VMX Operations ————————————————————————————— //

@@ -158,20 +158,47 @@ fn setup_ept(
     let (start, end) = allocator
         .get_boundaries()
         .expect("Failed to retrieve memory boundaries");
+    let capabilities = vmx::ept_capabilities().map_err(|_| ())?;
 
     // Just common checks on the boundaries.
     assert!(start % 0x1000 == 0);
     assert!(end % 0x1000 == 0);
     assert!(start <= end);
-    for i in (0..end).step_by(0x1000) {
-        unsafe {
-            ept_mapper.map(
-                allocator,
-                vmx::GuestPhysAddr::new(i as usize),
-                vmx::HostPhysAddr::new(i as usize),
-                EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
-            )?
-        };
+
+    // Choose the mapping page sizes
+    if capabilities.contains(vmx::bitmaps::EptCapability::PAGE_1GB) {
+        for i in (0..end).step_by(1 << 30) {
+            unsafe {
+                ept_mapper.map_giant_page(
+                    allocator,
+                    vmx::GuestPhysAddr::new(i as usize),
+                    vmx::HostPhysAddr::new(i as usize),
+                    EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
+                )?
+            };
+        }
+    } else if capabilities.contains(vmx::bitmaps::EptCapability::PAGE_2MB) {
+        for i in (0..end).step_by(1 << 21) {
+            unsafe {
+                ept_mapper.map_huge_page(
+                    allocator,
+                    vmx::GuestPhysAddr::new(i as usize),
+                    vmx::HostPhysAddr::new(i as usize),
+                    EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
+                )?
+            };
+        }
+    } else {
+        for i in (0..end).step_by(1 << 12) {
+            unsafe {
+                ept_mapper.map(
+                    allocator,
+                    vmx::GuestPhysAddr::new(i as usize),
+                    vmx::HostPhysAddr::new(i as usize),
+                    EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
+                )?
+            };
+        }
     }
 
     Ok(ept_mapper)

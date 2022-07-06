@@ -8,6 +8,10 @@ use super::{Frame, FrameAllocator, GuestPhysAddr, HostPhysAddr, HostVirtAddr};
 pub const GIANT_PAGE_SIZE: usize = 1 << 30;
 pub const HUGE_PAGE_SIZE: usize = 1 << 21;
 pub const PAGE_SIZE: usize = 1 << 12;
+pub const PTE_FLAGS: EptEntryFlags = EptEntryFlags::READ
+    .union(EptEntryFlags::WRITE)
+    .union(EptEntryFlags::SUPERVISOR_EXECUTE)
+    .union(EptEntryFlags::USER_EXECUTE);
 
 // ————————————————— Host Physical to Host Virtual Mapping —————————————————— //
 
@@ -290,20 +294,26 @@ impl<Level> ExtendedPageTable<Level> {
 // ——————————————————————————— Page Table Mapper ———————————————————————————— //
 
 pub struct ExtendedPageTableMapper<T> {
+    root: EptRoot,
+    translator: HostAddressMapper<T>,
+}
+
+struct EptRoot {
     root: &'static mut ExtendedPageTable<L4>,
     root_phys_addr: HostPhysAddr,
-    translator: HostAddressMapper<T>,
 }
 
 impl<T: Mapper> ExtendedPageTableMapper<T> {
     pub fn new(allocator: &impl FrameAllocator, translator: HostAddressMapper<T>) -> Option<Self> {
-        let root_phys_addr = allocator.allocate_frame()?.phys_addr;
+        let root_phys_addr = allocator.allocate_zeroed_frame()?.phys_addr;
         // SAFETY: the root must **never** be exposed with static lifetime outside of this
         // implementation.
         let root = unsafe { translator.map(root_phys_addr) };
         Some(Self {
-            root,
-            root_phys_addr,
+            root: EptRoot {
+                root,
+                root_phys_addr,
+            },
             translator,
         })
     }
@@ -315,43 +325,38 @@ impl<T: Mapper> ExtendedPageTableMapper<T> {
         host_phys: HostPhysAddr,
         flags: EptEntryFlags,
     ) -> Result<(), ()> {
-        // TODO: figure out what flags to turn on during new frame allocation.
-
-        let pte_flags = EptEntryFlags::READ
-            | EptEntryFlags::WRITE
-            | EptEntryFlags::SUPERVISOR_EXECUTE
-            | EptEntryFlags::USER_EXECUTE;
-        let entry = self.root.get_mut(guest_phys.l4_index());
-        let l3 = match entry.deref_mut(&self.translator) {
-            L3RefMut::L3(l3) => l3,
-            L3RefMut::NonPresent => {
-                let phys_addr = allocator.allocate_frame().ok_or(())?.phys_addr;
-                entry.set(phys_addr, pte_flags);
-                self.translator.map(phys_addr)
-            }
-        };
-        let entry = l3.get_mut(guest_phys.l3_index());
-        let l2 = match entry.deref_mut(&self.translator) {
-            L2RefMut::L2(l2) => l2,
-            L2RefMut::NonPresent => {
-                let phys_addr = allocator.allocate_frame().ok_or(())?.phys_addr;
-                entry.set(phys_addr, pte_flags);
-                self.translator.map(phys_addr)
-            }
-            L2RefMut::GiantPage(_) => return Err(()),
-        };
-        let entry = l2.get_mut(guest_phys.l2_index());
-        let l1 = match entry.deref_mut(&self.translator) {
-            L1RefMut::L1(l1) => l1,
-            L1RefMut::NonPresent => {
-                let phys_addr = allocator.allocate_frame().ok_or(())?.phys_addr;
-                entry.set(phys_addr, pte_flags);
-                self.translator.map(phys_addr)
-            }
-            L1RefMut::HugePage(_) => return Err(()),
-        };
-        let entry = l1.get_mut(guest_phys.l1_index());
+        let entry = self
+            .root
+            .get_l1_entry(allocator, guest_phys, PTE_FLAGS, &self.translator)?;
         entry.set(host_phys, flags);
+        Ok(())
+    }
+
+    pub unsafe fn map_huge_page(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        guest_phys: GuestPhysAddr,
+        host_phys: HostPhysAddr,
+        flags: EptEntryFlags,
+    ) -> Result<(), ()> {
+        let entry = self
+            .root
+            .get_l2_entry(allocator, guest_phys, PTE_FLAGS, &self.translator)?;
+        entry.set(host_phys, flags | EptEntryFlags::PAGE);
+        Ok(())
+    }
+
+    pub unsafe fn map_giant_page(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        guest_phys: GuestPhysAddr,
+        host_phys: HostPhysAddr,
+        flags: EptEntryFlags,
+    ) -> Result<(), ()> {
+        let entry = self
+            .root
+            .get_l3_entry(allocator, guest_phys, PTE_FLAGS, &self.translator)?;
+        entry.set(host_phys, flags | EptEntryFlags::PAGE);
         Ok(())
     }
 }
@@ -364,12 +369,79 @@ impl<T> ExtendedPageTableMapper<T> {
         let memory_kind = 6 << 0; // write-back
         let walk_length = 3 << 3; // walk length of 4
 
-        HostPhysAddr(self.root_phys_addr.0 | memory_kind | walk_length)
+        HostPhysAddr(self.root.root_phys_addr.0 | memory_kind | walk_length)
     }
 
     pub fn get_l4(&mut self) -> &mut ExtendedPageTable<L4> {
         // WARNING: notice that the lifetime is bound to `self`, this is crutial for safety!
-        self.root
+        self.root.root
+    }
+}
+
+impl EptRoot {
+    /// Returns the L3 entry corresponding to the 1Gb area starting at the given guest physical
+    /// address.
+    unsafe fn get_l3_entry<T: Mapper>(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        guest_phys: GuestPhysAddr,
+        pte_flags: EptEntryFlags,
+        translator: &HostAddressMapper<T>,
+    ) -> Result<&mut Entry<L3>, ()> {
+        let entry = self.root.get_mut(guest_phys.l4_index());
+        if let L3RefMut::NonPresent = entry.deref_mut(translator) {
+            let phys_addr = allocator.allocate_zeroed_frame().ok_or(())?.phys_addr;
+            entry.set(phys_addr, pte_flags);
+        }
+
+        match entry.deref_mut(translator) {
+            L3RefMut::L3(l3) => Ok(l3.get_mut(guest_phys.l3_index())),
+            L3RefMut::NonPresent => Err(()), // Should never happen
+        }
+    }
+
+    /// Returns the L2 entry corresponding to the 2Mb area starting at the given guest physical
+    /// address.
+    unsafe fn get_l2_entry<T: Mapper>(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        guest_phys: GuestPhysAddr,
+        pte_flags: EptEntryFlags,
+        translator: &HostAddressMapper<T>,
+    ) -> Result<&mut Entry<L2>, ()> {
+        let entry = self.get_l3_entry(allocator, guest_phys, pte_flags, translator)?;
+        if let L2RefMut::NonPresent = entry.deref_mut(translator) {
+            let phys_addr = allocator.allocate_zeroed_frame().ok_or(())?.phys_addr;
+            entry.set(phys_addr, pte_flags);
+        }
+
+        match entry.deref_mut(translator) {
+            L2RefMut::L2(l2) => Ok(l2.get_mut(guest_phys.l2_index())),
+            L2RefMut::NonPresent => Err(()),
+            L2RefMut::GiantPage(_) => Err(()),
+        }
+    }
+
+    /// Returns the L1 entry corresponding to the 4Kb area starting at the given guest physical
+    /// address.
+    unsafe fn get_l1_entry<T: Mapper>(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        guest_phys: GuestPhysAddr,
+        pte_flags: EptEntryFlags,
+        translator: &HostAddressMapper<T>,
+    ) -> Result<&mut Entry<L1>, ()> {
+        let entry = self.get_l2_entry(allocator, guest_phys, pte_flags, translator)?;
+        if let L1RefMut::NonPresent = entry.deref_mut(translator) {
+            let phys_addr = allocator.allocate_zeroed_frame().ok_or(())?.phys_addr;
+            entry.set(phys_addr, pte_flags);
+        }
+
+        match entry.deref_mut(translator) {
+            L1RefMut::L1(l1) => Ok(l1.get_mut(guest_phys.l1_index())),
+            L1RefMut::NonPresent => Err(()),
+            L1RefMut::HugePage(_) => Err(()),
+        }
     }
 }
 
@@ -383,10 +455,7 @@ pub struct EptpList {
 impl EptpList {
     /// Creates a fresh EPTP List with zeroed entries.
     pub fn new(allocator: &impl FrameAllocator) -> Option<Self> {
-        let mut frame = allocator.allocate_frame()?;
-        for entry in frame.as_array_page() {
-            *entry = 0;
-        }
+        let frame = allocator.allocate_zeroed_frame()?;
         Some(Self { frame })
     }
 
