@@ -7,9 +7,9 @@ use spin::Mutex;
 use x86_64::instructions::interrupts::without_interrupts;
 
 /// Additional vertical space between lines
-const LINE_SPACING: usize = 2;
+const LINE_SPACING: usize = 1;
 /// Zoom to make text big enough on screens with high pixel density
-const ZOOM_FACTOR: usize = 2;
+const ZOOM_FACTOR: usize = 1;
 
 /// The global writer, must be initialized with a frame buffer, otherwise writes are ignored.
 pub static WRITER: Mutex<Option<Writer>> = Mutex::new(None);

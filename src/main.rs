@@ -93,6 +93,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             .and_then(|_| vmcs.save_host_state())
             .and_then(|_| setup_guest(&mut vmcs.vcpu));
         println!("Config: {:?}", err);
+        println!("MSRs:   {:?}", configure_msr());
 
         let switching = vmx::available_vmfuncs().is_ok();
         println!(
@@ -112,19 +113,19 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         if switching {
             let ept_mapper2 =
                 setup_ept(physical_memory_offset, &vma_allocator).expect("Failed to setup EPT 2");
-            println!("EPT2: {:?}", vmcs.set_ept_ptr(&ept_mapper2));
+            println!("EPT2:   {:?}", vmcs.set_ept_ptr(&ept_mapper2));
             let mut eptp_list =
                 ept::EptpList::new(&vma_allocator).expect("Failed to allocate EPTP list");
             eptp_list.set_entry(0, &ept_mapper);
             eptp_list.set_entry(0, &ept_mapper2);
-            println!("EPTP list: {:?}", vmcs.set_eptp_list(&eptp_list));
+            println!("EPTP L: {:?}", vmcs.set_eptp_list(&eptp_list));
             println!(
                 "Enable vmfunc: {:?}",
                 vmcs.set_vmfunc_ctrls(VmFuncControls::EPTP_SWITCHING)
             );
         }
 
-        println!("Check:  {:?}", vmcs.check());
+        println!("Check:  {:?}", vmx::check::check());
         println!("Launch: {:?}", launch_guest(&mut vmcs, switching));
         println!("Info:   {:?}", vmcs.vcpu.interrupt_info());
         println!(
@@ -341,8 +342,18 @@ fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
     vcpu.set32(fields::GuestState32::ActivityState, 0)?;
     vcpu.set64(fields::GuestState64::VmcsLinkPtr, u64::max_value())?;
     vcpu.set16(fields::GuestState16::InterruptStatus, 0)?;
-    vcpu.set16(fields::GuestState16::PmlIndex, 0)?;
+    // vcpu.set16(fields::GuestState16::PmlIndex, 0)?; // <- Not supported on dev server
     vcpu.set32(fields::GuestState32::VmxPreemptionTimerValue, 0)?;
+
+    Ok(())
+}
+
+fn configure_msr() -> Result<(), vmx::VmxError> {
+    unsafe {
+        fields::Ctrl32::VmExitMsrLoadCount.vmwrite(0)?;
+        fields::Ctrl32::VmExitMsrStoreCount.vmwrite(0)?;
+        fields::Ctrl32::VmEntryMsrLoadCount.vmwrite(0)?;
+    }
 
     Ok(())
 }
