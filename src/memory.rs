@@ -81,10 +81,19 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
 // [1]: https://os.phil-opp.com/paging-implementation/                        //
 // —————————————————————————————————————————————————————————————————————————— //
 
+/// A range of physical memory.
+pub struct PhysRange {
+    /// Start of the physical range (inclusive).
+    pub start: PhysAddr,
+    /// End of the physical range (exclusive).
+    pub end: PhysAddr,
+}
+
 /// A FrameAllocator that returns usable frames from the bootloader's memory map.
 pub struct BootInfoFrameAllocator {
     memory_map: &'static [MemoryRegion],
-    next: usize,
+    region_idx: usize,
+    next_frame: u64,
 }
 
 impl BootInfoFrameAllocator {
@@ -94,34 +103,84 @@ impl BootInfoFrameAllocator {
     /// memory map is valid. The main requirement is that all frames that are marked
     /// as `USABLE` in it are really unused.
     pub unsafe fn init(memory_map: &'static [MemoryRegion]) -> Self {
-        BootInfoFrameAllocator {
+        let region_idx = 0;
+        let next_frame = memory_map[region_idx].start;
+        let mut allocator = BootInfoFrameAllocator {
             memory_map,
-            next: 0,
+            next_frame,
+            region_idx,
+        };
+
+        // If first region is not usable, we need to move to the next usable one
+        if allocator.memory_map[allocator.region_idx].kind != MemoryRegionKind::Usable {
+            allocator
+                .goto_next_region()
+                .expect("No usable memory region");
+        }
+        allocator
+    }
+
+    /// Allocates a single frame.
+    pub fn allocate_frame(&mut self) -> Option<PhysFrame> {
+        let region = self.memory_map[self.region_idx];
+        if self.next_frame >= region.end {
+            if self.goto_next_region().is_ok() {
+                // Retry allocation
+                self.allocate_frame()
+            } else {
+                // All the memory is exhausted
+                None
+            }
+        } else {
+            let frame = PhysFrame::containing_address(PhysAddr::new(self.next_frame));
+            self.next_frame += PAGE_SIZE as u64;
+            Some(frame)
         }
     }
 
-    /// Returns an iterator over the usable frames specified in the memory map.
-    fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {
-        // get usable regions from memory map
-        let regions = self.memory_map.iter();
-        let usable_regions = regions.filter(|r| r.kind == MemoryRegionKind::Usable);
-        // map each region to its address range
-        let addr_ranges = usable_regions.map(|r| r.start..r.end);
-        // transform to an iterator of frame start addresses
-        let frame_addresses = addr_ranges.flat_map(|r| r.step_by(4096));
-        // create `PhysFrame` types from the start addresses
-        frame_addresses.map(|addr| PhysFrame::containing_address(PhysAddr::new(addr)))
+    /// Allocates a range of physical memory
+    pub fn allocate_range(&mut self, size: u64) -> Option<PhysRange> {
+        let region = self.memory_map[self.region_idx];
+        if self.next_frame + size > region.end {
+            if self.goto_next_region().is_ok() {
+                // Retry allocation
+                self.allocate_range(size)
+            } else {
+                // All the memory is exhausted
+                None
+            }
+        } else {
+            let start = PhysAddr::new(self.next_frame);
+            let end = PhysAddr::new(self.next_frame + size);
+            let nb_pages = bytes_to_pages(size as usize);
+            self.next_frame = self.next_frame + (nb_pages * PAGE_SIZE) as u64;
+            Some(PhysRange { start, end })
+        }
     }
 
-    fn allocate_frame(&mut self) -> Option<PhysFrame> {
-        let frame = self.usable_frames().nth(self.next);
-        self.next += 1;
-        frame
+    /// Move the cursor to the next memory region
+    fn goto_next_region(&mut self) -> Result<(), ()> {
+        while self.region_idx + 1 < self.memory_map.len() {
+            self.region_idx += 1;
+
+            // Check if usable
+            if self.memory_map[self.region_idx].kind == MemoryRegionKind::Usable {
+                self.next_frame = self.memory_map[self.region_idx].start;
+                return Ok(());
+            }
+        }
+
+        // All the memory is exhausted
+        self.next_frame = self.memory_map[self.region_idx].end;
+        Err(())
     }
 
-    pub fn get_boundaries(&self) -> (Option<PhysFrame>, Option<PhysFrame>) {
-        let mut frames = self.usable_frames();
-        (frames.nth(0), frames.last())
+    pub fn get_boundaries(&self) -> PhysRange {
+        let first_region = self.memory_map[0];
+        let last_region = self.memory_map[self.memory_map.len() - 1];
+        let start = PhysAddr::new(first_region.start);
+        let end = PhysAddr::new(last_region.end);
+        PhysRange { start, end }
     }
 }
 
@@ -199,12 +258,6 @@ pub struct VirtualMemoryArea {
 }
 
 impl VirtualMemoryArea {
-    /// Returns the number of pages to add in order to grow by at least `n` bytes.
-    fn bytes_to_pages(n: usize) -> usize {
-        let page_aligned = (n + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
-        page_aligned / PAGE_SIZE
-    }
-
     /// Set the given flags for all pages of the virtual memory area.
     ///
     /// WARNING: future accesses to the VMA might cause an exception if the appropriate flags are
@@ -336,7 +389,7 @@ impl VirtualMemoryAreaAllocator {
 
     // TODO: Free allocated pages on failure.
     pub fn with_capacity(&self, capacity: usize) -> Result<VirtualMemoryArea, ()> {
-        let nb_pages = VirtualMemoryArea::bytes_to_pages(capacity);
+        let nb_pages = bytes_to_pages(capacity);
         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
         let mut inner = self.0.lock();
         let inner = inner.deref_mut();
@@ -368,28 +421,33 @@ impl VirtualMemoryAreaAllocator {
     /// Returns the memory boundaries.
     // TODO: make this more efficient when refactoring the allocator.
     pub fn get_boundaries(&self) -> Option<(u64, u64)> {
-        let mut inner  = self.0.lock();
+        let mut inner = self.0.lock();
         let inner = inner.deref_mut();
-        let frames = inner.frame_allocator.get_boundaries();
-        match frames {
-            (Some(first), Some(last)) => Some((first.start_address().as_u64(), last.start_address().as_u64())),
-            _ => None,
-        }
+        let range = inner.frame_allocator.get_boundaries();
+        Some((range.start.as_u64(), range.end.as_u64()))
     }
 }
+
+// ———————————————————————————— Helper Functions ———————————————————————————— //
+
+/// Returns the number of pages to add in order to grow by at least `n` bytes.
+fn bytes_to_pages(n: usize) -> usize {
+    let page_aligned = (n + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+    page_aligned / PAGE_SIZE
+}
+
+// ————————————————————————————————— Tests —————————————————————————————————— //
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    type VMA = VirtualMemoryArea;
-
     #[test_case]
     fn bytes_to_pages() {
-        assert_eq!(VMA::bytes_to_pages(0), 0);
-        assert_eq!(VMA::bytes_to_pages(1), 1);
-        assert_eq!(VMA::bytes_to_pages(PAGE_SIZE - 1), 1);
-        assert_eq!(VMA::bytes_to_pages(PAGE_SIZE), 1);
-        assert_eq!(VMA::bytes_to_pages(PAGE_SIZE + 1), 2);
+        assert_eq!(super::bytes_to_pages(0), 0);
+        assert_eq!(super::bytes_to_pages(1), 1);
+        assert_eq!(super::bytes_to_pages(PAGE_SIZE - 1), 1);
+        assert_eq!(super::bytes_to_pages(PAGE_SIZE), 1);
+        assert_eq!(super::bytes_to_pages(PAGE_SIZE + 1), 2);
     }
 }
