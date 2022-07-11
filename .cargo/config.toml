@@ -10,7 +10,10 @@ runner = "cargo run --package boot_toolchain --"
 
 [alias]
 kbuild = "build --target x86_64-kernel.json -Zbuild-std=core,alloc -Zbuild-std-features=compiler-builtins-mem"
+kbuild-release = "build --target x86_64-kernel.json -Zbuild-std=core,alloc -Zbuild-std-features=compiler-builtins-mem --release"
 kcheck = "check --target x86_64-kernel.json -Zbuild-std=core,alloc -Zbuild-std-features=compiler-builtins-mem"
 kimage = "run --target x86_64-kernel.json -Zbuild-std=core,alloc -Zbuild-std-features=compiler-builtins-mem --features=vga -- --no-run"
+kimage-release = "run --target x86_64-kernel.json -Zbuild-std=core,alloc -Zbuild-std-features=compiler-builtins-mem --features=vga --release -- --no-run"
 krun = "run --target x86_64-kernel.json -Zbuild-std=core,alloc -Zbuild-std-features=compiler-builtins-mem"
+krun-release = "run --target x86_64-kernel.json -Zbuild-std=core,alloc -Zbuild-std-features=compiler-builtins-mem --release"
 ktest = "test --target x86_64-kernel.json -Zbuild-std=core,alloc -Zbuild-std-features=compiler-builtins-mem"

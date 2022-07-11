@@ -117,7 +117,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             let mut eptp_list =
                 ept::EptpList::new(&vma_allocator).expect("Failed to allocate EPTP list");
             eptp_list.set_entry(0, &ept_mapper);
-            eptp_list.set_entry(0, &ept_mapper2);
+            eptp_list.set_entry(1, &ept_mapper2);
             println!("EPTP L: {:?}", vmcs.set_eptp_list(&eptp_list));
             println!(
                 "Enable vmfunc: {:?}",
