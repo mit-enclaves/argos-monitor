@@ -168,38 +168,35 @@ fn setup_ept(
 
     // Choose the mapping page sizes
     if capabilities.contains(vmx::bitmaps::EptCapability::PAGE_1GB) {
-        for i in (0..end).step_by(1 << 30) {
-            unsafe {
-                ept_mapper.map_giant_page(
-                    allocator,
-                    vmx::GuestPhysAddr::new(i as usize),
-                    vmx::HostPhysAddr::new(i as usize),
-                    EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
-                )?
-            };
-        }
+        unsafe {
+            ept_mapper.map_range_giant_page(
+                allocator,
+                vmx::GuestPhysAddr::new(0),
+                vmx::HostPhysAddr::new(0),
+                end as usize,
+                EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
+            )?
+        };
     } else if capabilities.contains(vmx::bitmaps::EptCapability::PAGE_2MB) {
-        for i in (0..end).step_by(1 << 21) {
-            unsafe {
-                ept_mapper.map_huge_page(
-                    allocator,
-                    vmx::GuestPhysAddr::new(i as usize),
-                    vmx::HostPhysAddr::new(i as usize),
-                    EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
-                )?
-            };
-        }
+        unsafe {
+            ept_mapper.map_range_huge_page(
+                allocator,
+                vmx::GuestPhysAddr::new(0),
+                vmx::HostPhysAddr::new(0),
+                end as usize,
+                EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
+            )?
+        };
     } else {
-        for i in (0..end).step_by(1 << 12) {
-            unsafe {
-                ept_mapper.map(
-                    allocator,
-                    vmx::GuestPhysAddr::new(i as usize),
-                    vmx::HostPhysAddr::new(i as usize),
-                    EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
-                )?
-            };
-        }
+        unsafe {
+            ept_mapper.map_range(
+                allocator,
+                vmx::GuestPhysAddr::new(0),
+                vmx::HostPhysAddr::new(0),
+                end as usize,
+                EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
+            )?
+        };
     }
 
     Ok(ept_mapper)

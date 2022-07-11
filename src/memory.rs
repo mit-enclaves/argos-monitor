@@ -89,6 +89,12 @@ pub struct PhysRange {
     pub end: PhysAddr,
 }
 
+impl PhysRange {
+    pub fn size(&self) -> usize {
+        (self.start.as_u64() - self.end.as_u64()) as usize
+    }
+}
+
 /// A FrameAllocator that returns usable frames from the bootloader's memory map.
 pub struct BootInfoFrameAllocator {
     memory_map: &'static [MemoryRegion],

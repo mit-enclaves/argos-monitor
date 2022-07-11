@@ -318,6 +318,63 @@ impl<T: Mapper> ExtendedPageTableMapper<T> {
         })
     }
 
+    pub unsafe fn map_range(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        guest_phys: GuestPhysAddr,
+        host_phys: HostPhysAddr,
+        size: usize,
+        flags: EptEntryFlags,
+    ) -> Result<(), ()> {
+        let mut host_phys = host_phys;
+        let mut guest_phys = guest_phys;
+        let host_end = host_phys.as_usize() + size;
+        while host_phys.as_usize() < host_end {
+            self.map(allocator, guest_phys, host_phys, flags)?;
+            host_phys = HostPhysAddr::new(host_phys.as_usize() + PAGE_SIZE);
+            guest_phys = GuestPhysAddr::new(guest_phys.as_usize() + PAGE_SIZE);
+        }
+        Ok(())
+    }
+
+    pub unsafe fn map_range_huge_page(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        guest_phys: GuestPhysAddr,
+        host_phys: HostPhysAddr,
+        size: usize,
+        flags: EptEntryFlags,
+    ) -> Result<(), ()> {
+        let mut host_phys = host_phys;
+        let mut guest_phys = guest_phys;
+        let host_end = host_phys.as_usize() + size;
+        while host_phys.as_usize() < host_end {
+            self.map_huge_page(allocator, guest_phys, host_phys, flags)?;
+            host_phys = HostPhysAddr::new(host_phys.as_usize() + HUGE_PAGE_SIZE);
+            guest_phys = GuestPhysAddr::new(guest_phys.as_usize() + HUGE_PAGE_SIZE);
+        }
+        Ok(())
+    }
+
+    pub unsafe fn map_range_giant_page(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        guest_phys: GuestPhysAddr,
+        host_phys: HostPhysAddr,
+        size: usize,
+        flags: EptEntryFlags,
+    ) -> Result<(), ()> {
+        let mut host_phys = host_phys;
+        let mut guest_phys = guest_phys;
+        let host_end = host_phys.as_usize() + size;
+        while host_phys.as_usize() < host_end {
+            self.map_giant_page(allocator, guest_phys, host_phys, flags)?;
+            host_phys = HostPhysAddr::new(host_phys.as_usize() + GIANT_PAGE_SIZE);
+            guest_phys = GuestPhysAddr::new(guest_phys.as_usize() + GIANT_PAGE_SIZE);
+        }
+        Ok(())
+    }
+
     pub unsafe fn map(
         &mut self,
         allocator: &impl FrameAllocator,
