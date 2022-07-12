@@ -346,6 +346,11 @@ impl VirtualMemoryAreaAllocator {
     fn lock(&self) -> MutexGuard<LockedVirtualMemoryAreaAllocator> {
         self.0.lock()
     }
+
+    pub fn allocate_range(&mut self, size: u64) -> Option<PhysRange> {
+        let mut inner = self.lock();
+        inner.frame_allocator.allocate_range(size)
+    }
 }
 
 impl Clone for VirtualMemoryAreaAllocator {
