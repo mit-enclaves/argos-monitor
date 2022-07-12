@@ -5,12 +5,12 @@
 //! [x86]: https://hermitcore.github.io/libhermit-rs/x86/bits64/vmx/index.html
 
 pub mod bitmaps;
+pub mod check;
 pub mod ept;
 pub mod errors;
 pub mod fields;
 pub mod msr;
 pub mod raw;
-pub mod check;
 
 use core::arch::asm;
 use core::{arch, usize};
@@ -46,7 +46,7 @@ const PAGE_TABLE_INDEX_MASK: usize = 0b111111111;
 macro_rules! addr_impl {
     ($name:ident) => {
         #[repr(transparent)]
-        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
         pub struct $name(usize);
 
         impl $name {

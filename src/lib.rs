@@ -23,6 +23,7 @@ pub mod print;
 pub mod qemu;
 pub mod serial;
 pub mod vmx;
+pub mod mmu;
 
 #[cfg(feature = "vga")]
 pub mod vga;
