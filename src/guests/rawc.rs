@@ -1,6 +1,7 @@
 use crate::guests::GuestBytes;
 
 pub const RAWC: GuestBytes = GuestBytes {
-    start: 0x1000,
+    start: 0x401000,
+    offset: 0x1000,
     bytes: include_bytes!("../../guest/rawc"),
 };

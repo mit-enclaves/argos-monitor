@@ -8,6 +8,7 @@ use core::arch::asm;
 use core::panic::PanicInfo;
 
 use kernel::memory::VirtualMemoryAreaAllocator;
+use kernel::print;
 use kernel::println;
 use kernel::qemu;
 use kernel::vmx;
@@ -17,12 +18,16 @@ use kernel::vmx::bitmaps::{
 };
 use kernel::vmx::ept;
 use kernel::vmx::fields;
+use kernel::vmx::FrameAllocator;
 
 use bootloader::{entry_point, BootInfo};
 use kernel::vmx::fields::traits::*;
 use x86_64::registers::control::{Cr0, Cr0Flags};
 use x86_64::registers::model_specific::Efer;
 use x86_64::VirtAddr;
+
+use kernel::gdt;
+use kernel::guests::rawc;
 
 entry_point!(kernel_main);
 
@@ -55,6 +60,12 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             .expect("Failed to initialize memory")
     };
 
+    if true {
+        unsafe {
+            create_rawc(physical_memory_offset.as_u64(), &vma_allocator);
+        }
+        kernel::qemu::exit(kernel::qemu::ExitCode::Success);
+    }
     // Start doing VMX things
     unsafe {
         initialize_cpu();
@@ -387,6 +398,157 @@ unsafe fn guest_code() {
     asm!("nop", "nop", "nop", "nop", "nop", "nop");
     println!("Hello from guest!");
     asm!("nop", "nop", "nop", "nop", "nop", "nop", "vmcall",);
+}
+
+unsafe fn create_rawc(virtoffset: u64, allocator: &VirtualMemoryAreaAllocator) {
+    // Strategy:
+    // 1. Allocate the page tables.
+    // We should be able to map the same physaddr in the EPT.
+    // We allocate 2GB of space to host the program.
+    //
+    // 2. Copy the program rawc at the aligned address.
+    // TODO we will need to give it a stack pointer (the end of the 2GB?);
+    //
+    // 3. Generate the EPTs with hpa == gpa.
+
+    // 1. Page tables
+    let mut pml4 = allocator
+        .allocate_zeroed_frame()
+        .expect("Unable to allocate the page tables");
+    let root = pml4.as_array_page();
+    let mut pl3 = allocator
+        .allocate_zeroed_frame()
+        .expect("Unable to allocate first entry");
+    root[0] = pl3.phys_addr.as_u64() | 0x7;
+
+    // 2. Allocate 2GB so that we can find a 1Gb aligned address;
+    let gb = 1 << 30;
+    let backed = allocator
+        .allocate_range(2 * gb)
+        .expect("Unable to allocate 2GB");
+    let aligned = backed.start.as_u64() / gb + gb;
+    assert!(aligned % gb == 0 && aligned > backed.start.as_u64() && aligned < backed.end.as_u64());
+    let pde = pl3.as_array_page();
+    pde[0] = aligned | 0x7 | (1 << 7);
+
+    // Copying the program.
+    let offset_aligned = aligned - backed.start.as_u64();
+    let addr = backed.start.as_u64() + virtoffset + offset_aligned;
+    let start = rawc::RAWC.offset as usize;
+    if start >= rawc::RAWC.bytes.len() {
+        panic!("The offset is too big");
+    }
+    let target = core::slice::from_raw_parts_mut(
+        (addr + rawc::RAWC.start) as *mut u8,
+        rawc::RAWC.bytes.len() - start,
+    );
+    target.copy_from_slice(&rawc::RAWC.bytes[start..]);
+
+    // 3. Initialize the vcpu;
+    initialize_cpu();
+    println!("VMX:    {:?}", vmx::vmx_available());
+    println!("EPT:    {:?}", vmx::ept_capabilities());
+    println!("VMFunc: {:?}", vmx::available_vmfuncs());
+    println!("VMXON:  {:?}", vmx::vmxon(allocator));
+
+    let mut vmcs = match vmx::VmcsRegion::new(allocator) {
+        Err(err) => {
+            println!("VMCS:   Err({:?})", err);
+            qemu::exit(qemu::ExitCode::Failure);
+        }
+        Ok(vmcs) => {
+            println!("VMCS:   Ok(())");
+            vmcs
+        }
+    };
+
+    println!("LOAD:   {:?}", vmcs.set_as_active());
+    let err = vmcs
+        .set_pin_based_ctrls(PinbasedControls::empty())
+        .and_then(|_| {
+            vmcs.set_vm_exit_ctrls(
+                ExitControls::HOST_ADDRESS_SPACE_SIZE
+                    | ExitControls::LOAD_IA32_EFER
+                    | ExitControls::SAVE_IA32_EFER,
+            )
+        })
+        .and_then(|_| {
+            vmcs.set_vm_entry_ctrls(EntryControls::IA32E_MODE_GUEST | EntryControls::LOAD_IA32_EFER)
+        })
+        .and_then(|_| vmcs.set_exception_bitmap(ExceptionBitmap::empty()))
+        .and_then(|_| vmcs.save_host_state())
+        .and_then(|_| setup_guest(&mut vmcs.vcpu));
+    println!("Config: {:?}", err);
+    println!("MSRs:   {:?}", configure_msr());
+    println!(
+        "1'Ctrl: {:?}",
+        vmcs.set_primary_ctrls(PrimaryControls::SECONDARY_CONTROLS)
+    );
+    let secondary_ctrls = SecondaryControls::ENABLE_RDTSCP | SecondaryControls::ENABLE_EPT;
+    println!("2'Ctrl: {:?}", vmcs.set_secondary_ctrls(secondary_ctrls));
+
+    // Translate physical address on host to virtual address on host.
+
+    let translator = move |addr: vmx::HostPhysAddr| {
+        vmx::HostVirtAddr::new(virtoffset as usize + addr.as_usize())
+    };
+    let host_address_translator = ept::HostAddressMapper::new(translator);
+    let mut ept_mapper = ept::ExtendedPageTableMapper::new(allocator, host_address_translator)
+        .expect("Failed to build EPT mapper");
+
+    // Let's map stuff
+    ept_mapper
+        .map_range(
+            allocator,
+            vmx::GuestPhysAddr::new(pml4.phys_addr.as_usize()),
+            pml4.phys_addr,
+            0x1000,
+            EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
+        )
+        .expect("Failed pml4");
+    ept_mapper
+        .map_range(
+            allocator,
+            vmx::GuestPhysAddr::new(pl3.phys_addr.as_usize()),
+            pl3.phys_addr,
+            0x1000,
+            EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
+        )
+        .expect("Failed pl3");
+    ept_mapper
+        .map_range(
+            allocator,
+            vmx::GuestPhysAddr::new(backed.start.as_u64() as usize),
+            vmx::HostPhysAddr::new(backed.start.as_u64() as usize),
+            backed.size(),
+            EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
+        )
+        .expect("Failed to map backed");
+    println!("EPTP:   {:?}", vmcs.set_ept_ptr(&ept_mapper));
+    println!("Check:  {:?}", vmx::check::check());
+    //let entry_point = addr + 0x4;
+    let entry_point = rawc::RAWC.start + 0x4;
+    vmcs.vcpu
+        .set_nat(fields::GuestStateNat::Rip, entry_point as usize)
+        .ok();
+    vmcs.vcpu
+        .set_nat(fields::GuestStateNat::Cr3, pml4.phys_addr.as_usize());
+    // Zero out the gdt and idt
+    vmcs.vcpu.set_nat(fields::GuestStateNat::GdtrBase, 0x0).ok();
+    vmcs.vcpu.set_nat(fields::GuestStateNat::IdtrBase, 0x0).ok();
+    println!(
+        "Launch: {:?} -> stopped at {:#x?} expected 0x401009",
+        vmcs.run(),
+        fields::GuestStateNat::Rip.vmread()
+    );
+    println!("Info:   {:?}", vmcs.vcpu.interrupt_info());
+    println!(
+        "Qualif: {:?}",
+        vmcs.vcpu
+            .exit_qualification()
+            .map(|qualif| qualif.ept_violation())
+    );
+    println!("VMXOFF: {:?}", vmx::raw::vmxoff());
 }
 
 #[cfg(not(test))]

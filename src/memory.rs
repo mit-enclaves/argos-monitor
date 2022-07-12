@@ -91,7 +91,7 @@ pub struct PhysRange {
 
 impl PhysRange {
     pub fn size(&self) -> usize {
-        (self.start.as_u64() - self.end.as_u64()) as usize
+        (self.end.as_u64() - self.start.as_u64()) as usize
     }
 }
 
@@ -347,7 +347,7 @@ impl VirtualMemoryAreaAllocator {
         self.0.lock()
     }
 
-    pub fn allocate_range(&mut self, size: u64) -> Option<PhysRange> {
+    pub fn allocate_range(&self, size: u64) -> Option<PhysRange> {
         let mut inner = self.lock();
         inner.frame_allocator.allocate_range(size)
     }

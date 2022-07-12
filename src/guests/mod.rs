@@ -1,6 +1,7 @@
 pub mod rawc;
 
 pub struct GuestBytes {
-    start: u64,
-    bytes: &'static [u8],
+    pub start: u64,
+    pub offset: u64,
+    pub bytes: &'static [u8],
 }

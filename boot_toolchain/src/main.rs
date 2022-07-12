@@ -12,6 +12,8 @@ const RUN_ARGS: &[&str] = &[
     "-cpu",
     "host,+kvm",
     "-enable-kvm",
+    "-m",
+    "4G",
     "-s",
 ];
 const TEST_ARGS: &[&str] = &[
