@@ -310,7 +310,10 @@ impl VmcsRegion {
 
         Ok(VmcsRegion {
             frame,
-            vcpu: VCpu { _private: () },
+            vcpu: VCpu {
+                _private: (),
+                regs: [0; Register::RSize as usize],
+            },
         })
     }
 
@@ -330,7 +333,7 @@ impl VmcsRegion {
     /// sensible environment. A simple way of ensuring that is to save the current environment as
     /// host state.
     pub unsafe fn run(&mut self) -> Result<VmxExitReason, VmxError> {
-        raw::vmlaunch()?;
+        raw::vmlaunch(&mut self.vcpu)?;
         self.vcpu.exit_reason()
     }
 
@@ -610,11 +613,35 @@ impl VmcsRegion {
 
 // —————————————————————————————— Virtual CPU ——————————————————————————————— //
 
+#[repr(usize)]
+pub enum Register {
+    Rax = 0,
+    Rcx = 1,
+    Rdx = 2,
+    Rbx = 3,
+    Rsp = 4,
+    Rbp = 5,
+    Rsi = 6,
+    Rdi = 7,
+    R8 = 8,
+    R9 = 9,
+    R10 = 10,
+    R11 = 11,
+    R12 = 12,
+    R13 = 13,
+    R14 = 14,
+    R15 = 15,
+    RSize = 16,
+}
+
 /// A virtual CPU.
 pub struct VCpu {
     // This field prevents a VCpu from being instantiated outside of this module, by not marking it
     // public.
     _private: (),
+
+    // Set of registers to save/restore
+    pub regs: [u64; Register::RSize as usize],
 }
 
 impl VCpu {

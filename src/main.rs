@@ -8,7 +8,6 @@ use core::arch::asm;
 use core::panic::PanicInfo;
 
 use kernel::memory::VirtualMemoryAreaAllocator;
-use kernel::print;
 use kernel::println;
 use kernel::qemu;
 use kernel::vmx;
@@ -26,7 +25,6 @@ use x86_64::registers::control::{Cr0, Cr0Flags};
 use x86_64::registers::model_specific::Efer;
 use x86_64::VirtAddr;
 
-use kernel::gdt;
 use kernel::guests::rawc;
 
 entry_point!(kernel_main);
@@ -234,12 +232,12 @@ fn launch_guest(
 }
 #[inline(always)]
 unsafe fn rdtsc() -> u64 {
-    let mut hi: u64 = 0;
-    let mut lo: u64 = 0;
-    asm!("rdtsc", "mov {hi}, rdx", "mov {lo}, rax",
-                        hi = out(reg) hi,
-                        lo = out(reg) lo, out("rdx") _, out("rax") _);
-    lo | (hi << 32)
+    let mut _hi: u64 = 0;
+    let mut _lo: u64 = 0;
+    asm!("rdtsc", "mov {_hi}, rdx", "mov {_lo}, rax",
+                        _hi = out(reg) _hi,
+                        _lo = out(reg) _lo, out("rdx") _, out("rax") _);
+    _lo | (_hi << 32)
 }
 
 fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
@@ -532,14 +530,16 @@ unsafe fn create_rawc(virtoffset: u64, allocator: &VirtualMemoryAreaAllocator) {
         .set_nat(fields::GuestStateNat::Rip, entry_point as usize)
         .ok();
     vmcs.vcpu
-        .set_nat(fields::GuestStateNat::Cr3, pml4.phys_addr.as_usize());
+        .set_nat(fields::GuestStateNat::Cr3, pml4.phys_addr.as_usize())
+        .ok();
     // Zero out the gdt and idt
     vmcs.vcpu.set_nat(fields::GuestStateNat::GdtrBase, 0x0).ok();
     vmcs.vcpu.set_nat(fields::GuestStateNat::IdtrBase, 0x0).ok();
     println!(
-        "Launch: {:?} -> stopped at {:#x?} expected 0x401009",
+        "Launch: {:?} -> stopped at {:#x?} expected 0x401009, {:#x?}",
         vmcs.run(),
-        fields::GuestStateNat::Rip.vmread()
+        fields::GuestStateNat::Rip.vmread(),
+        vmcs.vcpu.regs[vmx::Register::Rax as usize],
     );
     println!("Info:   {:?}", vmcs.vcpu.interrupt_info());
     println!(

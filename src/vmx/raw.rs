@@ -10,6 +10,7 @@ use x86_64::registers::rflags::RFlags;
 
 use super::errors::{VmxError, VmxInstructionError};
 use super::fields;
+use crate::vmx;
 
 /// Executes VMXON.
 ///
@@ -70,7 +71,7 @@ pub unsafe fn vmptrld(addr: u64) -> Result<(), VmxError> {
 /// In addition to VMLAUNCH, this function save the minimal required state to resume execution
 /// after VMLAUNCH: it saves ¨%rbp on the stack, compute an save suitable %rip and %rsp in the VMCS
 /// to contiunue execution of the function afer VM Exit. On Vmexit,
-pub unsafe fn vmlaunch() -> Result<(), VmxError> {
+pub unsafe fn vmlaunch(vcpu: &mut vmx::VCpu) -> Result<(), VmxError> {
     let rip_field = fields::HostStateNat::Rip as u64;
     let rsp_field = fields::HostStateNat::Rsp as u64;
     asm!(
@@ -82,22 +83,21 @@ pub unsafe fn vmlaunch() -> Result<(), VmxError> {
         "vmlaunch",                   // Launch the VM
         "nop",                        // After VM Exit we land here
         "pop rbp",                    // Restore %rbp
-        "pop rbx",
+        "pop rbx",                    // Restore %rbx
         // Registers used
-        out("rax") _,                 // Temporary register
-        inout("rcx") rsp_field => _,  // RSP host VMCS field
-        inout("rdx") rip_field => _,  // RIP host VMCS field
-        // Clobbered registers, might be modified by guest
-        out("rsi") _,
-        out("rdi") _,
-        out("r8") _,
-        out("r9") _,
-        out("r10") _,
-        out("r11") _,
-        out("r12") _,
-        out("r13") _,
-        out("r14") _,
-        out("r15") _,
+        out("rax") vcpu.regs[vmx::Register::Rax as usize],
+        inout("rcx") rsp_field => vcpu.regs[vmx::Register::Rcx as usize],  // RSP host VMCS field
+        inout("rdx") rip_field => vcpu.regs[vmx::Register::Rdx as usize],  // RIP host VMCS field
+        out("rsi") vcpu.regs[vmx::Register::Rsi as usize],
+        out("rdi") vcpu.regs[vmx::Register::Rdi as usize],
+        out("r8") vcpu.regs[vmx::Register::R8 as usize],
+        out("r9") vcpu.regs[vmx::Register::R9 as usize],
+        out("r10") vcpu.regs[vmx::Register::R10 as usize],
+        out("r11") vcpu.regs[vmx::Register::R11 as usize],
+        out("r12") vcpu.regs[vmx::Register::R12 as usize],
+        out("r13") vcpu.regs[vmx::Register::R13 as usize],
+        out("r14") vcpu.regs[vmx::Register::R14 as usize],
+        out("r15") vcpu.regs[vmx::Register::R15 as usize],
     );
     // NOTE: it is correct to check the flag even after a nop and pop instructions since none of
     // them modifies any flags.
