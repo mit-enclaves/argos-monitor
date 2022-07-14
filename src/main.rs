@@ -7,7 +7,7 @@
 use core::arch::asm;
 use core::panic::PanicInfo;
 
-use kernel::memory::VirtualMemoryAreaAllocator;
+use kernel::memory::SharedFrameAllocator;
 use kernel::println;
 use kernel::qemu;
 use kernel::vmx;
@@ -157,7 +157,7 @@ fn initialize_cpu() {
 
 fn setup_ept(
     physical_memory_offset: VirtAddr,
-    allocator: &VirtualMemoryAreaAllocator,
+    allocator: &SharedFrameAllocator,
 ) -> Result<vmx::ept::ExtendedPageTableMapper<impl vmx::ept::Mapper>, ()> {
     let translator = move |addr: vmx::HostPhysAddr| {
         vmx::HostVirtAddr::new(physical_memory_offset.as_u64() as usize + addr.as_usize())
@@ -165,9 +165,7 @@ fn setup_ept(
     let host_address_translator = unsafe { ept::HostAddressMapper::new(translator) };
     let mut ept_mapper = ept::ExtendedPageTableMapper::new(allocator, host_address_translator)
         .expect("Failed to build EPT mapper");
-    let (start, end) = allocator
-        .get_boundaries()
-        .expect("Failed to retrieve memory boundaries");
+    let (start, end) = allocator.get_boundaries();
     let capabilities = vmx::ept_capabilities().map_err(|_| ())?;
 
     // Just common checks on the boundaries.
@@ -398,7 +396,7 @@ unsafe fn guest_code() {
     asm!("nop", "nop", "nop", "nop", "nop", "nop", "vmcall",);
 }
 
-unsafe fn create_rawc(virtoffset: u64, allocator: &VirtualMemoryAreaAllocator) {
+unsafe fn create_rawc(virtoffset: u64, allocator: &SharedFrameAllocator) {
     // Strategy:
     // 1. Allocate the page tables.
     // We should be able to map the same physaddr in the EPT.

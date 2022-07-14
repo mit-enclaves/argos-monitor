@@ -1,15 +1,11 @@
-use alloc::sync::Arc;
-use core::marker::PhantomData;
 use core::ops::DerefMut;
-use core::ptr::NonNull;
 
 use bootloader::boot_info::{MemoryRegion, MemoryRegionKind};
-use spin::{Mutex, MutexGuard};
+use spin::Mutex;
 use x86_64::registers::control::Cr3;
 use x86_64::structures::paging::frame::PhysFrame;
-use x86_64::structures::paging::page::Page;
-use x86_64::structures::paging::page_table::{PageTable, PageTableFlags};
-use x86_64::structures::paging::{Mapper, OffsetPageTable};
+use x86_64::structures::paging::page_table::PageTable;
+use x86_64::structures::paging::OffsetPageTable;
 use x86_64::{PhysAddr, VirtAddr};
 
 use crate::allocator;
@@ -38,7 +34,7 @@ impl FrameAllocator for BootInfoFrameAllocator {}
 pub unsafe fn init(
     physical_memory_offset: VirtAddr,
     regions: &'static [MemoryRegion],
-) -> Result<VirtualMemoryAreaAllocator, ()> {
+) -> Result<SharedFrameAllocator, ()> {
     let level_4_table = active_level_4_table(physical_memory_offset);
 
     // Initialize the frame allocator and the memory mapper.
@@ -48,12 +44,7 @@ pub unsafe fn init(
     // Initialize the heap.
     allocator::init_heap(&mut mapper, &mut frame_allocator).map_err(|_| ())?;
 
-    // Create a memory map once the heap has been allocated.
-    let memory_map = VirtualMemoryMap::new_from_mapping(mapper.level_4_table());
-
-    Ok(VirtualMemoryAreaAllocator::new(
-        mapper,
-        memory_map,
+    Ok(SharedFrameAllocator::new(
         frame_allocator,
         physical_memory_offset,
     ))
@@ -74,12 +65,6 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
 }
 
 // ———————————————————————————— Frame Allocator ————————————————————————————— //
-// NOTE: this implementation comes from [1], it is simple but don't allow     //
-// frame reuse and has an allocation inf O(n) where n is the number of        //
-// already allocated framed.                                                  //
-//                                                                            //
-// [1]: https://os.phil-opp.com/paging-implementation/                        //
-// —————————————————————————————————————————————————————————————————————————— //
 
 /// A range of physical memory.
 pub struct PhysRange {
@@ -196,6 +181,49 @@ unsafe impl x86_64::structures::paging::FrameAllocator<Size4KiB> for BootInfoFra
     }
 }
 
+// ————————————————————————— Shared Frame Allocator ————————————————————————— //
+
+pub struct SharedFrameAllocator {
+    alloc: Mutex<BootInfoFrameAllocator>,
+    physical_memory_offset: VirtAddr,
+}
+
+impl SharedFrameAllocator {
+    pub fn new(alloc: BootInfoFrameAllocator, physical_memory_offset: VirtAddr) -> Self {
+        Self {
+            alloc: Mutex::new(alloc),
+            physical_memory_offset,
+        }
+    }
+
+    pub fn allocate_range(&self, size: u64) -> Option<PhysRange> {
+        let mut inner = self.alloc.lock();
+        inner.allocate_range(size)
+    }
+
+    pub fn get_boundaries(&self) -> (u64, u64) {
+        let mut inner = self.alloc.lock();
+        let inner = inner.deref_mut();
+        let range = inner.get_boundaries();
+        (range.start.as_u64(), range.end.as_u64())
+    }
+}
+
+// TODO: comment about safety
+// For now our frame allocator never re-use frames, so that's all good.
+unsafe impl vmx::FrameAllocator for SharedFrameAllocator {
+    fn allocate_frame(&self) -> Option<vmx::Frame> {
+        let mut inner = self.alloc.lock();
+        let frame = inner.allocate_frame()?;
+
+        Some(vmx::Frame {
+            phys_addr: vmx::HostPhysAddr::new(frame.start_address().as_u64() as usize),
+            virt_addr: (frame.start_address().as_u64() + self.physical_memory_offset.as_u64())
+                as *mut u8,
+        })
+    }
+}
+
 // ——————————————————————————— Virtual Memory Map ——————————————————————————— //
 
 /// A map of used & available chunks of an address space.
@@ -250,192 +278,6 @@ impl VirtualMemoryMap {
         }
         self.cursor = end_of_area;
         Ok(start_of_area)
-    }
-}
-
-// —————————————————————————— Virtual Memory Area ——————————————————————————— //
-
-// TODO: Free the area on drop.
-pub struct VirtualMemoryArea {
-    ptr: NonNull<u8>,
-    nb_pages: usize,
-    vma_allocator: VirtualMemoryAreaAllocator,
-    marker: PhantomData<u8>,
-}
-
-impl VirtualMemoryArea {
-    /// Set the given flags for all pages of the virtual memory area.
-    ///
-    /// WARNING: future accesses to the VMA might cause an exception if the appropriate flags are
-    /// not present.
-    fn update_flags(&mut self, flags: PageTableFlags) -> Result<(), ()> {
-        let mut virt_addr = VirtAddr::from_ptr(self.ptr.as_ptr());
-        let mut allocator = self.vma_allocator.lock();
-        let mapper = &mut allocator.mapper;
-
-        // The assumption is not necessary for correctness here, but should still hold.
-        debug_assert!(virt_addr.is_aligned(PAGE_SIZE as u64));
-
-        for _ in 0..self.nb_pages {
-            let page = Page::<Size4KiB>::containing_address(virt_addr);
-            unsafe {
-                mapper.update_flags(page, flags).map_err(|_| ())?.flush();
-            }
-            virt_addr += PAGE_SIZE;
-        }
-
-        Ok(())
-    }
-
-    pub fn set_executable(&mut self) {
-        let flags = PageTableFlags::PRESENT;
-        self.update_flags(flags)
-            .expect("Could not set execute permission");
-    }
-
-    pub fn set_write(&mut self) {
-        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-        self.update_flags(flags)
-            .expect("Could not set write permission");
-    }
-
-    pub fn set_read_only(&mut self) {
-        let flags = PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE;
-        self.update_flags(flags)
-            .expect("Could not set read-only permission");
-    }
-
-    pub fn as_ptr(&self) -> *const u8 {
-        self.ptr.as_ptr()
-    }
-
-    pub fn as_mut_ptr(&mut self) -> *mut u8 {
-        self.ptr.as_ptr()
-    }
-
-    /// Physical address of the first frame of this VMA.
-    ///
-    /// WARNING: There is no guarantee that frames are continuous!
-    pub fn as_phys_addr(&self) -> PhysAddr {
-        let page = Page::<Size4KiB>::containing_address(VirtAddr::from_ptr(self.as_ptr()));
-        let allocator = self.vma_allocator.lock();
-        let mapper = &allocator.mapper;
-        mapper.translate_page(page).unwrap().start_address()
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        // SAFETY: We rely on the correctness of `self.size()` and the validity of the pointer.
-        unsafe { core::slice::from_raw_parts(self.ptr.as_ptr(), self.size()) }
-    }
-
-    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
-        // SAFETY: We rely on the correctness of `self.size()` and the validity of the pointer.
-        unsafe { core::slice::from_raw_parts_mut(self.ptr.as_ptr(), self.size()) }
-    }
-
-    pub fn size(&self) -> usize {
-        self.nb_pages * PAGE_SIZE
-    }
-}
-
-/// The Virtual Memory Area Allocator, responsible for allocating and managing virtual memory
-/// areas.
-pub struct VirtualMemoryAreaAllocator(Arc<Mutex<LockedVirtualMemoryAreaAllocator>>);
-
-impl VirtualMemoryAreaAllocator {
-    fn lock(&self) -> MutexGuard<LockedVirtualMemoryAreaAllocator> {
-        self.0.lock()
-    }
-
-    pub fn allocate_range(&self, size: u64) -> Option<PhysRange> {
-        let mut inner = self.lock();
-        inner.frame_allocator.allocate_range(size)
-    }
-}
-
-impl Clone for VirtualMemoryAreaAllocator {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-// TODO: comment about safety
-// For now our frame allocator never re-use frames, so that's all good.
-unsafe impl vmx::FrameAllocator for VirtualMemoryAreaAllocator {
-    fn allocate_frame(&self) -> Option<vmx::Frame> {
-        let mut inner = self.0.lock();
-        let frame = inner.frame_allocator.allocate_frame()?;
-
-        Some(vmx::Frame {
-            phys_addr: vmx::HostPhysAddr::new(frame.start_address().as_u64() as usize),
-            virt_addr: (frame.start_address().as_u64() + inner.physical_memory_offset.as_u64())
-                as *mut u8,
-        })
-    }
-}
-
-/// Internal state of the `VirtualMemoryAreaAllocator`.
-struct LockedVirtualMemoryAreaAllocator {
-    mapper: OffsetPageTable<'static>,
-    memory_map: VirtualMemoryMap,
-    frame_allocator: BootInfoFrameAllocator,
-    physical_memory_offset: VirtAddr,
-}
-
-impl VirtualMemoryAreaAllocator {
-    pub fn new(
-        mapper: OffsetPageTable<'static>,
-        memory_map: VirtualMemoryMap,
-        frame_allocator: BootInfoFrameAllocator,
-        physical_memory_offset: VirtAddr,
-    ) -> Self {
-        let inner = Arc::new(Mutex::new(LockedVirtualMemoryAreaAllocator {
-            mapper,
-            memory_map,
-            frame_allocator,
-            physical_memory_offset,
-        }));
-        Self(inner)
-    }
-
-    // TODO: Free allocated pages on failure.
-    pub fn with_capacity(&self, capacity: usize) -> Result<VirtualMemoryArea, ()> {
-        let nb_pages = bytes_to_pages(capacity);
-        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-        let mut inner = self.0.lock();
-        let inner = inner.deref_mut();
-        let mapper = &mut inner.mapper;
-        let frame_allocator = &mut inner.frame_allocator;
-        let mut virt_addr = inner.memory_map.reserve_area(capacity)?;
-        let ptr = NonNull::new(virt_addr.as_mut_ptr()).unwrap();
-
-        for _ in 0..nb_pages {
-            unsafe {
-                let frame = frame_allocator.allocate_frame().ok_or(())?;
-                let page = Page::containing_address(virt_addr);
-                mapper
-                    .map_to(page, frame, flags, frame_allocator)
-                    .map_err(|_| ())?
-                    .flush();
-                virt_addr += PAGE_SIZE;
-            }
-        }
-
-        Ok(VirtualMemoryArea {
-            ptr,
-            nb_pages,
-            vma_allocator: self.clone(),
-            marker: PhantomData,
-        })
-    }
-
-    /// Returns the memory boundaries.
-    // TODO: make this more efficient when refactoring the allocator.
-    pub fn get_boundaries(&self) -> Option<(u64, u64)> {
-        let mut inner = self.0.lock();
-        let inner = inner.deref_mut();
-        let range = inner.frame_allocator.get_boundaries();
-        Some((range.start.as_u64(), range.end.as_u64()))
     }
 }
 
