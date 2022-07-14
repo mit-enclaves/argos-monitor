@@ -1,6 +1,7 @@
 //! Memory Management unit
 
 pub mod frames;
+pub mod ptmapper;
 pub mod walker;
 
 pub use frames::{init, FrameAllocator};
@@ -29,7 +30,7 @@ impl PtWalker {
             self.walk_range(
                 GuestVirtAddr::new(0),
                 GuestVirtAddr::new(0x1000000000000),
-                |addr, entry, level| {
+                &mut |addr, entry, level| {
                     if Self::is_leaf(*entry, level) {
                         WalkNext::Leaf
                     } else {

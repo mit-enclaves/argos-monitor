@@ -1,4 +1,5 @@
 use crate::guests;
+use crate::mmu::ptmapper::{PtFlag, PtMapper};
 use crate::mmu::FrameAllocator;
 use crate::println;
 use crate::qemu;
@@ -9,6 +10,7 @@ use crate::vmx::bitmaps::{
 };
 use crate::vmx::ept;
 use crate::vmx::fields;
+use crate::vmx::{GuestPhysAddr, GuestVirtAddr};
 
 use super::Guest;
 
@@ -35,14 +37,15 @@ impl Guest for RawcBytes {
     /// 3. Generate the EPT mappings with hpa == gpa.
     /// 4. Set the EPT and return the vmcs.
     unsafe fn instantiate(&self, allocator: &impl FrameAllocator) -> vmx::VmcsRegion {
-        let mut pml4 = allocator
+        let pml4 = allocator
             .allocate_zeroed_frame()
             .expect("Unable to allocate root");
-        let root = pml4.as_array_page();
+
+        /*let root = pml4.as_array_page();
         let mut pl3 = allocator
             .allocate_zeroed_frame()
             .expect("Unable to allocate first entry");
-        root[0] = pl3.phys_addr.as_u64() | 0x7;
+        root[0] = pl3.phys_addr.as_u64() | 0x7;*/
 
         // 2. Allocate 2GB so that we can find a 1Gb aligned address;
         let gb = 1 << 30;
@@ -53,8 +56,25 @@ impl Guest for RawcBytes {
         assert!(
             aligned % gb == 0 && aligned > backed.start.as_u64() && aligned < backed.end.as_u64()
         );
+        let mut mapper = PtMapper::new(
+            allocator.get_physical_offset().as_u64() as usize,
+            0,
+            GuestPhysAddr::new(pml4.phys_addr.as_usize()),
+        );
+
+        let frames = mapper
+            .map_range(
+                allocator,
+                GuestVirtAddr::new(0),
+                GuestPhysAddr::new(aligned as usize),
+                gb as usize,
+                PtFlag::PRESENT | PtFlag::WRITE | PtFlag::USER,
+            )
+            .expect("Error building page tables");
+
+        /*
         let pde = pl3.as_array_page();
-        pde[0] = aligned | 0x7 | (1 << 7);
+        pde[0] = aligned | 0x7 | (1 << 7);*/
 
         // Copying the program.
         let virtoffset = allocator.get_physical_offset().as_u64();
@@ -105,6 +125,7 @@ impl Guest for RawcBytes {
             "1'Ctrl: {:?}",
             vmcs.set_primary_ctrls(PrimaryControls::SECONDARY_CONTROLS)
         );
+
         let secondary_ctrls = SecondaryControls::ENABLE_RDTSCP | SecondaryControls::ENABLE_EPT;
         println!("2'Ctrl: {:?}", vmcs.set_secondary_ctrls(secondary_ctrls));
 
@@ -130,8 +151,8 @@ impl Guest for RawcBytes {
         ept_mapper
             .map_range(
                 allocator,
-                vmx::GuestPhysAddr::new(pl3.phys_addr.as_usize()),
-                pl3.phys_addr,
+                vmx::GuestPhysAddr::new(frames[0].phys_addr.as_usize()),
+                frames[0].phys_addr,
                 0x1000,
                 EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
             )

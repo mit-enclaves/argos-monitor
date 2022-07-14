@@ -153,9 +153,9 @@ pub unsafe trait Walker {
     fn root(&mut self) -> (Self::PhysAddr, Level);
 
     /// Walk the page tables controlling given address' mapping.
-    unsafe fn walk<F>(&mut self, addr: Self::VirtAddr, callback: F) -> Result<(), ()>
+    unsafe fn walk<F>(&mut self, addr: Self::VirtAddr, callback: &mut F) -> Result<(), ()>
     where
-        F: Fn(&mut u64, Level) -> WalkNext,
+        F: FnMut(&mut u64, Level) -> WalkNext,
     {
         let (mut phys_addr, mut level) = self.root();
 
@@ -185,14 +185,14 @@ pub unsafe trait Walker {
         &mut self,
         start: Self::VirtAddr,
         end: Self::VirtAddr,
-        callback: F,
+        callback: &mut F,
     ) -> Result<(), ()>
     where
-        F: Fn(Self::VirtAddr, &mut u64, Level) -> WalkNext,
+        F: FnMut(Self::VirtAddr, &mut u64, Level) -> WalkNext,
     {
         let (phys_addr, level) = self.root();
         let page = as_page(self, self.translate(phys_addr));
-        walk_range_rec(self, page, level, start, end, &callback)
+        walk_range_rec(self, page, level, start, end, callback)
     }
 
     unsafe fn as_page(&mut self, addr: HostVirtAddr) -> &mut [u64] {
@@ -207,13 +207,13 @@ unsafe fn walk_range_rec<VirtAddr, PhysAddr, W, F>(
     level: Level,
     start: VirtAddr,
     end: VirtAddr,
-    callback: &F,
+    callback: &mut F,
 ) -> Result<(), ()>
 where
     VirtAddr: Address,
     PhysAddr: Address,
     W: Walker<VirtAddr = VirtAddr, PhysAddr = PhysAddr> + ?Sized,
-    F: Fn(VirtAddr, &mut u64, Level) -> WalkNext,
+    F: FnMut(VirtAddr, &mut u64, Level) -> WalkNext,
 {
     let mut idx = start.index(level);
     let mut addr = start;
