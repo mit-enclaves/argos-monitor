@@ -12,7 +12,6 @@ use crate::allocator;
 use crate::vmx;
 
 const PAGE_SIZE: usize = 0x1000;
-const NB_PTE_ENTRIES: usize = 512;
 
 // ————————————————————————— Re-export definitions —————————————————————————— //
 
@@ -207,6 +206,10 @@ impl SharedFrameAllocator {
         let range = inner.get_boundaries();
         (range.start.as_u64(), range.end.as_u64())
     }
+
+    pub fn get_physical_offset(&self) -> VirtAddr {
+        self.physical_memory_offset
+    }
 }
 
 // TODO: comment about safety
@@ -221,63 +224,6 @@ unsafe impl vmx::FrameAllocator for SharedFrameAllocator {
             virt_addr: (frame.start_address().as_u64() + self.physical_memory_offset.as_u64())
                 as *mut u8,
         })
-    }
-}
-
-// ——————————————————————————— Virtual Memory Map ——————————————————————————— //
-
-/// A map of used & available chunks of an address space.
-///
-/// TODO: For now the memory map does not enable virtual addresses re-use. This was done for
-/// simplicity of the initial implementation.
-pub struct VirtualMemoryMap {
-    // Next available address.
-    cursor: VirtAddr,
-
-    // End of the valid virtual address range.
-    end_at: VirtAddr,
-}
-
-impl VirtualMemoryMap {
-    /// Creates a mapping of the virtual memory map from the page tables.
-    ///
-    /// SAFETY: the page table must be a valid level 4 page table.
-    pub unsafe fn new_from_mapping(level_4_table: &PageTable) -> Self {
-        let (last_used_index, _) = level_4_table
-            .iter()
-            .enumerate()
-            .filter(|(_idx, entry)| !entry.is_unused())
-            .last()
-            .unwrap();
-
-        if last_used_index >= NB_PTE_ENTRIES {
-            // Return a map with no free aeas
-            VirtualMemoryMap {
-                cursor: VirtAddr::new(0),
-                end_at: VirtAddr::new(0),
-            }
-        } else {
-            let l4_shift = 9 + 9 + 9 + 12; // Shift to get virtual address from L4 index
-            let first_unused_index = (last_used_index + 1) as u64;
-            let last_available_index = (NB_PTE_ENTRIES - 1) as u64;
-            let cursor = VirtAddr::new(first_unused_index << l4_shift);
-            let end_at = VirtAddr::new(last_available_index << l4_shift);
-            VirtualMemoryMap { cursor, end_at }
-        }
-    }
-
-    /// Reserves an area in the virtual address space.
-    ///
-    /// No frames are allocated, but the area is marked as reserved, preventing future collisions
-    /// with other areas.
-    pub fn reserve_area(&mut self, size: usize) -> Result<VirtAddr, ()> {
-        let start_of_area = self.cursor;
-        let end_of_area = (start_of_area + size).align_up(PAGE_SIZE as u64);
-        if end_of_area > self.end_at {
-            return Err(());
-        }
-        self.cursor = end_of_area;
-        Ok(start_of_area)
     }
 }
 
