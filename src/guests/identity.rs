@@ -1,5 +1,5 @@
 use crate::guests;
-use crate::mmu::SharedFrameAllocator;
+use crate::mmu::FrameAllocator;
 use crate::println;
 use crate::qemu;
 use crate::vmx;
@@ -18,7 +18,7 @@ use super::Guest;
 pub struct Identity {}
 
 impl Guest for Identity {
-    unsafe fn instantiate(&self, allocator: &SharedFrameAllocator) -> vmx::VmcsRegion {
+    unsafe fn instantiate(&self, allocator: &impl FrameAllocator) -> vmx::VmcsRegion {
         let mut vmcs = match vmx::VmcsRegion::new(allocator) {
             Err(err) => {
                 println!("VMCS:   Err({:?})", err);
@@ -153,7 +153,7 @@ unsafe fn guest_code() {
 
 fn setup_ept(
     physical_memory_offset: VirtAddr,
-    allocator: &SharedFrameAllocator,
+    allocator: &impl FrameAllocator,
 ) -> Result<vmx::ept::ExtendedPageTableMapper<impl vmx::ept::Mapper>, ()> {
     let translator = move |addr: vmx::HostPhysAddr| {
         vmx::HostVirtAddr::new(physical_memory_offset.as_u64() as usize + addr.as_usize())

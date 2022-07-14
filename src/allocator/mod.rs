@@ -4,7 +4,7 @@ use x86_64::structures::paging::mapper::{MapToError, Mapper};
 use x86_64::structures::paging::{Page, PageTableFlags};
 use x86_64::VirtAddr;
 
-use crate::mmu::frames::{FrameAllocator, Size4KiB};
+use crate::mmu::frames::{BootInfoFrameAllocator, Size4KiB};
 use alloc::alloc::GlobalAlloc;
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -22,7 +22,7 @@ static IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// Initializes the kernel heap.
 pub fn init_heap(
     mapper: &mut impl Mapper<Size4KiB>,
-    frame_allocator: &mut impl FrameAllocator,
+    frame_allocator: &mut BootInfoFrameAllocator,
 ) -> Result<(), MapToError<Size4KiB>> {
     if IS_INITIALIZED.swap(true, Ordering::SeqCst) {
         // Already initialized

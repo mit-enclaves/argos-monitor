@@ -1,3 +1,4 @@
+use alloc::sync::Arc;
 use core::ops::DerefMut;
 
 use bootloader::boot_info::{MemoryRegion, MemoryRegionKind};
@@ -17,9 +18,18 @@ const PAGE_SIZE: usize = 0x1000;
 
 pub use x86_64::structures::paging::page::Size4KiB;
 
-pub trait FrameAllocator: x86_64::structures::paging::FrameAllocator<Size4KiB> {}
+pub trait FrameAllocator:
+    x86_64::structures::paging::FrameAllocator<Size4KiB> + vmx::FrameAllocator + Clone
+{
+    /// Allocates a range of physical memory.
+    fn allocate_range(&self, size: u64) -> Option<PhysRange>;
 
-impl FrameAllocator for BootInfoFrameAllocator {}
+    /// Returns the boundaries of usable physical memory.
+    fn get_boundaries(&self) -> (u64, u64);
+
+    /// Returns the offset between physical and virtual addresses.
+    fn get_physical_offset(&self) -> VirtAddr;
+}
 
 // ————————————————————————— Memory Initialization —————————————————————————— //
 
@@ -33,20 +43,18 @@ impl FrameAllocator for BootInfoFrameAllocator {}
 pub unsafe fn init(
     physical_memory_offset: VirtAddr,
     regions: &'static [MemoryRegion],
-) -> Result<SharedFrameAllocator, ()> {
+) -> Result<impl FrameAllocator, ()> {
     let level_4_table = active_level_4_table(physical_memory_offset);
 
     // Initialize the frame allocator and the memory mapper.
-    let mut frame_allocator = BootInfoFrameAllocator::init(regions);
     let mut mapper = OffsetPageTable::new(level_4_table, physical_memory_offset);
+    let mut frame_allocator = BootInfoFrameAllocator::init(regions);
 
     // Initialize the heap.
     allocator::init_heap(&mut mapper, &mut frame_allocator).map_err(|_| ())?;
+    let frame_allocator = SharedFrameAllocator::new(frame_allocator, physical_memory_offset);
 
-    Ok(SharedFrameAllocator::new(
-        frame_allocator,
-        physical_memory_offset,
-    ))
+    Ok(frame_allocator)
 }
 
 /// This function is unsafe because the caller must guarantee that the
@@ -182,33 +190,18 @@ unsafe impl x86_64::structures::paging::FrameAllocator<Size4KiB> for BootInfoFra
 
 // ————————————————————————— Shared Frame Allocator ————————————————————————— //
 
+#[derive(Clone)]
 pub struct SharedFrameAllocator {
-    alloc: Mutex<BootInfoFrameAllocator>,
+    alloc: Arc<Mutex<BootInfoFrameAllocator>>,
     physical_memory_offset: VirtAddr,
 }
 
 impl SharedFrameAllocator {
     pub fn new(alloc: BootInfoFrameAllocator, physical_memory_offset: VirtAddr) -> Self {
         Self {
-            alloc: Mutex::new(alloc),
+            alloc: Arc::new(Mutex::new(alloc)),
             physical_memory_offset,
         }
-    }
-
-    pub fn allocate_range(&self, size: u64) -> Option<PhysRange> {
-        let mut inner = self.alloc.lock();
-        inner.allocate_range(size)
-    }
-
-    pub fn get_boundaries(&self) -> (u64, u64) {
-        let mut inner = self.alloc.lock();
-        let inner = inner.deref_mut();
-        let range = inner.get_boundaries();
-        (range.start.as_u64(), range.end.as_u64())
-    }
-
-    pub fn get_physical_offset(&self) -> VirtAddr {
-        self.physical_memory_offset
     }
 }
 
@@ -224,6 +217,31 @@ unsafe impl vmx::FrameAllocator for SharedFrameAllocator {
             virt_addr: (frame.start_address().as_u64() + self.physical_memory_offset.as_u64())
                 as *mut u8,
         })
+    }
+}
+
+impl FrameAllocator for SharedFrameAllocator {
+    fn allocate_range(&self, size: u64) -> Option<PhysRange> {
+        let mut inner = self.alloc.lock();
+        inner.allocate_range(size)
+    }
+
+    fn get_boundaries(&self) -> (u64, u64) {
+        let mut inner = self.alloc.lock();
+        let inner = inner.deref_mut();
+        let range = inner.get_boundaries();
+        (range.start.as_u64(), range.end.as_u64())
+    }
+
+    fn get_physical_offset(&self) -> VirtAddr {
+        self.physical_memory_offset
+    }
+}
+
+unsafe impl x86_64::structures::paging::FrameAllocator<Size4KiB> for SharedFrameAllocator {
+    fn allocate_frame(&mut self) -> Option<PhysFrame> {
+        let mut alloc = self.alloc.lock();
+        alloc.allocate_frame()
     }
 }
 

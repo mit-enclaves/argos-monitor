@@ -1,4 +1,4 @@
-use crate::mmu::SharedFrameAllocator;
+use crate::mmu::FrameAllocator;
 use crate::println;
 use crate::vmx;
 use crate::vmx::fields;
@@ -11,7 +11,7 @@ pub mod identity;
 pub mod rawc;
 
 pub trait Guest {
-    unsafe fn instantiate(&self, allocator: &SharedFrameAllocator) -> VmcsRegion;
+    unsafe fn instantiate(&self, allocator: &impl FrameAllocator) -> VmcsRegion;
 }
 
 fn configure_msr() -> Result<(), vmx::VmxError> {

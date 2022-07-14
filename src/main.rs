@@ -3,16 +3,18 @@
 #![feature(custom_test_frameworks)]
 #![test_runner(kernel::test_runner)]
 #![reexport_test_harness_main = "test_main"]
+
 extern crate alloc;
 
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
+use kernel::guests::Guest;
+use kernel::mmu::FrameAllocator;
 use kernel::println;
 use kernel::vmx;
 use x86_64::registers::control::{Cr0, Cr0Flags};
 use x86_64::VirtAddr;
 
-use alloc::boxed::Box;
 use kernel::guests;
 
 entry_point!(kernel_main);
@@ -41,22 +43,26 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             .expect("The bootloader must be configured with 'map-physical-memory'"),
     );
 
-    let vma_allocator = unsafe {
+    let frame_allocator = unsafe {
         kernel::init_memory(physical_memory_offset, &mut boot_info.memory_regions)
             .expect("Failed to initialize memory")
     };
 
+    if true {
+        launch_guest(&guests::rawc::RAWC, &frame_allocator)
+    } else {
+        launch_guest(&guests::identity::Identity {}, &frame_allocator)
+    };
+}
+
+fn launch_guest(guest: &impl Guest, vma_allocator: &impl FrameAllocator) -> ! {
     initialize_cpu();
     print_vmx_info();
 
     unsafe {
-        println!("VMXON:  {:?}", vmx::vmxon(&vma_allocator));
-        let guest: Box<dyn guests::Guest> = if true {
-            Box::new(guests::rawc::RAWC)
-        } else {
-            Box::new(guests::identity::Identity {})
-        };
-        let mut vmcs = guest.instantiate(&vma_allocator);
+        println!("VMXON:  {:?}", vmx::vmxon(vma_allocator));
+
+        let mut vmcs = guest.instantiate(vma_allocator);
         println!(
             "Launch: {:?} -> {:#x?}",
             vmcs.run(),

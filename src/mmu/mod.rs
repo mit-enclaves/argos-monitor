@@ -3,7 +3,7 @@
 pub mod frames;
 pub mod walker;
 
-pub use frames::{init, SharedFrameAllocator};
+pub use frames::{init, FrameAllocator};
 
 use crate::vmx::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 use walker::{Level, WalkNext, Walker};

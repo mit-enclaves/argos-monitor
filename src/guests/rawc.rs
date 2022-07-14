@@ -1,5 +1,5 @@
 use crate::guests;
-use crate::mmu::SharedFrameAllocator;
+use crate::mmu::FrameAllocator;
 use crate::println;
 use crate::qemu;
 use crate::vmx;
@@ -9,7 +9,6 @@ use crate::vmx::bitmaps::{
 };
 use crate::vmx::ept;
 use crate::vmx::fields;
-use crate::vmx::FrameAllocator;
 
 use super::Guest;
 
@@ -35,7 +34,7 @@ impl Guest for RawcBytes {
     /// 2. Copy the program rawc to this memory region.
     /// 3. Generate the EPT mappings with hpa == gpa.
     /// 4. Set the EPT and return the vmcs.
-    unsafe fn instantiate(&self, allocator: &SharedFrameAllocator) -> vmx::VmcsRegion {
+    unsafe fn instantiate(&self, allocator: &impl FrameAllocator) -> vmx::VmcsRegion {
         let mut pml4 = allocator
             .allocate_zeroed_frame()
             .expect("Unable to allocate root");
