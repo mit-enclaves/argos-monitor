@@ -1,6 +1,9 @@
 //! Memory Management unit
 
+pub mod frames;
 pub mod walker;
+
+pub use frames::{init, SharedFrameAllocator};
 
 use crate::vmx::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 use walker::{Level, WalkNext, Walker};

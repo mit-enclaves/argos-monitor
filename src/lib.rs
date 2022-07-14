@@ -18,7 +18,6 @@ pub mod allocator;
 pub mod gdt;
 pub mod guests;
 pub mod interrupts;
-pub mod memory;
 pub mod print;
 pub mod qemu;
 pub mod serial;
@@ -28,7 +27,7 @@ pub mod mmu;
 #[cfg(feature = "vga")]
 pub mod vga;
 
-pub use memory::init as init_memory;
+pub use mmu::init as init_memory;
 
 // Entry point for `cargo test`
 #[cfg(test)]

@@ -7,7 +7,7 @@
 use core::arch::asm;
 use core::panic::PanicInfo;
 
-use kernel::memory::SharedFrameAllocator;
+use kernel::mmu::SharedFrameAllocator;
 use kernel::println;
 use kernel::qemu;
 use kernel::vmx;

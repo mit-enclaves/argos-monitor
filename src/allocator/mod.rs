@@ -4,7 +4,7 @@ use x86_64::structures::paging::mapper::{MapToError, Mapper};
 use x86_64::structures::paging::{Page, PageTableFlags};
 use x86_64::VirtAddr;
 
-use crate::memory::{FrameAllocator, Size4KiB};
+use crate::mmu::frames::{FrameAllocator, Size4KiB};
 use alloc::alloc::GlobalAlloc;
 use core::sync::atomic::{AtomicBool, Ordering};
 
