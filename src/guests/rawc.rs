@@ -1,14 +1,11 @@
 use crate::guests;
+use crate::mmu::eptmapper::EptMapper;
 use crate::mmu::ptmapper::{PtFlag, PtMapper};
 use crate::mmu::FrameAllocator;
 use crate::println;
 use crate::qemu;
 use crate::vmx;
-use crate::vmx::bitmaps::{
-    EntryControls, EptEntryFlags, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
-    SecondaryControls,
-};
-use crate::vmx::ept;
+use crate::vmx::bitmaps::EptEntryFlags;
 use crate::vmx::fields;
 use crate::vmx::{GuestPhysAddr, GuestVirtAddr};
 
@@ -40,13 +37,6 @@ impl Guest for RawcBytes {
         let pml4 = allocator
             .allocate_zeroed_frame()
             .expect("Unable to allocate root");
-
-        /*let root = pml4.as_array_page();
-        let mut pl3 = allocator
-            .allocate_zeroed_frame()
-            .expect("Unable to allocate first entry");
-        root[0] = pl3.phys_addr.as_u64() | 0x7;*/
-
         // 2. Allocate 2GB so that we can find a 1Gb aligned address;
         let gb = 1 << 30;
         let backed = allocator
@@ -61,7 +51,6 @@ impl Guest for RawcBytes {
             0,
             GuestPhysAddr::new(pml4.phys_addr.as_usize()),
         );
-
         let frames = mapper
             .map_range(
                 allocator,
@@ -71,10 +60,6 @@ impl Guest for RawcBytes {
                 PtFlag::PRESENT | PtFlag::WRITE | PtFlag::USER,
             )
             .expect("Error building page tables");
-
-        /*
-        let pde = pl3.as_array_page();
-        pde[0] = aligned | 0x7 | (1 << 7);*/
 
         // Copying the program.
         let virtoffset = allocator.get_physical_offset().as_u64();
@@ -102,73 +87,39 @@ impl Guest for RawcBytes {
         };
 
         println!("LOAD:   {:?}", vmcs.set_as_active());
-        let err = vmcs
-            .set_pin_based_ctrls(PinbasedControls::empty())
-            .and_then(|_| {
-                vmcs.set_vm_exit_ctrls(
-                    ExitControls::HOST_ADDRESS_SPACE_SIZE
-                        | ExitControls::LOAD_IA32_EFER
-                        | ExitControls::SAVE_IA32_EFER,
-                )
-            })
-            .and_then(|_| {
-                vmcs.set_vm_entry_ctrls(
-                    EntryControls::IA32E_MODE_GUEST | EntryControls::LOAD_IA32_EFER,
-                )
-            })
-            .and_then(|_| vmcs.set_exception_bitmap(ExceptionBitmap::empty()))
-            .and_then(|_| vmcs.save_host_state())
-            .and_then(|_| guests::setup_guest(&mut vmcs.vcpu));
-        println!("Config: {:?}", err);
-        println!("MSRs:   {:?}", guests::configure_msr());
-        println!(
-            "1'Ctrl: {:?}",
-            vmcs.set_primary_ctrls(PrimaryControls::SECONDARY_CONTROLS)
+        guests::default_vmcs_config(&mut vmcs, false);
+        let root = allocator.allocate_zeroed_frame().expect("Allocate frame");
+        let mut ept_mapper = EptMapper::new(
+            allocator.get_physical_offset().as_u64() as usize,
+            0,
+            root.phys_addr,
         );
 
-        let secondary_ctrls = SecondaryControls::ENABLE_RDTSCP | SecondaryControls::ENABLE_EPT;
-        println!("2'Ctrl: {:?}", vmcs.set_secondary_ctrls(secondary_ctrls));
-
-        // Translate physical address on host to virtual address on host.
-
-        let translator = move |addr: vmx::HostPhysAddr| {
-            vmx::HostVirtAddr::new(virtoffset as usize + addr.as_usize())
-        };
-        let host_address_translator = ept::HostAddressMapper::new(translator);
-        let mut ept_mapper = ept::ExtendedPageTableMapper::new(allocator, host_address_translator)
-            .expect("Failed to build EPT mapper");
-
         // Let's map stuff
-        ept_mapper
-            .map_range(
-                allocator,
-                vmx::GuestPhysAddr::new(pml4.phys_addr.as_usize()),
-                pml4.phys_addr,
-                0x1000,
-                EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
-            )
-            .expect("Failed pml4");
-        ept_mapper
-            .map_range(
-                allocator,
-                vmx::GuestPhysAddr::new(frames[0].phys_addr.as_usize()),
-                frames[0].phys_addr,
-                0x1000,
-                EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
-            )
-            .expect("Failed pl3");
-        ept_mapper
-            .map_range(
-                allocator,
-                vmx::GuestPhysAddr::new(backed.start.as_u64() as usize),
-                vmx::HostPhysAddr::new(backed.start.as_u64() as usize),
-                backed.size(),
-                EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
-            )
-            .expect("Failed to map backed");
-        println!("EPTP:   {:?}", vmcs.set_ept_ptr(&ept_mapper));
+        ept_mapper.map_range(
+            allocator,
+            vmx::GuestPhysAddr::new(pml4.phys_addr.as_usize()),
+            pml4.phys_addr,
+            0x1000,
+            EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
+        );
+        ept_mapper.map_range(
+            allocator,
+            vmx::GuestPhysAddr::new(frames[0].phys_addr.as_usize()),
+            frames[0].phys_addr,
+            0x1000,
+            EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
+        );
+        ept_mapper.map_range(
+            allocator,
+            vmx::GuestPhysAddr::new(backed.start.as_u64() as usize),
+            vmx::HostPhysAddr::new(backed.start.as_u64() as usize),
+            backed.size(),
+            EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
+        );
+
+        println!("EPTP:   {:?}", vmcs.set_ept_ptr_raw(ept_mapper.get_root()));
         println!("Check:  {:?}", vmx::check::check());
-        //let entry_point = addr + 0x4;
         let entry_point = self.start + 0x4;
         vmcs.vcpu
             .set_nat(fields::GuestStateNat::Rip, entry_point as usize)

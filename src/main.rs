@@ -63,6 +63,7 @@ fn launch_guest(guest: &impl Guest, vma_allocator: &impl FrameAllocator) -> ! {
         println!("VMXON:  {:?}", vmx::vmxon(vma_allocator));
 
         let mut vmcs = guest.instantiate(vma_allocator);
+
         println!(
             "Launch: {:?} -> {:#x?}",
             vmcs.run(),

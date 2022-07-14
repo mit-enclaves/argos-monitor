@@ -530,6 +530,10 @@ impl EptpList {
         self.frame.as_array_page()[index] = eptp.as_u64();
     }
 
+    pub unsafe fn set_entry_raw(&mut self, index: usize, root: u64) {
+        self.frame.as_array_page()[index] = root;
+    }
+
     /// Deletes an entry from the EPTP list.
     pub fn delete_entry(&mut self, index: usize) {
         self.frame.as_array_page()[index] = 0;

@@ -1,6 +1,10 @@
 use crate::mmu::FrameAllocator;
 use crate::println;
 use crate::vmx;
+use crate::vmx::bitmaps::{
+    EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
+    SecondaryControls,
+};
 use crate::vmx::fields;
 use crate::vmx::fields::traits::*;
 use crate::vmx::VmcsRegion;
@@ -137,4 +141,34 @@ fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
     vcpu.set32(fields::GuestState32::VmxPreemptionTimerValue, 0)?;
 
     Ok(())
+}
+
+fn default_vmcs_config(vmcs: &mut VmcsRegion, switching: bool) {
+    let err = vmcs
+        .set_pin_based_ctrls(PinbasedControls::empty())
+        .and_then(|_| {
+            vmcs.set_vm_exit_ctrls(
+                ExitControls::HOST_ADDRESS_SPACE_SIZE
+                    | ExitControls::LOAD_IA32_EFER
+                    | ExitControls::SAVE_IA32_EFER,
+            )
+        })
+        .and_then(|_| {
+            vmcs.set_vm_entry_ctrls(EntryControls::IA32E_MODE_GUEST | EntryControls::LOAD_IA32_EFER)
+        })
+        .and_then(|_| vmcs.set_exception_bitmap(ExceptionBitmap::empty()))
+        .and_then(|_| vmcs.save_host_state())
+        .and_then(|_| setup_guest(&mut vmcs.vcpu));
+    println!("Config: {:?}", err);
+    println!("MSRs:   {:?}", configure_msr());
+    println!(
+        "1'Ctrl: {:?}",
+        vmcs.set_primary_ctrls(PrimaryControls::SECONDARY_CONTROLS)
+    );
+
+    let mut secondary_ctrls = SecondaryControls::ENABLE_RDTSCP | SecondaryControls::ENABLE_EPT;
+    if switching {
+        secondary_ctrls |= SecondaryControls::ENABLE_VM_FUNCTIONS
+    }
+    println!("2'Ctrl: {:?}", vmcs.set_secondary_ctrls(secondary_ctrls));
 }

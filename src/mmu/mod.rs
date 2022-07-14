@@ -1,5 +1,6 @@
 //! Memory Management unit
 
+pub mod eptmapper;
 pub mod frames;
 pub mod ptmapper;
 pub mod walker;

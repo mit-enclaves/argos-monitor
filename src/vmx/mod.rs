@@ -440,6 +440,10 @@ impl VmcsRegion {
         unsafe { fields::Ctrl64::EptPtr.vmwrite(ept_ptr) }
     }
 
+    pub fn set_ept_ptr_raw(&mut self, root: u64) -> Result<(), VmxError> {
+        unsafe { fields::Ctrl64::EptPtr.vmwrite(root) }
+    }
+
     /// Sets the EPTP address list.
     ///
     /// WARNING: the region must be active, otherwise this function might modify another VMCS.

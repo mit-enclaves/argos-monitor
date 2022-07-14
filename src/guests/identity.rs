@@ -1,17 +1,13 @@
 use crate::guests;
+use crate::mmu::eptmapper::EptMapper;
 use crate::mmu::FrameAllocator;
 use crate::println;
 use crate::qemu;
 use crate::vmx;
-use crate::vmx::bitmaps::{
-    EntryControls, EptEntryFlags, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
-    SecondaryControls, VmFuncControls,
-};
+use crate::vmx::bitmaps::{EptEntryFlags, VmFuncControls};
 use crate::vmx::ept;
 use crate::vmx::fields;
 use core::arch::asm;
-
-use x86_64::VirtAddr;
 
 use super::Guest;
 /// Allows to map tyche itself inside a VM.
@@ -31,50 +27,20 @@ impl Guest for Identity {
         };
 
         println!("LOAD:   {:?}", vmcs.set_as_active());
-        let err = vmcs
-            .set_pin_based_ctrls(PinbasedControls::empty())
-            .and_then(|_| {
-                vmcs.set_vm_exit_ctrls(
-                    ExitControls::HOST_ADDRESS_SPACE_SIZE
-                        | ExitControls::LOAD_IA32_EFER
-                        | ExitControls::SAVE_IA32_EFER,
-                )
-            })
-            .and_then(|_| {
-                vmcs.set_vm_entry_ctrls(
-                    EntryControls::IA32E_MODE_GUEST | EntryControls::LOAD_IA32_EFER,
-                )
-            })
-            .and_then(|_| vmcs.set_exception_bitmap(ExceptionBitmap::empty()))
-            .and_then(|_| vmcs.save_host_state())
-            .and_then(|_| guests::setup_guest(&mut vmcs.vcpu));
-        println!("Config: {:?}", err);
-        println!("MSRs:   {:?}", guests::configure_msr());
 
         let switching = vmx::available_vmfuncs().is_ok();
-        println!(
-            "1'Ctrl: {:?}",
-            vmcs.set_primary_ctrls(PrimaryControls::SECONDARY_CONTROLS)
-        );
-        println!("Switching: {}", switching);
-        let mut secondary_ctrls = SecondaryControls::ENABLE_RDTSCP | SecondaryControls::ENABLE_EPT;
-        if switching {
-            secondary_ctrls |= SecondaryControls::ENABLE_VM_FUNCTIONS
-        }
-        println!("2'Ctrl: {:?}", vmcs.set_secondary_ctrls(secondary_ctrls));
-        let ept_mapper =
-            setup_ept(allocator.get_physical_offset(), allocator).expect("Failed to setupt EPT 1");
-        println!("EPTP:   {:?}", vmcs.set_ept_ptr(&ept_mapper));
+        guests::default_vmcs_config(&mut vmcs, switching);
+        let ept_mapper = setup_ept(allocator).expect("Failed to setupt EPT 1");
+        println!("EPTP:   {:?}", vmcs.set_ept_ptr_raw(ept_mapper.get_root()));
 
         // Let's see if we can duplicate the EPTs, and register them both
         if switching {
-            let ept_mapper2 = setup_ept(allocator.get_physical_offset(), allocator)
-                .expect("Failed to setup EPT 2");
-            println!("EPT2:   {:?}", vmcs.set_ept_ptr(&ept_mapper2));
+            let ept_mapper2 = setup_ept(allocator).expect("Failed to setup EPT 2");
+            println!("EPT2:   {:?}", vmcs.set_ept_ptr_raw(ept_mapper2.get_root()));
             let mut eptp_list =
                 ept::EptpList::new(allocator).expect("Failed to allocate EPTP list");
-            eptp_list.set_entry(0, &ept_mapper);
-            eptp_list.set_entry(1, &ept_mapper2);
+            eptp_list.set_entry_raw(0, ept_mapper.get_root());
+            eptp_list.set_entry_raw(1, ept_mapper2.get_root());
             println!("EPTP L: {:?}", vmcs.set_eptp_list(&eptp_list));
             println!(
                 "Enable vmfunc: {:?}",
@@ -151,18 +117,16 @@ unsafe fn guest_code() {
     );
 }
 
-fn setup_ept(
-    physical_memory_offset: VirtAddr,
-    allocator: &impl FrameAllocator,
-) -> Result<vmx::ept::ExtendedPageTableMapper<impl vmx::ept::Mapper>, ()> {
-    let translator = move |addr: vmx::HostPhysAddr| {
-        vmx::HostVirtAddr::new(physical_memory_offset.as_u64() as usize + addr.as_usize())
-    };
-    let host_address_translator = unsafe { ept::HostAddressMapper::new(translator) };
-    let mut ept_mapper = ept::ExtendedPageTableMapper::new(allocator, host_address_translator)
-        .expect("Failed to build EPT mapper");
+fn setup_ept(allocator: &impl FrameAllocator) -> Result<EptMapper, ()> {
+    let root = allocator
+        .allocate_zeroed_frame()
+        .expect("Unable to allocate root ept");
+    let mut ept_mapper = EptMapper::new(
+        allocator.get_physical_offset().as_u64() as usize,
+        0,
+        root.phys_addr,
+    );
     let (start, end) = allocator.get_boundaries();
-    let capabilities = vmx::ept_capabilities().map_err(|_| ())?;
 
     // Just common checks on the boundaries.
     assert!(start % 0x1000 == 0);
@@ -170,37 +134,14 @@ fn setup_ept(
     assert!(start <= end);
 
     // Choose the mapping page sizes
-    if capabilities.contains(vmx::bitmaps::EptCapability::PAGE_1GB) {
-        unsafe {
-            ept_mapper.map_range_giant_page(
-                allocator,
-                vmx::GuestPhysAddr::new(0),
-                vmx::HostPhysAddr::new(0),
-                end as usize,
-                EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
-            )?
-        };
-    } else if capabilities.contains(vmx::bitmaps::EptCapability::PAGE_2MB) {
-        unsafe {
-            ept_mapper.map_range_huge_page(
-                allocator,
-                vmx::GuestPhysAddr::new(0),
-                vmx::HostPhysAddr::new(0),
-                end as usize,
-                EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
-            )?
-        };
-    } else {
-        unsafe {
-            ept_mapper.map_range(
-                allocator,
-                vmx::GuestPhysAddr::new(0),
-                vmx::HostPhysAddr::new(0),
-                end as usize,
-                EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
-            )?
-        };
-    }
+
+    ept_mapper.map_range(
+        allocator,
+        vmx::GuestPhysAddr::new(start as usize),
+        vmx::HostPhysAddr::new(start as usize),
+        end as usize,
+        EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
+    );
 
     Ok(ept_mapper)
 }
