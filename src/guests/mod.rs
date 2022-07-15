@@ -11,8 +11,11 @@ use crate::vmx::VmcsRegion;
 use x86_64::registers::model_specific::Efer;
 
 use core::arch::asm;
+
 pub mod identity;
 pub mod rawc;
+pub mod linux;
+pub mod elf;
 
 pub trait Guest {
     unsafe fn instantiate(&self, allocator: &impl FrameAllocator) -> VmcsRegion;
