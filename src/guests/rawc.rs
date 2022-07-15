@@ -118,7 +118,7 @@ impl Guest for RawcBytes {
             EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
         );
 
-        println!("EPTP:   {:?}", vmcs.set_ept_ptr_raw(ept_mapper.get_root()));
+        println!("EPTP:   {:?}", vmcs.set_ept_ptr(ept_mapper.get_root()));
         println!("Check:  {:?}", vmx::check::check());
         let entry_point = self.start + 0x4;
         vmcs.vcpu

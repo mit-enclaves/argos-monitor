@@ -31,16 +31,16 @@ impl Guest for Identity {
         let switching = vmx::available_vmfuncs().is_ok();
         guests::default_vmcs_config(&mut vmcs, switching);
         let ept_mapper = setup_ept(allocator).expect("Failed to setupt EPT 1");
-        println!("EPTP:   {:?}", vmcs.set_ept_ptr_raw(ept_mapper.get_root()));
+        println!("EPTP:   {:?}", vmcs.set_ept_ptr(ept_mapper.get_root()));
 
         // Let's see if we can duplicate the EPTs, and register them both
         if switching {
             let ept_mapper2 = setup_ept(allocator).expect("Failed to setup EPT 2");
-            println!("EPT2:   {:?}", vmcs.set_ept_ptr_raw(ept_mapper2.get_root()));
+            println!("EPT2:   {:?}", vmcs.set_ept_ptr(ept_mapper2.get_root()));
             let mut eptp_list =
                 ept::EptpList::new(allocator).expect("Failed to allocate EPTP list");
-            eptp_list.set_entry_raw(0, ept_mapper.get_root());
-            eptp_list.set_entry_raw(1, ept_mapper2.get_root());
+            eptp_list.set_entry(0, ept_mapper.get_root());
+            eptp_list.set_entry(1, ept_mapper2.get_root());
             println!("EPTP L: {:?}", vmcs.set_eptp_list(&eptp_list));
             println!(
                 "Enable vmfunc: {:?}",

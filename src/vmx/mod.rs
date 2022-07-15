@@ -430,18 +430,8 @@ impl VmcsRegion {
     /// Sets the extended page table (EPT) pointer.
     ///
     /// WARNING: the region must be active, otherwise this function might modify another VMCS.
-    pub fn set_ept_ptr<T>(
-        &mut self,
-        mapper: &ept::ExtendedPageTableMapper<T>,
-    ) -> Result<(), VmxError> {
-        let ept_ptr = mapper.get_ept_pointer().as_u64();
-
-        // SAFETY: the EPT pointer is valid
-        unsafe { fields::Ctrl64::EptPtr.vmwrite(ept_ptr) }
-    }
-
-    pub fn set_ept_ptr_raw(&mut self, root: u64) -> Result<(), VmxError> {
-        unsafe { fields::Ctrl64::EptPtr.vmwrite(root) }
+    pub fn set_ept_ptr(&mut self, ept_ptr: HostPhysAddr) -> Result<(), VmxError> {
+        unsafe { fields::Ctrl64::EptPtr.vmwrite(ept_ptr.as_u64()) }
     }
 
     /// Sets the EPTP address list.

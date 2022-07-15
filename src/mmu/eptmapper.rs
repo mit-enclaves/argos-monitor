@@ -89,10 +89,10 @@ impl EptMapper {
         }
     }
 
-    pub fn get_root(&self) -> u64 {
+    pub fn get_root(&self) -> HostPhysAddr {
         let memory_kind = 6 << 0; // write-back usize
         let walk_length = 3 << 3; // walk length of 4 usize
 
-        self.root.as_usize() as u64 | memory_kind | walk_length
+        HostPhysAddr::new(self.root.as_usize() | memory_kind | walk_length)
     }
 }
