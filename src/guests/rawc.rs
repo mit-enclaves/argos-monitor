@@ -2,6 +2,7 @@ use crate::guests;
 use crate::guests::elf_program::ElfProgram;
 use crate::mmu::eptmapper::EptMapper;
 use crate::mmu::frames::RangeFrameAllocator;
+use crate::mmu::ptmapper::PtFlag;
 use crate::mmu::ptmapper::PtMapper;
 use crate::mmu::FrameAllocator;
 use crate::println;
@@ -15,21 +16,14 @@ use super::Guest;
 const RAWCBYTES: &'static [u8] = include_bytes!("../../guest/rawc");
 const ONEGB: u64 = 1 << 30;
 const ONEPAGE: u64 = 1 << 12;
+const STACK: u64 = 0x7ffffffdd000;
 
 /// A datastructure to represent the program.
 /// `start` is the start address of the program.
 /// `offset` is the .text section offset in the raw bytes.
-pub struct RawcBytes {
-    pub start: u64,
-    pub offset: u64,
-    pub size: u64,
-}
+pub struct RawcBytes {}
 
-pub const RAWC: RawcBytes = RawcBytes {
-    start: 0x401000,
-    offset: 0x1000,
-    size: 0x1000,
-};
+pub const RAWC: RawcBytes = RawcBytes {};
 
 impl Guest for RawcBytes {
     /// Creates a VM from the rawc file bytes and jumps.
@@ -76,6 +70,17 @@ impl Guest for RawcBytes {
         );
         rawc_prog.load(&bumper, &mut pt_mapper);
 
+        // setup a stack.
+        let (bstart, _) = bumper.get_boundaries();
+        let stack = bumper.allocate_range(ONEPAGE).expect("stack");
+        pt_mapper.map_range(
+            &bumper,
+            vmx::GuestVirtAddr::new(STACK as usize),
+            vmx::GuestPhysAddr::new((stack.start.as_u64() - bstart) as usize),
+            ONEPAGE as usize,
+            PtFlag::WRITE | PtFlag::PRESENT | PtFlag::EXEC_DISABLE | PtFlag::USER,
+        );
+
         // Setup the vmcs.
         let mut vmcs = match vmx::VmcsRegion::new(allocator) {
             Err(err) => {
@@ -93,7 +98,7 @@ impl Guest for RawcBytes {
         // Setup the roots.
         vmcs.set_ept_ptr(ept_mapper.get_root()).ok();
         vmx::check::check().expect("check error");
-        let entry_point = rawc_prog.entry + 0x4;
+        let entry_point = rawc_prog.entry;
         vmcs.vcpu
             .set_nat(fields::GuestStateNat::Rip, entry_point as usize)
             .ok();
@@ -102,6 +107,9 @@ impl Guest for RawcBytes {
                 fields::GuestStateNat::Cr3,
                 (pt_root.start.as_u64() - start) as usize,
             )
+            .ok();
+        vmcs.vcpu
+            .set_nat(fields::GuestStateNat::Rsp, (STACK + ONEPAGE) as usize)
             .ok();
 
         // Zero out the gdt and idt
