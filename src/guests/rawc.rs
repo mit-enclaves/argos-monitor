@@ -7,9 +7,9 @@ use crate::mmu::ptmapper::PtMapper;
 use crate::mmu::FrameAllocator;
 use crate::println;
 use crate::qemu;
+use crate::vmx;
 use crate::vmx::bitmaps::EptEntryFlags;
 use crate::vmx::fields;
-use crate::vmx::{self};
 
 use super::Guest;
 
@@ -35,7 +35,11 @@ impl Guest for RawcBytes {
     /// 2. Copy the program rawc to this memory region.
     /// 3. Generate the EPT mappings with hpa == gpa.
     /// 4. Set the EPT and return the vmcs.
-    unsafe fn instantiate(&self, allocator: &impl FrameAllocator) -> vmx::VmcsRegion {
+    unsafe fn instantiate<'vmx>(
+        &self,
+        vmxon: &'vmx vmx::Vmxon,
+        allocator: &impl FrameAllocator,
+    ) -> vmx::VmcsRegion<'vmx> {
         let rawc_prog = ElfProgram::new(RAWCBYTES);
         let virtoffset = allocator.get_physical_offset();
         // Create a bumper allocator with 1GB of RAM.
@@ -82,7 +86,8 @@ impl Guest for RawcBytes {
         );
 
         // Setup the vmcs.
-        let mut vmcs = match vmx::VmcsRegion::new(allocator) {
+        let frame = allocator.allocate_frame().expect("Failed to allocate VMCS");
+        let mut vmcs = match vmxon.create_vm(frame) {
             Err(err) => {
                 println!("VMCS:   Err({:?})", err);
                 qemu::exit(qemu::ExitCode::Failure);
@@ -92,29 +97,30 @@ impl Guest for RawcBytes {
                 vmcs
             }
         };
-        vmcs.set_as_active().expect("vmcs cannot set active");
-        guests::default_vmcs_config(&mut vmcs, false);
+        {
+            // VMCS is active in this block
+            let mut vmcs = vmcs.set_as_active().expect("Failed to activate VMCS");
+            guests::default_vmcs_config(&mut vmcs, false);
 
-        // Setup the roots.
-        vmcs.set_ept_ptr(ept_mapper.get_root()).ok();
-        vmx::check::check().expect("check error");
-        let entry_point = rawc_prog.entry;
-        vmcs.vcpu
-            .set_nat(fields::GuestStateNat::Rip, entry_point as usize)
-            .ok();
-        vmcs.vcpu
-            .set_nat(
+            // Setup the roots.
+            vmcs.set_ept_ptr(ept_mapper.get_root()).ok();
+            vmx::check::check().expect("check error");
+            let entry_point = rawc_prog.entry;
+            let vcpu = vmcs.get_vcpu_mut();
+            vcpu.set_nat(fields::GuestStateNat::Rip, entry_point as usize)
+                .ok();
+            vcpu.set_nat(
                 fields::GuestStateNat::Cr3,
                 (pt_root.start.as_u64() - start) as usize,
             )
             .ok();
-        vmcs.vcpu
-            .set_nat(fields::GuestStateNat::Rsp, (STACK + ONEPAGE) as usize)
-            .ok();
+            vcpu.set_nat(fields::GuestStateNat::Rsp, (STACK + ONEPAGE) as usize)
+                .ok();
 
-        // Zero out the gdt and idt
-        vmcs.vcpu.set_nat(fields::GuestStateNat::GdtrBase, 0x0).ok();
-        vmcs.vcpu.set_nat(fields::GuestStateNat::IdtrBase, 0x0).ok();
+            // Zero out the gdt and idt
+            vcpu.set_nat(fields::GuestStateNat::GdtrBase, 0x0).ok();
+            vcpu.set_nat(fields::GuestStateNat::IdtrBase, 0x0).ok();
+        }
         vmcs
     }
 }

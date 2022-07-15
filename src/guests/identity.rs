@@ -14,8 +14,13 @@ use super::Guest;
 pub struct Identity {}
 
 impl Guest for Identity {
-    unsafe fn instantiate(&self, allocator: &impl FrameAllocator) -> vmx::VmcsRegion {
-        let mut vmcs = match vmx::VmcsRegion::new(allocator) {
+    unsafe fn instantiate<'vmx>(
+        &self,
+        vmxon: &'vmx vmx::Vmxon,
+        allocator: &impl FrameAllocator,
+    ) -> vmx::VmcsRegion<'vmx> {
+        let frame = allocator.allocate_frame().expect("Failed to allocate VMCS");
+        let mut vmcs = match vmxon.create_vm(frame) {
             Err(err) => {
                 println!("VMCS:   Err({:?})", err);
                 qemu::exit(qemu::ExitCode::Failure);
@@ -26,42 +31,43 @@ impl Guest for Identity {
             }
         };
 
-        println!("LOAD:   {:?}", vmcs.set_as_active());
+        {
+            // VMCS is active in this block
+            let mut vmcs = vmcs.set_as_active().expect("Failed to activate VMCS");
+            let switching = vmx::available_vmfuncs().is_ok();
+            guests::default_vmcs_config(&mut vmcs, switching);
+            let ept_mapper = setup_ept(allocator).expect("Failed to setupt EPT 1");
+            println!("EPTP:   {:?}", vmcs.set_ept_ptr(ept_mapper.get_root()));
 
-        let switching = vmx::available_vmfuncs().is_ok();
-        guests::default_vmcs_config(&mut vmcs, switching);
-        let ept_mapper = setup_ept(allocator).expect("Failed to setupt EPT 1");
-        println!("EPTP:   {:?}", vmcs.set_ept_ptr(ept_mapper.get_root()));
+            // Let's see if we can duplicate the EPTs, and register them both
+            if switching {
+                let ept_mapper2 = setup_ept(allocator).expect("Failed to setup EPT 2");
+                println!("EPT2:   {:?}", vmcs.set_ept_ptr(ept_mapper2.get_root()));
+                let mut eptp_list =
+                    ept::EptpList::new(allocator).expect("Failed to allocate EPTP list");
+                eptp_list.set_entry(0, ept_mapper.get_root());
+                eptp_list.set_entry(1, ept_mapper2.get_root());
+                println!("EPTP L: {:?}", vmcs.set_eptp_list(&eptp_list));
+                println!(
+                    "Enable vmfunc: {:?}",
+                    vmcs.set_vmfunc_ctrls(VmFuncControls::EPTP_SWITCHING)
+                );
+            }
+            const GUEST_STACK_SIZE: usize = 4096;
+            let entry_point = if switching {
+                guest_code_vmfunc as *const u8
+            } else {
+                guest_code as *const u8
+            };
 
-        // Let's see if we can duplicate the EPTs, and register them both
-        if switching {
-            let ept_mapper2 = setup_ept(allocator).expect("Failed to setup EPT 2");
-            println!("EPT2:   {:?}", vmcs.set_ept_ptr(ept_mapper2.get_root()));
-            let mut eptp_list =
-                ept::EptpList::new(allocator).expect("Failed to allocate EPTP list");
-            eptp_list.set_entry(0, ept_mapper.get_root());
-            eptp_list.set_entry(1, ept_mapper2.get_root());
-            println!("EPTP L: {:?}", vmcs.set_eptp_list(&eptp_list));
-            println!(
-                "Enable vmfunc: {:?}",
-                vmcs.set_vmfunc_ctrls(VmFuncControls::EPTP_SWITCHING)
-            );
+            let mut guest_stack = [0; GUEST_STACK_SIZE];
+            let guest_rsp = guest_stack.as_mut_ptr() as usize + GUEST_STACK_SIZE;
+            let vcpu = vmcs.get_vcpu_mut();
+            vcpu.set_nat(fields::GuestStateNat::Rip, entry_point as usize)
+                .expect("Unable to set rip");
+            vcpu.set_nat(fields::GuestStateNat::Rsp, guest_rsp)
+                .expect("Unable to set rsp");
         }
-        const GUEST_STACK_SIZE: usize = 4096;
-        let entry_point = if switching {
-            guest_code_vmfunc as *const u8
-        } else {
-            guest_code as *const u8
-        };
-
-        let mut guest_stack = [0; GUEST_STACK_SIZE];
-        let guest_rsp = guest_stack.as_mut_ptr() as usize + GUEST_STACK_SIZE;
-        vmcs.vcpu
-            .set_nat(fields::GuestStateNat::Rip, entry_point as usize)
-            .expect("Unable to set rip");
-        vmcs.vcpu
-            .set_nat(fields::GuestStateNat::Rsp, guest_rsp)
-            .expect("Unable to set rsp");
 
         vmcs
     }

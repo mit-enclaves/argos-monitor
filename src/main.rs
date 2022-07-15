@@ -16,6 +16,7 @@ use x86_64::registers::control::{Cr0, Cr0Flags};
 use x86_64::VirtAddr;
 
 use kernel::guests;
+use kernel::qemu;
 
 entry_point!(kernel_main);
 
@@ -55,29 +56,43 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     };
 }
 
-fn launch_guest(guest: &impl Guest, vma_allocator: &impl FrameAllocator) -> ! {
+fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
     initialize_cpu();
     print_vmx_info();
 
     unsafe {
-        println!("VMXON:  {:?}", vmx::vmxon(vma_allocator));
+        let frame = allocator
+            .allocate_frame()
+            .expect("Failed to allocate VMXON");
+        let vmxon = match vmx::vmxon(frame) {
+            Ok(vmxon) => {
+                println!("VMXON:  Ok(vmxon)");
+                vmxon
+            }
+            Err(err) => {
+                println!("VMXON:  {:?}", err);
+                qemu::exit(qemu::ExitCode::Failure);
+            }
+        };
 
-        let mut vmcs = guest.instantiate(vma_allocator);
+        let mut vmcs = guest.instantiate(&vmxon, allocator);
+        let mut vmcs = vmcs.set_as_active().expect("Failed to activate VMCS");
 
+        let result = vmcs.run();
+        let vcpu = vmcs.get_vcpu();
         println!(
             "Launch: {:?} -> {:#x?}",
-            vmcs.run(),
-            vmcs.vcpu.regs[vmx::Register::Rax as usize],
+            result,
+            vcpu.regs[vmx::Register::Rax as usize],
         );
-        println!("Info:   {:?}", vmcs.vcpu.interrupt_info());
+        println!("Info:   {:?}", vcpu.interrupt_info());
         println!(
             "Qualif: {:?}",
-            vmcs.vcpu
-                .exit_qualification()
+            vcpu.exit_qualification()
                 .map(|qualif| qualif.ept_violation())
         );
     }
-    kernel::qemu::exit(kernel::qemu::ExitCode::Success);
+    qemu::exit(qemu::ExitCode::Success);
 }
 
 fn initialize_cpu() {

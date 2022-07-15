@@ -7,7 +7,7 @@ use crate::vmx::bitmaps::{
 };
 use crate::vmx::fields;
 use crate::vmx::fields::traits::*;
-use crate::vmx::VmcsRegion;
+use crate::vmx::{ActiveVmcs, VmcsRegion};
 use x86_64::registers::model_specific::Efer;
 
 use core::arch::asm;
@@ -19,7 +19,11 @@ pub mod linux;
 pub mod rawc;
 
 pub trait Guest {
-    unsafe fn instantiate(&self, allocator: &impl FrameAllocator) -> VmcsRegion;
+    unsafe fn instantiate<'vmx>(
+        &self,
+        vmxon: &'vmx vmx::Vmxon,
+        allocator: &impl FrameAllocator,
+    ) -> VmcsRegion<'vmx>;
 }
 
 fn configure_msr() -> Result<(), vmx::VmxError> {
@@ -147,7 +151,7 @@ fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
     Ok(())
 }
 
-fn default_vmcs_config(vmcs: &mut VmcsRegion, switching: bool) {
+fn default_vmcs_config(vmcs: &mut ActiveVmcs, switching: bool) {
     let err = vmcs
         .set_pin_based_ctrls(PinbasedControls::empty())
         .and_then(|_| {
@@ -162,7 +166,7 @@ fn default_vmcs_config(vmcs: &mut VmcsRegion, switching: bool) {
         })
         .and_then(|_| vmcs.set_exception_bitmap(ExceptionBitmap::empty()))
         .and_then(|_| vmcs.save_host_state())
-        .and_then(|_| setup_guest(&mut vmcs.vcpu));
+        .and_then(|_| setup_guest(vmcs.get_vcpu_mut()));
     println!("Config: {:?}", err);
     println!("MSRs:   {:?}", configure_msr());
     println!(

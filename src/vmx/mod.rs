@@ -13,6 +13,7 @@ pub mod msr;
 pub mod raw;
 
 use core::arch::asm;
+use core::marker::PhantomData;
 use core::{arch, usize};
 
 use x86_64::instructions::tables::{sgdt, sidt};
@@ -111,14 +112,42 @@ pub struct Frame {
 }
 
 impl Frame {
-    fn as_mut(&mut self) -> &mut [u8] {
+    /// Creates a new Frames from a physical address and its corresponding virtual address.
+    ///
+    /// # Safety:
+    /// The virtual address must be mapped to the physical address, and the mapping must remain
+    /// valid for ever.
+    pub unsafe fn new(phys_addr: HostPhysAddr, virt_addr: HostVirtAddr) -> Self {
+        let virt_addr = virt_addr.as_usize() as *mut u8;
+        Self {
+            phys_addr,
+            virt_addr,
+        }
+    }
+
+    /// Returns a mutable view of the frame.
+    pub fn as_mut(&mut self) -> &mut [u8] {
         // SAFETY: we assume that the frame address is a valid virtual address exclusively owned by
         // the Frame struct.
         unsafe { core::slice::from_raw_parts_mut(self.virt_addr, 0x1000) }
     }
 
+    /// Returns a mutable view of the frame as an array of u64.
     pub fn as_array_page(&mut self) -> &mut [u64] {
         unsafe { core::slice::from_raw_parts_mut(self.virt_addr as *mut u64, 512) }
+    }
+
+    /// Zeroes out the frame.
+    pub fn zero_out(&mut self) {
+        for item in self.as_array_page().iter_mut() {
+            *item = 0;
+        }
+    }
+
+    /// Zeroes out the frame and returns it.
+    pub fn zeroed(mut self) -> Self {
+        self.zero_out();
+        self
     }
 }
 
@@ -248,24 +277,6 @@ pub fn available_vmfuncs() -> Result<bitmaps::VmFuncControls, VmxError> {
     Ok(bitmaps::VmFuncControls::from_bits_truncate(capabilities))
 }
 
-/// Enter VMX operations.
-///
-/// SAFETY: This function assumes that VMX is available, otherwise its behavior is unefined.
-//  NOTE: see Intel SDM Vol 3C Section 24.11.5
-pub unsafe fn vmxon(allocator: &impl FrameAllocator) -> Result<(), VmxError> {
-    let vmcs_info = get_vmx_info();
-
-    // Allocate a VMXON region, at most the size of a frame.
-    let mut frame = allocator
-        .allocate_zeroed_frame()
-        .expect("Failed to allocate VMXON region");
-
-    // Initialize the VMXON region by copying the revision ID into the 4 first bytes of VMXON
-    // region
-    frame.as_mut()[0..4].copy_from_slice(&vmcs_info.revision.to_le_bytes());
-    raw::vmxon(frame.phys_addr.as_u64())
-}
-
 /// Return basic info about VMX CPU-defined structures.
 ///
 /// SAFETY: This function assumes that VMX is available, otherwise its behavior is undefined.
@@ -284,25 +295,47 @@ unsafe fn get_vmx_info() -> VmxBasicInfo {
     }
 }
 
-// —————————————————————————————————— VMCS —————————————————————————————————— //
+// ————————————————————————————————— VMXON —————————————————————————————————— //
 
-/// A region containing information about a VM.
-pub struct VmcsRegion {
-    /// Virtual CPU, contains guest state.
-    pub vcpu: VCpu,
-    /// The frame used by the region.
-    pub frame: Frame,
+pub struct Vmxon {
+    frame: Frame,
+    // This fiels makes Vmxon !Sync and !Send, therefore it can't be send or shared with another
+    // core.
+    _not_sync: PhantomData<*const ()>,
 }
 
-impl VmcsRegion {
-    pub unsafe fn new(allocator: &impl FrameAllocator) -> Result<Self, VmxError> {
+/// Enter VMX operations.
+///
+/// SAFETY: This function assumes that VMX is available, otherwise its behavior is unefined.
+//  NOTE: see Intel SDM Vol 3C Section 24.11.5
+pub unsafe fn vmxon(mut frame: Frame) -> Result<Vmxon, VmxError> {
+    let vmcs_info = get_vmx_info();
+
+    // Initialize the VMXON region by copying the revision ID into the 4 first bytes of VMXON
+    // region
+    frame.zero_out();
+    frame.as_mut()[0..4].copy_from_slice(&vmcs_info.revision.to_le_bytes());
+    raw::vmxon(frame.phys_addr.as_u64())?;
+    Ok(Vmxon {
+        frame,
+        _not_sync: PhantomData,
+    })
+}
+
+impl Vmxon {
+    /// Turns off VMX mode.
+    pub unsafe fn vmxoff(self) -> Result<Frame, VmxError> {
+        let frame = self.frame;
+        raw::vmxoff()?;
+        Ok(frame)
+    }
+
+    pub unsafe fn create_vm(&self, mut frame: Frame) -> Result<VmcsRegion, VmxError> {
         let vmcs_info = get_vmx_info();
-        let mut frame = allocator
-            .allocate_zeroed_frame()
-            .expect("Failed to allocate VMXON region");
 
         // Initialize the VMCS region by copying the revision ID into the 4 first bytes of VMCS
         // region
+        frame.zero_out();
         frame.as_mut()[0..4].copy_from_slice(&vmcs_info.revision.to_le_bytes());
 
         // Use VMCLEAR to put the VMCS in a clear (valid) state.
@@ -314,17 +347,60 @@ impl VmcsRegion {
                 _private: (),
                 regs: [0; Register::RSize as usize],
             },
+            _lifetime: PhantomData,
+            _not_sync: PhantomData,
         })
     }
+}
 
+// —————————————————————————————————— VMCS —————————————————————————————————— //
+
+/// A region containing information about a VM.
+pub struct VmcsRegion<'vmx> {
+    /// Virtual CPU, contains guest state.
+    pub vcpu: VCpu,
+    /// The frame used by the region.
+    frame: Frame,
+    /// This fields creates an artificial lifetime for the region.
+    _lifetime: PhantomData<&'vmx ()>,
+    /// This fiels makes VmcsRegion !Sync and !Send, therefore it can't be send or shared with
+    /// another core.
+    _not_sync: PhantomData<*const ()>,
+}
+
+/// The active Vmcs. Writting to vmcs using assembly or raw wrappers will write to this structures.
+pub struct ActiveVmcs<'active, 'vmx> {
+    region: &'active mut VmcsRegion<'vmx>,
+}
+
+impl<'vmx> VmcsRegion<'vmx> {
     /// Makes this region the current active region.
-    pub unsafe fn set_as_active(&self) -> Result<(), VmxError> {
-        raw::vmptrld(self.frame.phys_addr.as_u64())
+    //  TODO: Enforce that only a single region can be active at any time.
+    pub fn set_as_active<'active>(
+        self: &'active mut Self,
+    ) -> Result<ActiveVmcs<'active, 'vmx>, VmxError> {
+        unsafe { raw::vmptrld(self.frame.phys_addr.as_u64())? };
+        Ok(ActiveVmcs { region: self })
+    }
+}
+
+impl<'active, 'vmx> ActiveVmcs<'active, 'vmx>
+where
+    'vmx: 'active,
+{
+    /// Deactivates the region.
+    pub fn deactivate(self) -> Result<(), VmxError> {
+        unsafe { raw::vmclear(self.region.frame.phys_addr.as_u64()) }
     }
 
-    pub unsafe fn deactivate() {
-        // Use VMCLEAR
-        todo!()
+    /// Returns a reference to the VCpu.
+    pub fn get_vcpu(&self) -> &VCpu {
+        &self.region.vcpu
+    }
+
+    /// Returns a mutable reference to the VCpu.
+    pub fn get_vcpu_mut(&mut self) -> &mut VCpu {
+        &mut self.region.vcpu
     }
 
     /// Run the VM.
@@ -333,13 +409,11 @@ impl VmcsRegion {
     /// sensible environment. A simple way of ensuring that is to save the current environment as
     /// host state.
     pub unsafe fn run(&mut self) -> Result<VmxExitReason, VmxError> {
-        raw::vmlaunch(&mut self.vcpu)?;
-        self.vcpu.exit_reason()
+        raw::vmlaunch(&mut self.region.vcpu)?;
+        self.region.vcpu.exit_reason()
     }
 
     /// Sets the pin-based controls.
-    ///
-    /// WARNING: the region must be active, otherwise this function might modify another VMCS.
     pub fn set_pin_based_ctrls(&mut self, flags: PinbasedControls) -> Result<(), VmxError> {
         unsafe {
             Self::set_ctrls(
@@ -354,8 +428,6 @@ impl VmcsRegion {
     }
 
     /// Sets the primary processor-based controls.
-    ///
-    /// WARNING: the region must be active, otherwise this function might modify another VMCS.
     pub fn set_primary_ctrls(&mut self, flags: PrimaryControls) -> Result<(), VmxError> {
         unsafe {
             Self::set_ctrls(
@@ -370,8 +442,6 @@ impl VmcsRegion {
     }
 
     /// Sets the secondary processor-based controls.
-    ///
-    /// WARNING: the region must be active, otherwise this function might modify another VMCS.
     pub fn set_secondary_ctrls(&mut self, flags: SecondaryControls) -> Result<(), VmxError> {
         unsafe {
             let spec = msr::VMX_PROCBASED_CTLS2.read();
@@ -382,8 +452,6 @@ impl VmcsRegion {
     }
 
     /// Sets the VM exit controls.
-    ///
-    /// WARNING: the region must be active, otherwise this function might modify another VMCS.
     pub fn set_vm_exit_ctrls(&mut self, flags: ExitControls) -> Result<(), VmxError> {
         unsafe {
             Self::set_ctrls(
@@ -398,8 +466,6 @@ impl VmcsRegion {
     }
 
     /// Sets the VM entry controls.
-    ///
-    /// WARNING: the region must be active, otherwise this function might modify another VMCS.
     pub fn set_vm_entry_ctrls(&mut self, flags: EntryControls) -> Result<(), VmxError> {
         unsafe {
             Self::set_ctrls(
@@ -420,23 +486,17 @@ impl VmcsRegion {
     }
 
     /// Sets the exception bitmap.
-    ///
-    /// WARNING: the region must be active, otherwise this function might modify another VMCS.
     pub fn set_exception_bitmap(&mut self, bitmap: ExceptionBitmap) -> Result<(), VmxError> {
         // TODO: is there a list of allowed settings?
         unsafe { fields::Ctrl32::ExceptionBitmap.vmwrite(bitmap.bits()) }
     }
 
     /// Sets the extended page table (EPT) pointer.
-    ///
-    /// WARNING: the region must be active, otherwise this function might modify another VMCS.
     pub fn set_ept_ptr(&mut self, ept_ptr: HostPhysAddr) -> Result<(), VmxError> {
         unsafe { fields::Ctrl64::EptPtr.vmwrite(ept_ptr.as_u64()) }
     }
 
     /// Sets the EPTP address list.
-    ///
-    /// WARNING: the region must be active, otherwise this function might modify another VMCS.
     pub fn set_eptp_list(&mut self, eptp_list: &ept::EptpList) -> Result<(), VmxError> {
         unsafe { fields::Ctrl64::EptpListAddr.vmwrite(eptp_list.get_ptr().as_u64()) }
     }
@@ -450,8 +510,6 @@ impl VmcsRegion {
     }
 
     /// Saves the host state (control registers, segments...), so that they are restored on VM Exit.
-    ///
-    /// WARNING: the region must be active, otherwise this function might modify another VMCS.
     pub fn save_host_state(&mut self) -> Result<(), VmxError> {
         // NOTE: See section 24.5 of volume 3C.
 
@@ -758,7 +816,7 @@ mod test {
         let expected:       u32 = 0b001_00_11;
 
         let spec = (spec_1_setting << 32) + spec_0_setting;
-        assert_eq!(VmcsRegion::get_ctls(user_request, spec, known), Ok(expected));
+        assert_eq!(ActiveVmcs::get_ctls(user_request, spec, known), Ok(expected));
 
         // testing disallowed one
         let spec_0_setting: u64 = 0b0_1;
@@ -767,7 +825,7 @@ mod test {
         let known:          u32 = 0b1_1;
 
         let spec = (spec_1_setting << 32) + spec_0_setting;
-        assert_eq!(VmcsRegion::get_ctls(user_request, spec, known), Err(VmxError::Disallowed1(VmxFieldError::Unknown, 1)));
+        assert_eq!(ActiveVmcs::get_ctls(user_request, spec, known), Err(VmxError::Disallowed1(VmxFieldError::Unknown, 1)));
 
         // testing disallowed zero
         let spec_0_setting: u64 = 0b1;
@@ -776,7 +834,7 @@ mod test {
         let known:          u32 = 0b1;
 
         let spec = (spec_1_setting << 32) + spec_0_setting;
-        assert_eq!(VmcsRegion::get_ctls(user_request, spec, known), Err(VmxError::Disallowed0(VmxFieldError::Unknown, 0)));
+        assert_eq!(ActiveVmcs::get_ctls(user_request, spec, known), Err(VmxError::Disallowed0(VmxFieldError::Unknown, 0)));
     }
 
     /// See manual Annex A.3.
@@ -793,7 +851,7 @@ mod test {
 
         let spec = spec_0_setting;
         let true_spec = (true_spec_1_setting << 32) + true_spec_0_setting;
-        assert_eq!(VmcsRegion::get_true_ctls(user_request, spec, true_spec, known), Ok(expected));
+        assert_eq!(ActiveVmcs::get_true_ctls(user_request, spec, true_spec, known), Ok(expected));
 
         // testing disallowed one
         let spec_0_setting:      u64 = 0b0_1;
@@ -805,7 +863,7 @@ mod test {
         let spec = spec_0_setting;
         let true_spec = (true_spec_1_setting << 32) + true_spec_0_setting;
         assert_eq!(
-            VmcsRegion::get_true_ctls(user_request, spec, true_spec, known),
+            ActiveVmcs::get_true_ctls(user_request, spec, true_spec, known),
             Err(VmxError::Disallowed1(VmxFieldError::Unknown, 1)),
         );
 
@@ -819,7 +877,7 @@ mod test {
         let spec = spec_0_setting;
         let true_spec = (true_spec_1_setting << 32) + true_spec_0_setting;
         assert_eq!(
-            VmcsRegion::get_true_ctls(user_request, spec, true_spec, known),
+            ActiveVmcs::get_true_ctls(user_request, spec, true_spec, known),
             Err(VmxError::Disallowed0(VmxFieldError::Unknown, 0)),
         );
     }

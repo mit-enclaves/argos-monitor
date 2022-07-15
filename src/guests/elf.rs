@@ -127,7 +127,7 @@ pub unsafe trait FromBytes: Sized + Clone {
         // reference, and a lenght check was performed just above.
         unsafe {
             let ptr = bytes.as_ptr() as *const Self;
-            Some((&*ptr).clone())
+            Some(ptr.read_unaligned())
         }
     }
 }
