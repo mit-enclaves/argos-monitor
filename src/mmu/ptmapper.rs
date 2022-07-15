@@ -11,6 +11,7 @@ pub struct PtMapper {
 
 bitflags! {
     pub struct PtFlag: u64 {
+        const EMPTY = 0;
         const PRESENT = 1;
         const WRITE = 1 << 1;
         const USER = 1 << 2;
@@ -28,6 +29,8 @@ bitflags! {
         const NORMAL = 1 << 12;
     }
 }
+
+pub const DEFAULT_PROTS: PtFlag = PtFlag::PRESENT.union(PtFlag::WRITE).union(PtFlag::USER);
 
 unsafe impl Walker for PtMapper {
     type PhysAddr = GuestPhysAddr;
@@ -65,6 +68,7 @@ impl PtMapper {
                 gva,
                 GuestVirtAddr::new(gva.as_usize() + size),
                 &mut |addr, entry, level| {
+                    // TODO(aghosn) handle rewrite of access rights.
                     if (*entry & PtFlag::PRESENT.bits()) != 0 {
                         return WalkNext::Continue;
                     }
@@ -98,7 +102,7 @@ impl PtMapper {
                         .allocate_zeroed_frame()
                         .expect("map_range: unable to allocate page table entry.");
                     assert!(frame.phys_addr.as_u64() >= offset as u64);
-                    *entry = frame.phys_addr.as_u64() - (offset as u64) | prot.bits();
+                    *entry = frame.phys_addr.as_u64() - (offset as u64) | DEFAULT_PROTS.bits();
                     WalkNext::Continue
                 },
             )

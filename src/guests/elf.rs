@@ -57,6 +57,20 @@ mod ffi {
 
     #[repr(C)]
     #[derive(Debug, Default, Copy, Clone)]
+    pub struct Elf64Shdr {
+        pub sh_name: Elf64_Word,
+        pub sh_type: Elf64_Word,
+        pub sh_flags: Elf64_Xword,
+        pub sh_addr: Elf64_Addr,
+        pub sh_offset: Elf64_Off,
+        pub sh_size: Elf64_Xword,
+        pub sh_link: Elf64_Word,
+        pub sh_addralign: Elf64_Xword,
+        pub sh_entsize: Elf64_Xword,
+    }
+
+    #[repr(C)]
+    #[derive(Debug, Default, Copy, Clone)]
     pub struct Elf64Note {
         pub n_namesz: Elf64_Word,
         pub n_descsz: Elf64_Word,
@@ -66,7 +80,35 @@ mod ffi {
 
 use core::mem;
 
+use bitflags::bitflags;
 pub use ffi::{Elf64Hdr, Elf64Note, Elf64Phdr};
+
+use self::ffi::Elf64Shdr;
+
+bitflags! {
+    /// Valid values for the Elf64Phdr.p_type entry.
+    pub struct Elf64PhdrType : ffi::Elf64_Word {
+        const PT_NULL       = 0x0;          // program header entry unused.
+        const PT_LOAD       = 0x1;          // loadable segment.
+        const PT_DYNAMIC    = 0x2;          // dynamic linking information.
+        const PT_INTERP     = 0x3;          // interpreter information.
+        const PT_NOTE       = 0x4;          // auxiliary information.
+        const PT_SHLIB      = 0x5;          // reserved.
+        const PT_PHDR       = 0x6;          // prog header segment.
+        const PT_TLS        = 0x7;          // thread-local storage.
+        const PT_LOOS       = 0x60000000;   // reserved INCLUSIVE range OS.
+        const PT_HIOS       = 0x6FFFFFFF;   // |
+        const PT_LOPROC     = 0x70000000;   // reserved INCLUSIVE range Proc.
+        const PT_HIPROC     = 0x7FFFFFFF;   // |
+    }
+
+    pub struct Elf64PhdrFlags: ffi::Elf64_Word {
+        const PF_X          = 0x1;          // Execute.
+        const PF_W          = 0x2;          // Write.
+        const PF_R          = 0x4;          // Read.
+        const PF_MASKPROC   = 0xf0000000;   // Unspecified.
+    }
+}
 
 /// Types that can be read from raw bytes.
 ///
@@ -93,3 +135,4 @@ pub unsafe trait FromBytes: Sized + Clone {
 unsafe impl FromBytes for Elf64Note {}
 unsafe impl FromBytes for Elf64Phdr {}
 unsafe impl FromBytes for Elf64Hdr {}
+unsafe impl FromBytes for Elf64Shdr {}

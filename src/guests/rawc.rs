@@ -1,7 +1,8 @@
 use crate::guests;
+use crate::guests::elf_program::ElfProgram;
 use crate::mmu::eptmapper::EptMapper;
 use crate::mmu::frames::RangeFrameAllocator;
-use crate::mmu::ptmapper::{PtFlag, PtMapper};
+use crate::mmu::ptmapper::PtMapper;
 use crate::mmu::FrameAllocator;
 use crate::println;
 use crate::qemu;
@@ -41,24 +42,13 @@ impl Guest for RawcBytes {
     /// 3. Generate the EPT mappings with hpa == gpa.
     /// 4. Set the EPT and return the vmcs.
     unsafe fn instantiate(&self, allocator: &impl FrameAllocator) -> vmx::VmcsRegion {
+        let rawc_prog = ElfProgram::new(RAWCBYTES);
         let virtoffset = allocator.get_physical_offset();
         // Create a bumper allocator with 1GB of RAM.
         let ram = allocator
             .allocate_range(ONEGB)
             .expect("Unable to allocate 2GB");
         let bumper = RangeFrameAllocator::new(ram.start, ram.end, virtoffset);
-
-        // Allocate a page to hold the program and copy the content.
-        // The program will use the page gpa 0.
-        let code = bumper
-            .allocate_range(self.size)
-            .expect("Unable to allocate code page");
-        let start = self.offset as usize;
-        let end = start + self.size as usize;
-        let dest_addr = code.start.as_u64() + virtoffset.as_u64();
-        let dest = core::slice::from_raw_parts_mut(dest_addr as *mut u8, self.size as usize);
-        assert!(RAWCBYTES.len() >= end);
-        dest.copy_from_slice(&RAWCBYTES[start..end]);
 
         // Setup the EPT first.
         let (start, end) = bumper.get_boundaries();
@@ -84,14 +74,7 @@ impl Guest for RawcBytes {
             start as usize,
             vmx::GuestPhysAddr::new((pt_root.start.as_u64() - start) as usize),
         );
-
-        pt_mapper.map_range(
-            &bumper,
-            vmx::GuestVirtAddr::new(RAWC.start as usize),
-            vmx::GuestPhysAddr::new((code.start.as_u64() - start) as usize),
-            ONEPAGE as usize,
-            PtFlag::PRESENT | PtFlag::WRITE | PtFlag::USER,
-        );
+        rawc_prog.load(&bumper, &mut pt_mapper);
 
         // Setup the vmcs.
         let mut vmcs = match vmx::VmcsRegion::new(allocator) {
@@ -110,7 +93,7 @@ impl Guest for RawcBytes {
         // Setup the roots.
         vmcs.set_ept_ptr(ept_mapper.get_root()).ok();
         vmx::check::check().expect("check error");
-        let entry_point = self.start + 0x4;
+        let entry_point = rawc_prog.entry + 0x4;
         vmcs.vcpu
             .set_nat(fields::GuestStateNat::Rip, entry_point as usize)
             .ok();
