@@ -1,4 +1,5 @@
 use alloc::sync::Arc;
+use core::cell::Cell;
 use core::ops::DerefMut;
 
 use bootloader::boot_info::{MemoryRegion, MemoryRegionKind};
@@ -18,9 +19,7 @@ const PAGE_SIZE: usize = 0x1000;
 
 pub use x86_64::structures::paging::page::Size4KiB;
 
-pub trait FrameAllocator:
-    x86_64::structures::paging::FrameAllocator<Size4KiB> + vmx::FrameAllocator + Clone
-{
+pub unsafe trait FrameAllocator: vmx::FrameAllocator {
     /// Allocates a range of physical memory.
     fn allocate_range(&self, size: u64) -> Option<PhysRange>;
 
@@ -220,7 +219,7 @@ unsafe impl vmx::FrameAllocator for SharedFrameAllocator {
     }
 }
 
-impl FrameAllocator for SharedFrameAllocator {
+unsafe impl FrameAllocator for SharedFrameAllocator {
     fn allocate_range(&self, size: u64) -> Option<PhysRange> {
         let mut inner = self.alloc.lock();
         inner.allocate_range(size)
@@ -238,10 +237,69 @@ impl FrameAllocator for SharedFrameAllocator {
     }
 }
 
-unsafe impl x86_64::structures::paging::FrameAllocator<Size4KiB> for SharedFrameAllocator {
-    fn allocate_frame(&mut self) -> Option<PhysFrame> {
-        let mut alloc = self.alloc.lock();
-        alloc.allocate_frame()
+// ————————————————————————— Range Frame Allocator —————————————————————————— //
+
+pub struct RangeFrameAllocator {
+    range_start: PhysAddr,
+    range_end: PhysAddr,
+    cursor: Cell<PhysAddr>,
+    physical_memory_offset: VirtAddr,
+}
+
+impl RangeFrameAllocator {
+    pub unsafe fn new(
+        range_start: PhysAddr,
+        range_end: PhysAddr,
+        physical_memory_offset: VirtAddr,
+    ) -> Self {
+        let range_start = range_start.align_up(PAGE_SIZE as u64);
+        let range_end = range_end.align_down(PAGE_SIZE as u64);
+        Self {
+            range_start,
+            range_end,
+            cursor: Cell::new(range_start),
+            physical_memory_offset,
+        }
+    }
+}
+
+unsafe impl vmx::FrameAllocator for RangeFrameAllocator {
+    fn allocate_frame(&self) -> Option<vmx::Frame> {
+        let cursor = self.cursor.get();
+        if cursor < self.range_end {
+            self.cursor
+                .set(PhysAddr::new(cursor.as_u64() + PAGE_SIZE as u64));
+            Some(vmx::Frame {
+                phys_addr: vmx::HostPhysAddr::new(cursor.as_u64() as usize),
+                virt_addr: (cursor.as_u64() + self.physical_memory_offset.as_u64()) as *mut u8,
+            })
+        } else {
+            None
+        }
+    }
+}
+
+unsafe impl FrameAllocator for RangeFrameAllocator {
+    fn allocate_range(&self, size: u64) -> Option<PhysRange> {
+        let cursor = self.cursor.get();
+        if cursor + size < self.range_end {
+            let new_cursor = (cursor + size).align_up(PAGE_SIZE as u64);
+            self.cursor.set(new_cursor);
+            Some(PhysRange {
+                start: cursor,
+                end: new_cursor,
+            })
+        } else {
+            None
+        }
+    }
+
+    fn get_boundaries(&self) -> (u64, u64) {
+        (self.range_start.as_u64(), self.range_end.as_u64())
+    }
+
+    fn get_physical_offset(&self) -> VirtAddr {
+        self.physical_memory_offset
     }
 }
 
