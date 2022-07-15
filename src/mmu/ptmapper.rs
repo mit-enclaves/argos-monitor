@@ -1,7 +1,6 @@
 use super::walker::{Level, WalkNext, Walker};
 use super::FrameAllocator;
-use crate::vmx::{Frame, GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
-use alloc::vec::Vec;
+use crate::vmx::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 use bitflags::bitflags;
 
 pub struct PtMapper {
@@ -58,10 +57,9 @@ impl PtMapper {
         gpa: GuestPhysAddr,
         size: usize,
         prot: PtFlag,
-    ) -> Result<Vec<Frame>, ()> {
+    ) {
         //TODO check alignment
         let offset = self.offset;
-        let mut frames = Vec::<Frame>::new();
         unsafe {
             self.walk_range(
                 gva,
@@ -74,21 +72,24 @@ impl PtMapper {
                     let phys = gpa.as_u64() + (addr.as_u64() - gva.as_u64());
                     // Opportunity to map a 1GB region
                     if level == Level::L3 {
-                        if addr.as_usize() + PageSize::GIANT.bits() <= end {
-                            assert!(phys % (PageSize::GIANT.bits() as u64) == 0);
+                        if (addr.as_usize() + PageSize::GIANT.bits() <= end)
+                            && (phys % (PageSize::GIANT.bits() as u64) == 0)
+                        {
                             *entry = phys | PtFlag::PSIZE.bits() | prot.bits();
                             return WalkNext::Leaf;
                         }
                     }
                     // Opportunity to map a 2MB region.
                     if level == Level::L2 {
-                        if addr.as_usize() + PageSize::HUGE.bits() <= end {
-                            assert!(phys % (PageSize::HUGE.bits() as u64) == 0);
+                        if (addr.as_usize() + PageSize::HUGE.bits() <= end)
+                            && (phys % (PageSize::HUGE.bits() as u64) == 0)
+                        {
                             *entry = phys | PtFlag::PSIZE.bits() | prot.bits();
                             return WalkNext::Leaf;
                         }
                     }
                     if level == Level::L1 {
+                        assert!(phys % (PageSize::NORMAL.bits() as u64) == 0);
                         *entry = phys | prot.bits();
                         return WalkNext::Leaf;
                     }
@@ -96,12 +97,12 @@ impl PtMapper {
                     let frame = allocator
                         .allocate_zeroed_frame()
                         .expect("map_range: unable to allocate page table entry.");
-                    *entry = frame.phys_addr.as_u64() + (offset as u64) | prot.bits();
-                    frames.push(frame);
+                    assert!(frame.phys_addr.as_u64() >= offset as u64);
+                    *entry = frame.phys_addr.as_u64() - (offset as u64) | prot.bits();
                     WalkNext::Continue
                 },
             )
-            .and_then(|_| Ok(frames))
+            .expect("Failed to map PTs");
         }
     }
 }

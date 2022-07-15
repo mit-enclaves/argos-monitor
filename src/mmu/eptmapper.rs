@@ -4,7 +4,7 @@ use super::{
 };
 use crate::vmx::{
     bitmaps::EptEntryFlags,
-    ept::{GIANT_PAGE_SIZE, HUGE_PAGE_SIZE},
+    ept::{GIANT_PAGE_SIZE, HUGE_PAGE_SIZE, PAGE_SIZE},
 };
 use crate::vmx::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
 
@@ -61,20 +61,23 @@ impl EptMapper {
                     let hphys = hpa.as_usize() + (addr.as_usize() - gpa.as_usize());
 
                     if level == Level::L3 {
-                        if addr.as_usize() + GIANT_PAGE_SIZE <= end {
-                            assert!(hphys % GIANT_PAGE_SIZE == 0);
+                        if (addr.as_usize() + GIANT_PAGE_SIZE <= end)
+                            && (hphys % GIANT_PAGE_SIZE == 0)
+                        {
                             *entry = hphys as u64 | EptEntryFlags::PAGE.bits() | prot.bits();
                             return WalkNext::Leaf;
                         }
                     }
                     if level == Level::L2 {
-                        if addr.as_usize() + HUGE_PAGE_SIZE <= end {
-                            assert!(hphys % HUGE_PAGE_SIZE == 0);
+                        if (addr.as_usize() + HUGE_PAGE_SIZE <= end)
+                            && (hphys % HUGE_PAGE_SIZE == 0)
+                        {
                             *entry = hphys as u64 | EptEntryFlags::PAGE.bits() | prot.bits();
                             return WalkNext::Leaf;
                         }
                     }
                     if level == Level::L1 {
+                        assert!(hphys % PAGE_SIZE == 0);
                         *entry = hphys as u64 | prot.bits();
                         return WalkNext::Leaf;
                     }

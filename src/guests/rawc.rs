@@ -1,26 +1,33 @@
 use crate::guests;
 use crate::mmu::eptmapper::EptMapper;
+use crate::mmu::frames::RangeFrameAllocator;
 use crate::mmu::ptmapper::{PtFlag, PtMapper};
 use crate::mmu::FrameAllocator;
 use crate::println;
 use crate::qemu;
-use crate::vmx;
 use crate::vmx::bitmaps::EptEntryFlags;
 use crate::vmx::fields;
-use crate::vmx::{GuestPhysAddr, GuestVirtAddr};
+use crate::vmx::{self};
 
 use super::Guest;
 
 const RAWCBYTES: &'static [u8] = include_bytes!("../../guest/rawc");
+const ONEGB: u64 = 1 << 30;
+const ONEPAGE: u64 = 1 << 12;
 
+/// A datastructure to represent the program.
+/// `start` is the start address of the program.
+/// `offset` is the .text section offset in the raw bytes.
 pub struct RawcBytes {
     pub start: u64,
     pub offset: u64,
+    pub size: u64,
 }
 
 pub const RAWC: RawcBytes = RawcBytes {
     start: 0x401000,
     offset: 0x1000,
+    size: 0x1000,
 };
 
 impl Guest for RawcBytes {
@@ -34,47 +41,59 @@ impl Guest for RawcBytes {
     /// 3. Generate the EPT mappings with hpa == gpa.
     /// 4. Set the EPT and return the vmcs.
     unsafe fn instantiate(&self, allocator: &impl FrameAllocator) -> vmx::VmcsRegion {
-        let pml4 = allocator
-            .allocate_zeroed_frame()
-            .expect("Unable to allocate root");
-        // 2. Allocate 2GB so that we can find a 1Gb aligned address;
-        let gb = 1 << 30;
-        let backed = allocator
-            .allocate_range(2 * gb)
+        let virtoffset = allocator.get_physical_offset();
+        // Create a bumper allocator with 1GB of RAM.
+        let ram = allocator
+            .allocate_range(ONEGB)
             .expect("Unable to allocate 2GB");
-        let aligned = backed.start.as_u64() / gb + gb;
-        assert!(
-            aligned % gb == 0 && aligned > backed.start.as_u64() && aligned < backed.end.as_u64()
-        );
-        let mut mapper = PtMapper::new(
-            allocator.get_physical_offset().as_u64() as usize,
-            0,
-            GuestPhysAddr::new(pml4.phys_addr.as_usize()),
-        );
-        let frames = mapper
-            .map_range(
-                allocator,
-                GuestVirtAddr::new(0),
-                GuestPhysAddr::new(aligned as usize),
-                gb as usize,
-                PtFlag::PRESENT | PtFlag::WRITE | PtFlag::USER,
-            )
-            .expect("Error building page tables");
+        let bumper = RangeFrameAllocator::new(ram.start, ram.end, virtoffset);
 
-        // Copying the program.
-        let virtoffset = allocator.get_physical_offset().as_u64();
-        let offset_aligned = aligned - backed.start.as_u64();
-        let addr = backed.start.as_u64() + virtoffset + offset_aligned;
+        // Allocate a page to hold the program and copy the content.
+        // The program will use the page gpa 0.
+        let code = bumper
+            .allocate_range(self.size)
+            .expect("Unable to allocate code page");
         let start = self.offset as usize;
-        if start >= RAWCBYTES.len() {
-            panic!("The offset is too big");
-        }
-        let target = core::slice::from_raw_parts_mut(
-            (addr + self.start) as *mut u8,
-            RAWCBYTES.len() - start,
-        );
-        target.copy_from_slice(&RAWCBYTES[start..]);
+        let end = start + self.size as usize;
+        let dest_addr = code.start.as_u64() + virtoffset.as_u64();
+        let dest = core::slice::from_raw_parts_mut(dest_addr as *mut u8, self.size as usize);
+        assert!(RAWCBYTES.len() >= end);
+        dest.copy_from_slice(&RAWCBYTES[start..end]);
 
+        // Setup the EPT first.
+        let (start, end) = bumper.get_boundaries();
+        let ept_root = bumper.allocate_range(ONEPAGE).expect("ept root allocation");
+        let mut ept_mapper = EptMapper::new(
+            bumper.get_physical_offset().as_u64() as usize,
+            start as usize,
+            vmx::HostPhysAddr::new(ept_root.start.as_u64() as usize),
+        );
+
+        ept_mapper.map_range(
+            &bumper,
+            vmx::GuestPhysAddr::new(0),
+            vmx::HostPhysAddr::new(start as usize),
+            (end - start) as usize,
+            EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
+        );
+
+        // Setup the page tables.
+        let pt_root = bumper.allocate_range(ONEPAGE).expect("root alloc");
+        let mut pt_mapper = PtMapper::new(
+            virtoffset.as_u64() as usize,
+            start as usize,
+            vmx::GuestPhysAddr::new((pt_root.start.as_u64() - start) as usize),
+        );
+
+        pt_mapper.map_range(
+            &bumper,
+            vmx::GuestVirtAddr::new(RAWC.start as usize),
+            vmx::GuestPhysAddr::new((code.start.as_u64() - start) as usize),
+            ONEPAGE as usize,
+            PtFlag::PRESENT | PtFlag::WRITE | PtFlag::USER,
+        );
+
+        // Setup the vmcs.
         let mut vmcs = match vmx::VmcsRegion::new(allocator) {
             Err(err) => {
                 println!("VMCS:   Err({:?})", err);
@@ -85,48 +104,23 @@ impl Guest for RawcBytes {
                 vmcs
             }
         };
-
-        println!("LOAD:   {:?}", vmcs.set_as_active());
+        vmcs.set_as_active().expect("vmcs cannot set active");
         guests::default_vmcs_config(&mut vmcs, false);
-        let root = allocator.allocate_zeroed_frame().expect("Allocate frame");
-        let mut ept_mapper = EptMapper::new(
-            allocator.get_physical_offset().as_u64() as usize,
-            0,
-            root.phys_addr,
-        );
 
-        // Let's map stuff
-        ept_mapper.map_range(
-            allocator,
-            vmx::GuestPhysAddr::new(pml4.phys_addr.as_usize()),
-            pml4.phys_addr,
-            0x1000,
-            EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
-        );
-        ept_mapper.map_range(
-            allocator,
-            vmx::GuestPhysAddr::new(frames[0].phys_addr.as_usize()),
-            frames[0].phys_addr,
-            0x1000,
-            EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
-        );
-        ept_mapper.map_range(
-            allocator,
-            vmx::GuestPhysAddr::new(backed.start.as_u64() as usize),
-            vmx::HostPhysAddr::new(backed.start.as_u64() as usize),
-            backed.size(),
-            EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
-        );
-
-        println!("EPTP:   {:?}", vmcs.set_ept_ptr(ept_mapper.get_root()));
-        println!("Check:  {:?}", vmx::check::check());
+        // Setup the roots.
+        vmcs.set_ept_ptr(ept_mapper.get_root()).ok();
+        vmx::check::check().expect("check error");
         let entry_point = self.start + 0x4;
         vmcs.vcpu
             .set_nat(fields::GuestStateNat::Rip, entry_point as usize)
             .ok();
         vmcs.vcpu
-            .set_nat(fields::GuestStateNat::Cr3, pml4.phys_addr.as_usize())
+            .set_nat(
+                fields::GuestStateNat::Cr3,
+                (pt_root.start.as_u64() - start) as usize,
+            )
             .ok();
+
         // Zero out the gdt and idt
         vmcs.vcpu.set_nat(fields::GuestStateNat::GdtrBase, 0x0).ok();
         vmcs.vcpu.set_nat(fields::GuestStateNat::IdtrBase, 0x0).ok();
