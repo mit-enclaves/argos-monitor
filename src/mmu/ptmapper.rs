@@ -99,8 +99,9 @@ impl PtMapper {
                     }
                     // Create an entry
                     let frame = allocator
-                        .allocate_zeroed_frame()
-                        .expect("map_range: unable to allocate page table entry.");
+                        .allocate_frame()
+                        .expect("map_range: unable to allocate page table entry.")
+                        .zeroed();
                     assert!(frame.phys_addr.as_u64() >= offset as u64);
                     *entry = frame.phys_addr.as_u64() - (offset as u64) | DEFAULT_PROTS.bits();
                     WalkNext::Continue

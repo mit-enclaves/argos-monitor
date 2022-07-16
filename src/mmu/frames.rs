@@ -19,7 +19,10 @@ const PAGE_SIZE: usize = 0x1000;
 
 pub use x86_64::structures::paging::page::Size4KiB;
 
-pub unsafe trait FrameAllocator: vmx::FrameAllocator {
+pub unsafe trait FrameAllocator {
+    /// Allocates a frame.
+    fn allocate_frame(&self) -> Option<vmx::Frame>;
+
     /// Allocates a range of physical memory.
     fn allocate_range(&self, size: u64) -> Option<PhysRange>;
 
@@ -204,9 +207,7 @@ impl SharedFrameAllocator {
     }
 }
 
-// TODO: comment about safety
-// For now our frame allocator never re-use frames, so that's all good.
-unsafe impl vmx::FrameAllocator for SharedFrameAllocator {
+unsafe impl FrameAllocator for SharedFrameAllocator {
     fn allocate_frame(&self) -> Option<vmx::Frame> {
         let mut inner = self.alloc.lock();
         let frame = inner.allocate_frame()?;
@@ -217,9 +218,7 @@ unsafe impl vmx::FrameAllocator for SharedFrameAllocator {
                 as *mut u8,
         })
     }
-}
 
-unsafe impl FrameAllocator for SharedFrameAllocator {
     fn allocate_range(&self, size: u64) -> Option<PhysRange> {
         let mut inner = self.alloc.lock();
         inner.allocate_range(size)
@@ -263,7 +262,7 @@ impl RangeFrameAllocator {
     }
 }
 
-unsafe impl vmx::FrameAllocator for RangeFrameAllocator {
+unsafe impl FrameAllocator for RangeFrameAllocator {
     fn allocate_frame(&self) -> Option<vmx::Frame> {
         let cursor = self.cursor.get();
         if cursor < self.range_end {
@@ -277,9 +276,7 @@ unsafe impl vmx::FrameAllocator for RangeFrameAllocator {
             None
         }
     }
-}
 
-unsafe impl FrameAllocator for RangeFrameAllocator {
     fn allocate_range(&self, size: u64) -> Option<PhysRange> {
         let cursor = self.cursor.get();
         if cursor + size < self.range_end {

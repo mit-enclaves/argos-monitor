@@ -1,7 +1,7 @@
 //! Extended Page Table
 
 use super::bitmaps::EptEntryFlags;
-use super::{Frame, FrameAllocator, HostPhysAddr};
+use super::{Frame, HostPhysAddr};
 
 pub const GIANT_PAGE_SIZE: usize = 1 << 30;
 pub const HUGE_PAGE_SIZE: usize = 1 << 21;
@@ -20,9 +20,8 @@ pub struct EptpList {
 
 impl EptpList {
     /// Creates a fresh EPTP List with zeroed entries.
-    pub fn new(allocator: &impl FrameAllocator) -> Option<Self> {
-        let frame = allocator.allocate_zeroed_frame()?;
-        Some(Self { frame })
+    pub fn new(frame: Frame) -> Self {
+        Self { frame }
     }
 
     /// Returns the address of the EPTP list.

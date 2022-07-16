@@ -43,8 +43,11 @@ impl Guest for Identity {
             if switching {
                 let ept_mapper2 = setup_ept(allocator).expect("Failed to setup EPT 2");
                 println!("EPT2:   {:?}", vmcs.set_ept_ptr(ept_mapper2.get_root()));
-                let mut eptp_list =
-                    ept::EptpList::new(allocator).expect("Failed to allocate EPTP list");
+                let mut eptp_list = ept::EptpList::new(
+                    allocator
+                        .allocate_frame()
+                        .expect("Failed to allocate EPTP list"),
+                );
                 eptp_list.set_entry(0, ept_mapper.get_root());
                 eptp_list.set_entry(1, ept_mapper2.get_root());
                 println!("EPTP L: {:?}", vmcs.set_eptp_list(&eptp_list));
@@ -125,8 +128,9 @@ unsafe fn guest_code() {
 
 fn setup_ept(allocator: &impl FrameAllocator) -> Result<EptMapper, ()> {
     let root = allocator
-        .allocate_zeroed_frame()
-        .expect("Unable to allocate root ept");
+        .allocate_frame()
+        .expect("Unable to allocate root ept")
+        .zeroed();
     let mut ept_mapper = EptMapper::new(
         allocator.get_physical_offset().as_u64() as usize,
         0,

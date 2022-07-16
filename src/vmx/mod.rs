@@ -98,7 +98,7 @@ addr_impl!(GuestPhysAddr);
 addr_impl!(HostPhysAddr);
 addr_impl!(HostVirtAddr);
 
-// ———————————————————————————— Frame Allocator ————————————————————————————— //
+// ——————————————————————————— Frame Abstraction ———————————————————————————— //
 
 /// Representation of a physical frame.
 pub struct Frame {
@@ -148,38 +148,6 @@ impl Frame {
     pub fn zeroed(mut self) -> Self {
         self.zero_out();
         self
-    }
-}
-
-/// A frame allocator, used to allocate frames for EPTs and VMX control structures.
-pub unsafe trait FrameAllocator {
-    /// Allocates a fresh frame.
-    ///
-    /// The frame is not initialized, i.e. there is no guarantee that the content is zeroed out.
-    /// To allocate zeroed frames, use `allocate_zeroed_frame`.
-    ///
-    /// SAFETY: the frame must be exclusively owned by the caller for the whole duration of VMX
-    /// operations.
-    fn allocate_frame(&self) -> Option<Frame>;
-
-    /// Allocates a fresh frame and zero out its content.
-    ///
-    /// SAFETY: the frame must be exclusively owned by the caller for the whole duration of VMX
-    /// operations.
-    fn allocate_zeroed_frame(&self) -> Option<Frame> {
-        let frame = self.allocate_frame()?;
-
-        // SAFETY: if the frame is allocated sucessfully, we have full ownership and the mapping is
-        // valid.
-        unsafe {
-            // Interpret the frame as an array of u64
-            let content = &mut *(frame.virt_addr as *mut [u64; 512]);
-            // Zero out the content
-            for bytes in content {
-                *bytes = 0;
-            }
-        }
-        Some(frame)
     }
 }
 

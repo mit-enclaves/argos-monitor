@@ -82,8 +82,9 @@ impl EptMapper {
                         return WalkNext::Leaf;
                     }
                     let frame = allocator
-                        .allocate_zeroed_frame()
-                        .expect("map_range: unable to allocate page table entry");
+                        .allocate_frame()
+                        .expect("map_range: unable to allocate page table entry")
+                        .zeroed();
                     *entry = frame.phys_addr.as_u64() | prot.bits();
                     WalkNext::Continue
                 },
