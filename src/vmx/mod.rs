@@ -313,7 +313,7 @@ impl Vmxon {
             frame,
             vcpu: VCpu {
                 _private: (),
-                regs: [0; Register::RSize as usize],
+                regs: [0; 15],
             },
             _lifetime: PhantomData,
             _not_sync: PhantomData,
@@ -634,28 +634,29 @@ where
 // —————————————————————————————— Virtual CPU ——————————————————————————————— //
 
 /// Virtual CPU registers.
+///
+/// Note that rip and rsp are special cases, as they are handled directly by VMX instead of the
+/// vcpu.
 //
 //  WARNING: inline assembly depends on the register values, don't change them without updating
 //  corresponding assembly!
-#[repr(usize)]
+#[repr(u8)]
 pub enum Register {
     Rax = 0,
     Rcx = 1,
     Rdx = 2,
     Rbx = 3,
-    Rsp = 4,
-    Rbp = 5,
-    Rsi = 6,
-    Rdi = 7,
-    R8 = 8,
-    R9 = 9,
-    R10 = 10,
-    R11 = 11,
-    R12 = 12,
-    R13 = 13,
-    R14 = 14,
-    R15 = 15,
-    RSize = 16,
+    Rbp = 4,
+    Rsi = 5,
+    Rdi = 6,
+    R8 = 7,
+    R9 = 8,
+    R10 = 9,
+    R11 = 10,
+    R12 = 11,
+    R13 = 12,
+    R14 = 13,
+    R15 = 14,
 }
 
 /// A virtual CPU.
@@ -665,7 +666,21 @@ pub struct VCpu {
     _private: (),
 
     // Set of registers to save/restore
-    pub regs: [u64; Register::RSize as usize],
+    regs: [u64; 15],
+}
+
+impl core::ops::Index<Register> for VCpu {
+    type Output = u64;
+
+    fn index(&self, index: Register) -> &Self::Output {
+        &self.regs[index as usize]
+    }
+}
+
+impl core::ops::IndexMut<Register> for VCpu {
+    fn index_mut(&mut self, index: Register) -> &mut Self::Output {
+        &mut self.regs[index as usize]
+    }
 }
 
 impl VCpu {

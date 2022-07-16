@@ -83,8 +83,8 @@ fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
         println!(
             "Launch: {:?} -> {:#x?} - {:#x?}",
             result,
-            vcpu.regs[vmx::Register::Rax as usize],
-            vcpu.regs[vmx::Register::Rbx as usize],
+            vcpu[vmx::Register::Rax],
+            vcpu[vmx::Register::Rbx],
         );
         println!("Info:   {:?}", vcpu.interrupt_info());
         println!(

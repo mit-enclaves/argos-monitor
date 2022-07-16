@@ -79,7 +79,7 @@ pub unsafe fn vmptrld(addr: u64) -> Result<(), VmxError> {
 pub unsafe fn vmlaunch(vcpu: &mut vmx::VCpu) -> Result<(), VmxError> {
     let rip_field = fields::HostStateNat::Rip as u64;
     let rsp_field = fields::HostStateNat::Rsp as u64;
-    let vcpu_ptr = vcpu.regs.as_ptr();
+    let vcpu_ptr = vcpu.regs.as_mut_ptr();
     asm!(
         "push rbx",                   // Save %rbx, see https://stackoverflow.com/a/71481425
         "push rbp",                   // Save %rbp
@@ -91,14 +91,14 @@ pub unsafe fn vmlaunch(vcpu: &mut vmx::VCpu) -> Result<(), VmxError> {
         "nop",                        // After VM Exit we land here
         "push rbx",                   // Save guest %rbx
         "mov rbx, [rsp + 8]",         // Load vcpu pointer (second value from top of the stack)
-        "mov [rbx + 40], rbp",        // Save guest %rbp to vcpu
+        "mov [rbx + 32], rbp",        // Save guest %rbp to vcpu
         "pop rbp",                    // Load guest %rbx in %rbp
         "mov [rbx + 24], rbp",        // Save guest %rbx to vcpu
         "pop rbx",                    // Discard pointer to vcpu
         "pop rbp",                    // Restore %rbp
         "pop rbx",                    // Restore %rbx
         // Registers used
-        inout("rax") vcpu_ptr => vcpu.regs[vmx::Register::Rax as usize], // VCPU RBX pointer
+        inout("rax") vcpu_ptr => vcpu.regs[vmx::Register::Rax as usize],     // VCPU RBX pointer
         inout("rcx") rsp_field => vcpu.regs[vmx::Register::Rcx as usize],    // RSP host VMCS field
         inout("rdx") rip_field => vcpu.regs[vmx::Register::Rdx as usize],    // RIP host VMCS field
         out("rsi") vcpu.regs[vmx::Register::Rsi as usize],
