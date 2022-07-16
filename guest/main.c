@@ -6,8 +6,13 @@ int bss;
 __attribute__((force_align_arg_pointer))
 void _start() {
   bss = RO;
-  asm("movl $0x666, %eax;"
-      "movl $0x777, %ebx;"
-      "vmcall");
+  for (int i = 0; i < 10; i++) {
+    asm("movl $0x888, %eax;"
+        "movl $0x777, %ebx;"
+        "vmcall");
+  }
+    asm("movl $0x666, %eax;"
+        "movl $0x777, %ebx;"
+        "vmcall");
   __builtin_unreachable();
 }

@@ -10,6 +10,7 @@ use crate::vmx::fields;
 use core::arch::asm;
 
 use super::Guest;
+use super::HandlerResult;
 /// Allows to map tyche itself inside a VM.
 pub struct Identity {}
 
@@ -73,6 +74,10 @@ impl Guest for Identity {
         }
 
         vmcs
+    }
+
+    unsafe fn exit_handler(&self, _vcpu: &mut vmx::VCpu) -> HandlerResult {
+        HandlerResult::Exit
     }
 }
 #[inline(always)]

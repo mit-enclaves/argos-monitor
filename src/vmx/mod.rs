@@ -659,6 +659,8 @@ pub enum Register {
     R15 = 14,
 }
 
+pub const REGFILE_SIZE: usize = 15;
+
 /// A virtual CPU.
 pub struct VCpu {
     // This field prevents a VCpu from being instantiated outside of this module, by not marking it
@@ -666,7 +668,7 @@ pub struct VCpu {
     _private: (),
 
     // Set of registers to save/restore
-    regs: [u64; 15],
+    regs: [u64; REGFILE_SIZE],
 }
 
 impl core::ops::Index<Register> for VCpu {

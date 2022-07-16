@@ -79,13 +79,14 @@ fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
         let mut vmcs = vmcs.set_as_active().expect("Failed to activate VMCS");
 
         let result = vmcs.run();
-        let vcpu = vmcs.get_vcpu();
-        println!(
-            "Launch: {:?} -> {:#x?} - {:#x?}",
-            result,
-            vcpu[vmx::Register::Rax],
-            vcpu[vmx::Register::Rbx],
-        );
+        let vcpu = vmcs.get_vcpu_mut();
+        println!("Launch: {:?}", result);
+        let mut exit_reason = guest.exit_handler(vcpu);
+        while exit_reason == guests::HandlerResult::Resume {
+            println!("Resume is not implemented yet");
+            exit_reason = guests::HandlerResult::Exit;
+        }
+
         println!("Info:   {:?}", vcpu.interrupt_info());
         println!(
             "Qualif: {:?}",

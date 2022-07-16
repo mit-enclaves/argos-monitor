@@ -18,12 +18,21 @@ pub mod identity;
 pub mod linux;
 pub mod rawc;
 
+#[derive(PartialEq)]
+pub enum HandlerResult {
+    Resume,
+    Exit,
+    Crash,
+}
+
 pub trait Guest {
     unsafe fn instantiate<'vmx>(
         &self,
         vmxon: &'vmx vmx::Vmxon,
         allocator: &impl FrameAllocator,
     ) -> VmcsRegion<'vmx>;
+
+    unsafe fn exit_handler(&self, vcpu: &mut vmx::VCpu) -> HandlerResult;
 }
 
 fn configure_msr() -> Result<(), vmx::VmxError> {

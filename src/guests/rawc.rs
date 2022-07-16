@@ -12,6 +12,7 @@ use crate::vmx::bitmaps::EptEntryFlags;
 use crate::vmx::fields;
 
 use super::Guest;
+use super::HandlerResult;
 
 const RAWCBYTES: &'static [u8] = include_bytes!("../../guest/rawc");
 const ONEGB: u64 = 1 << 30;
@@ -122,5 +123,16 @@ impl Guest for RawcBytes {
             vcpu.set_nat(fields::GuestStateNat::IdtrBase, 0x0).ok();
         }
         vmcs
+    }
+
+    unsafe fn exit_handler(&self, vcpu: &mut vmx::VCpu) -> HandlerResult {
+        let rax = vcpu[vmx::Register::Rax];
+        if rax == 0x777 {
+            return HandlerResult::Exit;
+        }
+        if rax == 0x888 {
+            return HandlerResult::Resume;
+        }
+        HandlerResult::Crash
     }
 }
