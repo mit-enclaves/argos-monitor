@@ -643,9 +643,9 @@ where
 #[repr(u8)]
 pub enum Register {
     Rax = 0,
-    Rcx = 1,
-    Rdx = 2,
-    Rbx = 3,
+    Rbx = 1,
+    Rcx = 2,
+    Rdx = 3,
     Rbp = 4,
     Rsi = 5,
     Rdi = 6,
