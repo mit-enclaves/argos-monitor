@@ -633,6 +633,10 @@ where
 
 // —————————————————————————————— Virtual CPU ——————————————————————————————— //
 
+/// Virtual CPU registers.
+//
+//  WARNING: inline assembly depends on the register values, don't change them without updating
+//  corresponding assembly!
 #[repr(usize)]
 pub enum Register {
     Rax = 0,
