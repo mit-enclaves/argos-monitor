@@ -371,13 +371,23 @@ where
         &mut self.region.vcpu
     }
 
-    /// Run the VM.
+    /// Launch the VM.
     ///
     /// SAFETY: the VMCS must be properly configured so that the host can resume execution in a
     /// sensible environment. A simple way of ensuring that is to save the current environment as
     /// host state.
-    pub unsafe fn run(&mut self) -> Result<VmxExitReason, VmxError> {
+    pub unsafe fn launch(&mut self) -> Result<VmxExitReason, VmxError> {
         raw::vmlaunch(&mut self.region.vcpu)?;
+        self.region.vcpu.exit_reason()
+    }
+
+    /// Resume the VM.
+    ///
+    /// SAFETY: the VMCS must be properly configured so that the host can resume execution in a
+    /// sensible environment. A simple way of ensuring that is to save the current environment as
+    /// host state.
+    pub unsafe fn resume(&mut self) -> Result<VmxExitReason, VmxError> {
+        raw::vmresume(&mut self.region.vcpu)?;
         self.region.vcpu.exit_reason()
     }
 
@@ -686,6 +696,14 @@ impl core::ops::IndexMut<Register> for VCpu {
 }
 
 impl VCpu {
+    pub fn get_rip(&self) -> Result<usize, VmxError> {
+        unsafe { fields::GuestStateNat::Rip.vmread() }
+    }
+
+    pub fn set_rip(&mut self, rip: usize) -> Result<(), VmxError> {
+        unsafe { fields::GuestStateNat::Rip.vmwrite(rip) }
+    }
+
     pub fn set16(&mut self, field: fields::GuestState16, value: u16) -> Result<(), VmxError> {
         unsafe { field.vmwrite(value) }
     }

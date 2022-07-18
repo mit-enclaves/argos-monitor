@@ -64,13 +64,10 @@ pub unsafe fn vmptrld(addr: u64) -> Result<(), VmxError> {
     vmx_capture_status()
 }
 
-/// Save host state and executes VMLAUNCH.
+/// Save host state, restore guest state and executes VMLAUNCH.
 ///
 /// On success, this will switch to non-root mode and load guest state from current VMCS and return
 /// the exit reason.
-/// In addition to VMLAUNCH, this function save the minimal required state to resume execution
-/// after VMLAUNCH: it saves ¨%rbp on the stack, compute an save suitable %rip and %rsp in the VMCS
-/// to continue execution of the function after VM Exit. On Vmexit,
 ///
 /// # SAFETY:
 /// - If the guest is not properly loaded, configured, and sandboxed, this might result in
@@ -88,18 +85,87 @@ pub unsafe fn vmlaunch(vcpu: &mut vmx::VCpu) -> Result<(), VmxError> {
 
         // Save remaining host state to VMCS
         "vmwrite rcx, rsp",           // Write %rsp to VMCS
-        "lea rax, [rip + 25]",        // Compute the address of the next instruction after vmlaunch
-        "vmwrite rdx, rax",           // Write tha value to VMCS
+        "lea rbp, [rip + 25]",        // Compute the address of the next instruction after vmlaunch
+        "vmwrite rdx, rbp",           // Write tha value to VMCS
 
         // Restore guest registers
         "mov rbx, [rax + 8]",         // Restore guest %rbx
         "mov rcx, [rax + 16]",        // Restore guest %rcx
         "mov rdx, [rax + 24]",        // Restore guest %rdx
-        "mov rdx, [rax + 32]",        // Restore guest %rbp
+        "mov rbp, [rax + 32]",        // Restore guest %rbp
         "mov rax, [rax]",             // Restore guest %rdx
 
         // Launch VM
         "vmlaunch",                   // Launch the VM
+        "nop",                        // After VM Exit we land here
+
+        // Save guest registers
+        "push rbx",                   // Save guest %rbx
+        "mov rbx, [rsp + 8]",         // Load vcpu pointer (second value from top of the stack)
+        "mov [rbx + 32], rbp",        // Save guest %rbp to vcpu
+        "pop rbp",                    // Load guest %rbx in %rbp
+        "mov [rbx + 8], rbp",         // Save guest %rbx to vcpu
+
+        // Restore host registers
+        "pop rbx",                    // Discard pointer to vcpu
+        "pop rbp",                    // Restore %rbp
+        "pop rbx",                    // Restore %rbx
+
+        // Registers used
+        inout("rax") vcpu_ptr => vcpu.regs[vmx::Register::Rax as usize],     // VCPU RBX pointer
+        inout("rcx") rsp_field => vcpu.regs[vmx::Register::Rcx as usize],    // RSP host VMCS field
+        inout("rdx") rip_field => vcpu.regs[vmx::Register::Rdx as usize],    // RIP host VMCS field
+
+        // Register automatically loaded and restored
+        inout("rsi") vcpu.regs[vmx::Register::Rsi as usize] => vcpu.regs[vmx::Register::Rsi as usize],
+        inout("rdi") vcpu.regs[vmx::Register::Rdi as usize] => vcpu.regs[vmx::Register::Rdi as usize],
+        inout("r8")  vcpu.regs[vmx::Register::R8  as usize] => vcpu.regs[vmx::Register::R8  as usize],
+        inout("r9")  vcpu.regs[vmx::Register::R9  as usize] => vcpu.regs[vmx::Register::R9  as usize],
+        inout("r10") vcpu.regs[vmx::Register::R10 as usize] => vcpu.regs[vmx::Register::R10 as usize],
+        inout("r11") vcpu.regs[vmx::Register::R11 as usize] => vcpu.regs[vmx::Register::R11 as usize],
+        inout("r12") vcpu.regs[vmx::Register::R12 as usize] => vcpu.regs[vmx::Register::R12 as usize],
+        inout("r13") vcpu.regs[vmx::Register::R13 as usize] => vcpu.regs[vmx::Register::R13 as usize],
+        inout("r14") vcpu.regs[vmx::Register::R14 as usize] => vcpu.regs[vmx::Register::R14 as usize],
+        inout("r15") vcpu.regs[vmx::Register::R15 as usize] => vcpu.regs[vmx::Register::R15 as usize],
+    );
+    // NOTE: it is correct to check the flag even after a nop and pop instructions since none of
+    // them modifies any flags.
+    vmx_capture_status()
+}
+
+/// Save host state, restore guest state and executes VMRESUME.
+///
+/// On success, this will switch to non-root mode and load guest state from current VMCS and return
+/// the exit reason.
+///
+/// # SAFETY:
+/// - If the guest is not properly loaded, configured, and sandboxed, this might result in
+///   arbitrary execution.
+/// - This function expects a 64 bits architecture for now.
+pub unsafe fn vmresume(vcpu: &mut vmx::VCpu) -> Result<(), VmxError> {
+    let rip_field = fields::HostStateNat::Rip as u64;
+    let rsp_field = fields::HostStateNat::Rsp as u64;
+    let vcpu_ptr = vcpu.regs.as_mut_ptr();
+    asm!(
+        // Save some of the host state on the stack
+        "push rbx",                   // Save %rbx, see https://stackoverflow.com/a/71481425
+        "push rbp",                   // Save %rbp
+        "push rax",                   // Save %rax (vcpu pointer)
+
+        // Save remaining host state to VMCS
+        "vmwrite rcx, rsp",           // Write %rsp to VMCS
+        "lea rbp, [rip + 25]",        // Compute the address of the next instruction after vmlaunch
+        "vmwrite rdx, rbp",           // Write tha value to VMCS
+
+        // Restore guest registers
+        "mov rbx, [rax + 8]",         // Restore guest %rbx
+        "mov rcx, [rax + 16]",        // Restore guest %rcx
+        "mov rdx, [rax + 24]",        // Restore guest %rdx
+        "mov rbp, [rax + 32]",        // Restore guest %rbp
+        "mov rax, [rax]",             // Restore guest %rdx
+
+        // Launch VM
+        "vmresume",                   // Resume the VM
         "nop",                        // After VM Exit we land here
 
         // Save guest registers

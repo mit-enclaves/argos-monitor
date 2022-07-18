@@ -6,7 +6,7 @@ int bss;
 __attribute__((force_align_arg_pointer))
 void _start() {
   bss = RO;
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < 3; i++) {
     asm("movl $0x888, %eax;"
         "movl $0x777, %ebx;"
         "vmcall");

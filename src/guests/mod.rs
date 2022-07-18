@@ -18,7 +18,7 @@ pub mod identity;
 pub mod linux;
 pub mod rawc;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum HandlerResult {
     Resume,
     Exit,

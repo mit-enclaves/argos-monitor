@@ -78,15 +78,40 @@ fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
         let mut vmcs = guest.instantiate(&vmxon, allocator);
         let mut vmcs = vmcs.set_as_active().expect("Failed to activate VMCS");
 
-        let result = vmcs.run();
-        let vcpu = vmcs.get_vcpu_mut();
-        println!("Launch: {:?}", result);
-        let mut exit_reason = guest.exit_handler(vcpu);
-        while exit_reason == guests::HandlerResult::Resume {
-            println!("Resume is not implemented yet");
-            exit_reason = guests::HandlerResult::Exit;
+        let result = vmcs.launch();
+        let mut launch = "Launch";
+        let mut counter = 0;
+        loop {
+            let vcpu = vmcs.get_vcpu_mut();
+            let rip = vcpu.get_rip().expect("Can't read guest %rip");
+            let rax = vcpu[vmx::Register::Rax];
+            let rbp = vcpu[vmx::Register::Rbp];
+            println!(
+                "{}: {:?} - info: {:?} - rip: 0x{:x} - rax: 0x{:x} - rbp: 0x{:x}",
+                launch,
+                result,
+                vcpu.interrupt_info(),
+                rip,
+                rax,
+                rbp
+            );
+            vcpu.set_rip(rip + 3).expect("Failed to set guest %rip");
+            let exit_reason = guest.exit_handler(vcpu);
+
+            if exit_reason != guests::HandlerResult::Resume {
+                break;
+            }
+            counter += 1;
+            if counter >= 5 {
+                println!("Too many iterations: stoping guest");
+                break;
+            }
+
+            launch = "Resume";
+            vmcs.resume().expect("Failed to resume guest");
         }
 
+        let vcpu = vmcs.get_vcpu();
         println!("Info:   {:?}", vcpu.interrupt_info());
         println!(
             "Qualif: {:?}",
