@@ -22,14 +22,15 @@ pub mod interrupts;
 pub mod mmu;
 pub mod print;
 pub mod qemu;
+pub mod segments;
 pub mod serial;
 pub mod vmx;
-pub mod segments;
 
 #[cfg(feature = "vga")]
 pub mod vga;
 
 pub use mmu::init as init_memory;
+pub use vmx::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
 
 // Entry point for `cargo test`
 #[cfg(test)]

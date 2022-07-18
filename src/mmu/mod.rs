@@ -7,5 +7,5 @@ pub mod walker;
 
 pub use frames::{init, FrameAllocator};
 pub use eptmapper::EptMapper;
-pub use ptmapper::PtMapper;
+pub use ptmapper::{PtMapper, PtFlag};
 

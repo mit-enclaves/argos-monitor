@@ -1,22 +1,18 @@
 use crate::guests;
 use crate::guests::elf_program::ElfProgram;
-use crate::mmu::eptmapper::EptMapper;
 use crate::mmu::frames::RangeFrameAllocator;
-use crate::mmu::ptmapper::PtFlag;
-use crate::mmu::ptmapper::PtMapper;
-use crate::mmu::FrameAllocator;
+use crate::mmu::{EptMapper, FrameAllocator};
 use crate::println;
 use crate::qemu;
 use crate::vmx;
 use crate::vmx::bitmaps::EptEntryFlags;
 use crate::vmx::fields;
+use crate::GuestVirtAddr;
 
 use super::Guest;
 use super::HandlerResult;
 
 const RAWCBYTES: &'static [u8] = include_bytes!("../../guest/rawc");
-const ONEGB: u64 = 1 << 30;
-const ONEPAGE: u64 = 1 << 12;
 const STACK: u64 = 0x7ffffffdd000;
 
 /// A datastructure to represent the program.
@@ -44,50 +40,39 @@ impl Guest for RawcBytes {
         let rawc_prog = ElfProgram::new(RAWCBYTES);
         let virtoffset = allocator.get_physical_offset();
         // Create a bumper allocator with 1GB of RAM.
-        let ram = allocator
-            .allocate_range(ONEGB)
-            .expect("Unable to allocate 2GB");
-        let bumper = RangeFrameAllocator::new(ram.start, ram.end, virtoffset);
+        let guest_ram = allocator
+            .allocate_range(guests::ONEGB)
+            .expect("Unable to allocate 1GB");
+        let guest_allocator = RangeFrameAllocator::new(guest_ram.start, guest_ram.end, virtoffset);
 
         // Setup the EPT first.
-        let (start, end) = bumper.get_boundaries();
-        let ept_root = bumper
+        let (start, end) = guest_allocator.get_boundaries();
+        let ept_root = allocator
             .allocate_frame()
             .expect("EPT root allocation")
             .zeroed();
         let mut ept_mapper = EptMapper::new(
-            bumper.get_physical_offset().as_u64() as usize,
+            virtoffset.as_u64() as usize,
             start as usize,
             ept_root.phys_addr,
         );
 
         ept_mapper.map_range(
-            &bumper,
+            allocator,
             vmx::GuestPhysAddr::new(0),
             vmx::HostPhysAddr::new(start as usize),
             (end - start) as usize,
             EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
         );
 
-        // Setup the page tables.
-        let pt_root = bumper.allocate_frame().expect("Root alloc").zeroed();
-        let mut pt_mapper = PtMapper::new(
-            virtoffset.as_u64() as usize,
-            start as usize,
-            vmx::GuestPhysAddr::new((pt_root.phys_addr.as_u64() - start) as usize),
-        );
-        rawc_prog.load(&bumper, &mut pt_mapper);
-
-        // setup a stack.
-        let (bstart, _) = bumper.get_boundaries();
-        let stack = bumper.allocate_range(ONEPAGE).expect("stack");
-        pt_mapper.map_range(
-            &bumper,
-            vmx::GuestVirtAddr::new(STACK as usize),
-            vmx::GuestPhysAddr::new((stack.start.as_u64() - bstart) as usize),
-            ONEPAGE as usize,
-            PtFlag::WRITE | PtFlag::PRESENT | PtFlag::EXEC_DISABLE | PtFlag::USER,
-        );
+        // Load guest into memory.
+        let pt_root = rawc_prog
+            .load(
+                guest_ram,
+                virtoffset,
+                Some((GuestVirtAddr::new(STACK as usize), 0x1000)),
+            )
+            .expect("Failed to load guest");
 
         // Setup the vmcs.
         let frame = allocator.allocate_frame().expect("Failed to allocate VMCS");
@@ -111,15 +96,15 @@ impl Guest for RawcBytes {
             vmx::check::check().expect("check error");
             let entry_point = rawc_prog.entry;
             let vcpu = vmcs.get_vcpu_mut();
-            vcpu.set_nat(fields::GuestStateNat::Rip, entry_point as usize)
+            vcpu.set_nat(fields::GuestStateNat::Rip, entry_point.as_usize())
+                .ok();
+            vcpu.set_nat(fields::GuestStateNat::Cr3, pt_root.as_usize())
                 .ok();
             vcpu.set_nat(
-                fields::GuestStateNat::Cr3,
-                (pt_root.phys_addr.as_u64() - start) as usize,
+                fields::GuestStateNat::Rsp,
+                (STACK + guests::ONEPAGE) as usize,
             )
             .ok();
-            vcpu.set_nat(fields::GuestStateNat::Rsp, (STACK + ONEPAGE) as usize)
-                .ok();
 
             // Zero out the gdt and idt
             vcpu.set_nat(fields::GuestStateNat::GdtrBase, 0x0).ok();

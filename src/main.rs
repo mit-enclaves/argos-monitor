@@ -50,7 +50,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     };
 
     if true {
-        launch_guest(&guests::rawc::RAWC, &frame_allocator)
+        // launch_guest(&guests::rawc::RAWC, &frame_allocator)
+        launch_guest(&guests::linux::LINUX, &frame_allocator)
     } else {
         launch_guest(&guests::identity::Identity {}, &frame_allocator)
     };

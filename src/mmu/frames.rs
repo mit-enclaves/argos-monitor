@@ -75,6 +75,7 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
 
 // ———————————————————————————— Frame Allocator ————————————————————————————— //
 
+#[derive(Clone, Copy)]
 /// A range of physical memory.
 pub struct PhysRange {
     /// Start of the physical range (inclusive).

@@ -35,6 +35,7 @@ pub const DEFAULT_PROTS: PtFlag = PtFlag::PRESENT.union(PtFlag::WRITE).union(PtF
 unsafe impl Walker for PtMapper {
     type PhysAddr = GuestPhysAddr;
     type VirtAddr = GuestVirtAddr;
+
     fn translate(&self, phys_addr: Self::PhysAddr) -> HostVirtAddr {
         HostVirtAddr::new(phys_addr.as_usize() + self.offset + self.host_offset)
     }

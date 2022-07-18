@@ -64,8 +64,11 @@ pub trait Address: Sized + Copy + Ord {
 
     /// Adds an offset to the current address.
     #[inline]
-    fn add(self, offset: u64) -> Self {
-        Self::from_u64(self.to_u64() + offset)
+    fn add(self, offset: u64) -> Option<Self> {
+        match self.to_u64().checked_add(offset) {
+            None => None,
+            Some(val) => Some(Self::from_u64(val)),
+        }
     }
 
     /// Apply a mask to the address (binary and).
@@ -238,7 +241,11 @@ where
         }
 
         // Move to next entry
-        addr = addr.add(level_offset).mask(level_mask);
+        // @warning: mask must be applied before the add to avoid overflowing op.
+        addr = match addr.mask(level_mask).add(level_offset) {
+            None => break,
+            Some(addr) => addr,
+        };
         idx += 1;
     }
 
