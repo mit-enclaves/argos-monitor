@@ -88,14 +88,15 @@ pub unsafe fn vmlaunch(vcpu: &mut vmx::VCpu) -> Result<(), VmxError> {
 
         // Save remaining host state to VMCS
         "vmwrite rcx, rsp",           // Write %rsp to VMCS
-        "lea rax, [rip + 21]",        // Compute the address of the next instruction after vmlaunch
+        "lea rax, [rip + 25]",        // Compute the address of the next instruction after vmlaunch
         "vmwrite rdx, rax",           // Write tha value to VMCS
 
         // Restore guest registers
-        "mov rbx, [rax + 8]",         // Restore guest rbx
-        "mov rcx, [rax + 16]",        // Restore guest rcx
-        "mov rdx, [rax + 24]",        // Restore guest rdx
-        "mov rax, [rax]",             // Restore guest rdx
+        "mov rbx, [rax + 8]",         // Restore guest %rbx
+        "mov rcx, [rax + 16]",        // Restore guest %rcx
+        "mov rdx, [rax + 24]",        // Restore guest %rdx
+        "mov rdx, [rax + 32]",        // Restore guest %rbp
+        "mov rax, [rax]",             // Restore guest %rdx
 
         // Launch VM
         "vmlaunch",                   // Launch the VM
