@@ -51,11 +51,14 @@ impl Guest for RawcBytes {
 
         // Setup the EPT first.
         let (start, end) = bumper.get_boundaries();
-        let ept_root = bumper.allocate_range(ONEPAGE).expect("ept root allocation");
+        let ept_root = bumper
+            .allocate_frame()
+            .expect("EPT root allocation")
+            .zeroed();
         let mut ept_mapper = EptMapper::new(
             bumper.get_physical_offset().as_u64() as usize,
             start as usize,
-            vmx::HostPhysAddr::new(ept_root.start.as_u64() as usize),
+            ept_root.phys_addr,
         );
 
         ept_mapper.map_range(
@@ -67,11 +70,11 @@ impl Guest for RawcBytes {
         );
 
         // Setup the page tables.
-        let pt_root = bumper.allocate_range(ONEPAGE).expect("root alloc");
+        let pt_root = bumper.allocate_frame().expect("Root alloc").zeroed();
         let mut pt_mapper = PtMapper::new(
             virtoffset.as_u64() as usize,
             start as usize,
-            vmx::GuestPhysAddr::new((pt_root.start.as_u64() - start) as usize),
+            vmx::GuestPhysAddr::new((pt_root.phys_addr.as_u64() - start) as usize),
         );
         rawc_prog.load(&bumper, &mut pt_mapper);
 
@@ -112,7 +115,7 @@ impl Guest for RawcBytes {
                 .ok();
             vcpu.set_nat(
                 fields::GuestStateNat::Cr3,
-                (pt_root.start.as_u64() - start) as usize,
+                (pt_root.phys_addr.as_u64() - start) as usize,
             )
             .ok();
             vcpu.set_nat(fields::GuestStateNat::Rsp, (STACK + ONEPAGE) as usize)
