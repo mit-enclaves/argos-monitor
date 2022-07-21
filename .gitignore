@@ -1,2 +1,5 @@
 target
 .vim
+
+# OVMF UEFI firmware
+OVMF-pure-efi.fd

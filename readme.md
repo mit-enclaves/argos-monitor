@@ -27,3 +27,18 @@ cargo kcheck
 # Build the image for deployment on real hardware (VGA mode)
 cargo kimage
 ```
+
+## UEFI boot
+
+Our current bootloader supports both BIOS and UEFI boots, to boot with UEFI
+first download the OVMF UEFI firmware at the root of this repo with:
+
+```sh
+ wget https://github.com/rust-osdev/ovmf-prebuilt/releases/download/v0.20220719.209%2Bgf0064ac3af/OVMF-pure-efi.fd
+```
+
+And then run:
+
+```sh
+cargo krun-uefi
+```

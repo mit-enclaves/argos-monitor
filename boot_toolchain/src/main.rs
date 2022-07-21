@@ -31,36 +31,42 @@ const TEST_ARGS: &[&str] = &[
 const TEST_TIMEOUT_SECS: u64 = 10;
 
 fn main() {
-    let mut args = std::env::args().skip(1).peekable(); // skip executable name
+    let mut args: Vec<String> = std::env::args().skip(1).collect(); // skip executable name
 
     let kernel_binary_path = {
-        let path = PathBuf::from(args.next().unwrap());
+        let path = PathBuf::from(args.remove(0));
         path.canonicalize().unwrap()
     };
-    let no_boot = if let Some(arg) = args.peek() {
-        if arg.as_str() == "--no-run" {
-            args.next();
+    let no_boot = match args.iter().position(|arg| arg == "--no-run") {
+        Some(idx) => {
+            args.remove(idx);
             true
-        } else {
-            false
         }
-    } else {
-        false
+        None => false,
+    };
+    let uefi = match args.iter().position(|arg| arg == "--uefi") {
+        Some(idx) => {
+            args.remove(idx);
+            true
+        }
+        None => false,
     };
 
-    let args = args.collect::<Vec<String>>();
-
-    let bios = create_disk_images(&kernel_binary_path);
+    let image = create_disk_images(&kernel_binary_path, uefi);
 
     if no_boot {
-        println!("Created disk image at `{}`", bios.display());
+        println!("Created disk image at `{}`", image.display());
         return;
     }
 
     let mut run_cmd = Command::new("qemu-system-x86_64");
     run_cmd
         .arg("-drive")
-        .arg(format!("format=raw,file={}", bios.display()));
+        .arg(format!("format=raw,file={}", image.display()));
+
+    if uefi {
+        run_cmd.arg("-bios").arg("OVMF-pure-efi.fd");
+    }
 
     let binary_kind = runner_utils::binary_kind(&kernel_binary_path);
     if binary_kind.is_test() {
@@ -98,7 +104,7 @@ fn run_test_command(mut cmd: Command) -> ExitStatus {
     runner_utils::run_with_timeout(&mut cmd, Duration::from_secs(TEST_TIMEOUT_SECS)).unwrap()
 }
 
-pub fn create_disk_images(kernel_binary_path: &Path) -> PathBuf {
+pub fn create_disk_images(kernel_binary_path: &Path, uefi: bool) -> PathBuf {
     let bootloader_manifest_path = bootloader_locator::locate_bootloader("bootloader").unwrap();
     let kernel_manifest_path = locate_cargo_manifest::locate_manifest().unwrap();
 
@@ -122,10 +128,11 @@ pub fn create_disk_images(kernel_binary_path: &Path) -> PathBuf {
     }
 
     let kernel_binary_name = kernel_binary_path.file_name().unwrap().to_str().unwrap();
-    let disk_image = kernel_binary_path
-        .parent()
-        .unwrap()
-        .join(format!("boot-bios-{}.img", kernel_binary_name));
+    let disk_image = kernel_binary_path.parent().unwrap().join(format!(
+        "boot-{}-{}.img",
+        if uefi { "uefi" } else { "bios" },
+        kernel_binary_name
+    ));
     if !disk_image.exists() {
         panic!(
             "Disk image does not exist at {} after bootloader build",
