@@ -12,6 +12,7 @@ use x86_64::{PhysAddr, VirtAddr};
 
 use crate::allocator;
 use crate::vmx;
+use crate::{HostPhysAddr, HostVirtAddr};
 
 const PAGE_SIZE: usize = 0x1000;
 
@@ -24,13 +25,13 @@ pub unsafe trait FrameAllocator {
     fn allocate_frame(&self) -> Option<vmx::Frame>;
 
     /// Allocates a range of physical memory.
-    fn allocate_range(&self, size: u64) -> Option<PhysRange>;
+    fn allocate_range(&self, size: usize) -> Option<PhysRange>;
 
     /// Returns the boundaries of usable physical memory.
-    fn get_boundaries(&self) -> (u64, u64);
+    fn get_boundaries(&self) -> (usize, usize);
 
     /// Returns the offset between physical and virtual addresses.
-    fn get_physical_offset(&self) -> VirtAddr;
+    fn get_physical_offset(&self) -> HostVirtAddr;
 }
 
 // ————————————————————————— Memory Initialization —————————————————————————— //
@@ -43,13 +44,16 @@ pub unsafe trait FrameAllocator {
 /// SAFETY: This function must be called **at most once**, and the boot info must contain a valid
 /// mapping of the physical memory.
 pub unsafe fn init(
-    physical_memory_offset: VirtAddr,
+    physical_memory_offset: HostVirtAddr,
     regions: &'static [MemoryRegion],
 ) -> Result<impl FrameAllocator, ()> {
     let level_4_table = active_level_4_table(physical_memory_offset);
 
     // Initialize the frame allocator and the memory mapper.
-    let mut mapper = OffsetPageTable::new(level_4_table, physical_memory_offset);
+    let mut mapper = OffsetPageTable::new(
+        level_4_table,
+        VirtAddr::new(physical_memory_offset.as_u64()),
+    );
     let mut frame_allocator = BootInfoFrameAllocator::init(regions);
 
     // Initialize the heap.
@@ -63,12 +67,12 @@ pub unsafe fn init(
 /// complete physical memory is mapped to virtual memory at the passed
 /// `physical_memory_offset`. Also, this function must be only called once
 /// to avoid aliasing `&mut` references (which is undefined behavior).
-unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut PageTable {
+unsafe fn active_level_4_table(physical_memory_offset: HostVirtAddr) -> &'static mut PageTable {
     let (level_4_table_frame, _) = Cr3::read();
 
     let phys = level_4_table_frame.start_address();
-    let virt = physical_memory_offset + phys.as_u64();
-    let page_table: *mut PageTable = virt.as_mut_ptr();
+    let virt = physical_memory_offset.as_u64() + phys.as_u64();
+    let page_table = virt as usize as *mut PageTable;
 
     &mut *page_table
 }
@@ -79,9 +83,9 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
 /// A range of physical memory.
 pub struct PhysRange {
     /// Start of the physical range (inclusive).
-    pub start: PhysAddr,
+    pub start: HostPhysAddr,
     /// End of the physical range (exclusive).
-    pub end: PhysAddr,
+    pub end: HostPhysAddr,
 }
 
 impl PhysRange {
@@ -133,26 +137,27 @@ impl BootInfoFrameAllocator {
                 None
             }
         } else {
-            let frame = PhysFrame::containing_address(PhysAddr::new(self.next_frame));
+            let frame = PhysFrame::containing_address(PhysAddr::new(self.next_frame as u64));
             self.next_frame += PAGE_SIZE as u64;
             Some(frame)
         }
     }
 
     /// Allocates a range of physical memory
-    pub fn allocate_range(&mut self, size: u64) -> Option<PhysRange> {
+    pub fn allocate_range(&mut self, size: usize) -> Option<PhysRange> {
+        let size = size as u64;
         let region = self.memory_map[self.region_idx];
         if self.next_frame + size > region.end {
             if self.goto_next_region().is_ok() {
                 // Retry allocation
-                self.allocate_range(size)
+                self.allocate_range(size as usize)
             } else {
                 // All the memory is exhausted
                 None
             }
         } else {
-            let start = PhysAddr::new(self.next_frame);
-            let end = PhysAddr::new(self.next_frame + size);
+            let start = HostPhysAddr::new(self.next_frame as usize);
+            let end = HostPhysAddr::new((self.next_frame + size) as usize);
             let nb_pages = bytes_to_pages(size as usize);
             self.next_frame = self.next_frame + (nb_pages * PAGE_SIZE) as u64;
             Some(PhysRange { start, end })
@@ -179,8 +184,8 @@ impl BootInfoFrameAllocator {
     pub fn get_boundaries(&self) -> PhysRange {
         let first_region = self.memory_map[0];
         let last_region = self.memory_map[self.memory_map.len() - 1];
-        let start = PhysAddr::new(first_region.start);
-        let end = PhysAddr::new(last_region.end);
+        let start = HostPhysAddr::new(first_region.start as usize);
+        let end = HostPhysAddr::new(last_region.end as usize);
         PhysRange { start, end }
     }
 }
@@ -196,11 +201,11 @@ unsafe impl x86_64::structures::paging::FrameAllocator<Size4KiB> for BootInfoFra
 #[derive(Clone)]
 pub struct SharedFrameAllocator {
     alloc: Arc<Mutex<BootInfoFrameAllocator>>,
-    physical_memory_offset: VirtAddr,
+    physical_memory_offset: HostVirtAddr,
 }
 
 impl SharedFrameAllocator {
-    pub fn new(alloc: BootInfoFrameAllocator, physical_memory_offset: VirtAddr) -> Self {
+    pub fn new(alloc: BootInfoFrameAllocator, physical_memory_offset: HostVirtAddr) -> Self {
         Self {
             alloc: Arc::new(Mutex::new(alloc)),
             physical_memory_offset,
@@ -220,19 +225,19 @@ unsafe impl FrameAllocator for SharedFrameAllocator {
         })
     }
 
-    fn allocate_range(&self, size: u64) -> Option<PhysRange> {
+    fn allocate_range(&self, size: usize) -> Option<PhysRange> {
         let mut inner = self.alloc.lock();
         inner.allocate_range(size)
     }
 
-    fn get_boundaries(&self) -> (u64, u64) {
+    fn get_boundaries(&self) -> (usize, usize) {
         let mut inner = self.alloc.lock();
         let inner = inner.deref_mut();
         let range = inner.get_boundaries();
-        (range.start.as_u64(), range.end.as_u64())
+        (range.start.as_u64() as usize, range.end.as_u64() as usize)
     }
 
-    fn get_physical_offset(&self) -> VirtAddr {
+    fn get_physical_offset(&self) -> HostVirtAddr {
         self.physical_memory_offset
     }
 }
@@ -243,21 +248,21 @@ pub struct RangeFrameAllocator {
     range_start: PhysAddr,
     range_end: PhysAddr,
     cursor: Cell<PhysAddr>,
-    physical_memory_offset: VirtAddr,
+    physical_memory_offset: HostVirtAddr,
 }
 
 impl RangeFrameAllocator {
     pub unsafe fn new(
-        range_start: PhysAddr,
-        range_end: PhysAddr,
-        physical_memory_offset: VirtAddr,
+        range_start: HostPhysAddr,
+        range_end: HostPhysAddr,
+        physical_memory_offset: HostVirtAddr,
     ) -> Self {
-        let range_start = range_start.align_up(PAGE_SIZE as u64);
-        let range_end = range_end.align_down(PAGE_SIZE as u64);
+        let range_start = range_start.align_up(PAGE_SIZE).as_u64();
+        let range_end = range_end.align_down(PAGE_SIZE).as_u64();
         Self {
-            range_start,
-            range_end,
-            cursor: Cell::new(range_start),
+            range_start: PhysAddr::new(range_start),
+            range_end: PhysAddr::new(range_end),
+            cursor: Cell::new(PhysAddr::new(range_start)),
             physical_memory_offset,
         }
     }
@@ -266,9 +271,8 @@ impl RangeFrameAllocator {
 unsafe impl FrameAllocator for RangeFrameAllocator {
     fn allocate_frame(&self) -> Option<vmx::Frame> {
         let cursor = self.cursor.get();
-        if cursor < self.range_end {
-            self.cursor
-                .set(PhysAddr::new(cursor.as_u64() + PAGE_SIZE as u64));
+        if cursor.as_u64() < self.range_end.as_u64() {
+            self.cursor.set(cursor + PAGE_SIZE as u64);
             Some(vmx::Frame {
                 phys_addr: vmx::HostPhysAddr::new(cursor.as_u64() as usize),
                 virt_addr: (cursor.as_u64() + self.physical_memory_offset.as_u64()) as *mut u8,
@@ -278,25 +282,28 @@ unsafe impl FrameAllocator for RangeFrameAllocator {
         }
     }
 
-    fn allocate_range(&self, size: u64) -> Option<PhysRange> {
+    fn allocate_range(&self, size: usize) -> Option<PhysRange> {
         let cursor = self.cursor.get();
         if cursor + size < self.range_end {
             let new_cursor = (cursor + size).align_up(PAGE_SIZE as u64);
             self.cursor.set(new_cursor);
             Some(PhysRange {
-                start: cursor,
-                end: new_cursor,
+                start: HostPhysAddr::new(cursor.as_u64() as usize),
+                end: HostPhysAddr::new(new_cursor.as_u64() as usize),
             })
         } else {
             None
         }
     }
 
-    fn get_boundaries(&self) -> (u64, u64) {
-        (self.range_start.as_u64(), self.range_end.as_u64())
+    fn get_boundaries(&self) -> (usize, usize) {
+        (
+            self.range_start.as_u64() as usize,
+            self.range_end.as_u64() as usize,
+        )
     }
 
-    fn get_physical_offset(&self) -> VirtAddr {
+    fn get_physical_offset(&self) -> HostVirtAddr {
         self.physical_memory_offset
     }
 }

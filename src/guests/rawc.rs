@@ -13,7 +13,7 @@ use super::Guest;
 use super::HandlerResult;
 
 const RAWCBYTES: &'static [u8] = include_bytes!("../../guest/rawc");
-const STACK: u64 = 0x7ffffffdd000;
+const STACK: usize = 0x7ffffffdd000;
 
 /// A datastructure to represent the program.
 /// `start` is the start address of the program.
@@ -51,17 +51,14 @@ impl Guest for RawcBytes {
             .allocate_frame()
             .expect("EPT root allocation")
             .zeroed();
-        let mut ept_mapper = EptMapper::new(
-            virtoffset.as_u64() as usize,
-            start as usize,
-            ept_root.phys_addr,
-        );
+        let mut ept_mapper =
+            EptMapper::new(virtoffset.as_u64() as usize, start, ept_root.phys_addr);
 
         ept_mapper.map_range(
             allocator,
             vmx::GuestPhysAddr::new(0),
-            vmx::HostPhysAddr::new(start as usize),
-            (end - start) as usize,
+            vmx::HostPhysAddr::new(start),
+            end - start,
             EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
         );
 
@@ -70,7 +67,7 @@ impl Guest for RawcBytes {
             .load(
                 guest_ram,
                 virtoffset,
-                Some((GuestVirtAddr::new(STACK as usize), 0x1000)),
+                Some((GuestVirtAddr::new(STACK), 0x1000)),
             )
             .expect("Failed to load guest");
 
@@ -100,11 +97,8 @@ impl Guest for RawcBytes {
                 .ok();
             vcpu.set_nat(fields::GuestStateNat::Cr3, pt_root.as_usize())
                 .ok();
-            vcpu.set_nat(
-                fields::GuestStateNat::Rsp,
-                (STACK + guests::ONEPAGE) as usize,
-            )
-            .ok();
+            vcpu.set_nat(fields::GuestStateNat::Rsp, STACK + guests::ONEPAGE)
+                .ok();
 
             // Zero out the gdt and idt
             vcpu.set_nat(fields::GuestStateNat::GdtrBase, 0x0).ok();

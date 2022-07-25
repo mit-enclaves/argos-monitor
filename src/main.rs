@@ -12,8 +12,8 @@ use kernel::guests::Guest;
 use kernel::mmu::FrameAllocator;
 use kernel::println;
 use kernel::vmx;
+use kernel::HostVirtAddr;
 use x86_64::registers::control::{Cr0, Cr0Flags};
-use x86_64::VirtAddr;
 
 use kernel::guests;
 use kernel::qemu;
@@ -37,11 +37,12 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     }
 
     // Initialize memory management
-    let physical_memory_offset = VirtAddr::new(
+    let physical_memory_offset = HostVirtAddr::new(
         boot_info
             .physical_memory_offset
             .into_option()
-            .expect("The bootloader must be configured with 'map-physical-memory'"),
+            .expect("The bootloader must be configured with 'map-physical-memory'")
+            as usize,
     );
 
     let frame_allocator = unsafe {
@@ -50,8 +51,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     };
 
     if true {
-        // launch_guest(&guests::rawc::RAWC, &frame_allocator)
-        launch_guest(&guests::linux::LINUX, &frame_allocator)
+        launch_guest(&guests::rawc::RAWC, &frame_allocator)
+        // launch_guest(&guests::linux::LINUX, &frame_allocator)
     } else {
         launch_guest(&guests::identity::Identity {}, &frame_allocator)
     };

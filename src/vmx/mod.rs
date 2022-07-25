@@ -52,18 +52,43 @@ macro_rules! addr_impl {
 
         impl $name {
             #[inline]
-            pub fn new(addr: usize) -> Self {
+            pub const fn new(addr: usize) -> Self {
                 Self(addr)
             }
 
             #[inline]
-            pub fn as_usize(self) -> usize {
+            pub const fn as_usize(self) -> usize {
                 self.0
             }
 
             #[inline]
-            pub fn as_u64(self) -> u64 {
+            pub const fn as_u64(self) -> u64 {
                 self.0 as u64
+            }
+
+            /// Aligns address downwards.
+            #[inline]
+            pub const fn align_down(self, align: usize) -> Self {
+                assert!(align.is_power_of_two(), "`align` must be a power of two");
+                let aligned = self.as_usize() & !(align - 1);
+                Self::new(aligned)
+            }
+
+            /// Aligns address upwards.
+            #[inline]
+            pub const fn align_up(self, align: usize) -> Self {
+                assert!(align.is_power_of_two(), "`align` must be a power of two");
+                let align_mask = align - 1;
+                let addr = self.as_usize();
+                if addr & align_mask == 0 {
+                    self // already aligned
+                } else {
+                    if let Some(aligned) = (addr | align_mask).checked_add(1) {
+                        Self::new(aligned)
+                    } else {
+                        panic!("Attempt to add with overflow");
+                    }
+                }
             }
 
             /// Returns this address' L4 index.

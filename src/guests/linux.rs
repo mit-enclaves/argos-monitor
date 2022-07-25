@@ -40,17 +40,14 @@ impl Guest for Linux {
             .allocate_frame()
             .expect("EPT root allocation")
             .zeroed();
-        let mut ept_mapper = EptMapper::new(
-            virtoffset.as_u64() as usize,
-            start as usize,
-            ept_root.phys_addr,
-        );
+        let mut ept_mapper =
+            EptMapper::new(virtoffset.as_u64() as usize, start, ept_root.phys_addr);
 
         ept_mapper.map_range(
             allocator,
             vmx::GuestPhysAddr::new(0),
-            vmx::HostPhysAddr::new(start as usize),
-            (end - start) as usize,
+            vmx::HostPhysAddr::new(start),
+            end - start,
             EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
         );
 

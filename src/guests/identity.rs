@@ -152,8 +152,8 @@ fn setup_ept(allocator: &impl FrameAllocator) -> Result<EptMapper, ()> {
 
     ept_mapper.map_range(
         allocator,
-        vmx::GuestPhysAddr::new(start as usize),
-        vmx::HostPhysAddr::new(start as usize),
+        vmx::GuestPhysAddr::new(start),
+        vmx::HostPhysAddr::new(start),
         end as usize,
         EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
     );

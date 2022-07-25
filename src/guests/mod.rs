@@ -18,8 +18,8 @@ pub mod identity;
 pub mod linux;
 pub mod rawc;
 
-const ONEGB: u64 = 1 << 30;
-const ONEPAGE: u64 = 1 << 12;
+const ONEGB: usize = 1 << 30;
+const ONEPAGE: usize = 1 << 12;
 
 #[derive(PartialEq, Debug)]
 pub enum HandlerResult {

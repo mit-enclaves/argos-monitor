@@ -1,10 +1,9 @@
 use alloc::vec::Vec;
-use x86_64::{PhysAddr, VirtAddr};
 
 use super::elf::{Elf64Hdr, Elf64Phdr, Elf64PhdrFlags, Elf64PhdrType, FromBytes};
 use crate::mmu::frames::{PhysRange, RangeFrameAllocator};
 use crate::mmu::{FrameAllocator, PtFlag, PtMapper};
-use crate::{GuestPhysAddr, GuestVirtAddr};
+use crate::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr, HostPhysAddr};
 
 pub struct Segment {}
 
@@ -60,7 +59,7 @@ impl ElfProgram {
     pub fn load(
         &self,
         guest_memory: PhysRange,
-        host_physical_offset: VirtAddr,
+        host_physical_offset: HostVirtAddr,
         stack_config: Option<(GuestVirtAddr, usize)>,
     ) -> Result<GuestPhysAddr, ()> {
         // Compute the highest physical address used by the guest.
@@ -93,8 +92,8 @@ impl ElfProgram {
         // Allocates page tables within the guest
         let guest_allocator = unsafe {
             RangeFrameAllocator::new(
-                PhysAddr::new(guest_phys_pt_start + guest_memory.start.as_u64()),
-                PhysAddr::new(guest_phys_pt_end + guest_memory.start.as_u64()),
+                HostPhysAddr::new((guest_phys_pt_start + guest_memory.start.as_u64()) as usize),
+                HostPhysAddr::new((guest_phys_pt_end + guest_memory.start.as_u64()) as usize),
                 host_physical_offset,
             )
         };
@@ -156,7 +155,7 @@ impl ElfProgram {
         &self,
         segment: &Elf64Phdr,
         guest_memory: &PhysRange,
-        host_physical_offset: VirtAddr,
+        host_physical_offset: HostVirtAddr,
     ) {
         // Sanity checks
         assert!(segment.p_align >= 0x1000);
