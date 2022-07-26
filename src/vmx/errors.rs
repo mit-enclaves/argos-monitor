@@ -178,6 +178,7 @@ pub enum VmxFieldError {
     VmExitMsrLoadAddr,
     VmEntryIntInfoField,
     VmEntryMsrLoadAddr,
+    MsrBitmaps,
 
     // Other
     Unknown,

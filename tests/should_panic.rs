@@ -29,7 +29,6 @@ pub fn test_runner(tests: &[&dyn Fn()]) {
 fn panic(_info: &PanicInfo) -> ! {
     println!("[ok]");
     qemu::exit(qemu::ExitCode::Success);
-    kernel::hlt_loop();
 }
 
 #[test_case]

@@ -71,6 +71,7 @@ impl Guest for Linux {
                 vmcs
             }
         };
+
         {
             // VMCS is active in this block
             let mut vmcs = vmcs.set_as_active().expect("Failed to activate VMCS");
@@ -90,6 +91,15 @@ impl Guest for Linux {
             // Zero out the gdt and idt
             vcpu.set_nat(fields::GuestStateNat::GdtrBase, 0x0).ok();
             vcpu.set_nat(fields::GuestStateNat::IdtrBase, 0x0).ok();
+
+            // Configure MSRs
+            let frame = allocator
+                .allocate_frame()
+                .expect("Failed to allocate MSR bitmaps");
+            let msr_bitmaps = vmcs
+                .initialize_msr_bitmaps(frame)
+                .expect("Failed to install MSR bitmap");
+            msr_bitmaps.allow_all();
         }
         vmcs
     }

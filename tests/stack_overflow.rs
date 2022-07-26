@@ -41,7 +41,6 @@ fn stack_overflow() {
 extern "x86-interrupt" fn test_double_fault_handler(_stack_frame: InterruptStackFrame, _error_code: u64) -> ! {
     print!("[ok]");
     kernel::qemu::exit(kernel::qemu::ExitCode::Success);
-    kernel::hlt_loop();
 }
 
 #[panic_handler]

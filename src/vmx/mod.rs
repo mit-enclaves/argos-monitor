@@ -14,6 +14,7 @@ pub mod raw;
 
 use core::arch::asm;
 use core::marker::PhantomData;
+use core::ptr::NonNull;
 use core::{arch, usize};
 
 use x86_64::instructions::tables::{sgdt, sidt};
@@ -340,6 +341,7 @@ impl Vmxon {
                 _private: (),
                 regs: [0; 15],
             },
+            msr_bitmaps: None,
             _lifetime: PhantomData,
             _not_sync: PhantomData,
         })
@@ -354,6 +356,8 @@ pub struct VmcsRegion<'vmx> {
     pub vcpu: VCpu,
     /// The frame used by the region.
     frame: Frame,
+    /// The MSR read and write bitmaps.
+    msr_bitmaps: Option<NonNull<msr::MsrBitmaps>>,
     /// This fields creates an artificial lifetime for the region.
     _lifetime: PhantomData<&'vmx ()>,
     /// This fiels makes VmcsRegion !Sync and !Send, therefore it can't be send or shared with
@@ -394,6 +398,34 @@ where
     /// Returns a mutable reference to the VCpu.
     pub fn get_vcpu_mut(&mut self) -> &mut VCpu {
         &mut self.region.vcpu
+    }
+
+    /// Initializes the MSR bitmaps, default to deny all reads and writes.
+    ///
+    /// SAFETY: The frame must be valid and becomes entirely owned by the VMCS, that is any future
+    /// access to the frame while the VMCS is still alive is undefined behavior.
+    pub unsafe fn initialize_msr_bitmaps(
+        &mut self,
+        frame: Frame,
+    ) -> Result<&mut msr::MsrBitmaps, VmxError> {
+        debug_assert_eq!(core::mem::size_of::<msr::MsrBitmaps>(), 0x1000);
+        fields::Ctrl64::MsrBitmaps.vmwrite(frame.phys_addr.as_u64())?;
+        self.region.msr_bitmaps = NonNull::new(frame.virt_addr as *mut msr::MsrBitmaps);
+        if let Some(mut bitmap) = self.region.msr_bitmaps {
+            Ok(bitmap.as_mut())
+        } else {
+            Err(VmxError::Misconfigured(VmxFieldError::MsrBitmaps))
+        }
+    }
+
+    /// Returns a mutable reference to the MSR bitmaps, if any.
+    pub fn get_msr_bitmaps(&mut self) -> Option<&mut msr::MsrBitmaps> {
+        if let Some(bitmap_ptr) = &mut self.region.msr_bitmaps {
+            // SAFETY: the region has total ownership of the bitmap frame
+            unsafe { Some(bitmap_ptr.as_mut()) }
+        } else {
+            None
+        }
     }
 
     /// Launch the VM.

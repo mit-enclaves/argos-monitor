@@ -31,9 +31,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     kernel::init();
 
     // Run tests and exit in test configuration
-    #[cfg(test)]
-    {
-        test_main();
+    if cfg!(test) {
+        run_tests();
     }
 
     // Initialize memory management
@@ -114,7 +113,7 @@ fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
 
             // Shutdown after too many VM exits
             counter += 1;
-            if counter >= 5 {
+            if counter >= 10 {
                 println!("Too many iterations: stoping guest");
                 break;
             }
@@ -145,6 +144,12 @@ fn print_vmx_info() {
     println!("VMX:    {:?}", vmx::vmx_available());
     println!("EPT:    {:?}", vmx::ept_capabilities());
     println!("VMFunc: {:?}", vmx::available_vmfuncs());
+}
+
+fn run_tests() {
+    #[cfg(test)]
+    test_main();
+    qemu::exit(qemu::ExitCode::Success);
 }
 
 #[cfg(not(test))]

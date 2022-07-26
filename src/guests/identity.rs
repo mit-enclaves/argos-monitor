@@ -71,6 +71,15 @@ impl Guest for Identity {
                 .expect("Unable to set rip");
             vcpu.set_nat(fields::GuestStateNat::Rsp, guest_rsp)
                 .expect("Unable to set rsp");
+
+            // Configure MSRs
+            let frame = allocator
+                .allocate_frame()
+                .expect("Failed to allocate MSR bitmaps");
+            let msr_bitmaps = vmcs
+                .initialize_msr_bitmaps(frame)
+                .expect("Failed to install MSR bitmap");
+            msr_bitmaps.allow_all();
         }
 
         vmcs

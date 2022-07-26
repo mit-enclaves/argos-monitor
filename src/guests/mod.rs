@@ -233,7 +233,9 @@ fn default_vmcs_config(vmcs: &mut ActiveVmcs, switching: bool) {
     println!("MSRs:   {:?}", configure_msr());
     println!(
         "1'Ctrl: {:?}",
-        vmcs.set_primary_ctrls(PrimaryControls::SECONDARY_CONTROLS)
+        vmcs.set_primary_ctrls(
+            PrimaryControls::SECONDARY_CONTROLS | PrimaryControls::USE_MSR_BITMAPS
+        )
     );
 
     let mut secondary_ctrls = SecondaryControls::ENABLE_RDTSCP | SecondaryControls::ENABLE_EPT;
