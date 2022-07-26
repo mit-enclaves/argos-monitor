@@ -50,12 +50,14 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             .expect("Failed to initialize memory")
     };
 
-    if true {
+    // Select appropriate guest depending on selected features
+    if cfg!(feature = "guest_linux") {
+        launch_guest(&guests::linux::LINUX, &frame_allocator)
+    } else if cfg!(feature = "guest_rawc") {
         launch_guest(&guests::rawc::RAWC, &frame_allocator)
-        // launch_guest(&guests::linux::LINUX, &frame_allocator)
     } else {
         launch_guest(&guests::identity::Identity {}, &frame_allocator)
-    };
+    }
 }
 
 fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {

@@ -13,7 +13,10 @@ use crate::vmx::fields;
 use super::Guest;
 use super::HandlerResult;
 
+#[cfg(feature = "guest_linux")]
 const LINUXBYTES: &'static [u8] = include_bytes!("../../linux-image/vmlinux");
+#[cfg(not(feature = "guest_linux"))]
+const LINUXBYTES: &'static [u8] = &[0; 10];
 
 pub struct Linux {}
 

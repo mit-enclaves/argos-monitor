@@ -13,6 +13,10 @@ members = [
 # Print to VGA text mode
 vga = ["font8x8"]
 
+# Guest
+guest_linux = []
+guest_rawc = []
+
 [dependencies]
 bootloader = { version = "0.10.12" }
 volatile = "0.2.6"
