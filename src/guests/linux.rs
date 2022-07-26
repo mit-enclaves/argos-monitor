@@ -94,7 +94,8 @@ impl Guest for Linux {
         vmcs
     }
 
-    unsafe fn exit_handler(&self, _vcpu: &mut vmx::VCpu) -> HandlerResult {
-        HandlerResult::Exit
+    unsafe fn vmcall_handler(&self, _vcpu: &mut vmx::VCpu) -> Result<HandlerResult, vmx::VmxError> {
+        crate::println!("Linux: VMCall - exiting...");
+        Ok(HandlerResult::Exit)
     }
 }

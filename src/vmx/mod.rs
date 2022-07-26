@@ -745,6 +745,16 @@ impl VCpu {
         unsafe { field.vmwrite(value) }
     }
 
+    /// Set guest RIP to the next instruction.
+    ///
+    /// SAFETY: This function must be called at most once between two VM exits, as the instruction
+    /// lenght is not updated until VM exits again.
+    pub unsafe fn next_instruction(&mut self) -> Result<(), VmxError> {
+        let instr_len = fields::GuestState32Ro::VmExitInstructionLenght.vmread()? as usize;
+        let rip = self.get_rip()?;
+        self.set_rip(rip + instr_len)
+    }
+
     /// Returns the exit reason.
     pub fn exit_reason(&self) -> Result<VmxExitReason, VmxError> {
         let reason = unsafe { fields::GuestState32Ro::ExitReason.vmread() }?;

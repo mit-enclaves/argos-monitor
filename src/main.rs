@@ -82,7 +82,7 @@ fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
         let mut vmcs = guest.instantiate(&vmxon, allocator);
         let mut vmcs = vmcs.set_as_active().expect("Failed to activate VMCS");
 
-        let result = vmcs.launch();
+        let mut result = vmcs.launch();
         let mut launch = "Launch";
         let mut counter = 0;
         loop {
@@ -99,20 +99,29 @@ fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
                 rax,
                 rbp
             );
-            vcpu.set_rip(rip + 3).expect("Failed to set guest %rip");
-            let exit_reason = guest.exit_handler(vcpu);
+
+            let exit_reason = if let Ok(exit_reason) = result {
+                guest
+                    .handle_exit(&mut vmcs, exit_reason)
+                    .expect("Failed to hadle VM exit")
+            } else {
+                guests::HandlerResult::Crash
+            };
 
             if exit_reason != guests::HandlerResult::Resume {
                 break;
             }
+
+            // Shutdown after too many VM exits
             counter += 1;
             if counter >= 5 {
                 println!("Too many iterations: stoping guest");
                 break;
             }
 
+            // Resume VM
             launch = "Resume";
-            vmcs.resume().expect("Failed to resume guest");
+            result = vmcs.resume();
         }
 
         let vcpu = vmcs.get_vcpu();

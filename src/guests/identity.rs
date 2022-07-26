@@ -76,8 +76,8 @@ impl Guest for Identity {
         vmcs
     }
 
-    unsafe fn exit_handler(&self, _vcpu: &mut vmx::VCpu) -> HandlerResult {
-        HandlerResult::Exit
+    unsafe fn vmcall_handler(&self, _vcpu: &mut vmx::VCpu) -> Result<HandlerResult, vmx::VmxError> {
+        Ok(HandlerResult::Exit)
     }
 }
 #[inline(always)]

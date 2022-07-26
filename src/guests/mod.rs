@@ -7,7 +7,7 @@ use crate::vmx::bitmaps::{
 };
 use crate::vmx::fields;
 use crate::vmx::fields::traits::*;
-use crate::vmx::{ActiveVmcs, VmcsRegion};
+use crate::vmx::{ActiveVmcs, Register, VmcsRegion};
 use x86_64::registers::model_specific::Efer;
 
 use core::arch::asm;
@@ -35,7 +35,57 @@ pub trait Guest {
         allocator: &impl FrameAllocator,
     ) -> VmcsRegion<'vmx>;
 
-    unsafe fn exit_handler(&self, vcpu: &mut vmx::VCpu) -> HandlerResult;
+    unsafe fn vmcall_handler(&self, vcpu: &mut vmx::VCpu) -> Result<HandlerResult, vmx::VmxError>;
+
+    fn handle_exit(
+        &self,
+        vmcs: &mut vmx::ActiveVmcs,
+        reason: vmx::VmxExitReason,
+    ) -> Result<HandlerResult, vmx::VmxError> {
+        match reason {
+            vmx::VmxExitReason::Vmcall => unsafe { self.vmcall_handler(vmcs.get_vcpu_mut()) },
+            vmx::VmxExitReason::Cpuid => {
+                let vcpu = vmcs.get_vcpu_mut();
+                let input_eax = vcpu[Register::Rax];
+                let input_ecx = vcpu[Register::Rcx];
+                let eax: u64;
+                let ebx: u64;
+                let ecx: u64;
+                let edx: u64;
+
+                unsafe {
+                    // Note: LLVM reserves %rbx for its internal use, so we need to use a scratch
+                    // register for %rbx here.
+                    asm!(
+                        "mov rbx, {tmp}",
+                        "cpuid",
+                        "mov {tmp}, rbx",
+                        tmp = out(reg) ebx ,
+                        inout("rax") input_eax => eax,
+                        inout("rcx") input_ecx => ecx,
+                        out("rdx") edx,
+                    )
+                }
+
+                vcpu[Register::Rax] = eax;
+                vcpu[Register::Rbx] = ebx;
+                vcpu[Register::Rcx] = ecx;
+                vcpu[Register::Rdx] = edx;
+
+                // SAFETY: called only once
+                unsafe { vcpu.next_instruction()? };
+
+                Ok(HandlerResult::Resume)
+            }
+            _ => {
+                crate::println!(
+                    "Emulation is not yet implemented for exit reason: {:?}",
+                    reason
+                );
+                Ok(HandlerResult::Exit)
+            }
+        }
+    }
 }
 
 fn configure_msr() -> Result<(), vmx::VmxError> {

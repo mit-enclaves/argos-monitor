@@ -111,14 +111,20 @@ impl Guest for RawcBytes {
         vmcs
     }
 
-    unsafe fn exit_handler(&self, vcpu: &mut vmx::VCpu) -> HandlerResult {
+    unsafe fn vmcall_handler(&self, vcpu: &mut vmx::VCpu) -> Result<HandlerResult, vmx::VmxError> {
+        let rip = vcpu.get_rip().expect("Can't read guest %rip");
         let rax = vcpu[vmx::Register::Rax];
+
+        // Move to next instruction
+        vcpu.set_rip(rip + 3).expect("Failed to set guest %rip");
+
+        // Interpret VMCall
         if rax == 0x777 {
-            return HandlerResult::Exit;
+            return Ok(HandlerResult::Exit);
         }
         if rax == 0x888 {
-            return HandlerResult::Resume;
+            return Ok(HandlerResult::Resume);
         }
-        HandlerResult::Crash
+        Ok(HandlerResult::Crash)
     }
 }
