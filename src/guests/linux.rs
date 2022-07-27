@@ -1,6 +1,6 @@
 //! Linux Guest
 use crate::guests;
-use crate::guests::elf_program::ElfProgram;
+use crate::guests::elf_program::{ElfMapping, ElfProgram};
 use crate::mmu::eptmapper::EptMapper;
 use crate::mmu::frames::RangeFrameAllocator;
 use crate::mmu::FrameAllocator;
@@ -28,7 +28,8 @@ impl Guest for Linux {
         vmxon: &'vmx vmx::Vmxon,
         allocator: &impl FrameAllocator,
     ) -> vmx::VmcsRegion<'vmx> {
-        let linux_prog = ElfProgram::new(LINUXBYTES);
+        let mut linux_prog = ElfProgram::new(LINUXBYTES);
+        linux_prog.set_mapping(ElfMapping::Identity);
 
         let virtoffset = allocator.get_physical_offset();
         // Create a bumper allocator with 1GB of RAM.
@@ -80,7 +81,7 @@ impl Guest for Linux {
             // Setup the roots.
             vmcs.set_ept_ptr(ept_mapper.get_root()).ok();
             vmx::check::check().expect("check error");
-            let entry_point = linux_prog.entry;
+            let entry_point = linux_prog.phys_entry;
             let vcpu = vmcs.get_vcpu_mut();
             vcpu.set_nat(fields::GuestStateNat::Rip, entry_point.as_usize())
                 .ok();

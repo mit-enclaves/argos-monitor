@@ -3,19 +3,32 @@ use alloc::vec::Vec;
 use super::elf::{Elf64Hdr, Elf64Phdr, Elf64PhdrFlags, Elf64PhdrType, FromBytes};
 use crate::mmu::frames::{PhysRange, RangeFrameAllocator};
 use crate::mmu::{FrameAllocator, PtFlag, PtMapper};
-use crate::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr, HostPhysAddr};
+use crate::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
 
-pub struct Segment {}
+pub enum ElfMapping {
+    /// Respect the virtual-to-physical mapping of the ELF file.
+    ElfDefault,
+    /// Use an identity mapping, i.e. virtual addresses becomes equal to physical addresses.
+    Identity,
+}
 
-pub struct Section {}
-
+/// An ELF program that can be loaded as a guest.
 pub struct ElfProgram {
+    /// The entry point, as a guest virtual address.
     pub entry: GuestVirtAddr,
+    /// The entry point, as a guest physical address.
+    ///
+    /// To be used with identity mapping.
+    pub phys_entry: GuestPhysAddr,
     segments: Vec<Elf64Phdr>,
     bytes: &'static [u8],
+    mapping: ElfMapping,
 }
 
 impl ElfProgram {
+    /// Parses an elf program from raw bytes.
+    ///
+    /// Uses the ELF virtual-to-physical mappings by default.
     pub fn new(bytes: &'static [u8]) -> Self {
         let mut start: usize = 0;
         let mut end: usize = Elf64Hdr::SIZE;
@@ -34,12 +47,12 @@ impl ElfProgram {
 
         // Find entry virtual address
         let mut entry = None;
-        let entry_phys = header.e_entry;
+        let phys_entry = header.e_entry;
         for header in &prog_headers {
             let segment_start = header.p_paddr;
             let segment_end = segment_start + header.p_memsz;
-            if entry_phys >= segment_start && entry_phys < segment_end {
-                let segment_offset = entry_phys - segment_start;
+            if phys_entry >= segment_start && phys_entry < segment_end {
+                let segment_offset = phys_entry - segment_start;
                 entry = Some(header.p_vaddr + segment_offset);
             }
         }
@@ -47,9 +60,16 @@ impl ElfProgram {
 
         Self {
             entry: GuestVirtAddr::new(entry as usize),
+            phys_entry: GuestPhysAddr::new(phys_entry as usize),
             segments: prog_headers,
+            mapping: ElfMapping::ElfDefault,
             bytes,
         }
+    }
+
+    /// Configures the mappings for this program.
+    pub fn set_mapping(&mut self, mapping: ElfMapping) {
+        self.mapping = mapping;
     }
 
     /// Loads the guest program and setup the page table inside the guest memory.
@@ -81,6 +101,7 @@ impl ElfProgram {
         let guest_virt_pt_end = guest_virt_pt_start + guest_pt_size;
 
         // Check for collisions between PT and other elf segments in guest virtual address space
+        // TODO: handle identity mapping (i.e. check phys addr instead of virt addr).
         for seg in self.segments.iter() {
             let seg_start = seg.p_vaddr;
             let seg_end = seg_start + seg.p_memsz;
@@ -141,13 +162,26 @@ impl ElfProgram {
         mapper: &mut PtMapper,
         guest_allocator: &impl FrameAllocator,
     ) {
-        mapper.map_range(
-            guest_allocator,
-            GuestVirtAddr::new(segment.p_vaddr as usize),
-            GuestPhysAddr::new(segment.p_paddr as usize),
-            segment.p_memsz as usize,
-            flags_to_prot(segment.p_flags),
-        );
+        match self.mapping {
+            ElfMapping::ElfDefault => {
+                mapper.map_range(
+                    guest_allocator,
+                    GuestVirtAddr::new(segment.p_vaddr as usize),
+                    GuestPhysAddr::new(segment.p_paddr as usize),
+                    segment.p_memsz as usize,
+                    flags_to_prot(segment.p_flags),
+                );
+            }
+            ElfMapping::Identity => {
+                mapper.map_range(
+                    guest_allocator,
+                    GuestVirtAddr::new(segment.p_paddr as usize),
+                    GuestPhysAddr::new(segment.p_paddr as usize),
+                    segment.p_memsz as usize,
+                    flags_to_prot(segment.p_flags),
+                );
+            }
+        }
     }
 
     /// Loads an elf segment at the desired physical address.
