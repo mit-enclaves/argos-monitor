@@ -78,21 +78,6 @@ impl Guest for Linux {
             let mut vmcs = vmcs.set_as_active().expect("Failed to activate VMCS");
             guests::default_vmcs_config(&mut vmcs, false);
 
-            // Setup the roots.
-            vmcs.set_ept_ptr(ept_mapper.get_root()).ok();
-            vmx::check::check().expect("check error");
-            let entry_point = linux_prog.phys_entry;
-            let vcpu = vmcs.get_vcpu_mut();
-            vcpu.set_nat(fields::GuestStateNat::Rip, entry_point.as_usize())
-                .ok();
-            vcpu.set_nat(fields::GuestStateNat::Cr3, pt_root.as_usize())
-                .ok();
-            vcpu.set_nat(fields::GuestStateNat::Rsp, 0).ok();
-
-            // Zero out the gdt and idt
-            vcpu.set_nat(fields::GuestStateNat::GdtrBase, 0x0).ok();
-            vcpu.set_nat(fields::GuestStateNat::IdtrBase, 0x0).ok();
-
             // Configure MSRs
             let frame = allocator
                 .allocate_frame()
@@ -101,6 +86,29 @@ impl Guest for Linux {
                 .initialize_msr_bitmaps(frame)
                 .expect("Failed to install MSR bitmap");
             msr_bitmaps.allow_all();
+
+            // Setup the roots.
+            vmcs.set_ept_ptr(ept_mapper.get_root()).unwrap();
+            let entry_point = linux_prog.phys_entry;
+            let vcpu = vmcs.get_vcpu_mut();
+            vcpu.set_nat(fields::GuestStateNat::Rip, entry_point.as_usize())
+                .unwrap();
+            vcpu.set_nat(fields::GuestStateNat::Cr3, pt_root.as_usize())
+                .unwrap();
+            vcpu.set_nat(fields::GuestStateNat::Rsp, 0).unwrap();
+
+            // Zero out the gdt and idt
+            vcpu.set_nat(fields::GuestStateNat::GdtrBase, 0x0).unwrap();
+            vcpu.set_nat(fields::GuestStateNat::IdtrBase, 0x0).unwrap();
+
+            // Setup control registers
+            let vmxe = 1 << 13; // VMXE flags, required during VMX operations.
+            let cr4 = 0xA0 | vmxe;
+            vcpu.set_nat(fields::GuestStateNat::Cr4, cr4).unwrap();
+            vmcs.set_cr4_mask(vmxe).unwrap();
+            vmcs.set_cr4_shadow(vmxe).unwrap();
+
+            vmx::check::check().expect("check error");
         }
         vmcs
     }

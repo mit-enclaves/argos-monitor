@@ -231,6 +231,23 @@ pub enum Ctrl64 {
 
 impl_field_for!(VmcsField64, Ctrl64);
 
+/// VMCS fields encoding of natural width control fields.
+#[rustfmt::skip]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum CtrlNat {
+    Cr0Mask         = 0x00006000,
+    Cr4Mask         = 0x00006002,
+    Cr0ReadShadow   = 0x00006004,
+    Cr4ReadShadow   = 0x00006006,
+    Cr3TargetValue0 = 0x00006008,
+    Cr3TargetValue1 = 0x0000600A,
+    Cr3TargetValue2 = 0x0000600C,
+    Cr3TargetValue3 = 0x0000600E,
+}
+
+impl_field_for!(VmcsFieldNat, CtrlNat);
+
 // ——————————————————————————— Host State Fields ———————————————————————————— //
 
 /// VMCS fields encoding of 16 bits host state fields.

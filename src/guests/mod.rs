@@ -107,11 +107,13 @@ fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
     let cr4: usize;
     unsafe {
         asm!("mov {}, cr0", out(reg) cr0, options(nomem, nostack, preserves_flags));
+        println!("CR0: 0x{:x} = 0b{:b}", cr0, cr0);
         vcpu.set_nat(fields::GuestStateNat::Cr0, cr0)?;
         asm!("mov {}, cr3", out(reg) cr3, options(nomem, nostack, preserves_flags));
         vcpu.set_nat(fields::GuestStateNat::Cr3, cr3)?;
         asm!("mov {}, cr4", out(reg) cr4, options(nomem, nostack, preserves_flags));
-        vcpu.set_nat(fields::GuestStateNat::Cr4, cr4)?;
+        println!("CR4: 0x{:x} = 0b{:b}", cr4, cr4);
+        vcpu.set_nat(fields::GuestStateNat::Cr4, 0xA0)?;
     }
 
     // Segments selectors

@@ -520,6 +520,32 @@ where
         Ok(EntryControls::from_bits_truncate(ctrls))
     }
 
+    /// Sets the Cr0 guest/host mask.
+    ///
+    /// Bits set to 1 will be read from the Cr0 shadow and modification attempt wills cause VM
+    /// exits.
+    pub fn set_cr0_mask(&mut self, cr0_mask: usize) -> Result<(), VmxError> {
+        unsafe { fields::CtrlNat::Cr0Mask.vmwrite(cr0_mask) }
+    }
+
+    /// Sets the Cr4 guest/host mask.
+    ///
+    /// Bits set to 1 will be read from the Cr4 shadow and modification attempt wills cause VM
+    /// exits.
+    pub fn set_cr4_mask(&mut self, cr4_mask: usize) -> Result<(), VmxError> {
+        unsafe { fields::CtrlNat::Cr4Mask.vmwrite(cr4_mask) }
+    }
+
+    /// Sets the Cr0 read shadow.
+    pub fn set_cr0_shadow(&mut self, cr0_shadow: usize) -> Result<(), VmxError> {
+        unsafe { fields::CtrlNat::Cr0ReadShadow.vmwrite(cr0_shadow) }
+    }
+
+    /// Sets the Cr4 read shadow.
+    pub fn set_cr4_shadow(&mut self, cr4_shadow: usize) -> Result<(), VmxError> {
+        unsafe { fields::CtrlNat::Cr4ReadShadow.vmwrite(cr4_shadow) }
+    }
+
     /// Sets the exception bitmap.
     pub fn set_exception_bitmap(&mut self, bitmap: ExceptionBitmap) -> Result<(), VmxError> {
         // TODO: is there a list of allowed settings?
