@@ -11,8 +11,13 @@ __attribute__((force_align_arg_pointer)) void _start() {
         "vmcall");
   }
 
-  asm("movq $0xA0, %rax;"
+  asm("movq $0x400A0, %rax;"
       "movq %rax, %cr4;");
+
+  asm("movl $0x7, %eax;"
+      "movl $0x0, %edx;"
+      "movl $0x0, %ecx;"
+      "xsetbv");
 
   asm("movl $0x666, %eax;"
       "movl $0x777, %ebx;"

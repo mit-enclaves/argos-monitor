@@ -101,12 +101,35 @@ pub trait Guest {
                 println!("EPT Violation: 0x{:x}", addr.as_u64());
                 Ok(HandlerResult::Crash)
             }
+            vmx::VmxExitReason::Xsetbv => {
+                let ecx = vcpu.get(Register::Rcx);
+                let eax = vcpu.get(Register::Rax);
+                let edx = vcpu.get(Register::Rdx);
+
+                let xrc_id = ecx & 0xFFFFFFFF; // Ignore 32 high-order bits
+                if xrc_id != 0 {
+                    println!("Xsetbv: invalid rcx 0x{:x}", ecx);
+                    return Ok(HandlerResult::Crash);
+                }
+
+                unsafe {
+                    asm!(
+                        "xsetbv",
+                        in("ecx") ecx,
+                        in("eax") eax,
+                        in("edx") edx,
+                    );
+                }
+
+                vcpu.next_instruction()?;
+                Ok(HandlerResult::Resume)
+            }
             _ => {
-                crate::println!(
+                println!(
                     "Emulation is not yet implemented for exit reason: {:?}",
                     reason
                 );
-                Ok(HandlerResult::Exit)
+                Ok(HandlerResult::Crash)
             }
         }
     }
@@ -131,12 +154,10 @@ fn setup_guest(vcpu: &mut vmx::ActiveVmcs) -> Result<(), vmx::VmxError> {
     let cr4: usize;
     unsafe {
         asm!("mov {}, cr0", out(reg) cr0, options(nomem, nostack, preserves_flags));
-        println!("CR0: 0x{:x} = 0b{:b}", cr0, cr0);
         vcpu.set_nat(fields::GuestStateNat::Cr0, cr0)?;
         asm!("mov {}, cr3", out(reg) cr3, options(nomem, nostack, preserves_flags));
         vcpu.set_nat(fields::GuestStateNat::Cr3, cr3)?;
         asm!("mov {}, cr4", out(reg) cr4, options(nomem, nostack, preserves_flags));
-        println!("CR4: 0x{:x} = 0b{:b}", cr4, cr4);
         vcpu.set_nat(fields::GuestStateNat::Cr4, cr4)?;
     }
 

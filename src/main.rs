@@ -14,7 +14,7 @@ use kernel::println;
 use kernel::vmx;
 use kernel::vmx::Register;
 use kernel::HostVirtAddr;
-use x86_64::registers::control::{Cr0, Cr0Flags};
+use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
 
 use kernel::guests;
 use kernel::qemu;
@@ -93,7 +93,7 @@ fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
             println!(
                 "{}: {:?} - rip: 0x{:x} - rbp: 0x{:x} - rax: 0x{:x} - rcx: 0x{:x}",
                 launch,
-                vcpu.interrupt_info(),
+                vcpu.exit_reason(),
                 rip,
                 rbp,
                 rax,
@@ -137,7 +137,11 @@ fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
 fn initialize_cpu() {
     // Set CPU in a valid state for VMX operations.
     let cr0 = Cr0::read();
-    unsafe { Cr0::write(cr0 | Cr0Flags::NUMERIC_ERROR) };
+    let cr4 = Cr4::read();
+    unsafe {
+        Cr0::write(cr0 | Cr0Flags::NUMERIC_ERROR);
+        Cr4::write(cr4 | Cr4Flags::OSXSAVE);
+    };
 }
 
 fn print_vmx_info() {
