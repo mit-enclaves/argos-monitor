@@ -11,9 +11,8 @@ __attribute__((force_align_arg_pointer)) void _start() {
         "vmcall");
   }
 
-  asm("movl $0x000, %eax;"
-      "movl $0x000, %ecx;"
-      "cpuid");
+  asm("movq $0xA0, %rax;"
+      "movq %rax, %cr4;");
 
   asm("movl $0x666, %eax;"
       "movl $0x777, %ebx;"

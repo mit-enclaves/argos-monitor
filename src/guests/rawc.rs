@@ -6,7 +6,7 @@ use crate::println;
 use crate::qemu;
 use crate::vmx;
 use crate::vmx::bitmaps::EptEntryFlags;
-use crate::vmx::fields;
+use crate::vmx::{fields, Register};
 use crate::GuestVirtAddr;
 
 use super::Guest;

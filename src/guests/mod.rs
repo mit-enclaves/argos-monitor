@@ -1,13 +1,14 @@
 use crate::mmu::FrameAllocator;
 use crate::println;
 use crate::vmx;
+use crate::vmx::bitmaps::exit_qualification;
 use crate::vmx::bitmaps::{
     EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
     SecondaryControls,
 };
 use crate::vmx::fields;
 use crate::vmx::fields::traits::*;
-use crate::vmx::{ActiveVmcs, Register, VmcsRegion};
+use crate::vmx::{ActiveVmcs, ControlRegister, Register, VmcsRegion};
 use x86_64::registers::model_specific::Efer;
 
 use core::arch::asm;
@@ -77,7 +78,22 @@ pub trait Guest {
                 vcpu.next_instruction()?;
                 Ok(HandlerResult::Resume)
             }
+            vmx::VmxExitReason::ControlRegisterAccesses => {
+                let qualification = vcpu.exit_qualification()?.control_register_accesses();
+                match qualification {
+                    exit_qualification::ControlRegisterAccesses::MovToCr(cr, reg) => {
+                        if cr != ControlRegister::Cr4 {
+                            todo!("Handle {:?}", cr);
+                        }
+                        let value = vcpu.get(reg) as usize;
+                        vcpu.set_cr4_shadow(value)?;
+                        let real_value = value | (1 << 13); // VMXE
+                        vcpu.set_cr(cr, real_value);
 
+                        vcpu.next_instruction()?;
+                    }
+                    _ => todo!("Emulation not yet implemented for {:?}", qualification),
+                };
                 Ok(HandlerResult::Resume)
             }
             _ => {

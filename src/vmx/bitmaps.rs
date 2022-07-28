@@ -2,6 +2,7 @@
 //!
 //! Wrappers for simple and tape safe manipulation of bitmaps used throughout VMX operations.
 
+use super::{ControlRegister, Register};
 use bitflags::bitflags;
 
 bitflags! {
@@ -357,5 +358,17 @@ pub mod exit_qualification {
             /// NMI blocked due to IRET.
             const NMI_BLOCKED = 1 << 12;
         }
+    }
+
+    /// Control Register Accesses qualification.
+    ///
+    /// See table 27.3.
+    #[derive(Clone, Copy, Debug)]
+    pub enum ControlRegisterAccesses {
+        MovToCr(ControlRegister, Register),
+        MovFromCr(ControlRegister, Register),
+        Clts(u16),
+        LmswRegister(u16),
+        LmswMemory(u16),
     }
 }

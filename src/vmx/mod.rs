@@ -24,6 +24,7 @@ use x86_64::registers::segmentation;
 use x86_64::registers::segmentation::Segment;
 
 use crate::gdt;
+use bitmaps::exit_qualification;
 use bitmaps::{
     EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
     SecondaryControls,
@@ -877,8 +878,54 @@ pub struct VmxExitQualification {
 
 impl VmxExitQualification {
     /// Interpretation due to EPT violations.
-    pub fn ept_violation(self) -> bitmaps::exit_qualification::EptViolation {
-        bitmaps::exit_qualification::EptViolation::from_bits_truncate(self.raw)
+    pub fn ept_violation(self) -> exit_qualification::EptViolation {
+        exit_qualification::EptViolation::from_bits_truncate(self.raw)
+    }
+
+    /// Interpretation due to access to a control register.
+    pub fn control_register_accesses(self) -> exit_qualification::ControlRegisterAccesses {
+        let cr_id = self.raw & 0b1111;
+        let cr = match cr_id {
+            0 => ControlRegister::Cr0,
+            3 => ControlRegister::Cr3,
+            4 => ControlRegister::Cr4,
+            8 => ControlRegister::Cr8,
+            _ => todo!("Handle unknown control register"),
+        };
+        let reg_id = (self.raw >> 8) & 0b1111;
+        let reg = match reg_id {
+            0 => Register::Rax,
+            1 => Register::Rcx,
+            2 => Register::Rdx,
+            3 => Register::Rbx,
+            4 => Register::Rsp,
+            5 => Register::Rbp,
+            6 => Register::Rsi,
+            7 => Register::Rdi,
+            8 => Register::R8,
+            9 => Register::R9,
+            10 => Register::R10,
+            11 => Register::R11,
+            12 => Register::R12,
+            13 => Register::R13,
+            14 => Register::R14,
+            15 => Register::R15,
+            _ => unreachable!("Can't happen, masked with 4 lowest bits"),
+        };
+        let payload = ((self.raw >> 16) & 0xFFFF) as u16;
+        match (self.raw >> 4) & 0b11 {
+            0 => exit_qualification::ControlRegisterAccesses::MovToCr(cr, reg),
+            1 => exit_qualification::ControlRegisterAccesses::MovFromCr(cr, reg),
+            2 => exit_qualification::ControlRegisterAccesses::Clts(payload),
+            3 => {
+                if self.raw & (1 << 6) == 0 {
+                    exit_qualification::ControlRegisterAccesses::LmswRegister(payload)
+                } else {
+                    exit_qualification::ControlRegisterAccesses::LmswMemory(payload)
+                }
+            }
+            _ => unreachable!("Can't happen, masked with 2 lowest bits"),
+        }
     }
 }
 
