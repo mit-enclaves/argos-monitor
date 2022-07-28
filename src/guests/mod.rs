@@ -35,19 +35,21 @@ pub trait Guest {
         allocator: &impl FrameAllocator,
     ) -> VmcsRegion<'vmx>;
 
-    unsafe fn vmcall_handler(&self, vcpu: &mut vmx::VCpu) -> Result<HandlerResult, vmx::VmxError>;
+    unsafe fn vmcall_handler(
+        &self,
+        vcpu: &mut vmx::ActiveVmcs,
+    ) -> Result<HandlerResult, vmx::VmxError>;
 
     fn handle_exit(
         &self,
-        vmcs: &mut vmx::ActiveVmcs,
+        vcpu: &mut vmx::ActiveVmcs,
         reason: vmx::VmxExitReason,
     ) -> Result<HandlerResult, vmx::VmxError> {
         match reason {
-            vmx::VmxExitReason::Vmcall => unsafe { self.vmcall_handler(vmcs.get_vcpu_mut()) },
+            vmx::VmxExitReason::Vmcall => unsafe { self.vmcall_handler(vcpu) },
             vmx::VmxExitReason::Cpuid => {
-                let vcpu = vmcs.get_vcpu_mut();
-                let input_eax = vcpu[Register::Rax];
-                let input_ecx = vcpu[Register::Rcx];
+                let input_eax = vcpu.get(Register::Rax);
+                let input_ecx = vcpu.get(Register::Rcx);
                 let eax: u64;
                 let ebx: u64;
                 let ecx: u64;
@@ -67,13 +69,14 @@ pub trait Guest {
                     )
                 }
 
-                vcpu[Register::Rax] = eax;
-                vcpu[Register::Rbx] = ebx;
-                vcpu[Register::Rcx] = ecx;
-                vcpu[Register::Rdx] = edx;
+                vcpu.set(Register::Rax, eax);
+                vcpu.set(Register::Rbx, ebx);
+                vcpu.set(Register::Rcx, ecx);
+                vcpu.set(Register::Rdx, edx);
 
-                // SAFETY: called only once
-                unsafe { vcpu.next_instruction()? };
+                vcpu.next_instruction()?;
+                Ok(HandlerResult::Resume)
+            }
 
                 Ok(HandlerResult::Resume)
             }
@@ -98,7 +101,7 @@ fn configure_msr() -> Result<(), vmx::VmxError> {
     Ok(())
 }
 
-fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
+fn setup_guest(vcpu: &mut vmx::ActiveVmcs) -> Result<(), vmx::VmxError> {
     // Mostly copied from https://nixhacker.com/developing-hypervisor-from-scratch-part-4/
 
     // Control registers
@@ -113,7 +116,7 @@ fn setup_guest(vcpu: &mut vmx::VCpu) -> Result<(), vmx::VmxError> {
         vcpu.set_nat(fields::GuestStateNat::Cr3, cr3)?;
         asm!("mov {}, cr4", out(reg) cr4, options(nomem, nostack, preserves_flags));
         println!("CR4: 0x{:x} = 0b{:b}", cr4, cr4);
-        vcpu.set_nat(fields::GuestStateNat::Cr4, 0xA0)?;
+        vcpu.set_nat(fields::GuestStateNat::Cr4, cr4)?;
     }
 
     // Segments selectors
@@ -230,7 +233,7 @@ fn default_vmcs_config(vmcs: &mut ActiveVmcs, switching: bool) {
         })
         .and_then(|_| vmcs.set_exception_bitmap(ExceptionBitmap::empty()))
         .and_then(|_| vmcs.save_host_state())
-        .and_then(|_| setup_guest(vmcs.get_vcpu_mut()));
+        .and_then(|_| setup_guest(vmcs));
     println!("Config: {:?}", err);
     println!("MSRs:   {:?}", configure_msr());
     println!(

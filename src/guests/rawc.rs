@@ -90,14 +90,21 @@ impl Guest for RawcBytes {
 
         {
             // VMCS is active in this block
-            let mut vmcs = vmcs.set_as_active().expect("Failed to activate VMCS");
-            guests::default_vmcs_config(&mut vmcs, false);
+            let mut vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");
+            guests::default_vmcs_config(&mut vcpu, false);
+
+            // Configure MSRs
+            let frame = allocator
+                .allocate_frame()
+                .expect("Failed to allocate MSR bitmaps");
+            let msr_bitmaps = vcpu
+                .initialize_msr_bitmaps(frame)
+                .expect("Failed to install MSR bitmap");
+            msr_bitmaps.allow_all();
 
             // Setup the roots.
-            vmcs.set_ept_ptr(ept_mapper.get_root()).ok();
-            vmx::check::check().expect("check error");
+            vcpu.set_ept_ptr(ept_mapper.get_root()).ok();
             let entry_point = rawc_prog.entry;
-            let vcpu = vmcs.get_vcpu_mut();
             vcpu.set_nat(fields::GuestStateNat::Rip, entry_point.as_usize())
                 .ok();
             vcpu.set_nat(fields::GuestStateNat::Cr3, pt_root.as_usize())
@@ -109,24 +116,24 @@ impl Guest for RawcBytes {
             vcpu.set_nat(fields::GuestStateNat::GdtrBase, 0x0).ok();
             vcpu.set_nat(fields::GuestStateNat::IdtrBase, 0x0).ok();
 
-            // Configure MSRs
-            let frame = allocator
-                .allocate_frame()
-                .expect("Failed to allocate MSR bitmaps");
-            let msr_bitmaps = vmcs
-                .initialize_msr_bitmaps(frame)
-                .expect("Failed to install MSR bitmap");
-            msr_bitmaps.allow_all();
+            // Setup control registers
+            let vmxe = 1 << 13; // VMXE flags, required during VMX operations.
+            let cr4 = 0xA0 | vmxe;
+            vcpu.set_nat(fields::GuestStateNat::Cr4, cr4).unwrap();
+            vcpu.set_cr4_mask(vmxe).unwrap();
+            vcpu.set_cr4_shadow(vmxe).unwrap();
+
+            vmx::check::check().expect("check error");
         }
         vmcs
     }
 
-    unsafe fn vmcall_handler(&self, vcpu: &mut vmx::VCpu) -> Result<HandlerResult, vmx::VmxError> {
-        let rip = vcpu.get_rip().expect("Can't read guest %rip");
-        let rax = vcpu[vmx::Register::Rax];
+    unsafe fn vmcall_handler(&self, vcpu: &mut vmx::ActiveVmcs) -> Result<HandlerResult, vmx::VmxError> {
+        let rip = vcpu.get(Register::Rip);
+        let rax = vcpu.get(Register::Rax);
 
         // Move to next instruction
-        vcpu.set_rip(rip + 3).expect("Failed to set guest %rip");
+        vcpu.set(Register::Rip, rip + 3);
 
         // Interpret VMCall
         if rax == 0x777 {

@@ -34,16 +34,16 @@ impl Guest for Identity {
 
         {
             // VMCS is active in this block
-            let mut vmcs = vmcs.set_as_active().expect("Failed to activate VMCS");
+            let mut vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");
             let switching = vmx::available_vmfuncs().is_ok();
-            guests::default_vmcs_config(&mut vmcs, switching);
+            guests::default_vmcs_config(&mut vcpu, switching);
             let ept_mapper = setup_ept(allocator).expect("Failed to setupt EPT 1");
-            println!("EPTP:   {:?}", vmcs.set_ept_ptr(ept_mapper.get_root()));
+            println!("EPTP:   {:?}", vcpu.set_ept_ptr(ept_mapper.get_root()));
 
             // Let's see if we can duplicate the EPTs, and register them both
             if switching {
                 let ept_mapper2 = setup_ept(allocator).expect("Failed to setup EPT 2");
-                println!("EPT2:   {:?}", vmcs.set_ept_ptr(ept_mapper2.get_root()));
+                println!("EPT2:   {:?}", vcpu.set_ept_ptr(ept_mapper2.get_root()));
                 let mut eptp_list = ept::EptpList::new(
                     allocator
                         .allocate_frame()
@@ -51,10 +51,10 @@ impl Guest for Identity {
                 );
                 eptp_list.set_entry(0, ept_mapper.get_root());
                 eptp_list.set_entry(1, ept_mapper2.get_root());
-                println!("EPTP L: {:?}", vmcs.set_eptp_list(&eptp_list));
+                println!("EPTP L: {:?}", vcpu.set_eptp_list(&eptp_list));
                 println!(
                     "Enable vmfunc: {:?}",
-                    vmcs.set_vmfunc_ctrls(VmFuncControls::EPTP_SWITCHING)
+                    vcpu.set_vmfunc_ctrls(VmFuncControls::EPTP_SWITCHING)
                 );
             }
             const GUEST_STACK_SIZE: usize = 4096;
@@ -66,7 +66,6 @@ impl Guest for Identity {
 
             let mut guest_stack = [0; GUEST_STACK_SIZE];
             let guest_rsp = guest_stack.as_mut_ptr() as usize + GUEST_STACK_SIZE;
-            let vcpu = vmcs.get_vcpu_mut();
             vcpu.set_nat(fields::GuestStateNat::Rip, entry_point as usize)
                 .expect("Unable to set rip");
             vcpu.set_nat(fields::GuestStateNat::Rsp, guest_rsp)
@@ -76,7 +75,7 @@ impl Guest for Identity {
             let frame = allocator
                 .allocate_frame()
                 .expect("Failed to allocate MSR bitmaps");
-            let msr_bitmaps = vmcs
+            let msr_bitmaps = vcpu
                 .initialize_msr_bitmaps(frame)
                 .expect("Failed to install MSR bitmap");
             msr_bitmaps.allow_all();
@@ -85,7 +84,10 @@ impl Guest for Identity {
         vmcs
     }
 
-    unsafe fn vmcall_handler(&self, _vcpu: &mut vmx::VCpu) -> Result<HandlerResult, vmx::VmxError> {
+    unsafe fn vmcall_handler(
+        &self,
+        _vcpu: &mut vmx::ActiveVmcs,
+    ) -> Result<HandlerResult, vmx::VmxError> {
         Ok(HandlerResult::Exit)
     }
 }

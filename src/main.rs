@@ -12,6 +12,7 @@ use kernel::guests::Guest;
 use kernel::mmu::FrameAllocator;
 use kernel::println;
 use kernel::vmx;
+use kernel::vmx::Register;
 use kernel::HostVirtAddr;
 use x86_64::registers::control::{Cr0, Cr0Flags};
 
@@ -79,16 +80,15 @@ fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
         };
 
         let mut vmcs = guest.instantiate(&vmxon, allocator);
-        let mut vmcs = vmcs.set_as_active().expect("Failed to activate VMCS");
+        let mut vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");
 
-        let mut result = vmcs.launch();
+        let mut result = vcpu.launch();
         let mut launch = "Launch";
         let mut counter = 0;
         loop {
-            let vcpu = vmcs.get_vcpu_mut();
-            let rip = vcpu.get_rip().expect("Can't read guest %rip");
-            let rax = vcpu[vmx::Register::Rax];
-            let rbp = vcpu[vmx::Register::Rbp];
+            let rip = vcpu.get(Register::Rip);
+            let rax = vcpu.get(Register::Rax);
+            let rbp = vcpu.get(Register::Rbp);
             println!(
                 "{}: {:?} - info: {:?} - rip: 0x{:x} - rax: 0x{:x} - rbp: 0x{:x}",
                 launch,
@@ -101,7 +101,7 @@ fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
 
             let exit_reason = if let Ok(exit_reason) = result {
                 guest
-                    .handle_exit(&mut vmcs, exit_reason)
+                    .handle_exit(&mut vcpu, exit_reason)
                     .expect("Failed to hadle VM exit")
             } else {
                 guests::HandlerResult::Crash
@@ -120,10 +120,9 @@ fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
 
             // Resume VM
             launch = "Resume";
-            result = vmcs.resume();
+            result = vcpu.resume();
         }
 
-        let vcpu = vmcs.get_vcpu();
         println!("Info:   {:?}", vcpu.interrupt_info());
         println!(
             "Qualif: {:?}",

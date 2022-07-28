@@ -337,10 +337,7 @@ impl Vmxon {
 
         Ok(VmcsRegion {
             frame,
-            vcpu: VCpu {
-                _private: (),
-                regs: [0; 15],
-            },
+            regs: [0; 15],
             msr_bitmaps: None,
             _lifetime: PhantomData,
             _not_sync: PhantomData,
@@ -352,8 +349,8 @@ impl Vmxon {
 
 /// A region containing information about a VM.
 pub struct VmcsRegion<'vmx> {
-    /// Virtual CPU, contains guest state.
-    pub vcpu: VCpu,
+    // Set of registers to save/restore
+    regs: [u64; REGFILE_SIZE],
     /// The frame used by the region.
     frame: Frame,
     /// The MSR read and write bitmaps.
@@ -390,14 +387,116 @@ where
         unsafe { raw::vmclear(self.region.frame.phys_addr.as_u64()) }
     }
 
-    /// Returns a reference to the VCpu.
-    pub fn get_vcpu(&self) -> &VCpu {
-        &self.region.vcpu
+    /// Returns a given register.
+    pub fn get(&self, register: Register) -> u64 {
+        match register {
+            // SAFETY: We know that these registers always exits and that there is an active VMCS.
+            Register::Rsp => unsafe { fields::GuestStateNat::Rsp.vmread().unwrap() as u64 },
+            Register::Rip => unsafe { fields::GuestStateNat::Rip.vmread().unwrap() as u64 },
+            _ => self.region.regs[register as usize],
+        }
     }
 
-    /// Returns a mutable reference to the VCpu.
-    pub fn get_vcpu_mut(&mut self) -> &mut VCpu {
-        &mut self.region.vcpu
+    ///s Set a given register.
+    pub fn set(&mut self, register: Register, value: u64) {
+        match register {
+            // SAFETY: We know that these registers always exits and that there is an active VMCS.
+            Register::Rsp => unsafe { fields::GuestStateNat::Rsp.vmwrite(value as usize).unwrap() },
+            Register::Rip => unsafe { fields::GuestStateNat::Rip.vmwrite(value as usize).unwrap() },
+            _ => self.region.regs[register as usize] = value,
+        };
+    }
+
+    /// Sets a given control register.
+    pub fn set_cr(&mut self, register: ControlRegister, value: usize) {
+        // SAFETY: all the fields exists on all architecture, except Cr8 which is only available on
+        // x86_64.
+        unsafe {
+            match register {
+                ControlRegister::Cr0 => fields::GuestStateNat::Cr0.vmwrite(value),
+                ControlRegister::Cr3 => fields::GuestStateNat::Cr3.vmwrite(value),
+                ControlRegister::Cr4 => fields::GuestStateNat::Cr4.vmwrite(value),
+                ControlRegister::Cr8 => todo!("Handle Cr8"),
+            }
+        }
+        .unwrap();
+    }
+
+    pub fn set16(&mut self, field: fields::GuestState16, value: u16) -> Result<(), VmxError> {
+        unsafe { field.vmwrite(value) }
+    }
+
+    pub fn set32(&mut self, field: fields::GuestState32, value: u32) -> Result<(), VmxError> {
+        unsafe { field.vmwrite(value) }
+    }
+
+    pub fn set64(&mut self, field: fields::GuestState64, value: u64) -> Result<(), VmxError> {
+        unsafe { field.vmwrite(value) }
+    }
+
+    pub fn set_nat(&mut self, field: fields::GuestStateNat, value: usize) -> Result<(), VmxError> {
+        unsafe { field.vmwrite(value) }
+    }
+
+    /// Set guest RIP to the next instruction.
+    ///
+    /// This function must be called at most once between two VM exits, as the instruction
+    /// lenght is not updated until VM exits again.
+    pub fn next_instruction(&mut self) -> Result<(), VmxError> {
+        // TODO: Chech that instr-len is availlable on all CPU, remove Result if that's the case.
+        let instr_len = unsafe { fields::GuestState32Ro::VmExitInstructionLenght.vmread()? as u64 };
+        let rip = self.get(Register::Rip);
+        Ok(self.set(Register::Rip, rip + instr_len))
+    }
+
+    /// Returns the exit reason.
+    pub fn exit_reason(&self) -> Result<VmxExitReason, VmxError> {
+        let reason = unsafe { fields::GuestState32Ro::ExitReason.vmread() }?;
+        Ok(VmxExitReason::from_u16((reason & 0xFFFF) as u16))
+    }
+
+    /// Returns the exit qualification.
+    pub fn exit_qualification(&self) -> Result<VmxExitQualification, VmxError> {
+        let qualification = unsafe { fields::GuestStateNatRo::ExitQualification.vmread() }?;
+        Ok(VmxExitQualification { raw: qualification })
+    }
+
+    /// Returns the guest physical address.
+    ///
+    /// This field is set on VM exits due to EPT violations and EPT misconfigurations.
+    /// See section 27.2.1 for details of when and how this field is used.
+    pub fn guest_phys_addr(&self) -> Result<GuestPhysAddr, VmxError> {
+        let guest_phys_addr = unsafe { fields::GuestState64Ro::GuestPhysAddr.vmread() }?;
+        Ok(GuestPhysAddr::new(guest_phys_addr as usize))
+    }
+
+    /// Returns the guest virtual address.
+    ///
+    /// This field is set for some VM exits. See section 27.2.1 for details of when and how this
+    /// field is used.
+    pub fn guest_linear_addr(&self) -> Result<GuestVirtAddr, VmxError> {
+        let guest_virt_addr = unsafe { fields::GuestStateNatRo::GuestLinearAddr.vmread() }?;
+        Ok(GuestVirtAddr::new(guest_virt_addr))
+    }
+
+    pub fn interrupt_info(&self) -> Result<Option<VmExitInterrupt>, VmxError> {
+        let info = unsafe { fields::GuestState32Ro::VmExitInterruptInfo.vmread()? };
+        if (info & (1 << 31)) == 0 {
+            return Ok(None);
+        }
+
+        let vector = (info & 0xFF) as u8;
+        let int_type = errors::InterruptionType::from_raw(info);
+        let error_code = if (info & (1 << 11)) != 0 {
+            Some(unsafe { fields::GuestState32Ro::VmExitInterruptErrCode.vmread()? })
+        } else {
+            None
+        };
+        Ok(Some(VmExitInterrupt {
+            vector,
+            int_type,
+            error_code,
+        }))
     }
 
     /// Initializes the MSR bitmaps, default to deny all reads and writes.
@@ -434,8 +533,8 @@ where
     /// sensible environment. A simple way of ensuring that is to save the current environment as
     /// host state.
     pub unsafe fn launch(&mut self) -> Result<VmxExitReason, VmxError> {
-        raw::vmlaunch(&mut self.region.vcpu)?;
-        self.region.vcpu.exit_reason()
+        raw::vmlaunch(self)?;
+        self.exit_reason()
     }
 
     /// Resume the VM.
@@ -444,8 +543,8 @@ where
     /// sensible environment. A simple way of ensuring that is to save the current environment as
     /// host state.
     pub unsafe fn resume(&mut self) -> Result<VmxExitReason, VmxError> {
-        raw::vmresume(&mut self.region.vcpu)?;
-        self.region.vcpu.exit_reason()
+        raw::vmresume(self)?;
+        self.exit_reason()
     }
 
     /// Sets the pin-based controls.
@@ -724,17 +823,16 @@ where
     }
 }
 
-// —————————————————————————————— Virtual CPU ——————————————————————————————— //
+// ——————————————————————————————— Registers ———————————————————————————————— //
 
 /// Virtual CPU registers.
 ///
-/// Note that rip and rsp are special cases, as they are handled directly by VMX instead of the
-/// vcpu.
-//
 //  WARNING: inline assembly depends on the register values, don't change them without updating
 //  corresponding assembly!
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Register {
+    // Stored in register array
     Rax = 0,
     Rbx = 1,
     Rcx = 2,
@@ -750,119 +848,21 @@ pub enum Register {
     R13 = 12,
     R14 = 13,
     R15 = 14,
+
+    // Stored in VMCS
+    Rsp = 15,
+    Rip = 16,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ControlRegister {
+    Cr0,
+    Cr3,
+    Cr4,
+    Cr8,
 }
 
 pub const REGFILE_SIZE: usize = 15;
-
-/// A virtual CPU.
-pub struct VCpu {
-    // This field prevents a VCpu from being instantiated outside of this module, by not marking it
-    // public.
-    _private: (),
-
-    // Set of registers to save/restore
-    regs: [u64; REGFILE_SIZE],
-}
-
-impl core::ops::Index<Register> for VCpu {
-    type Output = u64;
-
-    fn index(&self, index: Register) -> &Self::Output {
-        &self.regs[index as usize]
-    }
-}
-
-impl core::ops::IndexMut<Register> for VCpu {
-    fn index_mut(&mut self, index: Register) -> &mut Self::Output {
-        &mut self.regs[index as usize]
-    }
-}
-
-impl VCpu {
-    pub fn get_rip(&self) -> Result<usize, VmxError> {
-        unsafe { fields::GuestStateNat::Rip.vmread() }
-    }
-
-    pub fn set_rip(&mut self, rip: usize) -> Result<(), VmxError> {
-        unsafe { fields::GuestStateNat::Rip.vmwrite(rip) }
-    }
-
-    pub fn set16(&mut self, field: fields::GuestState16, value: u16) -> Result<(), VmxError> {
-        unsafe { field.vmwrite(value) }
-    }
-
-    pub fn set32(&mut self, field: fields::GuestState32, value: u32) -> Result<(), VmxError> {
-        unsafe { field.vmwrite(value) }
-    }
-
-    pub fn set64(&mut self, field: fields::GuestState64, value: u64) -> Result<(), VmxError> {
-        unsafe { field.vmwrite(value) }
-    }
-
-    pub fn set_nat(&mut self, field: fields::GuestStateNat, value: usize) -> Result<(), VmxError> {
-        unsafe { field.vmwrite(value) }
-    }
-
-    /// Set guest RIP to the next instruction.
-    ///
-    /// SAFETY: This function must be called at most once between two VM exits, as the instruction
-    /// lenght is not updated until VM exits again.
-    pub unsafe fn next_instruction(&mut self) -> Result<(), VmxError> {
-        let instr_len = fields::GuestState32Ro::VmExitInstructionLenght.vmread()? as usize;
-        let rip = self.get_rip()?;
-        self.set_rip(rip + instr_len)
-    }
-
-    /// Returns the exit reason.
-    pub fn exit_reason(&self) -> Result<VmxExitReason, VmxError> {
-        let reason = unsafe { fields::GuestState32Ro::ExitReason.vmread() }?;
-        Ok(VmxExitReason::from_u16((reason & 0xFFFF) as u16))
-    }
-
-    /// Returns the exit qualification.
-    pub fn exit_qualification(&self) -> Result<VmxExitQualification, VmxError> {
-        let qualification = unsafe { fields::GuestStateNatRo::ExitQualification.vmread() }?;
-        Ok(VmxExitQualification { raw: qualification })
-    }
-
-    /// Returns the guest physical address.
-    ///
-    /// This field is set on VM exits due to EPT violations and EPT misconfigurations.
-    /// See section 27.2.1 for details of when and how this field is used.
-    pub fn guest_phys_addr(&self) -> Result<GuestPhysAddr, VmxError> {
-        let guest_phys_addr = unsafe { fields::GuestState64Ro::GuestPhysAddr.vmread() }?;
-        Ok(GuestPhysAddr::new(guest_phys_addr as usize))
-    }
-
-    /// Returns the guest virtual address.
-    ///
-    /// This field is set for some VM exits. See section 27.2.1 for details of when and how this
-    /// field is used.
-    pub fn guest_linear_addr(&self) -> Result<GuestVirtAddr, VmxError> {
-        let guest_virt_addr = unsafe { fields::GuestStateNatRo::GuestLinearAddr.vmread() }?;
-        Ok(GuestVirtAddr::new(guest_virt_addr))
-    }
-
-    pub fn interrupt_info(&self) -> Result<Option<VmExitInterrupt>, VmxError> {
-        let info = unsafe { fields::GuestState32Ro::VmExitInterruptInfo.vmread()? };
-        if (info & (1 << 31)) == 0 {
-            return Ok(None);
-        }
-
-        let vector = (info & 0xFF) as u8;
-        let int_type = errors::InterruptionType::from_raw(info);
-        let error_code = if (info & (1 << 11)) != 0 {
-            Some(unsafe { fields::GuestState32Ro::VmExitInterruptErrCode.vmread()? })
-        } else {
-            None
-        };
-        Ok(Some(VmExitInterrupt {
-            vector,
-            int_type,
-            error_code,
-        }))
-    }
-}
 
 // —————————————————————————— Exit Qualifications ——————————————————————————— //
 

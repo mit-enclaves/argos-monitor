@@ -75,22 +75,21 @@ impl Guest for Linux {
 
         {
             // VMCS is active in this block
-            let mut vmcs = vmcs.set_as_active().expect("Failed to activate VMCS");
-            guests::default_vmcs_config(&mut vmcs, false);
+            let mut vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");
+            guests::default_vmcs_config(&mut vcpu, false);
 
             // Configure MSRs
             let frame = allocator
                 .allocate_frame()
                 .expect("Failed to allocate MSR bitmaps");
-            let msr_bitmaps = vmcs
+            let msr_bitmaps = vcpu
                 .initialize_msr_bitmaps(frame)
                 .expect("Failed to install MSR bitmap");
             msr_bitmaps.allow_all();
 
             // Setup the roots.
-            vmcs.set_ept_ptr(ept_mapper.get_root()).unwrap();
+            vcpu.set_ept_ptr(ept_mapper.get_root()).unwrap();
             let entry_point = linux_prog.phys_entry;
-            let vcpu = vmcs.get_vcpu_mut();
             vcpu.set_nat(fields::GuestStateNat::Rip, entry_point.as_usize())
                 .unwrap();
             vcpu.set_nat(fields::GuestStateNat::Cr3, pt_root.as_usize())
@@ -105,15 +104,15 @@ impl Guest for Linux {
             let vmxe = 1 << 13; // VMXE flags, required during VMX operations.
             let cr4 = 0xA0 | vmxe;
             vcpu.set_nat(fields::GuestStateNat::Cr4, cr4).unwrap();
-            vmcs.set_cr4_mask(vmxe).unwrap();
-            vmcs.set_cr4_shadow(vmxe).unwrap();
+            vcpu.set_cr4_mask(vmxe).unwrap();
+            vcpu.set_cr4_shadow(vmxe).unwrap();
 
             vmx::check::check().expect("check error");
         }
         vmcs
     }
 
-    unsafe fn vmcall_handler(&self, _vcpu: &mut vmx::VCpu) -> Result<HandlerResult, vmx::VmxError> {
+    unsafe fn vmcall_handler(&self, _vcpu: &mut vmx::ActiveVmcs) -> Result<HandlerResult, vmx::VmxError> {
         crate::println!("Linux: VMCall - exiting...");
         Ok(HandlerResult::Exit)
     }
