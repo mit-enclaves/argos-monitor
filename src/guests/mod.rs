@@ -124,6 +124,19 @@ pub trait Guest {
                 vcpu.next_instruction()?;
                 Ok(HandlerResult::Resume)
             }
+            vmx::VmxExitReason::Wrmsr => {
+                let ecx = vcpu.get(Register::Rcx);
+                if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
+                    // Custom MSR range, used by KVM
+                    // See https://docs.kernel.org/virt/kvm/x86/msr.html
+                    // TODO: just ignore them for now, should add support in the future
+                    vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                } else {
+                    println!("Unknown MSR: 0x{:x}", ecx);
+                    Ok(HandlerResult::Crash)
+                }
+            }
             _ => {
                 println!(
                     "Emulation is not yet implemented for exit reason: {:?}",
