@@ -1,4 +1,7 @@
 //! Linux Guest
+
+use alloc::vec;
+
 use crate::guests;
 use crate::guests::elf_program::{ElfMapping, ElfProgram};
 use crate::mmu::eptmapper::EptMapper;
@@ -9,6 +12,7 @@ use crate::qemu;
 use crate::vmx;
 use crate::vmx::bitmaps::EptEntryFlags;
 use crate::vmx::fields;
+use crate::vmx::Register;
 
 use super::Guest;
 use super::HandlerResult;
@@ -30,6 +34,7 @@ impl Guest for Linux {
     ) -> vmx::VmcsRegion<'vmx> {
         let mut linux_prog = ElfProgram::new(LINUXBYTES);
         linux_prog.set_mapping(ElfMapping::Identity);
+        linux_prog.add_payload(vec![0; 0x1000]);
 
         let virtoffset = allocator.get_physical_offset();
         // Create a bumper allocator with 1GB of RAM.
@@ -56,8 +61,8 @@ impl Guest for Linux {
         );
 
         // Load guest into memory.
-        let pt_root = linux_prog
-            .load(guest_ram, virtoffset, None)
+        let loaded_linux = linux_prog
+            .load(guest_ram, virtoffset)
             .expect("Failed to load guest");
 
         // Setup the vmcs.
@@ -92,7 +97,7 @@ impl Guest for Linux {
             let entry_point = linux_prog.phys_entry;
             vcpu.set_nat(fields::GuestStateNat::Rip, entry_point.as_usize())
                 .unwrap();
-            vcpu.set_nat(fields::GuestStateNat::Cr3, pt_root.as_usize())
+            vcpu.set_nat(fields::GuestStateNat::Cr3, loaded_linux.pt_root.as_usize())
                 .unwrap();
             vcpu.set_nat(fields::GuestStateNat::Rsp, 0).unwrap();
 
@@ -107,12 +112,18 @@ impl Guest for Linux {
             vcpu.set_cr4_mask(vmxe).unwrap();
             vcpu.set_cr4_shadow(vmxe).unwrap();
 
+            // Setup boot_params
+            vcpu.set(Register::Rsi, loaded_linux.payload.unwrap().as_u64());
+
             vmx::check::check().expect("check error");
         }
         vmcs
     }
 
-    unsafe fn vmcall_handler(&self, _vcpu: &mut vmx::ActiveVmcs) -> Result<HandlerResult, vmx::VmxError> {
+    unsafe fn vmcall_handler(
+        &self,
+        _vcpu: &mut vmx::ActiveVmcs,
+    ) -> Result<HandlerResult, vmx::VmxError> {
         crate::println!("Linux: VMCall - exiting...");
         Ok(HandlerResult::Exit)
     }

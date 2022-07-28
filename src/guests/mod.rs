@@ -96,6 +96,11 @@ pub trait Guest {
                 };
                 Ok(HandlerResult::Resume)
             }
+            vmx::VmxExitReason::EptViolation => {
+                let addr = vcpu.guest_linear_addr()?;
+                println!("EPT Violation: 0x{:x}", addr.as_u64());
+                Ok(HandlerResult::Crash)
+            }
             _ => {
                 crate::println!(
                     "Emulation is not yet implemented for exit reason: {:?}",

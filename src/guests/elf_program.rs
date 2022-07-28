@@ -23,6 +23,13 @@ pub struct ElfProgram {
     segments: Vec<Elf64Phdr>,
     bytes: &'static [u8],
     mapping: ElfMapping,
+    stack: Option<(GuestVirtAddr, usize)>,
+    payload: Option<Vec<u8>>,
+}
+
+pub struct LoadResult {
+    pub pt_root: GuestPhysAddr,
+    pub payload: Option<GuestPhysAddr>,
 }
 
 impl ElfProgram {
@@ -63,6 +70,8 @@ impl ElfProgram {
             phys_entry: GuestPhysAddr::new(phys_entry as usize),
             segments: prog_headers,
             mapping: ElfMapping::ElfDefault,
+            stack: None,
+            payload: None,
             bytes,
         }
     }
@@ -70,6 +79,16 @@ impl ElfProgram {
     /// Configures the mappings for this program.
     pub fn set_mapping(&mut self, mapping: ElfMapping) {
         self.mapping = mapping;
+    }
+
+    /// Configures the guest stack.
+    pub fn add_stack(&mut self, virt_addr: GuestVirtAddr, size: usize) {
+        self.stack = Some((virt_addr, size));
+    }
+
+    /// Specifies a payload to copy to the guest memory.
+    pub fn add_payload(&mut self, payload: Vec<u8>) {
+        self.payload = Some(payload);
     }
 
     /// Loads the guest program and setup the page table inside the guest memory.
@@ -80,8 +99,7 @@ impl ElfProgram {
         &self,
         guest_memory: PhysRange,
         host_physical_offset: HostVirtAddr,
-        stack_config: Option<(GuestVirtAddr, usize)>,
-    ) -> Result<GuestPhysAddr, ()> {
+    ) -> Result<LoadResult, ()> {
         // Compute the highest physical address used by the guest.
         // The remaining space can be used to allocate page tables.
         let mut highest_addr = 0;
@@ -93,7 +111,7 @@ impl ElfProgram {
         }
 
         // Choose where to place PT in guest physical and virtual memory
-        let guest_pt_offset = 0xe00000000; // Pick an arbitrary offset for now
+        let guest_pt_offset = 0xe0000000; // Pick an arbitrary offset for now
         let guest_pt_size = 0x1000 * 1000; // enough space for 1000 guest PT
         let guest_phys_pt_start = highest_addr;
         let guest_phys_pt_end = guest_phys_pt_start + guest_pt_size;
@@ -126,6 +144,10 @@ impl ElfProgram {
             guest_memory.start.as_u64() as usize,
             pt_root_guest_phys_addr,
         );
+        let mut result = LoadResult {
+            pt_root: pt_root_guest_phys_addr,
+            payload: None,
+        };
 
         // Load and map segments
         for seg in self.segments.iter() {
@@ -140,7 +162,7 @@ impl ElfProgram {
         }
 
         // Create stack, if required
-        if let Some((stack_address, size)) = stack_config {
+        if let Some((stack_address, size)) = self.stack {
             // TODO: properly choose a valid stack physical address. Zero is not ideal...
             let stack_prot = PtFlag::WRITE | PtFlag::PRESENT | PtFlag::EXEC_DISABLE | PtFlag::USER;
             pt_mapper.map_range(
@@ -151,8 +173,23 @@ impl ElfProgram {
                 stack_prot,
             );
         }
+        // Copy payload into guest memory, if any
+        if let Some(payload) = &self.payload {
+            let range = guest_allocator
+                .allocate_range(payload.len())
+                .expect("Failed to allocate guest payload");
+            let host_virt_addr =
+                (range.start.as_usize() + host_physical_offset.as_usize()) as *mut u8;
+            unsafe {
+                let dest = core::slice::from_raw_parts_mut(host_virt_addr, payload.len());
+                dest.copy_from_slice(payload);
+            }
+            result.payload = Some(GuestPhysAddr::new(
+                range.start.as_usize() - guest_memory.start.as_usize(),
+            ));
+        }
 
-        Ok(pt_root_guest_phys_addr)
+        Ok(result)
     }
 
     /// Maps an elf segment at the desired virtual address.

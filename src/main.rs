@@ -88,15 +88,16 @@ fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
         loop {
             let rip = vcpu.get(Register::Rip);
             let rax = vcpu.get(Register::Rax);
+            let rcx = vcpu.get(Register::Rcx);
             let rbp = vcpu.get(Register::Rbp);
             println!(
-                "{}: {:?} - info: {:?} - rip: 0x{:x} - rax: 0x{:x} - rbp: 0x{:x}",
+                "{}: {:?} - rip: 0x{:x} - rbp: 0x{:x} - rax: 0x{:x} - rcx: 0x{:x}",
                 launch,
-                result,
                 vcpu.interrupt_info(),
                 rip,
+                rbp,
                 rax,
-                rbp
+                rcx
             );
 
             let exit_reason = if let Ok(exit_reason) = result {
@@ -113,7 +114,7 @@ fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
 
             // Shutdown after too many VM exits
             counter += 1;
-            if counter >= 10 {
+            if counter >= 200 {
                 println!("Too many iterations: stoping guest");
                 break;
             }

@@ -41,7 +41,9 @@ impl Guest for RawcBytes {
         vmxon: &'vmx vmx::Vmxon,
         allocator: &impl FrameAllocator,
     ) -> vmx::VmcsRegion<'vmx> {
-        let rawc_prog = ElfProgram::new(RAWCBYTES);
+        let mut rawc_prog = ElfProgram::new(RAWCBYTES);
+        rawc_prog.add_stack(GuestVirtAddr::new(STACK), 0x1000);
+
         let virtoffset = allocator.get_physical_offset();
         // Create a bumper allocator with 1GB of RAM.
         let guest_ram = allocator
@@ -68,12 +70,9 @@ impl Guest for RawcBytes {
 
         // Load guest into memory.
         let pt_root = rawc_prog
-            .load(
-                guest_ram,
-                virtoffset,
-                Some((GuestVirtAddr::new(STACK), 0x1000)),
-            )
-            .expect("Failed to load guest");
+            .load(guest_ram, virtoffset)
+            .expect("Failed to load guest")
+            .pt_root;
 
         // Setup the vmcs.
         let frame = allocator.allocate_frame().expect("Failed to allocate VMCS");
@@ -128,7 +127,10 @@ impl Guest for RawcBytes {
         vmcs
     }
 
-    unsafe fn vmcall_handler(&self, vcpu: &mut vmx::ActiveVmcs) -> Result<HandlerResult, vmx::VmxError> {
+    unsafe fn vmcall_handler(
+        &self,
+        vcpu: &mut vmx::ActiveVmcs,
+    ) -> Result<HandlerResult, vmx::VmxError> {
         let rip = vcpu.get(Register::Rip);
         let rax = vcpu.get(Register::Rax);
 
