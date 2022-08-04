@@ -103,7 +103,7 @@ fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
             let exit_reason = if let Ok(exit_reason) = result {
                 guest
                     .handle_exit(&mut vcpu, exit_reason)
-                    .expect("Failed to hadle VM exit")
+                    .expect("Failed to handle VM exit")
             } else {
                 guests::HandlerResult::Crash
             };
