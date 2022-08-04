@@ -7,7 +7,6 @@
 #add-symbol-file linux-image/images/vmlinux
 
 # Workaround to set hardware breakpoints by default
-
 define b
   hb $arg0
 end
@@ -28,3 +27,8 @@ end
 define symbol_linux
   add-symbol-file linux-image/images/vmlinux
 end
+
+# Load custom memory dump python script
+source scripts/tyche_guest_memory_dump.py
+
+# TODO create short versions of the complicated command with default args
