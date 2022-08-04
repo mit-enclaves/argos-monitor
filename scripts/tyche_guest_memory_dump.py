@@ -29,8 +29,6 @@ class AddressContext(Enum):
 
 
 QEMU_RAMFILE="/tmp/tyche"
-TYCHE_VIRTOFFSET = 0x18000000000 
-
 
 class TycheGuestMemoryDump (gdb.Command):
     """Helper Function that """
