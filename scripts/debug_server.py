@@ -22,11 +22,15 @@ def recvall(sock):
             break
     return data.decode().strip()
 
+def get_offset():
+    res = gdb.execute("p/x dbg_offset", to_string=True)
+    return int(res.split()[-1], 16)
+
 """ Processing the command. 
     We automatically add the offset of the mmaped region to any value enclosed in `@`, e.g., `@0xdeadbeef@`.
 """
 def process_command(command):
-    offset = 0x0
+    offset = get_offset()
     parts = command.split()
     print("the parts ", parts)
     for idx, entry in enumerate(parts):
