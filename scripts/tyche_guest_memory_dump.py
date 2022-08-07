@@ -31,8 +31,6 @@ class AddressContext(Enum):
 QEMU_RAMFILE="/tmp/tyche"
 
 class TycheGuestMemoryDump (gdb.Command):
-    """Helper Function that """
-
     def __init__(self):
         super (TycheGuestMemoryDump, self).__init__("tmd", gdb.COMMAND_USER)
 
@@ -77,4 +75,20 @@ class TycheGuestMemoryDump (gdb.Command):
                 ]
         os.system(" ".join(command))
 
+""" Small gdb command to get and set the guest start address.
+This command accesses the static global variable crate::debug::info::GUEST_START.
+For some reason, gdb is unable to directly print it so we have to do some python
+scripting in order to access its value.
+This command creates a gdb global variable tyche_guest_address with the offset."""
+class TycheUpdateGuestStartAddress(gdb.Command):
+    def __init__(self):
+        super (TycheUpdateGuestStartAddress, self).__init__("tyche_ugsa", gdb.COMMAND_USER)
+
+    def invoke(self, arg, from_tty):
+        infos = gdb.execute('info variables -q GUEST_START', to_string=True).split()
+        address = infos[-2]
+        offset = gdb.execute("x/1g "+address, to_string=True).split()[-1]
+        gdb.execute("set $tyche_guest_address ="+hex(int(offset, 16)))
+
 TycheGuestMemoryDump()
+TycheUpdateGuestStartAddress()
