@@ -22,13 +22,28 @@ end
 
 define symbol_rawc
   add-symbol-file guest/rawc
+  set $tyche_guest_image="guest/rawc"
+  set $tyche_guest_name="rawc"
 end
 
 define symbol_linux
   add-symbol-file linux-image/images/vmlinux
+  set $tyche_guest_image="linux-image/images/vmlinux"
+  set $tyche_guest_name="linux"
 end
 
 # Load custom memory dump python script
-source scripts/tyche_guest_memory_dump.py
+source scripts/tyche_debug.py
 
 # TODO create short versions of the complicated command with default args
+
+# Automatically get the value of the guest start phys address
+# TODO for some reason it does not work if we put a cont, thus exec blocks
+# on that breakpoint for the moment.
+b tyche_hook_done
+commands $bpnum
+silent
+tyche_ugsa
+tyche_start_server
+d $bpnum
+end

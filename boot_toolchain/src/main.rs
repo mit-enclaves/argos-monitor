@@ -15,7 +15,7 @@ const RUN_ARGS: &[&str] = &[
     "-m",
     "4G",
     "-object",
-    "memory-backend-file,id=pc.ram,share=on,discard-data=on,mem-path=/tmp/tyche,size=4G",
+    "memory-backend-file,id=pc.ram,share=on,mem-path=/tmp/tyche,size=4G",
     "-machine",
     "memory-backend=pc.ram",
     "-s",

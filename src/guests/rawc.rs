@@ -1,3 +1,4 @@
+use crate::debug::info;
 use crate::guests;
 use crate::guests::elf_program::ElfProgram;
 use crate::mmu::frames::RangeFrameAllocator;
@@ -49,6 +50,9 @@ impl Guest for RawcBytes {
         let guest_ram = allocator
             .allocate_range(guests::ONEGB)
             .expect("Unable to allocate 1GB");
+        // Storing the guest ram start address for debugging.
+        info::tyche_hook_set_guest_start(guest_ram.start.as_u64());
+
         let guest_allocator = RangeFrameAllocator::new(guest_ram.start, guest_ram.end, virtoffset);
 
         // Setup the EPT first.
