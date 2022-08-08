@@ -21,12 +21,12 @@ class InstanceOffsets(Enum):
     tyche = 0x18000000000
     rawc = 0x4e0000
 
-class AddressContext(Enum):
-    tyche_virt = -1 * InstanceOffsets.tyche.value
-    tyche_phys = 0
-    guest_phys = 0 # Use the command tyche_ugsa
-    guest_rawc_virt = 0 #InstanceOffsets.rawc.value
-
+AddressContext = {
+    "tyche_virt": -1 * InstanceOffsets.tyche.value,
+    "tyche_phys": 0,
+    "guest_phys": 0,
+    "guest_virt": 0,
+        }
 
 QEMU_RAMFILE="/tmp/tyche"
 
@@ -64,7 +64,7 @@ class TycheGuestMemoryDump (gdb.Command):
             return
         b_size = b_size * format_size.value
         
-        start = str(int(offset, 16) + context_real.value)
+        start = str(int(offset, 16) + context_real)
         command = [
                 "xxd",
                 "-seek",
@@ -88,7 +88,6 @@ class TycheUpdateGuestStartAddress(gdb.Command):
         infos = gdb.execute('info variables -q GUEST_START', to_string=True).split()
         address = infos[-2]
         offset = gdb.execute("x/1gx "+address, to_string=True).split()[-1]
-        print("The offset ", offset)
         gdb.execute("set $tyche_guest_address ="+offset)
 
 
@@ -105,20 +104,20 @@ class TycheStartServer(gdb.Command):
         import os
         # Get the name of the binary
         name = gdb.execute("p $tyche_guest_image", to_string=True).split()[-1]
+        goff = gdb.execute("p/x $tyche_guest_address", to_string=True).split()[-1]
+        with open("/tmp/guest_info", 'w') as fd:
+            fd.write(name+"\n")
+            fd.write(goff+"\n")
         command = [
                 "nohup",
                 "gdb",
                 "./debugger/debugger",
                 "-ex",
-                '"source scripts/debug_server.py"',
-                "-ex",
-                '"b gdb_block"',
+                '"source scripts/debugger.gdb"',
                 "-ex",
                 '"start"',
                 "-ex",
                 '"c"',
-                "-ex",
-                '"start_debug_server"',
                 ">",
                 "/tmp/debugger.out",
                 "2>&1",
@@ -168,10 +167,10 @@ class TycheClient(gdb.Command):
         args = arg.split()
 
         # Find the context & compute the offset
-        context = AddressContext[args[0]]
-        offset = context.value
-        if context.name.startswith("guest_"):
-            offset += guest_start
+        context = args[0]
+        offset = AddressContext[context]
+        if context.startswith("guest_"):
+            offset = offset + guest_start
         
         # Replace addresses according to context
         for i, a in enumerate(args):
@@ -181,7 +180,8 @@ class TycheClient(gdb.Command):
                 args[i] = replace
 
         # Now send the command to the remote server without the context
-        execute_command(" ".join(args[1:])) 
+        cmd = " ".join(args[1:])
+        execute_command(cmd) 
 
 
 TycheGuestMemoryDump()

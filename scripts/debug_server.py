@@ -87,5 +87,24 @@ class DebugServer(gdb.Command):
                 # Clean up the connection
                 connection.close()
 
+""" Loads the debugging information at the right offset """
+class LoadDebugInfo(gdb.Command):
+    def __init__(self):
+        super (LoadDebugInfo, self).__init__("debugger_load_img", gdb.COMMAND_USER) 
+
+    def invoke(self, arg, from_tty):
+        paths = {
+                    "0": "guest/rawc",
+                    "1": "linux-image/images/vmlinux",
+                }
+        with open("/tmp/guest_info", 'r') as fd:
+            lines = fd.readlines()
+            path = paths[lines[0].strip()]
+            offset = lines[1].strip()
+            gdb.execute("set $tyche_guest_address="+offset)
+            goff = int(offset, 16)
+            value = goff + get_offset()
+            gdb.execute("add-symbol-file "+path+" -o "+hex(value))
 
 DebugServer()
+LoadDebugInfo()

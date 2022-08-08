@@ -22,14 +22,12 @@ end
 
 define symbol_rawc
   add-symbol-file guest/rawc
-  set $tyche_guest_image="guest/rawc"
-  set $tyche_guest_name="rawc"
+  set $tyche_guest_image=0
 end
 
 define symbol_linux
   add-symbol-file linux-image/images/vmlinux
-  set $tyche_guest_image="linux-image/images/vmlinux"
-  set $tyche_guest_name="linux"
+  set $tyche_guest_image=1
 end
 
 # Load custom memory dump python script
