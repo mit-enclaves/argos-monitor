@@ -8,6 +8,7 @@ extern crate alloc;
 
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
+use kernel::debug::info;
 use kernel::guests::Guest;
 use kernel::mmu::FrameAllocator;
 use kernel::println;
@@ -80,6 +81,10 @@ fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
         };
 
         let mut vmcs = guest.instantiate(&vmxon, allocator);
+
+        // Debugging hook post initialization.
+        info::tyche_hook_done(1);
+
         let mut vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");
 
         let mut result = vcpu.launch();

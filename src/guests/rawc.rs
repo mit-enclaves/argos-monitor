@@ -114,7 +114,6 @@ impl Guest for RawcBytes {
                 .ok();
             vcpu.set_nat(fields::GuestStateNat::Rsp, STACK + guests::ONEPAGE)
                 .ok();
-
             // Zero out the gdt and idt
             vcpu.set_nat(fields::GuestStateNat::GdtrBase, 0x0).ok();
             vcpu.set_nat(fields::GuestStateNat::IdtrBase, 0x0).ok();

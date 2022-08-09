@@ -74,21 +74,34 @@ class TycheGuestMemoryDump (gdb.Command):
                 ]
         os.system(" ".join(command))
 
-""" Small gdb command to get and set the guest start address.
-This command accesses the static global variable crate::debug::info::GUEST_START.
-For some reason, gdb is unable to directly print it so we have to do some python
-scripting in order to access its value.
-This command creates a gdb global variable tyche_guest_address with the offset."""
-class TycheUpdateGuestStartAddress(gdb.Command):
+
+CAPTURED_VARIABLES = ["GUEST_START", "GUEST_STACK_PHYS", "GUEST_STACK_VIRT"]
+
+def get_global_var(name):
+    infos = gdb.execute("info variables -q "+name, to_string=True).split()
+    address = infos[-2]
+    res = gdb.execute("x/1gx "+address, to_string=True).split()[-1]
+    return int(res, 16)
+
+def set_global_var(name):
+    value = get_global_var(name)
+    gdb.execute("set $tyche_"+name+"="+hex(value))
+
+def get_convenience(name):
+     return int(gdb.execute("p/x $tyche_"+name, to_string=True).split()[-1], 16)
+
+""" GDB initialization command called right at the hook after loading the guest.
+This command captures the value of certain globals that would need to be
+accessed, even when we are running the guest.
+It captures the global's value and sets it inside a convenience gdb var prefixed
+with `tyche_`."""
+class TycheSetConvenienceVars(gdb.Command):
     def __init__(self):
-        super (TycheUpdateGuestStartAddress, self).__init__("tyche_ugsa", gdb.COMMAND_USER)
+        super (TycheSetConvenienceVars, self).__init__("tyche_set_convenience_vars", gdb.COMMAND_USER)
 
     def invoke(self, arg, from_tty):
-        infos = gdb.execute('info variables -q GUEST_START', to_string=True).split()
-        address = infos[-2]
-        offset = gdb.execute("x/1gx "+address, to_string=True).split()[-1]
-        gdb.execute("set $tyche_guest_address ="+offset)
-
+        for e in CAPTURED_VARIABLES:
+            set_global_var(e)
 
 """ Starts the remote gdb session attached to the debugger/debugger executable.
 The remote gdb session executes until QEMU file-backed memory is mmaped into
@@ -103,10 +116,10 @@ class TycheStartServer(gdb.Command):
         import os
         # Get the name of the binary
         name = gdb.execute("p $tyche_guest_image", to_string=True).split()[-1]
-        goff = gdb.execute("p/x $tyche_guest_address", to_string=True).split()[-1]
+        goff = get_convenience("GUEST_START")
         with open("/tmp/guest_info", 'w') as fd:
             fd.write(name+"\n")
-            fd.write(goff+"\n")
+            fd.write(hex(goff)+"\n")
         command = [
                 "nohup",
                 "gdb",
@@ -150,7 +163,24 @@ def execute_command(cmd):
         print(response)
     finally:
         sock.close()
-    
+
+
+def create_stack_cmd(offset):
+    # Get the registers.
+    rsp = int(gdb.execute("p/x $rsp", to_string=True).split()[-1], 16)
+    rbp = int(gdb.execute("p/x $rbp", to_string=True).split()[-1], 16)
+
+    # Get the starting values
+    gstack_phys = get_convenience("GUEST_STACK_PHYS")
+    gstack_virt = get_convenience("GUEST_STACK_VIRT")
+
+    # Compute offsets
+    diff_rsp = (rsp - gstack_virt)
+    diff_rbp = (rbp - gstack_virt)
+    start = gstack_phys+offset
+    cmd = "STACK "+hex(start+diff_rsp) + " "+hex(start+diff_rbp)
+    return cmd
+
 
 """ This command forwards gdb commands to the debugger server. """
 class TycheClient(gdb.Command):
@@ -161,8 +191,7 @@ class TycheClient(gdb.Command):
     Moreover, we allow automatic translation of addresses surrounded by @s """
     def invoke(self, arg, from_tty):
         # Update the guest address.
-        res = gdb.execute("p/x $tyche_guest_address", to_string=True)
-        guest_start = int(res.split()[-1], 16)
+        guest_start = get_convenience("GUEST_START")
         args = arg.split()
 
         # Find the context & compute the offset
@@ -170,7 +199,7 @@ class TycheClient(gdb.Command):
         offset = AddressContext[context]
         if context.startswith("guest_"):
             offset = offset + guest_start
-        
+
         # Replace addresses according to context
         for i, a in enumerate(args):
             if a.startswith("@") and a.endswith("@"):
@@ -178,12 +207,17 @@ class TycheClient(gdb.Command):
                 replace = "@"+value+"+"+str(offset)+"@"
                 args[i] = replace
 
-        # Now send the command to the remote server without the context
         cmd = " ".join(args[1:])
+
+        # Special commands
+        if cmd == "BT":
+            cmd = create_stack_cmd(offset)
+
+        # Now send the command to the remote server without the context
         execute_command(cmd) 
 
 
 #TycheGuestMemoryDump()
-TycheUpdateGuestStartAddress()
+TycheSetConvenienceVars()
 TycheStartServer()
 TycheClient()

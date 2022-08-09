@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 
 use super::elf::{Elf64Hdr, Elf64Phdr, Elf64PhdrFlags, Elf64PhdrType, FromBytes};
+use crate::debug::info;
 use crate::mmu::frames::{PhysRange, RangeFrameAllocator};
 use crate::mmu::{FrameAllocator, PtFlag, PtMapper};
 use crate::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
@@ -172,6 +173,7 @@ impl ElfProgram {
                 size,
                 stack_prot,
             );
+            info::hook_set_guest_stack(0, stack_address.as_u64());
         }
         // Copy payload into guest memory, if any
         if let Some(payload) = &self.payload {

@@ -32,7 +32,6 @@ def get_offset():
 def process_command(command):
     offset = get_offset()
     parts = command.split()
-    print("the parts ", parts)
     for idx, entry in enumerate(parts):
         if entry.startswith("@") and entry.endswith("@"):
             replace = entry[1:-1]+"+"+str(offset)
@@ -42,8 +41,21 @@ def process_command(command):
         output = gdb.execute(command, to_string=True)
     except gdb.error as err:
         output = str(err)
-    return output
+    return "[SERVER]\n"+output
 
+
+def execute_backtrace(command):
+    offset = get_offset()
+    parts = command.split()[1:]
+    rsp = int(parts[0], 16) + offset
+    rbp = int(parts[1], 16) + offset
+    output = ""
+    try:
+        gdb.execute("stack_switch_print "+str(rsp)+" "+str(rbp))
+        output = "[SERVER]\n"+gdb.execute("bt", to_string=True)
+    except gdb.error as err:
+        output = "[SERVER]\n"+str(err)
+    return output
 
 class DebugServer(gdb.Command):
     def __init__(self):
@@ -77,6 +89,14 @@ class DebugServer(gdb.Command):
                             connection.close()
                             print("Quitting")
                             return
+
+                    """ Special backtrace command """
+                    if command.startswith(SpecialCommands.STACK.name):
+                        print("FUCK")
+                        result = execute_backtrace(command)
+                        connection.sendall(result.encode())
+                        continue
+
                     """ Execute other commands """
                     if command:
                         result = process_command(command)

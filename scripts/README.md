@@ -40,8 +40,8 @@ We chose to implement them as commands rather than functions to reduce the verbo
 
 **behaviour**: The script defines 3 commands (and one prototype left for reference).
 
-1. `tyche_ugsa`: Defined in the class `TycheUpdateGuestStartAddress`.
-This command copies the `GUEST_START` global variable defined in tyche in the gdb variable `tyche_guest_address` for quick access.
+1. `tyche_set_convenience_vars`: Defined in the class `TycheSetConvenienceVars`.
+This command copies the `GUEST_START`, `GUEST_STACK_{PHYS, VIRT}` global variables defined in tyche in convenience gdb variables `tyche_{GUEST_START, GUEST_STACK_{PHYS, VIRT}}` for quick access, especially when we transition in the guest and these are no longer available.
 The command is automatically called after hitting the `tyche_hook_done` breakpoint function.
 
 2. `tyche_start_server`: Defined in the class `TycheStartServer`.
@@ -49,7 +49,7 @@ This command spawns a separate process running a gdb session attached to `debugg
 The output of the debugger is available in `/tmp/debugger.out`. 
 
 **BUGS**:
-a. Gdb does not allow setting debug variables with `-ex` or to pass strings. As a result, this command dumps an id for the guest (0 for rawc, 1 for linux as defined in `debug_server.py` enum) and the `tyche_guest_address` in the file `/tmp/guest_info` which is then read by the server. 
+a. Gdb does not allow setting debug variables with `-ex` or to pass strings. As a result, this command dumps an id for the guest (0 for rawc, 1 for linux as defined in `debug_server.py` enum) and the `tyche_GUEST_START` in the file `/tmp/guest_info` which is then read by the server. 
 b. I cannot remove the breakpoint on main in the `debugger`. As a result, the command to start the server includes a continue.
 
 3. `tyche`: Defined in the class `TycheClient`.

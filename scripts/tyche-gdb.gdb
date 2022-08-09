@@ -41,6 +41,6 @@ source scripts/tyche_debug.py
 b tyche_hook_done
 commands
 silent
-tyche_ugsa
+tyche_set_convenience_vars
 tyche_start_server
 end
