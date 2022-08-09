@@ -39,9 +39,8 @@ source scripts/tyche_debug.py
 # TODO for some reason it does not work if we put a cont, thus exec blocks
 # on that breakpoint for the moment.
 b tyche_hook_done
-commands $bpnum
+commands
 silent
 tyche_ugsa
 tyche_start_server
-d $bpnum
 end

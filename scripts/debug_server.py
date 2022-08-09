@@ -38,7 +38,10 @@ def process_command(command):
             replace = entry[1:-1]+"+"+str(offset)
             parts[idx] = replace
     command = " ".join(parts)
-    output = gdb.execute(command, to_string=True)
+    try:
+        output = gdb.execute(command, to_string=True)
+    except gdb.error as err:
+        output = str(err)
     return output
 
 

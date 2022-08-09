@@ -17,12 +17,11 @@ class Guests(Enum):
 """ Memory offsets, for the moment we have an enum.
     A better solution would have tyche dump them in a file at startup,
     so that we can read them."""
-class InstanceOffsets(Enum):
+class VirtOffsets(Enum):
     tyche = 0x18000000000
-    rawc = 0x4e0000
 
 AddressContext = {
-    "tyche_virt": -1 * InstanceOffsets.tyche.value,
+    "tyche_virt": -1 * VirtOffsets.tyche.value,
     "tyche_phys": 0,
     "guest_phys": 0,
     "guest_virt": 0,
@@ -184,7 +183,7 @@ class TycheClient(gdb.Command):
         execute_command(cmd) 
 
 
-TycheGuestMemoryDump()
+#TycheGuestMemoryDump()
 TycheUpdateGuestStartAddress()
 TycheStartServer()
 TycheClient()
