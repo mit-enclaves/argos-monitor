@@ -26,6 +26,19 @@ def get_offset():
     res = gdb.execute("p/x dbg_offset", to_string=True)
     return int(res.split()[-1], 16)
 
+""" Adds an offset to a `@` wrapped address """
+def update_address(wrapped, offset):
+    assert wrapped.startswith("@")
+    assert wrapped.endswith("@")
+    try:
+        prev = int(wrapped[1:-1], 16)
+        value = prev + offset
+        print("[SERVER]", hex(prev), "->", hex(value), "(+", hex(offset), ")")
+        return value
+    except:
+        print("[SERVER] Error parsing `", wrapped, "`")
+    return wrapped[1:-1]
+
 """ Processing the command. 
     We automatically add the offset of the mmaped region to any value enclosed in `@`, e.g., `@0xdeadbeef@`.
 """
@@ -34,8 +47,8 @@ def process_command(command):
     parts = command.split()
     for idx, entry in enumerate(parts):
         if entry.startswith("@") and entry.endswith("@"):
-            replace = entry[1:-1]+"+"+str(offset)
-            parts[idx] = replace
+            value = update_address(entry, offset)
+            parts[idx] = hex(value)
     command = " ".join(parts)
     try:
         output = gdb.execute(command, to_string=True)

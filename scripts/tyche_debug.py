@@ -75,7 +75,14 @@ class TycheGuestMemoryDump (gdb.Command):
         os.system(" ".join(command))
 
 
-CAPTURED_VARIABLES = ["GUEST_START", "GUEST_STACK_PHYS", "GUEST_STACK_VIRT"]
+""" Global static rust variable that we want to capture right after instantiation.
+This is done automatically by the tyche_set_convenience_vars command as we reach
+the tyche_hook_done function."""
+CAPTURED_VARIABLES = [
+        "GUEST_START",
+        "GUEST_STACK_PHYS",
+        "GUEST_STACK_VIRT",
+        ]
 
 def get_global_var(name):
     infos = gdb.execute("info variables -q "+name, to_string=True).split()
@@ -181,6 +188,30 @@ def create_stack_cmd(offset):
     cmd = "STACK "+hex(start+diff_rsp) + " "+hex(start+diff_rbp)
     return cmd
 
+def create_print_log(cmd):
+    # format is PLOG size
+    size = int(cmd.split()[-1])
+    # Get the symbol address for the log
+    addr = int(gdb.execute("p &__log_buf", to_string=True).split()[-2], 16)
+    # Remove the offset
+    guest_start = get_convenience("GUEST_START")
+    addr = addr - 0xffffffff80000000 + guest_start 
+    cmd = "x/"+str(size)+"s @"+hex(addr)+"@"
+    print("The command ", cmd)
+    return cmd
+
+""" Adds an offset to a `@` wrapped address """
+def update_address(wrapped, offset):
+    assert wrapped.startswith("@")
+    assert wrapped.endswith("@")
+    try:
+        prev = int(wrapped[1:-1], 16)
+        value = prev + offset
+        print("[CLIENT]", hex(prev), "->", hex(value), "(+", hex(offset), ")")
+        return value
+    except:
+        print("[CLIENT] Error parsing `", wrapped, "`")
+    return wrapped[1:-1]
 
 """ This command forwards gdb commands to the debugger server. """
 class TycheClient(gdb.Command):
@@ -203,8 +234,8 @@ class TycheClient(gdb.Command):
         # Replace addresses according to context
         for i, a in enumerate(args):
             if a.startswith("@") and a.endswith("@"):
-                value = a[1:-1]
-                replace = "@"+value+"+"+str(offset)+"@"
+                value = update_address(a, offset)
+                replace = "@"+hex(value)+"@"
                 args[i] = replace
 
         cmd = " ".join(args[1:])
@@ -212,6 +243,8 @@ class TycheClient(gdb.Command):
         # Special commands
         if cmd == "BT":
             cmd = create_stack_cmd(offset)
+        if cmd.startswith("PLOG"):
+            cmd = create_print_log(cmd) 
 
         # Now send the command to the remote server without the context
         execute_command(cmd) 
