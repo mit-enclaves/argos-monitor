@@ -298,7 +298,9 @@ fn default_vmcs_config(vmcs: &mut ActiveVmcs, switching: bool) {
         )
     );
 
-    let mut secondary_ctrls = SecondaryControls::ENABLE_RDTSCP | SecondaryControls::ENABLE_EPT;
+    let mut secondary_ctrls = SecondaryControls::ENABLE_RDTSCP
+        | SecondaryControls::ENABLE_EPT
+        | SecondaryControls::ENABLE_XSAVES_XRSTORS;
     if switching {
         secondary_ctrls |= SecondaryControls::ENABLE_VM_FUNCTIONS
     }
