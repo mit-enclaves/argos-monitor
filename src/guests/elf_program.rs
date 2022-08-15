@@ -1,6 +1,11 @@
+use core::str::from_utf8;
+
 use alloc::vec::Vec;
 
-use super::elf::{Elf64Hdr, Elf64Phdr, Elf64PhdrFlags, Elf64PhdrType, FromBytes};
+use super::elf::{
+    Elf64Hdr, Elf64Phdr, Elf64PhdrFlags, Elf64PhdrType, Elf64Shdr, Elf64ShdrType, Elf64Sym,
+    FromBytes,
+};
 use crate::debug::info;
 use crate::mmu::frames::{PhysRange, RangeFrameAllocator};
 use crate::mmu::{FrameAllocator, PtFlag, PtMapper};
@@ -22,6 +27,7 @@ pub struct ElfProgram {
     /// To be used with identity mapping.
     pub phys_entry: GuestPhysAddr,
     segments: Vec<Elf64Phdr>,
+    sections: Vec<Elf64Shdr>,
     bytes: &'static [u8],
     mapping: ElfMapping,
     stack: Option<(GuestVirtAddr, usize)>,
@@ -66,10 +72,23 @@ impl ElfProgram {
         }
         let entry = entry.expect("Couldn't fiend guest entry point");
 
+        // Parse section header table: this is needed to access symbols.
+        let mut sections = Vec::<Elf64Shdr>::new();
+        let shdr_start = header.e_shoff as usize;
+        assert!(header.e_shentsize as usize == Elf64Shdr::SIZE);
+        for i in 0..header.e_shnum {
+            let start = shdr_start + (i as usize) * Elf64Shdr::SIZE;
+            let end = start + Elf64Shdr::SIZE;
+            let section =
+                Elf64Shdr::from_bytes(&bytes[start..end]).expect("parsing section header");
+            sections.push(section);
+        }
+
         Self {
             entry: GuestVirtAddr::new(entry as usize),
             phys_entry: GuestPhysAddr::new(phys_entry as usize),
             segments: prog_headers,
+            sections: sections,
             mapping: ElfMapping::ElfDefault,
             stack: None,
             payload: None,
@@ -192,6 +211,75 @@ impl ElfProgram {
         }
 
         Ok(result)
+    }
+
+    pub fn find_symbol(&self, target: &str) -> Option<Elf64Sym> {
+        if self.sections.len() == 0 {
+            return None;
+        }
+
+        // Find the symbol table sections.
+        let symbols = match self.find_section(Elf64ShdrType::SHT_SYMTAB) {
+            Some(symbs) => symbs,
+            None => return None,
+        };
+
+        // Find the string table.
+        // This could be obtained directly from elf header.
+        let strings = match self.find_section(Elf64ShdrType::SHT_STRTAB) {
+            Some(strs) => strs,
+            None => return None,
+        };
+
+        let str_start = strings.sh_offset as usize;
+        let str_end = str_start + strings.sh_size as usize;
+        let content = &self.bytes[str_start..str_end];
+
+        // Now look for the symbol
+        if symbols.sh_size == 0 || symbols.sh_entsize == 0 {
+            return None;
+        }
+        assert!(symbols.sh_entsize as usize == Elf64Sym::SIZE);
+        // Read all the entries now.
+        let nb = symbols.sh_size / symbols.sh_entsize;
+        let off = symbols.sh_offset;
+        for i in 0..nb {
+            let start = (off + i * symbols.sh_entsize) as usize;
+            let end = start + symbols.sh_entsize as usize;
+            let symbol = Elf64Sym::from_bytes(&self.bytes[start..end]).expect("parsing symbol");
+            if symbol.st_name == 0 {
+                continue;
+            }
+            let n_start = symbol.st_name as usize;
+            let idx = match self.find_substring(&content[n_start..]) {
+                Some(i) => i,
+                None => return None,
+            };
+            let name = from_utf8(&content[n_start..(n_start + idx)]).expect("parsing name");
+            // Now find the name for this symbol.
+            if name == target {
+                return Some(symbol);
+            }
+        }
+        return None;
+    }
+
+    fn find_substring(&self, content: &[u8]) -> Option<usize> {
+        for (i, &v) in content.iter().enumerate() {
+            if v == b'\0' {
+                return Some(i);
+            }
+        }
+        return None;
+    }
+
+    fn find_section(&self, tpe: Elf64ShdrType) -> Option<&Elf64Shdr> {
+        for sec in self.sections.iter() {
+            if sec.sh_type == tpe.bits() {
+                return Some(&sec);
+            }
+        }
+        return None;
     }
 
     /// Maps an elf segment at the desired virtual address.

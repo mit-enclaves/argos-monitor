@@ -15,6 +15,7 @@ use crate::vmx::bitmaps::EptEntryFlags;
 use crate::vmx::fields;
 use crate::vmx::Register;
 
+use super::elf::LinuxSetupHeader;
 use super::Guest;
 use super::HandlerResult;
 
@@ -22,6 +23,11 @@ use super::HandlerResult;
 const LINUXBYTES: &'static [u8] = include_bytes!("../../linux-image/images/vmlinux");
 #[cfg(not(feature = "guest_linux"))]
 const LINUXBYTES: &'static [u8] = &[0; 10];
+
+const LINUX_MASK: u64 = 0xffffffff82000000;
+// Offset of setup_header within the boot_params structure as specified in:
+// linux/arch/x86/include/uapi/asm/bootparam.h
+const SETUP_HDR: u64 = 0x1f1;
 
 pub struct Linux {}
 
@@ -40,7 +46,7 @@ impl Guest for Linux {
         let virtoffset = allocator.get_physical_offset();
         // Create a bumper allocator with 1GB of RAM.
         let guest_ram = allocator
-            .allocate_range(guests::ONEGB)
+            .allocate_range(2 * guests::ONEGB)
             .expect("Unable to allocate 1GB");
         // Storing the guest ram start address for debugging.
         info::tyche_hook_set_guest_start(guest_ram.start.as_u64());
@@ -67,6 +73,15 @@ impl Guest for Linux {
         let loaded_linux = linux_prog
             .load(guest_ram, virtoffset)
             .expect("Failed to load guest");
+
+        // Patch up the boot param
+        let boot_param_sym = linux_prog.find_symbol("boot_params").expect("boot params");
+        let setup_header_start = boot_param_sym.st_value - LINUX_MASK
+            + guest_ram.start.as_u64()
+            + virtoffset.as_u64()
+            + SETUP_HDR;
+        let setup_header = setup_header_start as *mut LinuxSetupHeader;
+        println!("We have a pointer! {:#x?}", setup_header);
 
         // Setup the vmcs.
         let frame = allocator.allocate_frame().expect("Failed to allocate VMCS");
