@@ -19,12 +19,14 @@ class Guests(Enum):
     so that we can read them."""
 class VirtOffsets(Enum):
     tyche = 0x18000000000
+    linux = 0xffffffff80000000
 
 AddressContext = {
     "tyche_virt": -1 * VirtOffsets.tyche.value,
     "tyche_phys": 0,
     "guest_phys": 0,
     "guest_virt": 0,
+    "linux_virt": -1 * VirtOffsets.linux.value, 
         }
 
 QEMU_RAMFILE="/tmp/tyche"
