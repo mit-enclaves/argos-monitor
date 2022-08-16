@@ -4,6 +4,7 @@ use alloc::vec;
 
 use crate::debug::info;
 use crate::guests;
+use crate::guests::boot_params::BootParams;
 use crate::guests::elf_program::{ElfMapping, ElfProgram};
 use crate::mmu::eptmapper::EptMapper;
 use crate::mmu::frames::RangeFrameAllocator;
@@ -15,7 +16,7 @@ use crate::vmx::bitmaps::EptEntryFlags;
 use crate::vmx::fields;
 use crate::vmx::Register;
 
-use super::elf::SetupHeader;
+use super::boot_params::SetupHeader;
 use super::Guest;
 use super::HandlerResult;
 
@@ -76,12 +77,18 @@ impl Guest for Linux {
 
         // Patch up the boot param
         let boot_param_sym = linux_prog.find_symbol("boot_params").expect("boot params");
-        let setup_header_start = boot_param_sym.st_value - LINUX_MASK
-            + guest_ram.start.as_u64()
-            + virtoffset.as_u64()
-            + SETUP_HDR;
-        let setup_header = setup_header_start as *mut SetupHeader;
-        println!("We have a pointer! {:#x?}", setup_header);
+        let boot_param_addr =
+            boot_param_sym.st_value - LINUX_MASK + guest_ram.start.as_u64() + virtoffset.as_u64();
+        let setup_header_addr = boot_param_addr + SETUP_HDR;
+
+        let boot_params = boot_param_addr as *mut BootParams;
+        let setup_header = setup_header_addr as *mut SetupHeader;
+        assert!(setup_header_addr == (&(*boot_params).hdr as *const _) as u64);
+        println!(
+            "We have a pointer! {:#x?} & {:#x?}",
+            setup_header,
+            &(*boot_params).hdr as *const _
+        );
 
         // Setup the vmcs.
         let frame = allocator.allocate_frame().expect("Failed to allocate VMCS");

@@ -13,6 +13,7 @@ use x86_64::registers::model_specific::Efer;
 
 use core::arch::asm;
 
+pub mod boot_params;
 pub mod elf;
 pub mod elf_program;
 pub mod identity;
