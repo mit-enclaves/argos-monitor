@@ -15,7 +15,7 @@ use crate::vmx::bitmaps::EptEntryFlags;
 use crate::vmx::fields;
 use crate::vmx::Register;
 
-use super::elf::LinuxSetupHeader;
+use super::elf::SetupHeader;
 use super::Guest;
 use super::HandlerResult;
 
@@ -80,7 +80,7 @@ impl Guest for Linux {
             + guest_ram.start.as_u64()
             + virtoffset.as_u64()
             + SETUP_HDR;
-        let setup_header = setup_header_start as *mut LinuxSetupHeader;
+        let setup_header = setup_header_start as *mut SetupHeader;
         println!("We have a pointer! {:#x?}", setup_header);
 
         // Setup the vmcs.

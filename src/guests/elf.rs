@@ -91,7 +91,7 @@ mod ffi {
     /// Linux boot related structures.
     #[repr(C)]
     #[derive(Debug, Default, Copy, Clone)]
-    struct screen_info {
+    struct ScreenInfo {
         orig_x: __u8,             /* 0x00 */
         orig_y: __u8,             /* 0x01 */
         ext_mem_k: __u16,         /* 0x02 */
@@ -134,7 +134,7 @@ mod ffi {
 
     #[repr(C)]
     #[derive(Debug, Default, Copy, Clone)]
-    struct apm_bios_info {
+    struct ApmBiosInfo {
         version: __u16,
         cseg: __u16,
         offset: __u32,
@@ -148,7 +148,7 @@ mod ffi {
 
     #[repr(C)]
     #[derive(Debug, Default, Copy, Clone)]
-    struct ist_info {
+    struct IstInfo {
         signature: __u32,
         command: __u32,
         event: __u32,
@@ -157,14 +157,14 @@ mod ffi {
 
     #[repr(C)]
     #[derive(Debug, Default, Copy, Clone)]
-    struct sys_desc_table {
+    struct SysDescTable {
         length: __u16,
         table: [__u8; 14],
     }
 
     #[repr(C)]
     #[derive(Debug, Default, Copy, Clone)]
-    struct olpc_ofw_header {
+    struct OlpcOfwHeader {
         ofw_magic: __u32, /* OFW signature */
         ofw_version: __u32,
         cif_handler: __u32, /* callback into OFW */
@@ -173,13 +173,13 @@ mod ffi {
 
     #[repr(C)]
     #[derive(Debug, Copy, Clone)]
-    struct edid_info {
+    struct EdidInfo {
         dummy: [__u8; 128],
     }
 
     #[repr(C)]
     #[derive(Debug, Default, Copy, Clone)]
-    struct efi_info {
+    struct EfiInfo {
         efi_loader_signature: __u32,
         efi_systab: __u32,
         efi_memdesc_size: __u32,
@@ -190,9 +190,9 @@ mod ffi {
         efi_memmap_hi: __u32,
     }
 
-    #[repr(C)]
+    #[repr(C, packed)]
     #[derive(Debug, Default, Copy, Clone)]
-    pub struct LinuxSetupHeader {
+    pub struct SetupHeader {
         pub setup_sects: __u8,
         pub root_flags: __u16,
         pub syssize: __u32,
@@ -236,7 +236,7 @@ mod ffi {
 
     #[repr(C, packed)]
     #[derive(Debug, Default, Copy, Clone)]
-    struct boot_e820_entry {
+    struct BootE820Entry {
         addr: __u64,
         size: __u64,
         tpe: __u32,
@@ -400,7 +400,7 @@ mod ffi {
 
     #[repr(C, packed)]
     #[derive(Copy, Clone)]
-    struct edd_info {
+    struct EddInfo {
         device: __u8,
         version: __u8,
         interface_support: __u16,
@@ -409,12 +409,80 @@ mod ffi {
         legacy_sectors_per_track: __u8,
         params: edd_device_params,
     }
+
+    /* max number of signatures to store */
+    const EDD_MBR_SIG_MAX: usize = 16;
+
+    /* number of edd_info structs starting at EDDBUF  */
+    const EDDMAXNR: usize = 6;
+
+    /*
+     * This is the maximum number of entries in struct boot_params::e820_table
+     * (the zeropage), which is part of the x86 boot protocol ABI:
+     */
+    const E820_MAX_ENTRIES_ZEROPAGE: usize = 128;
+
+    /* The so-called "zeropage" */
+    #[repr(C, packed)]
+    #[derive(Copy, Clone)]
+    struct BootParams {
+        screen_info: ScreenInfo,    /* 0x000 */
+        apm_bios_info: ApmBiosInfo, /* 0x040 */
+        _pad2: [__u8; 4],           /* 0x054 */
+        tboot_addr: __u64,          /* 0x058 */
+        ist_info: IstInfo,          /* 0x060 */
+        acpi_rsdp_addr: __u64,      /* 0x070 */
+        _pad3: [__u8; 8],           /* 0x078 */
+        hd0_info: [__u8; 16],       /* obsolete! */
+        /* 0x080 */
+        hd1_info: [__u8; 16], /* obsolete! */
+        /* 0x090 */
+        sys_desc_table: SysDescTable, /* obsolete! */
+        /* 0x0a0 */
+        olpc_ofw_header: OlpcOfwHeader, /* 0x0b0 */
+        ext_ramdisk_image: __u32,       /* 0x0c0 */
+        ext_ramdisk_size: __u32,        /* 0x0c4 */
+        ext_cmd_line_ptr: __u32,        /* 0x0c8 */
+        _pad4: [__u8; 116],             /* 0x0cc */
+        edid_info: EdidInfo,            /* 0x140 */
+        efi_info: EfiInfo,              /* 0x1c0 */
+        alt_mem_k: __u32,               /* 0x1e0 */
+        scratch: __u32,                 /* Scratch field! */
+        /* 0x1e4 */
+        e820_entries: __u8,            /* 0x1e8 */
+        eddbuf_entries: __u8,          /* 0x1e9 */
+        edd_mbr_sig_buf_entries: __u8, /* 0x1ea */
+        kbd_status: __u8,              /* 0x1eb */
+        secure_boot: __u8,             /* 0x1ec */
+        _pad5: [__u8; 2],              /* 0x1ed */
+        /*
+         * The sentinel is set to a nonzero value (0xff) in header.S.
+         *
+         * A bootloader is supposed to only take setup_header and put
+         * it into a clean boot_params buffer. If it turns out that
+         * it is clumsy or too generous with the buffer, it most
+         * probably will pick up the sentinel variable too. The fact
+         * that this variable then is still 0xff will let kernel
+         * know that some variables in boot_params are invalid and
+         * kernel should zero out certain portions of boot_params.
+         */
+        _sentinel: __u8,  /* 0x1ef */
+        _pad6: [__u8; 1], /* 0x1f0 */
+        hdr: SetupHeader, /* setup header */
+        /* 0x1f1 */
+        _pad7: [__u8; 0x290 - 0x1f1 - 0x7b], //  0x7f is supposed to be setup header size
+        edd_mbr_sig_buffer: [__u32; EDD_MBR_SIG_MAX], /* 0x290 */
+        e820_table: [BootE820Entry; E820_MAX_ENTRIES_ZEROPAGE], /* 0x2d0 */
+        _pad8: [__u8; 48],                   /* 0xcd0 */
+        eddbuf: [EddInfo; EDDMAXNR],         /* 0xd00 */
+        _pad9: [__u8; 276],                  /* 0xeec */
+    }
 }
 
 use core::mem;
 
 use bitflags::bitflags;
-pub use ffi::{Elf64Hdr, Elf64Note, Elf64Phdr, Elf64Shdr, Elf64Sym, LinuxSetupHeader};
+pub use ffi::{Elf64Hdr, Elf64Note, Elf64Phdr, Elf64Shdr, Elf64Sym, SetupHeader};
 
 bitflags! {
     /// Valid values for the Elf64Phdr.p_type entry.
@@ -490,4 +558,4 @@ unsafe impl FromBytes for Elf64Phdr {}
 unsafe impl FromBytes for Elf64Hdr {}
 unsafe impl FromBytes for Elf64Shdr {}
 unsafe impl FromBytes for Elf64Sym {}
-unsafe impl FromBytes for LinuxSetupHeader {}
+unsafe impl FromBytes for SetupHeader {}
