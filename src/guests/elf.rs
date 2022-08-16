@@ -88,6 +88,7 @@ mod ffi {
         pub n_type: Elf64_Word,
     }
 
+    /// Linux boot related structures.
     #[repr(C)]
     #[derive(Debug, Default, Copy, Clone)]
     struct screen_info {
@@ -233,12 +234,180 @@ mod ffi {
         pub kernel_info_offset: __u32,
     }
 
-    #[repr(C)]
+    #[repr(C, packed)]
     #[derive(Debug, Default, Copy, Clone)]
     struct boot_e820_entry {
         addr: __u64,
         size: __u64,
         tpe: __u32,
+    }
+
+    #[repr(C, packed)]
+    #[derive(Debug, Default, Copy, Clone)]
+    struct ISA {
+        base_address: __u16,
+        reserved1: __u16,
+        reserved2: __u32,
+    }
+
+    #[repr(C, packed)]
+    #[derive(Debug, Default, Copy, Clone)]
+    struct PCI {
+        bus: __u8,
+        slot: __u8,
+        function: __u8,
+        channel: __u8,
+        reserved: __u32,
+    }
+
+    #[repr(C, packed)]
+    #[derive(Debug, Default, Copy, Clone)]
+    struct S1 {
+        reserved: __u64,
+    }
+
+    #[repr(C, packed)]
+    #[derive(Copy, Clone)]
+    union InterfacePath {
+        isa: ISA,
+        pci: PCI,
+        ibnd: S1,
+        xprs: S1,
+        htpt: S1,
+        unknown: S1,
+    }
+
+    #[repr(C, packed)]
+    #[derive(Debug, Default, Copy, Clone)]
+    struct ATA {
+        device: __u8,
+        reserved1: __u8,
+        reserved2: __u16,
+        reserved3: __u32,
+        reserved4: __u64,
+    }
+
+    #[repr(C, packed)]
+    #[derive(Debug, Default, Copy, Clone)]
+    struct ATAPI {
+        device: __u8,
+        lun: __u8,
+        reserved1: __u8,
+        reserved2: __u8,
+        reserved3: __u32,
+        reserved4: __u64,
+    }
+
+    #[repr(C, packed)]
+    #[derive(Debug, Default, Copy, Clone)]
+    struct SCSI {
+        id: __u16,
+        lun: __u64,
+        reserved1: __u16,
+        reserved2: __u32,
+    }
+
+    #[repr(C, packed)]
+    #[derive(Debug, Default, Copy, Clone)]
+    struct USB {
+        serial_number: __u64,
+        reserved: __u64,
+    }
+
+    #[repr(C, packed)]
+    #[derive(Debug, Default, Copy, Clone)]
+    struct I1394 {
+        eui: __u64,
+        reserved: __u64,
+    }
+
+    #[repr(C, packed)]
+    #[derive(Debug, Default, Copy, Clone)]
+    struct FIBRE {
+        wwid: __u64,
+        lun: __u64,
+    }
+
+    #[repr(C, packed)]
+    #[derive(Debug, Default, Copy, Clone)]
+    struct I2O {
+        identity_tag: __u64,
+        reserved: __u64,
+    }
+
+    #[repr(C, packed)]
+    #[derive(Debug, Default, Copy, Clone)]
+    struct RAID {
+        array_number: __u32,
+        reserved1: __u32,
+        reserved2: __u64,
+    }
+
+    #[repr(C, packed)]
+    #[derive(Debug, Default, Copy, Clone)]
+    struct SATA {
+        device: __u8,
+        reserved1: __u8,
+        reserved2: __u16,
+        reserved3: __u32,
+        reserved4: __u64,
+    }
+
+    #[repr(C, packed)]
+    #[derive(Debug, Default, Copy, Clone)]
+    struct UNKNOWN {
+        reserved1: __u64,
+        reserved2: __u64,
+    }
+
+    #[repr(C, packed)]
+    #[derive(Copy, Clone)]
+    union DevicePath {
+        ata: ATA,
+        atapi: ATAPI,
+        scsi: SCSI,
+        usb: USB,
+        i1394: I1394,
+        fibre: FIBRE,
+        i2o: I2O,
+        raid: RAID,
+        sata: SATA,
+        unknown: UNKNOWN,
+    }
+
+    #[repr(C, packed)]
+    #[derive(Copy, Clone)]
+    struct edd_device_params {
+        length: __u16,
+        info_flags: __u16,
+        num_default_cylinders: __u32,
+        num_default_heads: __u32,
+        sectors_per_track: __u32,
+        number_of_sectors: __u64,
+        bytes_per_sector: __u16,
+        dpte_ptr: __u32,               /* 0xFFFFFFFF for our purposes */
+        key: __u16,                    /* = 0xBEDD */
+        device_path_info_length: __u8, /* = 44 */
+        reserved2: __u8,
+        reserved3: __u16,
+        host_bus_type: [__u8; 4],
+        interface_type: [__u8; 8],
+        interface_path: InterfacePath,
+        device_path: DevicePath,
+        reserved4: __u8,
+        checksum: __u8,
+    }
+
+    #[repr(C, packed)]
+    #[derive(Copy, Clone)]
+    struct edd_info {
+        device: __u8,
+        version: __u8,
+        interface_support: __u16,
+        legacy_max_cylinder: __u16,
+        legacy_max_head: __u8,
+        legacy_sectors_per_track: __u8,
+        params: edd_device_params,
     }
 }
 
