@@ -824,6 +824,36 @@ where
     }
 }
 
+impl<'active, 'vmx> core::fmt::Debug for ActiveVmcs<'active, 'vmx> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        writeln!(f, "VMCS {{")?;
+        writeln!(f, "    registers {{")?;
+        writeln!(f, "        rax: {:x}", self.get(Register::Rax))?;
+        writeln!(f, "        rbx: {:x}", self.get(Register::Rbx))?;
+        writeln!(f, "        rax: {:x}", self.get(Register::Rax))?;
+        writeln!(f, "        rbx: {:x}", self.get(Register::Rbx))?;
+        writeln!(f, "        rcx: {:x}", self.get(Register::Rcx))?;
+        writeln!(f, "        rdx: {:x}", self.get(Register::Rdx))?;
+        writeln!(f, "        rip: {:x}", self.get(Register::Rip))?;
+        writeln!(f, "        rsp: {:x}", self.get(Register::Rsp))?;
+        writeln!(f, "        rbp: {:x}", self.get(Register::Rbp))?;
+        writeln!(f, "        rsi: {:x}", self.get(Register::Rsi))?;
+        writeln!(f, "        rdi: {:x}", self.get(Register::Rdi))?;
+        writeln!(f, "        r8:  {:x}", self.get(Register::R8))?;
+        writeln!(f, "        r9:  {:x}", self.get(Register::R9))?;
+        writeln!(f, "        r10: {:x}", self.get(Register::R10))?;
+        writeln!(f, "        r11: {:x}", self.get(Register::R11))?;
+        writeln!(f, "        r12: {:x}", self.get(Register::R12))?;
+        writeln!(f, "        r13: {:x}", self.get(Register::R13))?;
+        writeln!(f, "        r14: {:x}", self.get(Register::R14))?;
+        writeln!(f, "        r15: {:x}", self.get(Register::R15))?;
+        writeln!(f, "    }}")?;
+        writeln!(f, "}}")?;
+
+        Ok(())
+    }
+}
+
 // ——————————————————————————————— Registers ———————————————————————————————— //
 
 /// Virtual CPU registers.

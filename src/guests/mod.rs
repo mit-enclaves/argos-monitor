@@ -143,6 +143,7 @@ pub trait Guest {
                     "Emulation is not yet implemented for exit reason: {:?}",
                     reason
                 );
+                println!("{:?}", vcpu);
                 Ok(HandlerResult::Crash)
             }
         }
