@@ -1,5 +1,6 @@
 target
 .vim
+.gdb_history
 
 # OVMF UEFI firmware
 OVMF-pure-efi.fd
