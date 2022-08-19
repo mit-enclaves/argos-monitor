@@ -227,6 +227,22 @@ pub fn vmx_available() -> Result<(), VmxError> {
     Ok(())
 }
 
+pub fn secondary_controls_capabilities() -> Result<bitmaps::SecondaryControls, VmxError> {
+    // Check that VMX is available
+    vmx_available()?;
+
+    // SAFETY: MSR exists if vmx is available.
+    let procbased_ctls = unsafe { msr::VMX_PROCBASED_CTLS.read() };
+    if procbased_ctls & (1 << 63) == 0 {
+        return Err(VmxError::FeatureNotSupported);
+    }
+
+    // SAFETY: MSR exists if bit 63 of procbased_ctls is 1.
+    let second_procbased_ctrl = unsafe { msr::VMX_PROCBASED_CTLS2.read() };
+    let allowed_1 = (second_procbased_ctrl >> 32) as u32;
+    Ok(bitmaps::SecondaryControls::from_bits_truncate(allowed_1))
+}
+
 /// Return the EPT and VPID capabilities.
 ///
 /// See Intel manual volume 3 annex A.10.

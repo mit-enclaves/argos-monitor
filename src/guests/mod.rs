@@ -276,6 +276,11 @@ fn setup_guest(vcpu: &mut vmx::ActiveVmcs) -> Result<(), vmx::VmxError> {
 }
 
 fn default_vmcs_config(vmcs: &mut ActiveVmcs, switching: bool) {
+    // Look for XSAVES capabilities
+    let capabilities =
+        vmx::secondary_controls_capabilities().expect("Secondary controls are not supported");
+    let xsaves = capabilities.contains(SecondaryControls::ENABLE_XSAVES_XRSTORS);
+
     let err = vmcs
         .set_pin_based_ctrls(PinbasedControls::empty())
         .and_then(|_| {
@@ -300,11 +305,12 @@ fn default_vmcs_config(vmcs: &mut ActiveVmcs, switching: bool) {
         )
     );
 
-    let mut secondary_ctrls = SecondaryControls::ENABLE_RDTSCP
-        | SecondaryControls::ENABLE_EPT
-        | SecondaryControls::ENABLE_XSAVES_XRSTORS;
+    let mut secondary_ctrls = SecondaryControls::ENABLE_RDTSCP | SecondaryControls::ENABLE_EPT;
     if switching {
         secondary_ctrls |= SecondaryControls::ENABLE_VM_FUNCTIONS
+    }
+    if xsaves {
+        secondary_ctrls |= SecondaryControls::ENABLE_XSAVES_XRSTORS;
     }
     println!("2'Ctrl: {:?}", vmcs.set_secondary_ctrls(secondary_ctrls));
 }
