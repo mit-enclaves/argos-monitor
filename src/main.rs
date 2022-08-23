@@ -96,8 +96,9 @@ fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
             let rcx = vcpu.get(Register::Rcx);
             let rbp = vcpu.get(Register::Rbp);
             println!(
-                "{}: {:?} - rip: 0x{:x} - rbp: 0x{:x} - rax: 0x{:x} - rcx: 0x{:x}",
+                "{}: {} {:?} - rip: 0x{:x} - rbp: 0x{:x} - rax: 0x{:x} - rcx: 0x{:x}",
                 launch,
+                counter,
                 vcpu.exit_reason(),
                 rip,
                 rbp,

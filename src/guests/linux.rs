@@ -1,11 +1,9 @@
 //! Linux Guest
 
-use alloc::vec;
-
 use crate::debug::info;
 use crate::guests;
 use crate::guests::boot_params::{
-    BootParams, E820_RAM, EBDA_START, KERNEL_BOOT_FLAG_MAGIC, KERNEL_HDR_MAGIC,
+    BootParams, E820Types, EBDA_START, KERNEL_BOOT_FLAG_MAGIC, KERNEL_HDR_MAGIC,
     KERNEL_LOADER_OTHER, KERNEL_MIN_ALIGNMENT_BYTES,
 };
 use crate::guests::elf_program::{ElfMapping, ElfProgram};
@@ -17,7 +15,7 @@ use crate::qemu;
 use crate::vmx;
 use crate::vmx::bitmaps::EptEntryFlags;
 use crate::vmx::fields;
-use crate::vmx::Register;
+use crate::vmx::{GuestPhysAddr, Register};
 
 use super::Guest;
 use super::HandlerResult;
@@ -27,10 +25,13 @@ const LINUXBYTES: &'static [u8] = include_bytes!("../../linux-image/images/vmlin
 #[cfg(not(feature = "guest_linux"))]
 const LINUXBYTES: &'static [u8] = &[0; 10];
 
+#[allow(dead_code)]
 const LINUX_MASK: u64 = 0xffffffff82000000;
 // Offset of setup_header within the boot_params structure as specified in:
 // linux/arch/x86/include/uapi/asm/bootparam.h
+#[allow(dead_code)]
 const SETUP_HDR: u64 = 0x1f1;
+const HIGH_MEM_START: u64 = 0x0010_0000; // 1 Mb
 
 pub struct Linux {}
 
@@ -44,13 +45,17 @@ impl Guest for Linux {
     ) -> vmx::VmcsRegion<'vmx> {
         let mut linux_prog = ElfProgram::new(LINUXBYTES);
         linux_prog.set_mapping(ElfMapping::Identity);
-        linux_prog.add_payload(vec![0; 0x1000]);
 
         let virtoffset = allocator.get_physical_offset();
         // Create a bumper allocator with 1GB of RAM.
+        let guest_ram_size = 2 * guests::ONEGB;
         let guest_ram = allocator
-            .allocate_range(2 * guests::ONEGB)
-            .expect("Unable to allocate 1GB");
+            .allocate_range(guest_ram_size)
+            .expect("Unable to allocate 2GB");
+
+        let boot_params = build_bootparams(guest_ram_size as u64);
+        linux_prog.add_payload(boot_params.as_bytes().to_vec());
+
         // Storing the guest ram start address for debugging.
         info::tyche_hook_set_guest_start(guest_ram.start.as_u64());
         let guest_allocator = RangeFrameAllocator::new(guest_ram.start, guest_ram.end, virtoffset);
@@ -76,29 +81,6 @@ impl Guest for Linux {
         let loaded_linux = linux_prog
             .load(guest_ram, virtoffset)
             .expect("Failed to load guest");
-
-        // Patch up the boot param
-        // TODO is boot param an actual page or just a pointer? Need to check that.
-        // TODO(aghosn) might have to relocate the kernel when we load ...
-        let boot_param_sym = linux_prog.find_symbol("boot_params").expect("boot params");
-        let boot_param_addr =
-            boot_param_sym.st_value - LINUX_MASK + guest_ram.start.as_u64() + virtoffset.as_u64();
-        let setup_header_addr = boot_param_addr + SETUP_HDR;
-
-        let boot_params = boot_param_addr as *mut BootParams;
-        assert!(setup_header_addr == (&(*boot_params).hdr as *const _) as u64);
-
-        (*boot_params).hdr.type_of_loader = KERNEL_LOADER_OTHER;
-        (*boot_params).hdr.boot_flag = KERNEL_BOOT_FLAG_MAGIC;
-        (*boot_params).hdr.header = KERNEL_HDR_MAGIC;
-        //(*boot_params).hdr.cmd_line_ptr = cmdline_addr.raw_value() as u32;
-        //(*boot_params).hdr.cmdline_size = cmdline_size as u32;
-        (*boot_params).hdr.kernel_alignment = KERNEL_MIN_ALIGNMENT_BYTES;
-
-        // The initramfs is embedded so not sure we need to do any of that
-        //(*boot_params).hdr.ramdisk_image = ramdisk addr;
-        //(*boot_params).hdr.ramdisk_size = ramdisk size;
-        add_e820_entry(&mut (*boot_params), 0, EBDA_START, E820_RAM).expect("VGA region");
 
         // Setup the vmcs.
         let frame = allocator.allocate_frame().expect("Failed to allocate VMCS");
@@ -149,6 +131,7 @@ impl Guest for Linux {
 
             // Setup boot_params
             vcpu.set(Register::Rsi, loaded_linux.payload.unwrap().as_u64());
+            println!("BootParams: 0x{}", loaded_linux.payload.unwrap().as_u64());
 
             vmx::check::check().expect("check error");
         }
@@ -164,26 +147,28 @@ impl Guest for Linux {
     }
 }
 
-#[derive(Debug)]
-pub enum BootParamError {
-    /// Invalid e820 setup params.
-    E820Configuration,
-}
+fn build_bootparams(guest_ram_size: u64) -> BootParams {
+    let mut boot_params = BootParams::default();
+    boot_params.hdr.type_of_loader = KERNEL_LOADER_OTHER;
+    boot_params.hdr.boot_flag = KERNEL_BOOT_FLAG_MAGIC;
+    boot_params.hdr.header = KERNEL_HDR_MAGIC;
+    //boot_params.hdr.cmd_line_ptr = cmdline_addr.raw_value() as u32;
+    //boot_params.hdr.cmdline_size = cmdline_size as u32;
+    boot_params.hdr.kernel_alignment = KERNEL_MIN_ALIGNMENT_BYTES;
 
-fn add_e820_entry(
-    params: &mut BootParams,
-    addr: u64,
-    size: u64,
-    mem_type: u32,
-) -> Result<(), BootParamError> {
-    if params.e820_entries >= params.e820_table.len() as u8 {
-        return Err(BootParamError::E820Configuration);
-    }
+    // The initramfs is embedded so not sure we need to do any of that
+    //boot_params.hdr.ramdisk_image = ramdisk addr;
+    //boot_params.hdr.ramdisk_size = ramdisk size;
+    boot_params
+        .add_e820_entry(GuestPhysAddr::new(0), EBDA_START, E820Types::Ram)
+        .expect("VGA region");
+    boot_params
+        .add_e820_entry(
+            GuestPhysAddr::new(HIGH_MEM_START as usize),
+            guest_ram_size as u64 - HIGH_MEM_START,
+            E820Types::Ram,
+        )
+        .expect("High memory");
 
-    params.e820_table[params.e820_entries as usize].addr = addr;
-    params.e820_table[params.e820_entries as usize].size = size;
-    params.e820_table[params.e820_entries as usize].tpe = mem_type;
-    params.e820_entries += 1;
-
-    Ok(())
+    boot_params
 }

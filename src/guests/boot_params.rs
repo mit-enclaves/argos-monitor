@@ -1,6 +1,12 @@
 //! Boot parameters declaration.
 //!
 //! Mostly copied from linux/arch/x86/include/uapi/asm/bootparam.h
+
+use crate::vmx::GuestPhysAddr;
+use core::mem;
+
+pub use ffi::{BootParams, SetupHeader};
+
 mod ffi {
     #![allow(non_camel_case_types)]
 
@@ -103,6 +109,12 @@ mod ffi {
         pub dummy: [__u8; 128],
     }
 
+    impl Default for EdidInfo {
+        fn default() -> Self {
+            Self { dummy: [0; 128] }
+        }
+    }
+
     #[repr(C, packed)]
     #[derive(Debug, Default, Copy, Clone)]
     pub struct EfiInfo {
@@ -165,7 +177,7 @@ mod ffi {
     pub struct BootE820Entry {
         pub addr: __u64,
         pub size: __u64,
-        pub tpe: __u32,
+        pub typ: __u32,
     }
 
     #[repr(C, packed)]
@@ -201,6 +213,14 @@ mod ffi {
         pub xprs: S1,
         pub htpt: S1,
         pub unknown: S1,
+    }
+
+    impl Default for InterfacePath {
+        fn default() -> Self {
+            Self {
+                unknown: S1::default(),
+            }
+        }
     }
 
     #[repr(C, packed)]
@@ -301,8 +321,16 @@ mod ffi {
         pub unknown: UNKNOWN,
     }
 
+    impl Default for DevicePath {
+        fn default() -> Self {
+            Self {
+                unknown: Default::default(),
+            }
+        }
+    }
+
     #[repr(C, packed)]
-    #[derive(Copy, Clone)]
+    #[derive(Default, Copy, Clone)]
     pub struct edd_device_params {
         pub length: __u16,
         pub info_flags: __u16,
@@ -325,7 +353,7 @@ mod ffi {
     }
 
     #[repr(C, packed)]
-    #[derive(Copy, Clone)]
+    #[derive(Default, Copy, Clone)]
     pub struct EddInfo {
         pub device: __u8,
         pub version: __u8,
@@ -403,20 +431,100 @@ mod ffi {
         pub eddbuf: [EddInfo; EDDMAXNR],         /* 0xd00 */
         pub _pad9: [__u8; 276],                  /* 0xeec */
     }
+
+    impl Default for BootParams {
+        fn default() -> Self {
+            Self {
+                screen_info: Default::default(),
+                apm_bios_info: Default::default(),
+                _pad2: Default::default(),
+                tboot_addr: Default::default(),
+                ist_info: Default::default(),
+                acpi_rsdp_addr: Default::default(),
+                _pad3: Default::default(),
+                hd0_info: Default::default(),
+                hd1_info: Default::default(),
+                sys_desc_table: Default::default(),
+                olpc_ofw_header: Default::default(),
+                ext_ramdisk_image: Default::default(),
+                ext_ramdisk_size: Default::default(),
+                ext_cmd_line_ptr: Default::default(),
+                _pad4: [0; 116],
+                edid_info: Default::default(),
+                efi_info: Default::default(),
+                alt_mem_k: Default::default(),
+                scratch: Default::default(),
+                e820_entries: Default::default(),
+                eddbuf_entries: Default::default(),
+                edd_mbr_sig_buf_entries: Default::default(),
+                kbd_status: Default::default(),
+                secure_boot: Default::default(),
+                _pad5: Default::default(),
+                _sentinel: Default::default(),
+                _pad6: Default::default(),
+                hdr: Default::default(),
+                _pad7: [0; 0x290 - 0x1f1 - 0x7b],
+                edd_mbr_sig_buffer: Default::default(),
+                e820_table: [BootE820Entry::default(); E820_MAX_ENTRIES_ZEROPAGE],
+                _pad8: [0; 48],
+                eddbuf: [EddInfo::default(); EDDMAXNR],
+                _pad9: [0; 276],
+            }
+        }
+    }
 }
 
-use core::mem;
+#[derive(Debug)]
+pub enum BootParamError {
+    /// Invalid e820 setup params.
+    E820Configuration,
+}
 
-pub use ffi::{BootParams, SetupHeader};
+impl BootParams {
+    /// Adds an e820 region to the e820 map.
+    /// Returns Ok(()) if successful, or an error if there is no space left in the map.
+    pub fn add_e820_entry(
+        &mut self,
+        addr: GuestPhysAddr,
+        size: u64,
+        mem_type: E820Types,
+    ) -> Result<(), BootParamError> {
+        if self.e820_entries >= self.e820_table.len() as u8 {
+            return Err(BootParamError::E820Configuration);
+        }
+
+        let idx = self.e820_entries as usize;
+        self.e820_table[idx].addr = addr.as_u64();
+        self.e820_table[idx].size = size;
+        self.e820_table[idx].typ = mem_type as u32;
+        self.e820_entries += 1;
+
+        Ok(())
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            core::slice::from_raw_parts(
+                (self as *const Self) as *const u8,
+                core::mem::size_of::<Self>(),
+            )
+        }
+    }
+}
+
+#[repr(u32)]
+pub enum E820Types {
+    Ram = 1,
+    Reserved = 2,
+    ACPI = 3,
+    NVS = 4,
+    UNUSABLE = 5,
+}
 
 pub const KERNEL_LOADER_OTHER: u8 = 0xff;
 pub const KERNEL_BOOT_FLAG_MAGIC: u16 = 0xaa55;
 pub const KERNEL_HDR_MAGIC: u32 = 0x5372_6448;
 pub const KERNEL_MIN_ALIGNMENT_BYTES: u32 = 0x0100_0000; // Must be non-zero.
-
-// TODO clean tha tup and take all the possible values.
-// Got it from firecracker.
-pub const E820_RAM: u32 = 1;
 
 // Where BIOS/VGA magic would live on a real PC.
 pub const EBDA_START: u64 = 0x9fc00;
