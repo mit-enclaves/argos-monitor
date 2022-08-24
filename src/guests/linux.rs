@@ -16,6 +16,7 @@ use crate::vmx;
 use crate::vmx::bitmaps::EptEntryFlags;
 use crate::vmx::fields;
 use crate::vmx::{GuestPhysAddr, Register};
+use core::convert::TryFrom;
 
 use super::Guest;
 use super::HandlerResult;
@@ -32,6 +33,9 @@ const LINUX_MASK: u64 = 0xffffffff82000000;
 #[allow(dead_code)]
 const SETUP_HDR: u64 = 0x1f1;
 const HIGH_MEM_START: u64 = 0x0010_0000; // 1 Mb
+
+// WARNING: Don't forget that the command line must be null terminated ('\0')!
+static COMMAND_LINE: &'static [u8] = b"apic=debug\0";
 
 pub struct Linux {}
 
@@ -52,9 +56,6 @@ impl Guest for Linux {
         let guest_ram = allocator
             .allocate_range(guest_ram_size)
             .expect("Unable to allocate 2GB");
-
-        let boot_params = build_bootparams(guest_ram_size as u64);
-        linux_prog.add_payload(boot_params.as_bytes().to_vec());
 
         // Storing the guest ram start address for debugging.
         info::tyche_hook_set_guest_start(guest_ram.start.as_u64());
@@ -78,9 +79,19 @@ impl Guest for Linux {
         );
 
         // Load guest into memory.
-        let loaded_linux = linux_prog
+        let mut loaded_linux = linux_prog
             .load(guest_ram, virtoffset)
             .expect("Failed to load guest");
+
+        // Build the boot params
+        let mut boot_params = build_bootparams(guest_ram_size as u64);
+        let command_line = loaded_linux.add_payload(COMMAND_LINE);
+        let command_line_addr_low = (command_line.as_usize() & 0xFFFF_FFFF) as u32;
+        let command_line_addr_high = (command_line.as_usize() >> 32) as u32;
+        boot_params.ext_cmd_line_ptr = command_line_addr_high;
+        boot_params.hdr.cmd_line_ptr = command_line_addr_low;
+        boot_params.hdr.cmdline_size = COMMAND_LINE.len() as u32;
+        let boot_params = loaded_linux.add_payload(boot_params.as_bytes());
 
         // Setup the vmcs.
         let frame = allocator.allocate_frame().expect("Failed to allocate VMCS");
@@ -130,8 +141,7 @@ impl Guest for Linux {
             vcpu.set_cr4_shadow(vmxe).unwrap();
 
             // Setup boot_params
-            vcpu.set(Register::Rsi, loaded_linux.payload.unwrap().as_u64());
-            println!("BootParams: 0x{}", loaded_linux.payload.unwrap().as_u64());
+            vcpu.set(Register::Rsi, boot_params.as_u64());
 
             vmx::check::check().expect("check error");
         }

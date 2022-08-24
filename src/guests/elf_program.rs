@@ -31,12 +31,15 @@ pub struct ElfProgram {
     bytes: &'static [u8],
     mapping: ElfMapping,
     stack: Option<(GuestVirtAddr, usize)>,
-    payload: Option<Vec<u8>>,
 }
 
-pub struct LoadResult {
+pub struct LoadedElf {
+    /// The root of initial page tables.
     pub pt_root: GuestPhysAddr,
-    pub payload: Option<GuestPhysAddr>,
+    /// An allocator that can be used to write datz to the guest address space before launch.
+    allocator: RangeFrameAllocator,
+    guest_memory: PhysRange,
+    host_physical_offset: HostVirtAddr,
 }
 
 impl ElfProgram {
@@ -88,10 +91,9 @@ impl ElfProgram {
             entry: GuestVirtAddr::new(entry as usize),
             phys_entry: GuestPhysAddr::new(phys_entry as usize),
             segments: prog_headers,
-            sections: sections,
+            sections,
             mapping: ElfMapping::ElfDefault,
             stack: None,
-            payload: None,
             bytes,
         }
     }
@@ -106,11 +108,6 @@ impl ElfProgram {
         self.stack = Some((virt_addr, size));
     }
 
-    /// Specifies a payload to copy to the guest memory.
-    pub fn add_payload(&mut self, payload: Vec<u8>) {
-        self.payload = Some(payload);
-    }
-
     /// Loads the guest program and setup the page table inside the guest memory.
     ///
     /// On success, returns the guest physical address of the guest page table root (to bet set as
@@ -119,7 +116,7 @@ impl ElfProgram {
         &self,
         guest_memory: PhysRange,
         host_physical_offset: HostVirtAddr,
-    ) -> Result<LoadResult, ()> {
+    ) -> Result<LoadedElf, ()> {
         // Compute the highest physical address used by the guest.
         // The remaining space can be used to allocate page tables.
         let mut highest_addr = 0;
@@ -164,10 +161,6 @@ impl ElfProgram {
             guest_memory.start.as_u64() as usize,
             pt_root_guest_phys_addr,
         );
-        let mut result = LoadResult {
-            pt_root: pt_root_guest_phys_addr,
-            payload: None,
-        };
 
         // Load and map segments
         for seg in self.segments.iter() {
@@ -194,23 +187,13 @@ impl ElfProgram {
             );
             info::hook_set_guest_stack(0, stack_address.as_u64());
         }
-        // Copy payload into guest memory, if any
-        if let Some(payload) = &self.payload {
-            let range = guest_allocator
-                .allocate_range(payload.len())
-                .expect("Failed to allocate guest payload");
-            let host_virt_addr =
-                (range.start.as_usize() + host_physical_offset.as_usize()) as *mut u8;
-            unsafe {
-                let dest = core::slice::from_raw_parts_mut(host_virt_addr, payload.len());
-                dest.copy_from_slice(payload);
-            }
-            result.payload = Some(GuestPhysAddr::new(
-                range.start.as_usize() - guest_memory.start.as_usize(),
-            ));
-        }
 
-        Ok(result)
+        Ok(LoadedElf {
+            pt_root: pt_root_guest_phys_addr,
+            allocator: guest_allocator,
+            host_physical_offset,
+            guest_memory,
+        })
     }
 
     pub fn find_symbol(&self, target: &str) -> Option<Elf64Sym> {
@@ -338,6 +321,23 @@ impl ElfProgram {
         let start = segment.p_offset as usize;
         let end = (segment.p_offset + segment.p_filesz) as usize;
         dest.copy_from_slice(&self.bytes[start..end]);
+    }
+}
+
+impl LoadedElf {
+    /// Adds a paylog to a free location of the guest memory and returns the chosen location.
+    pub fn add_payload(&mut self, data: &[u8]) -> GuestPhysAddr {
+        let range = self
+            .allocator
+            .allocate_range(data.len())
+            .expect("Failed to allocate guest payload");
+        let host_virt_addr =
+            (range.start.as_usize() + self.host_physical_offset.as_usize()) as *mut u8;
+        unsafe {
+            let dest = core::slice::from_raw_parts_mut(host_virt_addr, data.len());
+            dest.copy_from_slice(data);
+        }
+        GuestPhysAddr::new(range.start.as_usize() - self.guest_memory.start.as_usize())
     }
 }
 
