@@ -6,8 +6,10 @@ use crate::vmx::bitmaps::{
     EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
     SecondaryControls,
 };
+use crate::vmx::errors::Trapnr;
 use crate::vmx::fields;
 use crate::vmx::fields::traits::*;
+use crate::vmx::VmExitInterrupt;
 use crate::vmx::{ActiveVmcs, ControlRegister, Register, VmcsRegion};
 use x86_64::registers::model_specific::Efer;
 
@@ -137,6 +139,21 @@ pub trait Guest {
                     println!("Unknown MSR: 0x{:x}", ecx);
                     Ok(HandlerResult::Crash)
                 }
+            }
+            vmx::VmxExitReason::Exception => {
+                let _value: u8 = Trapnr::InvalidOpcode.as_u8();
+                match vcpu.interrupt_info() {
+                    Ok(Some(VmExitInterrupt { vector: _value, .. })) => {
+                        println!("Exception: {:?}", vcpu.interrupt_info());
+                        // Clear the exception bitmap and let the guest handle it.
+                        vcpu.set_exception_bitmap(ExceptionBitmap::empty())?;
+                        return Ok(HandlerResult::Resume);
+                    }
+                    _ => {}
+                }
+                println!("VM received an exception");
+                println!("{:?}", vcpu);
+                Ok(HandlerResult::Crash)
             }
             _ => {
                 println!(
@@ -303,7 +320,7 @@ fn default_vmcs_config(vmcs: &mut ActiveVmcs, switching: bool) {
         .and_then(|_| {
             vmcs.set_vm_entry_ctrls(EntryControls::IA32E_MODE_GUEST | EntryControls::LOAD_IA32_EFER)
         })
-        .and_then(|_| vmcs.set_exception_bitmap(ExceptionBitmap::empty()))
+        .and_then(|_| vmcs.set_exception_bitmap(ExceptionBitmap::INVALID_OPCODE))
         .and_then(|_| vmcs.save_host_state())
         .and_then(|_| setup_guest(vmcs));
     println!("Config: {:?}", err);

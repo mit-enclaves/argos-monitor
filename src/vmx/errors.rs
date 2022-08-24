@@ -463,3 +463,54 @@ impl VmxExitReason {
         }
     }
 }
+
+/// Trap numbers for interrupt exit vector values.
+#[rustfmt::skip]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[repr(u8)]
+pub enum Trapnr {
+    /// Divide Error #DE.
+    DivideError             = 0,
+    /// NMI Interrupt.
+    NMI                     = 2,
+    /// Breakpoint #BP.
+    Breakpoint              = 3,
+    /// Overflow #OF.
+    Overflow                = 4,
+    /// Bound Range Exceeded #BR.
+    BoundRangeExceeded      = 5,
+    /// Invalid Opcode #UD.
+    InvalidOpcode           = 6,
+    /// Device Not Available #NM.
+    DeviceNotAvailable      = 7,
+    /// Double Fault #DF.
+    DoubleFault             = 8, 
+    /// Invalid TSS #TS.
+    InvalidTSS              = 10,
+    /// Segment Not present #NP.
+    SegmentNotPresentFault  = 11, 
+    /// Stack-Segment #SS.
+    StackSegmentFault       = 12,
+    /// General Protection #GP.
+    GeneralProtectionFault  = 13,
+    ///Page fault #PF.
+    PageFault               = 14,
+    /// x87 FPU fp error #MF.
+    FPUError                = 16,
+    /// Alignment Check #AC.   
+    AlignmentCheck          = 17,
+    /// Machine Check #MC.
+    MachineCheck            = 18,
+    /// SIMD fp exception #XM.
+    SIMDException           = 19,
+    /// Virtualization exception #VE.
+    VirtualizationException = 20,
+    /// Default is reserved
+    Reserved                = 21,
+}
+
+impl Trapnr {
+    pub fn as_u8(self) -> u8 {
+        return self as u8;
+    }
+}
