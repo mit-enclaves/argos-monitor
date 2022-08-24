@@ -11,7 +11,7 @@ use crate::vmx::fields::traits::*;
 use crate::vmx::{ActiveVmcs, ControlRegister, Register, VmcsRegion};
 use x86_64::registers::model_specific::Efer;
 
-use core::arch::asm;
+use core::{arch, arch::asm};
 
 pub mod boot_params;
 pub mod elf;
@@ -275,6 +275,16 @@ fn setup_guest(vcpu: &mut vmx::ActiveVmcs) -> Result<(), vmx::VmxError> {
     Ok(())
 }
 
+/// Returns optional secondary controls depending on the host cpuid.
+fn cpuid_secondary_controls() -> SecondaryControls {
+    let mut controls = SecondaryControls::empty();
+    let cpuid = unsafe { arch::x86_64::__cpuid(7) };
+    if cpuid.ebx & vmx::CPUID_EBX_X64_FEATURE_INVPCID != 0 {
+        controls |= SecondaryControls::ENABLE_INVPCID;
+    }
+    return controls;
+}
+
 fn default_vmcs_config(vmcs: &mut ActiveVmcs, switching: bool) {
     // Look for XSAVES capabilities
     let capabilities =
@@ -312,5 +322,6 @@ fn default_vmcs_config(vmcs: &mut ActiveVmcs, switching: bool) {
     if xsaves {
         secondary_ctrls |= SecondaryControls::ENABLE_XSAVES_XRSTORS;
     }
+    secondary_ctrls |= cpuid_secondary_controls();
     println!("2'Ctrl: {:?}", vmcs.set_secondary_ctrls(secondary_ctrls));
 }
