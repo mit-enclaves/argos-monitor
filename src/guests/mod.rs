@@ -6,10 +6,9 @@ use crate::vmx::bitmaps::{
     EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
     SecondaryControls,
 };
-use crate::vmx::errors::Trapnr;
 use crate::vmx::fields;
 use crate::vmx::fields::traits::*;
-use crate::vmx::VmExitInterrupt;
+use crate::vmx::VmxError;
 use crate::vmx::{ActiveVmcs, ControlRegister, Register, VmcsRegion};
 use x86_64::registers::model_specific::Efer;
 
@@ -43,6 +42,15 @@ pub trait Guest {
         &self,
         vcpu: &mut vmx::ActiveVmcs,
     ) -> Result<HandlerResult, vmx::VmxError>;
+
+    /// Enables exception interposition in the host.
+    ///
+    /// @msg: Add whatever exceptions you want to catch to the bitmap.
+    fn enable_exceptions(&self, vcpu: &mut ActiveVmcs) -> Result<(), VmxError> {
+        vcpu.set_exception_bitmap(
+            ExceptionBitmap::INVALID_OPCODE | ExceptionBitmap::DEVICE_NOT_AVAILABLE,
+        )
+    }
 
     fn handle_exit(
         &self,
@@ -141,19 +149,20 @@ pub trait Guest {
                 }
             }
             vmx::VmxExitReason::Exception => {
-                let _value: u8 = Trapnr::InvalidOpcode.as_u8();
                 match vcpu.interrupt_info() {
-                    Ok(Some(VmExitInterrupt { vector: _value, .. })) => {
+                    Ok(Some(exit)) => {
                         println!("Exception: {:?}", vcpu.interrupt_info());
-                        // Clear the exception bitmap and let the guest handle it.
-                        vcpu.set_exception_bitmap(ExceptionBitmap::empty())?;
-                        return Ok(HandlerResult::Resume);
+                        // Inject the fault back into the guest.
+                        let injection = exit.as_injectable_u32();
+                        vcpu.set_vm_entry_interruption_information(injection)?;
+                        Ok(HandlerResult::Resume)
                     }
-                    _ => {}
+                    _ => {
+                        println!("VM received an exception");
+                        println!("{:?}", vcpu);
+                        Ok(HandlerResult::Crash)
+                    }
                 }
-                println!("VM received an exception");
-                println!("{:?}", vcpu);
-                Ok(HandlerResult::Crash)
             }
             _ => {
                 println!(

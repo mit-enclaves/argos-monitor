@@ -111,6 +111,7 @@ fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
                     .handle_exit(&mut vcpu, exit_reason)
                     .expect("Failed to handle VM exit")
             } else {
+                println!("VMXerror {:?}", result);
                 guests::HandlerResult::Crash
             };
 

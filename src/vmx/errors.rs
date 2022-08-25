@@ -1,5 +1,7 @@
 //! VMX Errors
 
+use super::bitmaps::EntryInterruptionInformationField;
+
 /// An error that occured during VMX operations.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum VmxError {
@@ -194,14 +196,31 @@ pub struct VmExitInterrupt {
     pub error_code: Option<u32>,
 }
 
+/// Transforms a VmExitInterrupt into a valid VmEntryIntInfoField for event injection.
+///
+/// @warn apparently setting the deliver bit results in invalid ctrls fields
+/// upon a vmresume.
+impl VmExitInterrupt {
+    pub fn as_injectable_u32(&self) -> u32 {
+        let mut res: u32 = 0;
+        res |= self.vector as u32;
+        res |= (self.int_type as u32) << 8;
+        //res |= EntryInterruptionInformationField::DELIVER.bits();
+        res |= EntryInterruptionInformationField::VALID.bits();
+        return res;
+    }
+}
+
 /// Interruption type.
 ///
 /// Generated on VM exit due to an interruption with corresponding exception bitmap bit set to 1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InterruptionType {
     ExternalInterrupt,
+    Reserved,
     NonMaskableInterrupt,
     HardwareException,
+    PrivilegedSoftwareException,
     SoftwareException,
     Unknown,
 }
@@ -212,8 +231,10 @@ impl InterruptionType {
         let id = (info >> 8) & 0b111;
         match id {
             0 => Self::ExternalInterrupt,
+            1 => Self::Reserved,
             2 => Self::NonMaskableInterrupt,
             3 => Self::HardwareException,
+            4 => Self::PrivilegedSoftwareException,
             6 => Self::SoftwareException,
             _ => Self::Unknown,
         }
@@ -484,11 +505,11 @@ pub enum Trapnr {
     /// Device Not Available #NM.
     DeviceNotAvailable      = 7,
     /// Double Fault #DF.
-    DoubleFault             = 8, 
+    DoubleFault             = 8,
     /// Invalid TSS #TS.
     InvalidTSS              = 10,
     /// Segment Not present #NP.
-    SegmentNotPresentFault  = 11, 
+    SegmentNotPresentFault  = 11,
     /// Stack-Segment #SS.
     StackSegmentFault       = 12,
     /// General Protection #GP.
@@ -497,7 +518,7 @@ pub enum Trapnr {
     PageFault               = 14,
     /// x87 FPU fp error #MF.
     FPUError                = 16,
-    /// Alignment Check #AC.   
+    /// Alignment Check #AC.
     AlignmentCheck          = 17,
     /// Machine Check #MC.
     MachineCheck            = 18,

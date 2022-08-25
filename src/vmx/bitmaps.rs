@@ -196,6 +196,21 @@ bitflags! {
         const LOAD_IA32_RTIT_CTL         = 1 << 18;
     }
 
+    // VM-entry interruption-information field (32 bits).
+    //
+    // A set of bitmask flags useful when setting up the VmEntryIntInfoField VMCS field.
+    // This bitmap is incomplete as most bits are used to hold actual values
+    // rather than as flags.
+    // These two values are used in vmx/errors.rs to create an injectable fault.
+    //
+    // See Intel SDM, Volume 3C, Section 24.8.3.
+    pub struct EntryInterruptionInformationField: u32 {
+        /// Deliver error code (0 = do not deliver, 1 = deliver)
+        const DELIVER   = 1 << 11;
+        /// Valid
+        const VALID     = 1 << 31;
+    }
+
     /// The exception bitmap.
     ///
     /// Setting a bit to 1 will cause the corresponding exception to trigger a VMExit instead of

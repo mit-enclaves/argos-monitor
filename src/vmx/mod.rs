@@ -639,6 +639,15 @@ where
         Ok(EntryControls::from_bits_truncate(ctrls))
     }
 
+    /// Sets the VM Entry interruption information field.
+    pub fn set_vm_entry_interruption_information(&mut self, flags: u32) -> Result<(), VmxError> {
+        unsafe {
+            fields::Ctrl32::VmEntryIntInfoField
+                .vmwrite(flags)
+                .map_err(|err| err.set_field(VmxFieldError::VmEntryIntInfoField))
+        }
+    }
+
     /// Sets the Cr0 guest/host mask.
     ///
     /// Bits set to 1 will be read from the Cr0 shadow and modification attempt wills cause VM
@@ -669,6 +678,11 @@ where
     pub fn set_exception_bitmap(&mut self, bitmap: ExceptionBitmap) -> Result<(), VmxError> {
         // TODO: is there a list of allowed settings?
         unsafe { fields::Ctrl32::ExceptionBitmap.vmwrite(bitmap.bits()) }
+    }
+    /// Gets the exception bitmap.
+    pub fn get_exception_bitmap(&self) -> Result<ExceptionBitmap, VmxError> {
+        let bitmap = unsafe { fields::Ctrl32::VmEntryCtrls.vmread()? };
+        Ok(ExceptionBitmap::from_bits_truncate(bitmap))
     }
 
     /// Sets the extended page table (EPT) pointer.
