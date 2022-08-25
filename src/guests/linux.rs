@@ -15,8 +15,7 @@ use crate::qemu;
 use crate::vmx;
 use crate::vmx::bitmaps::EptEntryFlags;
 use crate::vmx::fields;
-use crate::vmx::{GuestPhysAddr, Register};
-use core::convert::TryFrom;
+use crate::vmx::{GuestPhysAddr, HostPhysAddr, Register};
 
 use super::Guest;
 use super::HandlerResult;
@@ -33,6 +32,7 @@ const LINUX_MASK: u64 = 0xffffffff82000000;
 #[allow(dead_code)]
 const SETUP_HDR: u64 = 0x1f1;
 const HIGH_MEM_START: u64 = 0x0010_0000; // 1 Mb
+const APIC_BASE: usize = 0xfee0_0000;
 
 // WARNING: Don't forget that the command line must be null terminated ('\0')!
 static COMMAND_LINE: &'static [u8] = b"apic=debug\0";
@@ -72,10 +72,18 @@ impl Guest for Linux {
 
         ept_mapper.map_range(
             allocator,
-            vmx::GuestPhysAddr::new(0),
-            vmx::HostPhysAddr::new(start),
+            GuestPhysAddr::new(0),
+            HostPhysAddr::new(start),
             end - start,
             EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
+        );
+        // Maps guest APIC mmio to host, giving complete control over APIC configuration.
+        ept_mapper.map_range(
+            allocator,
+            GuestPhysAddr::new(APIC_BASE),
+            HostPhysAddr::new(APIC_BASE),
+            0x1000,
+            EptEntryFlags::READ | EptEntryFlags::WRITE,
         );
 
         // Load guest into memory.
