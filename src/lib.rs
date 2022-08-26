@@ -15,6 +15,7 @@ use core::panic::PanicInfo;
 
 use bootloader::boot_info::FrameBuffer;
 
+pub mod acpi;
 pub mod allocator;
 pub mod debug;
 pub mod gdt;

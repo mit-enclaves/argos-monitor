@@ -51,6 +51,13 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             .expect("Failed to initialize memory")
     };
 
+    // Parse RSDP tables
+    let rsdp = boot_info
+        .rsdp_addr
+        .into_option()
+        .expect("Missing RSDP address");
+    unsafe { kernel::acpi::AcpiInfo::from_rsdp(rsdp, physical_memory_offset) };
+
     // Select appropriate guest depending on selected features
     if cfg!(feature = "guest_linux") {
         launch_guest(&guests::linux::LINUX, &frame_allocator)
