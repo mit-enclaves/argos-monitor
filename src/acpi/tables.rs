@@ -110,3 +110,90 @@ pub struct McfgItem {
     // Reserved.
     pub reserved: u32,
 }
+
+// —————————————————————————————————— DMAR —————————————————————————————————— //
+
+pub mod dmar {
+    //! DMA Remapping Reporting (DMAR) ACPI table.
+    //!
+    //! This table describes the I/O MMUs and the devices they oversee.
+    //!
+    //! See documentation in Intel Virtualization Technology for Direct I/O manual (VT-d), section
+    //! 8 (BIOS Considerations).
+
+    use super::SdtHeader;
+
+    /// DMA Remapping reporting structure.
+    #[repr(C, packed)]
+    pub struct Header {
+        pub header: SdtHeader,
+        /// Maximum DMA physical addressability.
+        pub host_addr_width: u8,
+        /// DMA Remapping feature flags.
+        ///
+        /// - Bit 0: if set platform support interrupt remapping.
+        /// - Bit 1: if set the firmware kindly ask not to use x2APIC.
+        /// - Bit 2: ?
+        /// - Bit 3 to 7: Reserved (0)
+        pub flags: u8,
+        _reserved: [u8; 10],
+    }
+
+    /// Header of Remapping structures found in the DMAR.
+    pub struct RemappingHeader {
+        /// Structure type.
+        ///
+        /// - 1: Dma Remapping Hardware Unit
+        pub typ: u16,
+        pub length: u16,
+    }
+
+    /// DMA Remapping Hardware Unit Definition.
+    #[repr(C, packed)]
+    pub struct DmaRemappingHwUnit {
+        pub header: RemappingHeader,
+        /// Remapping unit flags.
+        ///
+        /// - Bit 0: if cleared this unit only remap devices defined in the device scope blocks. If
+        ///          set to 1 this unit remap all devices not already remapped by other units in
+        ///          the current segment.
+        /// - Bit 1 to 7: Reserved.
+        pub flags: u8,
+        /// Size of remapping hardware registers, in pages.
+        ///
+        /// - Bits 3:0 indicates the number of 4kb pages in power of two of the register region. If
+        ///   value is N, the region is 2^N pages, i.e. 2^(N + 12) bytes.
+        pub size: u8,
+        /// PCI segment associated with this unit.
+        pub segment_number: u16,
+        /// Register base address.
+        pub base_address: u64,
+    }
+
+    /// DMA remapping unit scope.
+    #[repr(C, packed)]
+    pub struct DeviceScope {
+        /// type of scipe.
+        ///
+        /// - 0x01: pci endpoint device.
+        /// - 0x02: pci sub-hierarchy.
+        /// - 0x03: ioapic.
+        /// - 0x04: msi_capable_hpet.
+        /// - 0x05: acpi_namespace_device.
+        pub typ: u8,
+        pub length: u8,
+        /// flags.
+        pub flags: u8,
+        _reserved: u8,
+        /// device id, as it appears in other acpi tables.
+        pub enumeration_id: u8,
+        /// start bus number of the device range.
+        pub start_bus: u8,
+    }
+
+    /// Path to a PCI device on a given bus.
+    pub struct Path {
+        pub device_number: u8,
+        pub function_number: u8,
+    }
+}

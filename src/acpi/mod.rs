@@ -8,6 +8,7 @@ use core::ptr;
 
 use crate::println;
 use crate::vmx::HostVirtAddr;
+use tables::dmar;
 use tables::{McfgItem, Rsdp, SdtHeader};
 
 #[derive(Default)]
@@ -33,13 +34,6 @@ impl AcpiInfo {
         let xsdt_ptr = (rsdp.xsdt_address + physical_memory_offset.as_u64()) as *const u8;
         let xsdt_header = &*(xsdt_ptr as *const SdtHeader);
         let lenght = xsdt_header.length as usize;
-        println!("Lenght:    {}", lenght);
-        println!("Nb Items:  {}", lenght - mem::size_of::<SdtHeader>());
-        println!("XSDT ptr:  0x{:x}", xsdt_ptr as usize);
-        println!(
-            "Table ptr: 0x{:x}",
-            xsdt_ptr.offset(mem::size_of::<SdtHeader>() as isize) as usize
-        );
 
         // Iterate over table entries
         let mut table_ptr = xsdt_ptr.offset(mem::size_of::<SdtHeader>() as isize);
@@ -57,6 +51,7 @@ impl AcpiInfo {
         let header = &*((table_addr + physical_memory_offset.as_u64()) as *const SdtHeader);
         match &header.signature {
             b"MCFG" => self.handle_mcfg_table(header),
+            b"DMAR" => self.handle_dmar_table(header),
             _ => {
                 println!(
                     "ACPI: unknown table '{}'",
@@ -86,5 +81,59 @@ impl AcpiInfo {
         }
 
         self.mcfg = Some(items);
+    }
+
+    unsafe fn handle_dmar_table(&mut self, header: &SdtHeader) {
+        println!("ACPI: parsing 'DMAR' table");
+        header.verify_checksum().expect("Invalid DMAR checksum");
+
+        let table_ptr = (header as *const _) as *const u8;
+        let table_end = table_ptr.offset(header.length as isize);
+        let mut remap_struct_ptr = table_ptr.offset(mem::size_of::<dmar::Header>() as isize);
+        while remap_struct_ptr < table_end {
+            let remap_header = &*(remap_struct_ptr as *const dmar::RemappingHeader);
+            match remap_header.typ {
+                0 => self.handle_dmar_drhd(&*(remap_struct_ptr as *const dmar::DmaRemappingHwUnit)),
+                _ => {
+                    println!("  Unknown DMAR type: {}", remap_header.typ);
+                }
+            }
+
+            remap_struct_ptr = remap_struct_ptr.offset(remap_header.length as isize);
+        }
+    }
+
+    unsafe fn handle_dmar_drhd(&mut self, remap_unit: &dmar::DmaRemappingHwUnit) {
+        if remap_unit.flags & 0b1 != 0 {
+            // All the segment is remapped
+            todo!();
+        } else {
+            // Only the specified devices are remapped.
+
+            let unit_ptr = (remap_unit as *const _) as *const u8;
+            let unit_end = unit_ptr.offset(remap_unit.header.length as isize);
+            let mut device_scope_ptr =
+                unit_ptr.offset(mem::size_of::<dmar::DmaRemappingHwUnit>() as isize);
+            while device_scope_ptr < unit_end {
+                let device_scope = &*(device_scope_ptr as *const dmar::DeviceScope);
+                if device_scope.length != 8 {
+                    todo!("Handle arbitrary PCI device path");
+                }
+
+                // We assume a single path here
+                let path = &*(device_scope_ptr.offset(mem::size_of::<dmar::DeviceScope>() as isize)
+                    as *const dmar::Path);
+                println!(
+                    "  PCI: {:02x}:{:02x}.{} - len: {} - type: {}",
+                    device_scope.start_bus,
+                    path.device_number,
+                    path.function_number,
+                    device_scope.length,
+                    device_scope.typ
+                );
+
+                device_scope_ptr = device_scope_ptr.offset(device_scope.length as isize);
+            }
+        }
     }
 }

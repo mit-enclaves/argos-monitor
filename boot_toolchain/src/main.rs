@@ -4,22 +4,18 @@ use std::{
     time::Duration,
 };
 
+#[rustfmt::skip]
 const RUN_ARGS: &[&str] = &[
     "--no-reboot",
     "-nographic",
-    "-device",
-    "isa-debug-exit,iobase=0xf4,iosize=0x04",
-    "-cpu",
-    "host,+kvm,+x2apic",
-    "-machine",
-    "q35",
-    "-enable-kvm",
-    "-m",
-    "6G",
-    "-object",
-    "memory-backend-file,id=pc.ram,share=on,mem-path=/tmp/tyche,size=6G",
-    "-machine",
-    "memory-backend=pc.ram",
+    "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
+    "-device", "intel-iommu,intremap=on",
+    "-cpu", "host,+kvm,+x2apic",
+    "-machine", "q35",
+    "-accel", "kvm,kernel-irqchip=split",
+    "-m", "6G",
+    "-object", "memory-backend-file,id=pc.ram,share=on,mem-path=/tmp/tyche,size=6G",
+    "-machine", "memory-backend=pc.ram",
     "-s",
 ];
 const TEST_ARGS: &[&str] = &[
