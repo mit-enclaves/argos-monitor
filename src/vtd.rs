@@ -11,7 +11,7 @@ pub struct Iommu {
 macro_rules! ro_reg {
     ($t:ty, $addr:expr, $get:ident) => {
         pub fn $get(&self) -> $t {
-            unsafe { ptr::read_volatile(self.addr as *mut $t) }
+            unsafe { ptr::read_volatile(self.addr.offset($addr) as *mut $t) }
         }
     };
 }
@@ -19,7 +19,7 @@ macro_rules! ro_reg {
 macro_rules! wo_reg {
     ($t:ty, $addr:expr, $set:ident) => {
         pub fn $set(&self, val: $t) {
-            unsafe { ptr::write_volatile(self.addr as *mut $t, val) }
+            unsafe { ptr::write_volatile(self.addr.offset($addr) as *mut $t, val) }
         }
     };
 }

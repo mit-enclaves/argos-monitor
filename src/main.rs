@@ -69,6 +69,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             iommu.get_capability(),
             iommu.get_extended_capability()
         );
+        iommu.set_global_command(1 << 31); // Enable translation
+        println!("IO MMU: status 0b{:b}", iommu.get_global_status());
     } else {
         println!("IO MMU: None");
     }
