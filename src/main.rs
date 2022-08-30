@@ -56,7 +56,22 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         .rsdp_addr
         .into_option()
         .expect("Missing RSDP address");
-    let _acpi_info = unsafe { kernel::acpi::AcpiInfo::from_rsdp(rsdp, physical_memory_offset) };
+    let acpi_info = unsafe { kernel::acpi::AcpiInfo::from_rsdp(rsdp, physical_memory_offset) };
+
+    // Check I/O MMU support
+    if let Some(iommus) = acpi_info.iommu {
+        let iommu_addr = HostVirtAddr::new(
+            iommus[0].base_address.as_usize() + physical_memory_offset.as_usize(),
+        );
+        let iommu = unsafe { kernel::vtd::Iommu::new(iommu_addr) };
+        println!(
+            "IO MMU: capabilities 0b{:b} - extended 0b{:b}",
+            iommu.get_capability(),
+            iommu.get_extended_capability()
+        );
+    } else {
+        println!("IO MMU: None");
+    }
 
     // Select appropriate guest depending on selected features
     if cfg!(feature = "guest_linux") {
