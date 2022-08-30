@@ -56,7 +56,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         .rsdp_addr
         .into_option()
         .expect("Missing RSDP address");
-    unsafe { kernel::acpi::AcpiInfo::from_rsdp(rsdp, physical_memory_offset) };
+    let _acpi_info = unsafe { kernel::acpi::AcpiInfo::from_rsdp(rsdp, physical_memory_offset) };
 
     // Select appropriate guest depending on selected features
     if cfg!(feature = "guest_linux") {

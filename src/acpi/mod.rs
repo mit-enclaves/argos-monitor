@@ -7,14 +7,26 @@ use core::mem;
 use core::ptr;
 
 use crate::println;
-use crate::vmx::HostVirtAddr;
+use crate::vmx::{HostPhysAddr, HostVirtAddr};
 use tables::dmar;
 use tables::{McfgItem, Rsdp, SdtHeader};
 
-#[derive(Default)]
+/// Hardware configuration info collected from ACPI tables.
+#[derive(Default, Debug)]
 pub struct AcpiInfo {
     /// MCFG table.
     pub mcfg: Option<Vec<McfgItem>>,
+    /// DMAR table, containing I/O MMU configuration.
+    pub iommu: Option<Vec<IommuInfo>>,
+}
+
+/// Information about I/O MMU.
+#[derive(Debug)]
+pub struct IommuInfo {
+    /// Base address of the I/O MMU configuration.
+    pub base_address: HostPhysAddr,
+    /// Size of the I/O MMU configuration, in bytes.
+    pub size: usize,
 }
 
 impl AcpiInfo {
@@ -90,10 +102,15 @@ impl AcpiInfo {
         let table_ptr = (header as *const _) as *const u8;
         let table_end = table_ptr.offset(header.length as isize);
         let mut remap_struct_ptr = table_ptr.offset(mem::size_of::<dmar::Header>() as isize);
+        let mut iommus = Vec::new();
         while remap_struct_ptr < table_end {
             let remap_header = &*(remap_struct_ptr as *const dmar::RemappingHeader);
             match remap_header.typ {
-                0 => self.handle_dmar_drhd(&*(remap_struct_ptr as *const dmar::DmaRemappingHwUnit)),
+                0 => {
+                    let iommu = self
+                        .handle_dmar_drhd(&*(remap_struct_ptr as *const dmar::DmaRemappingHwUnit));
+                    iommus.push(iommu);
+                }
                 _ => {
                     println!("  Unknown DMAR type: {}", remap_header.typ);
                 }
@@ -101,9 +118,11 @@ impl AcpiInfo {
 
             remap_struct_ptr = remap_struct_ptr.offset(remap_header.length as isize);
         }
+
+        self.iommu = Some(iommus);
     }
 
-    unsafe fn handle_dmar_drhd(&mut self, remap_unit: &dmar::DmaRemappingHwUnit) {
+    unsafe fn handle_dmar_drhd(&mut self, remap_unit: &dmar::DmaRemappingHwUnit) -> IommuInfo {
         if remap_unit.flags & 0b1 != 0 {
             // All the segment is remapped
             todo!();
@@ -134,6 +153,10 @@ impl AcpiInfo {
 
                 device_scope_ptr = device_scope_ptr.offset(device_scope.length as isize);
             }
+
+            let base_address = HostPhysAddr::new(remap_unit.base_address as usize);
+            let size = 1 << ((remap_unit.size & 0b1111) + 12);
+            IommuInfo { base_address, size }
         }
     }
 }
