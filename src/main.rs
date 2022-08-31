@@ -64,11 +64,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             iommus[0].base_address.as_usize() + physical_memory_offset.as_usize(),
         );
         let iommu = unsafe { kernel::vtd::Iommu::new(iommu_addr) };
-        println!(
-            "IO MMU: capabilities 0b{:b} - extended 0b{:b}",
-            iommu.get_capability(),
-            iommu.get_extended_capability()
-        );
+        println!("IO MMU: capabilities {:?}", iommu.get_capability(),);
+        println!("        extended {:?}", iommu.get_extended_capability());
         iommu.set_global_command(1 << 31); // Enable translation
         println!("IO MMU: status 0b{:b}", iommu.get_global_status());
     } else {
