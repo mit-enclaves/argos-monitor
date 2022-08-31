@@ -1,9 +1,15 @@
 //! Intel VT-d
 
 use bitflags::bitflags;
+use core::arch::x86_64;
+use core::ptr;
 
 use crate::vmx::HostVirtAddr;
-use core::ptr;
+
+/// Command bits that have an effect when set to 1 (e.g. update internal I/O MMU state).
+const ONE_SHOOT_COMMAND_BITS: Command = Command::SET_ROOT_PTR
+    .union(Command::WRITE_FLUSH_BUFFER)
+    .union(Command::SET_INT_REMAP_PTR);
 
 /// A device identifier, in the form bus:device.function (BDF).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -11,6 +17,19 @@ use core::ptr;
 pub struct DeviceId {
     bus: u8,
     dev_fun: u8,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+#[repr(C)]
+pub struct RootEntry {
+    pub reserved: u64,
+    pub entry: u64,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ContextEntry {
+    pub upper: u64,
+    pub lower: u64,
 }
 
 // ———————————————————————————————— I/O MMU ————————————————————————————————— //
@@ -39,7 +58,7 @@ macro_rules! ro_reg {
 
 macro_rules! wo_reg {
     ($t:ty, $addr:expr, $set:ident) => {
-        pub fn $set(&self, val: $t) {
+        pub fn $set(&mut self, val: $t) {
             unsafe { ptr::write_volatile(self.addr.offset($addr) as *mut $t, val) }
         }
     };
@@ -59,11 +78,57 @@ impl Iommu {
         }
     }
 
+    pub fn update_root_table_addr(&mut self) {
+        self.execute_oneshoot_command(Command::SET_ROOT_PTR);
+    }
+
+    pub fn enable_translation(&mut self) {
+        self.execute_toggle_command(Command::TRANSLATION_ENABLE, true);
+    }
+
+    /// Executes a one-shot command (e.g. reloading the root table pointer).
+    fn execute_oneshoot_command(&mut self, cmd: Command) {
+        let status = self.get_global_status() & !ONE_SHOOT_COMMAND_BITS;
+        let new_status = status | cmd;
+
+        self.set_global_command(new_status.bits());
+        self.wait_on_global_status(cmd, true);
+    }
+
+    /// Executes a command that toggle a setting (e.g. enable/disable translation).
+    fn execute_toggle_command(&mut self, cmd: Command, enable: bool) {
+        let status = self.get_global_status();
+        let new_status = if enable {
+            status & !ONE_SHOOT_COMMAND_BITS | cmd
+        } else {
+            status & !ONE_SHOOT_COMMAND_BITS & !cmd
+        };
+
+        self.set_global_command(new_status.bits());
+        self.wait_on_global_status(cmd, enable);
+    }
+
+    /// Spinloops until the global status is updated with the given command, indicating the the
+    /// command was processed.
+    fn wait_on_global_status(&self, cmd: Command, set: bool) {
+        loop {
+            let status = self.get_global_status();
+            if set & status.contains(cmd) {
+                return;
+            } else if !set & !status.intersects(cmd) {
+                return;
+            }
+
+            // Tell the CPU that we are in a spinloop
+            unsafe { x86_64::_mm_pause() };
+        }
+    }
+
     ro_reg!(u32, 0x000, get_version);
     ro_reg!(u64, 0x008, get_capability, Capability);
     ro_reg!(u64, 0x010, get_extended_capability, ExtendedCapability);
     wo_reg!(u32, 0x018, set_global_command);
-    ro_reg!(u32, 0x01C, get_global_status);
+    ro_reg!(u32, 0x01C, get_global_status, Command);
     rw_reg!(u64, 0x020, get_root_table_addr, set_root_table_addr);
     rw_reg!(u64, 0x028, get_context_command, set_context_command);
     rw_reg!(u32, 0x034, get_fault_status, set_fault_status);
@@ -174,5 +239,15 @@ bitflags! {
         const ABORT_DMA_MODE            = 1 << 52;
         const RID_PRIV                  = 1 << 53;
         const STOP_MARKER_SUPPORT       = 1 << 58;
+    }
+
+    pub struct Command: u32 {
+        const COMPATIBILITY_FORMAT_INT = 1 << 23;
+        const SET_INT_REMAP_PTR        = 1 << 24;
+        const INT_REMAP_ENABLE         = 1 << 25;
+        const QUEUED_INVALIDATION      = 1 << 26;
+        const WRITE_FLUSH_BUFFER       = 1 << 27;
+        const SET_ROOT_PTR             = 1 << 30;
+        const TRANSLATION_ENABLE       = 1 << 31;
     }
 }

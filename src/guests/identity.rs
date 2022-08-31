@@ -1,3 +1,4 @@
+use crate::acpi::AcpiInfo;
 use crate::guests;
 use crate::mmu::eptmapper::EptMapper;
 use crate::mmu::FrameAllocator;
@@ -18,6 +19,7 @@ impl Guest for Identity {
     unsafe fn instantiate<'vmx>(
         &self,
         vmxon: &'vmx vmx::Vmxon,
+        _acpi: &AcpiInfo,
         allocator: &impl FrameAllocator,
     ) -> vmx::VmcsRegion<'vmx> {
         let frame = allocator.allocate_frame().expect("Failed to allocate VMCS");
@@ -149,7 +151,6 @@ fn setup_ept(allocator: &impl FrameAllocator) -> Result<EptMapper, ()> {
         .zeroed();
     let mut ept_mapper = EptMapper::new(
         allocator.get_physical_offset().as_u64() as usize,
-        0,
         root.phys_addr,
     );
     let (start, end) = allocator.get_boundaries();

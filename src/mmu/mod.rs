@@ -2,10 +2,11 @@
 
 pub mod eptmapper;
 pub mod frames;
+pub mod ioptmapper;
 pub mod ptmapper;
 pub mod walker;
 
-pub use frames::{init, FrameAllocator};
 pub use eptmapper::EptMapper;
-pub use ptmapper::{PtMapper, PtFlag};
-
+pub use frames::{init, FrameAllocator};
+pub use ioptmapper::{IoPtFlag, IoPtMapper};
+pub use ptmapper::{PtFlag, PtMapper};

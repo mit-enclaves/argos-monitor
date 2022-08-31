@@ -1,5 +1,8 @@
 //! Linux Guest
 
+use core::slice;
+
+use crate::acpi::AcpiInfo;
 use crate::debug::info;
 use crate::guests;
 use crate::guests::boot_params::{
@@ -9,13 +12,15 @@ use crate::guests::boot_params::{
 use crate::guests::elf_program::{ElfMapping, ElfProgram};
 use crate::mmu::eptmapper::EptMapper;
 use crate::mmu::frames::RangeFrameAllocator;
+use crate::mmu::ioptmapper::{IoPtFlag, IoPtMapper};
 use crate::mmu::FrameAllocator;
 use crate::println;
 use crate::qemu;
 use crate::vmx;
 use crate::vmx::bitmaps::EptEntryFlags;
 use crate::vmx::fields;
-use crate::vmx::{GuestPhysAddr, HostPhysAddr, Register};
+use crate::vmx::{GuestPhysAddr, HostPhysAddr, HostVirtAddr, Register};
+use crate::vtd::{ContextEntry, Iommu, RootEntry};
 
 use super::Guest;
 use super::HandlerResult;
@@ -45,6 +50,7 @@ impl Guest for Linux {
     unsafe fn instantiate<'vmx>(
         &self,
         vmxon: &'vmx vmx::Vmxon,
+        acpi: &AcpiInfo,
         allocator: &impl FrameAllocator,
     ) -> vmx::VmcsRegion<'vmx> {
         let mut linux_prog = ElfProgram::new(LINUXBYTES);
@@ -67,9 +73,14 @@ impl Guest for Linux {
             .allocate_frame()
             .expect("EPT root allocation")
             .zeroed();
-        let mut ept_mapper =
-            EptMapper::new(virtoffset.as_u64() as usize, start, ept_root.phys_addr);
+        let iopt_root = allocator
+            .allocate_frame()
+            .expect("I/O PT root allocation")
+            .zeroed();
+        let mut ept_mapper = EptMapper::new(virtoffset.as_usize(), ept_root.phys_addr);
+        let mut iopt_mapper = IoPtMapper::new(virtoffset.as_usize(), iopt_root.phys_addr);
 
+        // Map guest memory
         ept_mapper.map_range(
             allocator,
             GuestPhysAddr::new(0),
@@ -77,6 +88,14 @@ impl Guest for Linux {
             end - start,
             EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
         );
+        iopt_mapper.map_range(
+            allocator,
+            GuestPhysAddr::new(0),
+            HostPhysAddr::new(start),
+            end - start,
+            IoPtFlag::WRITE,
+        );
+
         // Maps guest APIC mmio to host, giving complete control over APIC configuration.
         ept_mapper.map_range(
             allocator,
@@ -90,6 +109,18 @@ impl Guest for Linux {
         let mut loaded_linux = linux_prog
             .load(guest_ram, virtoffset)
             .expect("Failed to load guest");
+
+        // Setup I/O MMU
+        if let Some(iommus) = &acpi.iommu {
+            let iommu_addr = HostVirtAddr::new(
+                iommus[0].base_address.as_usize() + allocator.get_physical_offset().as_usize(),
+            );
+            let mut iommu = Iommu::new(iommu_addr);
+            let root_addr = setup_iommu_context(iopt_mapper.get_root(), allocator);
+            iommu.set_root_table_addr(root_addr.as_u64() | (0b00 << 10)); // Set legacy mode
+            iommu.update_root_table_addr();
+            iommu.enable_translation();
+        }
 
         // Build the boot params
         let mut boot_params = build_bootparams(guest_ram_size as u64);
@@ -189,4 +220,37 @@ fn build_bootparams(guest_ram_size: u64) -> BootParams {
         .expect("High memory");
 
     boot_params
+}
+
+fn setup_iommu_context(iopt_root: HostPhysAddr, allocator: &impl FrameAllocator) -> HostPhysAddr {
+    let ctx_frame = allocator
+        .allocate_frame()
+        .expect("I/O MMU context frame")
+        .zeroed();
+    let root_frame = allocator
+        .allocate_frame()
+        .expect("I/O MMU root frame")
+        .zeroed();
+    let ctx_entry = ContextEntry {
+        upper: 0b010, // 4 lvl pages
+        lower: iopt_root.as_u64(),
+    };
+    let root_entry = RootEntry {
+        reserved: 0,
+        entry: ctx_frame.phys_addr.as_u64() | 0b1, // Mark as present
+    };
+
+    unsafe {
+        let ctx_array = slice::from_raw_parts_mut(ctx_frame.virt_addr as *mut ContextEntry, 256);
+        let root_array = slice::from_raw_parts_mut(root_frame.virt_addr as *mut RootEntry, 256);
+
+        for entry in ctx_array {
+            *entry = ctx_entry;
+        }
+        for entry in root_array {
+            *entry = root_entry;
+        }
+    }
+
+    root_frame.phys_addr
 }

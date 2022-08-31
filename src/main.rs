@@ -8,6 +8,7 @@ extern crate alloc;
 
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
+use kernel::acpi::AcpiInfo;
 use kernel::debug::info;
 use kernel::guests::Guest;
 use kernel::mmu::FrameAllocator;
@@ -59,30 +60,28 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     let acpi_info = unsafe { kernel::acpi::AcpiInfo::from_rsdp(rsdp, physical_memory_offset) };
 
     // Check I/O MMU support
-    if let Some(iommus) = acpi_info.iommu {
+    if let Some(iommus) = &acpi_info.iommu {
         let iommu_addr = HostVirtAddr::new(
             iommus[0].base_address.as_usize() + physical_memory_offset.as_usize(),
         );
         let iommu = unsafe { kernel::vtd::Iommu::new(iommu_addr) };
         println!("IO MMU: capabilities {:?}", iommu.get_capability(),);
         println!("        extended {:?}", iommu.get_extended_capability());
-        iommu.set_global_command(1 << 31); // Enable translation
-        println!("IO MMU: status 0b{:b}", iommu.get_global_status());
     } else {
         println!("IO MMU: None");
     }
 
     // Select appropriate guest depending on selected features
     if cfg!(feature = "guest_linux") {
-        launch_guest(&guests::linux::LINUX, &frame_allocator)
+        launch_guest(&guests::linux::LINUX, &acpi_info, &frame_allocator)
     } else if cfg!(feature = "guest_rawc") {
-        launch_guest(&guests::rawc::RAWC, &frame_allocator)
+        launch_guest(&guests::rawc::RAWC, &acpi_info, &frame_allocator)
     } else {
-        launch_guest(&guests::identity::Identity {}, &frame_allocator)
+        launch_guest(&guests::identity::Identity {}, &acpi_info, &frame_allocator)
     }
 }
 
-fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
+fn launch_guest(guest: &impl Guest, acpi: &AcpiInfo, allocator: &impl FrameAllocator) -> ! {
     initialize_cpu();
     print_vmx_info();
 
@@ -101,7 +100,7 @@ fn launch_guest(guest: &impl Guest, allocator: &impl FrameAllocator) -> ! {
             }
         };
 
-        let mut vmcs = guest.instantiate(&vmxon, allocator);
+        let mut vmcs = guest.instantiate(&vmxon, acpi, allocator);
 
         // Debugging hook post initialization.
         info::tyche_hook_done(1);

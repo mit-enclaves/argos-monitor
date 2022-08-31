@@ -1,3 +1,4 @@
+use crate::acpi::AcpiInfo;
 use crate::mmu::FrameAllocator;
 use crate::println;
 use crate::vmx;
@@ -8,8 +9,7 @@ use crate::vmx::bitmaps::{
 };
 use crate::vmx::fields;
 use crate::vmx::fields::traits::*;
-use crate::vmx::VmxError;
-use crate::vmx::{ActiveVmcs, ControlRegister, Register, VmcsRegion};
+use crate::vmx::{ActiveVmcs, ControlRegister, Register, VmcsRegion, VmxError};
 use x86_64::registers::model_specific::Efer;
 
 use core::{arch, arch::asm};
@@ -35,6 +35,7 @@ pub trait Guest {
     unsafe fn instantiate<'vmx>(
         &self,
         vmxon: &'vmx vmx::Vmxon,
+        acpi: &AcpiInfo,
         allocator: &impl FrameAllocator,
     ) -> VmcsRegion<'vmx>;
 
