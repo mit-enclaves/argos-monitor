@@ -123,10 +123,7 @@ impl AcpiInfo {
     }
 
     unsafe fn handle_dmar_drhd(&mut self, remap_unit: &dmar::DmaRemappingHwUnit) -> IommuInfo {
-        if remap_unit.flags & 0b1 != 0 {
-            // All the segment is remapped
-            todo!();
-        } else {
+        if remap_unit.flags & 0b1 == 0 {
             // Only the specified devices are remapped.
 
             let unit_ptr = (remap_unit as *const _) as *const u8;
@@ -153,10 +150,9 @@ impl AcpiInfo {
 
                 device_scope_ptr = device_scope_ptr.offset(device_scope.length as isize);
             }
-
-            let base_address = HostPhysAddr::new(remap_unit.base_address as usize);
-            let size = 1 << ((remap_unit.size & 0b1111) + 12);
-            IommuInfo { base_address, size }
         }
+        let base_address = HostPhysAddr::new(remap_unit.base_address as usize);
+        let size = 1 << ((remap_unit.size & 0b1111) + 12);
+        IommuInfo { base_address, size }
     }
 }
