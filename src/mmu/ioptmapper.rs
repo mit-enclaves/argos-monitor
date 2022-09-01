@@ -11,25 +11,25 @@ pub struct IoPtMapper {
 
 bitflags! {
     pub struct IoPtFlag: u64 {
-        const EMPTY              = 0;
-        const PRESENT            = 1;
-        const WRITE              = 1 << 1;
-        const USER               = 1 << 2;
-        const PAGE_WRITE_THROUGH = 1 << 3;
-        const PAGE_CACHE_DISABLE = 1 << 4;
-        const ACCESS             = 1 << 5;
-        const PSIZE              = 1 << 7;
-        const HALT               = 1 << 11;
-        const EXEC_DISABLE       = 1 << 63;
+        const READ      = 1 << 0;
+        const WRITE     = 1 << 1;
+        const EXECUTE   = 1 << 2;
+        const PAGE_SIZE = 1 << 7;
+        const ACCESSED  = 1 << 8;
+        const DIRTY     = 1 << 9;
+        const SNOOP     = 1 << 11;
     }
 }
 
 pub const HUGE_PAGE_SIZE: usize = 1 << 21;
 pub const PAGE_SIZE: usize = 1 << 12;
 
-pub const DEFAULT_PROTS: IoPtFlag = IoPtFlag::PRESENT
+pub const DEFAULT_PROTS: IoPtFlag = IoPtFlag::READ
     .union(IoPtFlag::WRITE)
-    .union(IoPtFlag::USER);
+    .union(IoPtFlag::EXECUTE);
+pub const PRESENT: IoPtFlag = IoPtFlag::READ
+    .union(IoPtFlag::WRITE)
+    .union(IoPtFlag::EXECUTE);
 
 unsafe impl Walker for IoPtMapper {
     type PhysAddr = HostPhysAddr;
@@ -62,7 +62,7 @@ impl IoPtMapper {
                 gpa,
                 GuestPhysAddr::new(gpa.as_usize() + size),
                 &mut |addr, entry, level| {
-                    if (*entry & IoPtFlag::PRESENT.bits()) != 0 {
+                    if (*entry & PRESENT.bits()) != 0 {
                         return WalkNext::Continue;
                     }
 
@@ -73,7 +73,7 @@ impl IoPtMapper {
                         if (addr.as_usize() + HUGE_PAGE_SIZE <= end)
                             && (hphys % HUGE_PAGE_SIZE == 0)
                         {
-                            *entry = hphys as u64 | IoPtFlag::PSIZE.bits() | prot.bits();
+                            *entry = hphys as u64 | IoPtFlag::PAGE_SIZE.bits() | prot.bits();
                             return WalkNext::Leaf;
                         }
                     }

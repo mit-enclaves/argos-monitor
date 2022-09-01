@@ -86,7 +86,7 @@ impl Guest for RawcBytes {
             GuestPhysAddr::new(0),
             HostPhysAddr::new(start),
             end - start,
-            IoPtFlag::WRITE,
+            IoPtFlag::WRITE | IoPtFlag::READ | IoPtFlag::EXECUTE,
         );
 
         // Load guest into memory.
