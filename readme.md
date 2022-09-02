@@ -4,42 +4,39 @@ A Virtual Machine Monitor based on Intel VT-x.
 
 ## Setup
 
-Requires a nightly rust toolchain. For Rust versions installed with `rustup`
-this can be done with:
+This project uses _justfiles_ as a command line runner (think makefiles but
+without the build-system bits). To get started [install
+just](https://github.com/casey/just#packages), you can also build it from source
+if you have rust installed with `cargo install just`.
 
-```sh
-rustup toolchain install nightly
-```
+To list available commands, run `just help`. For instance, the vmm can be built
+with `just build`.
 
 ## Usage
 
-Due the current setup the build steps are a bit more complicated than with
-standard Rust projects. To ease development the appropriate aliases to standard
-commands are defined in `.cargo/config.toml`:
+The VMM can easily be built and typechecked with:
 
 ```sh
-# Run the kernel in Qemu (text mode)
-cargo krun
+# Build the vmm
+just build
 
-# Typecheck the kernel
-cargo kcheck
-
-# Build the image for deployment on real hardware (VGA mode)
-cargo kimage
+# Typecheck the vmm 
+just check
 ```
 
-By default, the selected guest is `RawC`, a small C program that can be used for
-simple testing. To run other guests, use:
+When running the VMM, multiple guests are available. By default, the selected
+guest is `RawC`, a small C program that can be used for simple testing. To run
+other guests, use:
 
 ```sh
-# For RawC (default)
-cargo krun-rawc
+# For RawC
+just rawc
+
+# For RawC with UEFI
+just rawc-uefi
 
 # For Linux
-cargo krun-linux
-
-# For self-virtualization
-cargo krun-identity
+just linux
 ```
 
 ## UEFI boot

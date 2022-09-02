@@ -1,37 +1,36 @@
 #![no_std]
 #![no_main]
 #![feature(custom_test_frameworks)]
-#![test_runner(kernel::test_runner)]
+#![test_runner(first_stage::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
 extern crate alloc;
 
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
-use kernel::acpi::AcpiInfo;
-use kernel::debug::info;
-use kernel::guests::Guest;
-use kernel::mmu::FrameAllocator;
-use kernel::println;
-use kernel::vmx;
-use kernel::vmx::Register;
-use kernel::HostVirtAddr;
+use first_stage::acpi::AcpiInfo;
+use first_stage::debug::info;
+use first_stage::guests;
+use first_stage::guests::Guest;
+use first_stage::mmu::FrameAllocator;
+use first_stage::println;
+use first_stage::qemu;
+use first_stage::vmx;
+use first_stage::vmx::Register;
+use first_stage::HostVirtAddr;
 use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
-
-use kernel::guests;
-use kernel::qemu;
 
 entry_point!(kernel_main);
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // Initialize display, if any
     if let Some(buffer) = boot_info.framebuffer.as_mut().take() {
-        kernel::init_display(buffer);
+        first_stage::init_display(buffer);
     }
     println!("=========== Start QEMU ===========");
 
     // Initialize kernel structures
-    kernel::init();
+    first_stage::init();
 
     // Run tests and exit in test configuration
     if cfg!(test) {
@@ -48,7 +47,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     );
 
     let frame_allocator = unsafe {
-        kernel::init_memory(physical_memory_offset, &mut boot_info.memory_regions)
+        first_stage::init_memory(physical_memory_offset, &mut boot_info.memory_regions)
             .expect("Failed to initialize memory")
     };
 
@@ -57,14 +56,14 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         .rsdp_addr
         .into_option()
         .expect("Missing RSDP address");
-    let acpi_info = unsafe { kernel::acpi::AcpiInfo::from_rsdp(rsdp, physical_memory_offset) };
+    let acpi_info = unsafe { first_stage::acpi::AcpiInfo::from_rsdp(rsdp, physical_memory_offset) };
 
     // Check I/O MMU support
     if let Some(iommus) = &acpi_info.iommu {
         let iommu_addr = HostVirtAddr::new(
             iommus[0].base_address.as_usize() + physical_memory_offset.as_usize(),
         );
-        let iommu = unsafe { kernel::vtd::Iommu::new(iommu_addr) };
+        let iommu = unsafe { first_stage::vtd::Iommu::new(iommu_addr) };
         println!("IO MMU: capabilities {:?}", iommu.get_capability(),);
         println!("        extended {:?}", iommu.get_extended_capability());
     } else {
@@ -188,11 +187,11 @@ fn run_tests() {
 fn panic(info: &PanicInfo) -> ! {
     println!("{}", info);
 
-    kernel::qemu::exit(kernel::qemu::ExitCode::Failure);
+    qemu::exit(qemu::ExitCode::Failure);
 }
 
 #[cfg(test)]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    kernel::test_panic_handler(info);
+    first_stage::test_panic_handler(info);
 }
