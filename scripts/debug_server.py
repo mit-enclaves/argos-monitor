@@ -105,7 +105,6 @@ class DebugServer(gdb.Command):
 
                     """ Special backtrace command """
                     if command.startswith(SpecialCommands.STACK.name):
-                        print("FUCK")
                         result = execute_backtrace(command)
                         connection.sendall(result.encode())
                         continue
