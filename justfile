@@ -38,7 +38,7 @@ rawc-uefi:
 # Run linux guest with UEFI
 linux:
 	@just build
-	-cargo run {{cargo_args}} {{first-stage}} {{linux}} --
+	-cargo run {{cargo_args}} {{first-stage}} {{linux}} -- --uefi
 
 # Install the required dependencies
 setup:
