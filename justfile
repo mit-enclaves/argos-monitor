@@ -8,6 +8,8 @@ build_features := "-Zbuild-std-features=compiler-builtins-mem"
 cargo_args     := target + " " + build_std + " " + build_features
 first-stage    := "--package first-stage"
 second-stage   := "--package second-stage"
+rawc           := "--features=first-stage/guest_rawc"
+linux          := "--features=first-stage/guest_linux"
 
 # Print list of commands
 help:
@@ -26,17 +28,17 @@ check:
 # Run rawc guest
 rawc:
 	@just build
-	-cargo run {{cargo_args}} {{first-stage}} --features=guest_rawc --
+	-cargo run {{cargo_args}} {{first-stage}} {{rawc}} --
 
 # Run rawc guest with UEFI
 rawc-uefi:
 	@just build
-	-cargo run {{cargo_args}} {{first-stage}} --features=guest_rawc -- --uefi
+	-cargo run {{cargo_args}} {{first-stage}} {{rawc}} -- --uefi
 
 # Run linux guest with UEFI
 linux:
 	@just build
-	-cargo run {{cargo_args}} {{first-stage}} --features=guest_linux --
+	-cargo run {{cargo_args}} {{first-stage}} {{linux}} --
 
 # Install the required dependencies
 setup:

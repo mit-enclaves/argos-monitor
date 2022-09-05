@@ -26,7 +26,7 @@ use super::Guest;
 use super::HandlerResult;
 
 #[cfg(feature = "guest_linux")]
-const LINUXBYTES: &'static [u8] = include_bytes!("../../linux-image/images/vmlinux");
+const LINUXBYTES: &'static [u8] = include_bytes!("../../../../linux-image/images/vmlinux");
 #[cfg(not(feature = "guest_linux"))]
 const LINUXBYTES: &'static [u8] = &[0; 10];
 

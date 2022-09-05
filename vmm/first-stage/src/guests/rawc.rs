@@ -18,7 +18,7 @@ use super::Guest;
 use super::HandlerResult;
 
 #[cfg(feature = "guest_rawc")]
-const RAWCBYTES: &'static [u8] = include_bytes!("../../guest/rawc");
+const RAWCBYTES: &'static [u8] = include_bytes!("../../../../guest/rawc");
 #[cfg(not(feature = "guest_rawc"))]
 const RAWCBYTES: &'static [u8] = &[0; 10];
 
