@@ -1,5 +1,8 @@
+use core::arch;
+use core::arch::asm;
+
 use crate::acpi::AcpiInfo;
-use crate::mmu::FrameAllocator;
+use crate::mmu::{FrameAllocator, MemoryMap};
 use crate::println;
 use crate::vmx;
 use crate::vmx::bitmaps::exit_qualification;
@@ -10,9 +13,8 @@ use crate::vmx::bitmaps::{
 use crate::vmx::fields;
 use crate::vmx::fields::traits::*;
 use crate::vmx::{ActiveVmcs, ControlRegister, Register, VmcsRegion, VmxError};
-use x86_64::registers::model_specific::Efer;
 
-use core::{arch, arch::asm};
+use x86_64::registers::model_specific::Efer;
 
 pub mod boot_params;
 pub mod elf;
@@ -20,8 +22,8 @@ pub mod elf_program;
 pub mod identity;
 pub mod linux;
 pub mod rawc;
+pub mod common;
 
-const ONEGB: usize = 1 << 30;
 const ONEPAGE: usize = 1 << 12;
 
 #[derive(PartialEq, Debug)]
@@ -36,7 +38,9 @@ pub trait Guest {
         &self,
         vmxon: &'vmx vmx::Vmxon,
         acpi: &AcpiInfo,
-        allocator: &impl FrameAllocator,
+        host_allocator: &impl FrameAllocator,
+        guest_allocator: &impl FrameAllocator,
+        memory_map: MemoryMap,
     ) -> VmcsRegion<'vmx>;
 
     unsafe fn vmcall_handler(

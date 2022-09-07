@@ -6,19 +6,16 @@ use bootloader::boot_info::{MemoryRegion, MemoryRegionKind};
 use spin::Mutex;
 use x86_64::registers::control::Cr3;
 use x86_64::structures::paging::frame::PhysFrame;
-use x86_64::structures::paging::page_table::PageTable;
-use x86_64::structures::paging::OffsetPageTable;
-use x86_64::{PhysAddr, VirtAddr};
+use x86_64::PhysAddr;
 
 use crate::allocator;
+use crate::mmu::PtMapper;
 use crate::vmx;
 use crate::{HostPhysAddr, HostVirtAddr};
 
 const PAGE_SIZE: usize = 0x1000;
 
 // ————————————————————————— Re-export definitions —————————————————————————— //
-
-pub use x86_64::structures::paging::page::Size4KiB;
 
 pub unsafe trait FrameAllocator {
     /// Allocates a frame.
@@ -36,45 +33,53 @@ pub unsafe trait FrameAllocator {
 
 // ————————————————————————— Memory Initialization —————————————————————————— //
 
+/// How the memory is split between host and guest.
+pub struct MemoryMap {
+    pub guest: &'static [MemoryRegion],
+    pub host: PhysRange,
+}
+
 /// Initializes the memory subsystem.
 ///
 /// After success, the memory subsystem is operationnal, meaning that the global allocator is
 /// availables (and thus heap allocated values such as `Box` and `Vec` can be used).
 ///
+/// Return values:
+///  - Host frame allocator
+///  - Guest frame allocator
+///  - memory map
+///
 /// SAFETY: This function must be called **at most once**, and the boot info must contain a valid
 /// mapping of the physical memory.
 pub unsafe fn init(
     physical_memory_offset: HostVirtAddr,
-    regions: &'static [MemoryRegion],
-) -> Result<impl FrameAllocator, ()> {
-    let level_4_table = active_level_4_table(physical_memory_offset);
+    regions: &'static mut [MemoryRegion],
+) -> Result<(impl FrameAllocator, impl FrameAllocator, MemoryMap), ()> {
+    // Partition physical memory between host and guest
+    let host_region = select_host_region(regions);
+    let host_range = PhysRange {
+        start: HostPhysAddr::new(host_region.start as usize),
+        end: HostPhysAddr::new(host_region.end as usize),
+    };
+    host_region.kind = MemoryRegionKind::Bootloader;
+    let memory_map = MemoryMap {
+        guest: regions,
+        host: host_range,
+    };
+    let mut host_allocator =
+        RangeFrameAllocator::new(host_range.start, host_range.end, physical_memory_offset);
+    let guest_allocator = BootInfoFrameAllocator::init(regions);
 
     // Initialize the frame allocator and the memory mapper.
-    let mut mapper = OffsetPageTable::new(
-        level_4_table,
-        VirtAddr::new(physical_memory_offset.as_u64()),
-    );
-    let mut frame_allocator = BootInfoFrameAllocator::init(regions);
+    let (level_4_table_frame, _) = Cr3::read();
+    let pt_root = HostPhysAddr::new(level_4_table_frame.start_address().as_u64() as usize);
+    let mut pt_mapper = PtMapper::new(physical_memory_offset.as_usize(), 0, pt_root);
 
     // Initialize the heap.
-    allocator::init_heap(&mut mapper, &mut frame_allocator).map_err(|_| ())?;
-    let frame_allocator = SharedFrameAllocator::new(frame_allocator, physical_memory_offset);
+    allocator::init_heap(&mut pt_mapper, &mut host_allocator)?;
+    let guest_allocator = SharedFrameAllocator::new(guest_allocator, physical_memory_offset);
 
-    Ok(frame_allocator)
-}
-
-/// This function is unsafe because the caller must guarantee that the
-/// complete physical memory is mapped to virtual memory at the passed
-/// `physical_memory_offset`. Also, this function must be only called once
-/// to avoid aliasing `&mut` references (which is undefined behavior).
-unsafe fn active_level_4_table(physical_memory_offset: HostVirtAddr) -> &'static mut PageTable {
-    let (level_4_table_frame, _) = Cr3::read();
-
-    let phys = level_4_table_frame.start_address();
-    let virt = physical_memory_offset.as_u64() + phys.as_u64();
-    let page_table = virt as usize as *mut PageTable;
-
-    &mut *page_table
+    Ok((host_allocator, guest_allocator, memory_map))
 }
 
 // ———————————————————————————— Frame Allocator ————————————————————————————— //
@@ -122,6 +127,11 @@ impl BootInfoFrameAllocator {
                 .goto_next_region()
                 .expect("No usable memory region");
         }
+        // Allocate one frame, so that we don't use frame zero
+        allocator
+            .allocate_frame()
+            .expect("Initial frame allocation failed");
+
         allocator
     }
 
@@ -187,12 +197,6 @@ impl BootInfoFrameAllocator {
         let start = HostPhysAddr::new(first_region.start as usize);
         let end = HostPhysAddr::new(last_region.end as usize);
         PhysRange { start, end }
-    }
-}
-
-unsafe impl x86_64::structures::paging::FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
-    fn allocate_frame(&mut self) -> Option<PhysFrame> {
-        Self::allocate_frame(self)
     }
 }
 
@@ -314,6 +318,24 @@ unsafe impl FrameAllocator for RangeFrameAllocator {
 fn bytes_to_pages(n: usize) -> usize {
     let page_aligned = (n + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
     page_aligned / PAGE_SIZE
+}
+
+/// Selects a sub-range of the available memory regions for use within the kernel.
+fn select_host_region(regions: &mut [MemoryRegion]) -> &mut MemoryRegion {
+    // NOTE: We start from the end of the list (higher regions) to favor high-memory regions.
+    for region in regions.iter_mut().rev() {
+        // Select a free region that's big enough
+        if region.kind == MemoryRegionKind::Usable && (region.end - region.start) >= 0x1000000 {
+            crate::println!(
+                "DEBUG: host region is 0x{:x} - len: 0x{:x}",
+                region.start,
+                region.end - region.start
+            );
+            return region;
+        }
+    }
+
+    panic!("Could not find a memory region big enough");
 }
 
 // ————————————————————————————————— Tests —————————————————————————————————— //

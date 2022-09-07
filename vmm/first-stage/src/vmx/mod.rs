@@ -442,6 +442,21 @@ where
         .unwrap();
     }
 
+    /// Returns a given control register.
+    pub fn get_cr(&self, register: ControlRegister) -> usize {
+        // SAFETY: all the fields exists on all architecture, except Cr8 which is only available on
+        // x86_64.
+        unsafe {
+            match register {
+                ControlRegister::Cr0 => fields::GuestStateNat::Cr0.vmread(),
+                ControlRegister::Cr3 => fields::GuestStateNat::Cr3.vmread(),
+                ControlRegister::Cr4 => fields::GuestStateNat::Cr4.vmread(),
+                ControlRegister::Cr8 => todo!("Handle Cr8"),
+            }
+        }
+        .unwrap()
+    }
+
     pub fn set16(&mut self, field: fields::GuestState16, value: u16) -> Result<(), VmxError> {
         unsafe { field.vmwrite(value) }
     }
@@ -880,6 +895,9 @@ impl<'active, 'vmx> core::fmt::Debug for ActiveVmcs<'active, 'vmx> {
         writeln!(f, "        r13: {:x}", self.get(Register::R13))?;
         writeln!(f, "        r14: {:x}", self.get(Register::R14))?;
         writeln!(f, "        r15: {:x}", self.get(Register::R15))?;
+        writeln!(f, "        cr0: {:x}", self.get_cr(ControlRegister::Cr0))?;
+        writeln!(f, "        cr3: {:x}", self.get_cr(ControlRegister::Cr3))?;
+        writeln!(f, "        cr4: {:x}", self.get_cr(ControlRegister::Cr4))?;
         writeln!(f, "    }}")?;
         writeln!(f, "}}")?;
 

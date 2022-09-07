@@ -1,7 +1,9 @@
+use super::Guest;
+use super::HandlerResult;
 use crate::acpi::AcpiInfo;
 use crate::guests;
 use crate::mmu::eptmapper::EptMapper;
-use crate::mmu::FrameAllocator;
+use crate::mmu::{FrameAllocator, MemoryMap};
 use crate::println;
 use crate::qemu;
 use crate::vmx;
@@ -10,8 +12,6 @@ use crate::vmx::ept;
 use crate::vmx::fields;
 use core::arch::asm;
 
-use super::Guest;
-use super::HandlerResult;
 /// Allows to map tyche itself inside a VM.
 pub struct Identity {}
 
@@ -20,9 +20,13 @@ impl Guest for Identity {
         &self,
         vmxon: &'vmx vmx::Vmxon,
         _acpi: &AcpiInfo,
-        allocator: &impl FrameAllocator,
+        host_allocator: &impl FrameAllocator,
+        _guest_allocator: &impl FrameAllocator,
+        _memory_map: MemoryMap,
     ) -> vmx::VmcsRegion<'vmx> {
-        let frame = allocator.allocate_frame().expect("Failed to allocate VMCS");
+        let frame = host_allocator
+            .allocate_frame()
+            .expect("Failed to allocate VMCS");
         let mut vmcs = match vmxon.create_vm(frame) {
             Err(err) => {
                 println!("VMCS:   Err({:?})", err);
@@ -39,15 +43,15 @@ impl Guest for Identity {
             let mut vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");
             let switching = vmx::available_vmfuncs().is_ok();
             guests::default_vmcs_config(&mut vcpu, switching);
-            let ept_mapper = setup_ept(allocator).expect("Failed to setupt EPT 1");
+            let ept_mapper = setup_ept(host_allocator).expect("Failed to setupt EPT 1");
             println!("EPTP:   {:?}", vcpu.set_ept_ptr(ept_mapper.get_root()));
 
             // Let's see if we can duplicate the EPTs, and register them both
             if switching {
-                let ept_mapper2 = setup_ept(allocator).expect("Failed to setup EPT 2");
+                let ept_mapper2 = setup_ept(host_allocator).expect("Failed to setup EPT 2");
                 println!("EPT2:   {:?}", vcpu.set_ept_ptr(ept_mapper2.get_root()));
                 let mut eptp_list = ept::EptpList::new(
-                    allocator
+                    host_allocator
                         .allocate_frame()
                         .expect("Failed to allocate EPTP list"),
                 );
@@ -74,7 +78,7 @@ impl Guest for Identity {
                 .expect("Unable to set rsp");
 
             // Configure MSRs
-            let frame = allocator
+            let frame = host_allocator
                 .allocate_frame()
                 .expect("Failed to allocate MSR bitmaps");
             let msr_bitmaps = vcpu

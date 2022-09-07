@@ -1,21 +1,17 @@
-use core::slice;
-
+use super::Guest;
+use super::HandlerResult;
 use crate::acpi::AcpiInfo;
 use crate::debug::info;
 use crate::guests;
+use crate::guests::common::{create_mappings, setup_iommu_context};
 use crate::guests::elf_program::ElfProgram;
-use crate::mmu::frames::RangeFrameAllocator;
-use crate::mmu::{EptMapper, FrameAllocator, IoPtFlag, IoPtMapper};
+use crate::mmu::{EptMapper, FrameAllocator, IoPtMapper, MemoryMap};
 use crate::println;
 use crate::qemu;
 use crate::vmx;
-use crate::vmx::bitmaps::EptEntryFlags;
-use crate::vmx::{fields, GuestPhysAddr, HostPhysAddr, HostVirtAddr, Register};
-use crate::vtd::{ContextEntry, Iommu, RootEntry};
-use crate::GuestVirtAddr;
-
-use super::Guest;
-use super::HandlerResult;
+use crate::vmx::{fields, Register};
+use crate::vtd::Iommu;
+use crate::{GuestVirtAddr, HostVirtAddr};
 
 #[cfg(feature = "guest_rawc")]
 const RAWCBYTES: &'static [u8] = include_bytes!("../../../../guest/rawc");
@@ -45,63 +41,49 @@ impl Guest for RawcBytes {
         &self,
         vmxon: &'vmx vmx::Vmxon,
         acpi: &AcpiInfo,
-        allocator: &impl FrameAllocator,
+        host_allocator: &impl FrameAllocator,
+        guest_allocator: &impl FrameAllocator,
+        memory_map: MemoryMap,
     ) -> vmx::VmcsRegion<'vmx> {
         let mut rawc_prog = ElfProgram::new(RAWCBYTES);
-        rawc_prog.add_stack(GuestVirtAddr::new(STACK), 0x1000);
+        rawc_prog.add_stack(GuestVirtAddr::new(STACK), 0x2000);
 
-        let virtoffset = allocator.get_physical_offset();
-        // Create a bumper allocator with 1GB of RAM.
-        let guest_ram = allocator
-            .allocate_range(guests::ONEGB)
-            .expect("Unable to allocate 1GB");
+        let virtoffset = host_allocator.get_physical_offset();
+
         // Storing the guest ram start address for debugging.
-        info::tyche_hook_set_guest_start(guest_ram.start.as_u64());
-
-        let guest_allocator = RangeFrameAllocator::new(guest_ram.start, guest_ram.end, virtoffset);
+        info::tyche_hook_set_guest_start(0); // Identity mapping
 
         // Setup the EPT first.
-        let (start, end) = guest_allocator.get_boundaries();
-        let ept_root = allocator
+        let ept_root = host_allocator
             .allocate_frame()
             .expect("EPT root allocation")
             .zeroed();
-        let iopt_root = allocator
+        let iopt_root = host_allocator
             .allocate_frame()
             .expect("I/O PT root allocation")
             .zeroed();
         let mut ept_mapper = EptMapper::new(virtoffset.as_usize(), ept_root.phys_addr);
         let mut iopt_mapper = IoPtMapper::new(virtoffset.as_usize(), iopt_root.phys_addr);
-
-        // Map guest memory
-        ept_mapper.map_range(
-            allocator,
-            GuestPhysAddr::new(0),
-            HostPhysAddr::new(start),
-            end - start,
-            EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
-        );
-        iopt_mapper.map_range(
-            allocator,
-            GuestPhysAddr::new(0),
-            HostPhysAddr::new(start),
-            end - start,
-            IoPtFlag::WRITE | IoPtFlag::READ | IoPtFlag::EXECUTE,
+        create_mappings(
+            &memory_map,
+            &mut ept_mapper,
+            &mut iopt_mapper,
+            host_allocator,
         );
 
         // Load guest into memory.
         let pt_root = rawc_prog
-            .load(guest_ram, virtoffset)
+            .load(guest_allocator, virtoffset)
             .expect("Failed to load guest")
             .pt_root;
 
         // Setup I/O MMU
         if let Some(iommus) = &acpi.iommu {
             let iommu_addr = HostVirtAddr::new(
-                iommus[0].base_address.as_usize() + allocator.get_physical_offset().as_usize(),
+                iommus[0].base_address.as_usize() + host_allocator.get_physical_offset().as_usize(),
             );
             let mut iommu = Iommu::new(iommu_addr);
-            let root_addr = setup_iommu_context(iopt_mapper.get_root(), allocator);
+            let root_addr = setup_iommu_context(iopt_mapper.get_root(), host_allocator);
             iommu.set_root_table_addr(root_addr.as_u64() | (0b00 << 10)); // Set legacy mode
             iommu.update_root_table_addr();
             iommu.enable_translation();
@@ -109,7 +91,9 @@ impl Guest for RawcBytes {
         }
 
         // Setup the vmcs.
-        let frame = allocator.allocate_frame().expect("Failed to allocate VMCS");
+        let frame = host_allocator
+            .allocate_frame()
+            .expect("Failed to allocate VMCS");
         let mut vmcs = match vmxon.create_vm(frame) {
             Err(err) => {
                 println!("VMCS:   Err({:?})", err);
@@ -127,7 +111,7 @@ impl Guest for RawcBytes {
             guests::default_vmcs_config(&mut vcpu, false);
 
             // Configure MSRs
-            let frame = allocator
+            let frame = host_allocator
                 .allocate_frame()
                 .expect("Failed to allocate MSR bitmaps");
             let msr_bitmaps = vcpu
@@ -179,37 +163,4 @@ impl Guest for RawcBytes {
         }
         Ok(HandlerResult::Crash)
     }
-}
-
-fn setup_iommu_context(iopt_root: HostPhysAddr, allocator: &impl FrameAllocator) -> HostPhysAddr {
-    let ctx_frame = allocator
-        .allocate_frame()
-        .expect("I/O MMU context frame")
-        .zeroed();
-    let root_frame = allocator
-        .allocate_frame()
-        .expect("I/O MMU root frame")
-        .zeroed();
-    let ctx_entry = ContextEntry {
-        upper: 0b010, // 4 lvl pages
-        lower: iopt_root.as_u64(),
-    };
-    let root_entry = RootEntry {
-        reserved: 0,
-        entry: ctx_frame.phys_addr.as_u64() | 0b1, // Mark as present
-    };
-
-    unsafe {
-        let ctx_array = slice::from_raw_parts_mut(ctx_frame.virt_addr as *mut ContextEntry, 256);
-        let root_array = slice::from_raw_parts_mut(root_frame.virt_addr as *mut RootEntry, 256);
-
-        for entry in ctx_array {
-            *entry = ctx_entry;
-        }
-        for entry in root_array {
-            *entry = root_entry;
-        }
-    }
-
-    root_frame.phys_addr
 }

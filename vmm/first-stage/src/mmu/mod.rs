@@ -7,6 +7,6 @@ pub mod ptmapper;
 pub mod walker;
 
 pub use eptmapper::EptMapper;
-pub use frames::{init, FrameAllocator};
+pub use frames::{init, FrameAllocator, MemoryMap};
 pub use ioptmapper::{IoPtFlag, IoPtMapper};
 pub use ptmapper::{PtFlag, PtMapper};

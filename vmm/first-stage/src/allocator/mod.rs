@@ -1,12 +1,11 @@
 //! # Heap Allocator
 
-use x86_64::structures::paging::mapper::{MapToError, Mapper};
-use x86_64::structures::paging::{Page, PageTableFlags};
-use x86_64::VirtAddr;
-
-use crate::mmu::frames::{BootInfoFrameAllocator, Size4KiB};
+use crate::mmu::frames::FrameAllocator;
+use crate::mmu::{PtFlag, PtMapper};
+use crate::{HostPhysAddr, HostVirtAddr};
 use alloc::alloc::GlobalAlloc;
 use core::sync::atomic::{AtomicBool, Ordering};
+use x86_64::instructions::tlb;
 
 mod fallback;
 mod global;
@@ -21,33 +20,30 @@ static IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 /// Initializes the kernel heap.
 pub fn init_heap(
-    mapper: &mut impl Mapper<Size4KiB>,
-    frame_allocator: &mut BootInfoFrameAllocator,
-) -> Result<(), MapToError<Size4KiB>> {
+    mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
+    frame_allocator: &impl FrameAllocator,
+) -> Result<(), ()> {
     if IS_INITIALIZED.swap(true, Ordering::SeqCst) {
         // Already initialized
         return Ok(());
     }
 
-    let page_range = {
-        let heap_start = VirtAddr::new(HEAP_START as u64);
-        let heap_end = heap_start + HEAP_SIZE - 1u64;
-        let heap_start_page = Page::containing_address(heap_start);
-        let heap_end_page = Page::containing_address(heap_end);
-        Page::range_inclusive(heap_start_page, heap_end_page)
-    };
-
-    for page in page_range {
-        let frame = frame_allocator
-            .allocate_frame()
-            .ok_or(MapToError::FrameAllocationFailed)?;
-        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-        unsafe { mapper.map_to(page, frame, flags, frame_allocator)?.flush() };
-    }
+    // Find space for the heap and create the mappings
+    let heap_range = frame_allocator
+        .allocate_range(HEAP_SIZE)
+        .expect("Could not allocate kernel heap");
+    mapper.map_range(
+        frame_allocator,
+        HostVirtAddr::new(HEAP_START),
+        heap_range.start,
+        HEAP_SIZE,
+        PtFlag::PRESENT | PtFlag::WRITE | PtFlag::EXEC_DISABLE,
+    );
 
     // SAFETY: We check that the method is called only once and the heap is valid (mappings are
     // created just above).
     unsafe {
+        tlb::flush_all(); // Update page table to prevent #PF
         GLOBAL_ALLOC.lock().init(HEAP_START, HEAP_SIZE);
     }
 

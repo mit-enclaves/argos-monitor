@@ -12,7 +12,7 @@ use first_stage::acpi::AcpiInfo;
 use first_stage::debug::info;
 use first_stage::guests;
 use first_stage::guests::Guest;
-use first_stage::mmu::FrameAllocator;
+use first_stage::mmu::{FrameAllocator, MemoryMap};
 use first_stage::println;
 use first_stage::qemu;
 use first_stage::vmx;
@@ -46,7 +46,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             as usize,
     );
 
-    let frame_allocator = unsafe {
+    let (host_allocator, guest_allocator, memory_map) = unsafe {
         first_stage::init_memory(physical_memory_offset, &mut boot_info.memory_regions)
             .expect("Failed to initialize memory")
     };
@@ -72,20 +72,44 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     // Select appropriate guest depending on selected features
     if cfg!(feature = "guest_linux") {
-        launch_guest(&guests::linux::LINUX, &acpi_info, &frame_allocator)
+        launch_guest(
+            &guests::linux::LINUX,
+            &acpi_info,
+            &host_allocator,
+            &guest_allocator,
+            memory_map,
+        )
     } else if cfg!(feature = "guest_rawc") {
-        launch_guest(&guests::rawc::RAWC, &acpi_info, &frame_allocator)
+        launch_guest(
+            &guests::rawc::RAWC,
+            &acpi_info,
+            &host_allocator,
+            &guest_allocator,
+            memory_map,
+        )
     } else {
-        launch_guest(&guests::identity::Identity {}, &acpi_info, &frame_allocator)
+        launch_guest(
+            &guests::identity::Identity {},
+            &acpi_info,
+            &host_allocator,
+            &guest_allocator,
+            memory_map,
+        )
     }
 }
 
-fn launch_guest(guest: &impl Guest, acpi: &AcpiInfo, allocator: &impl FrameAllocator) -> ! {
+fn launch_guest(
+    guest: &impl Guest,
+    acpi: &AcpiInfo,
+    host_allocator: &impl FrameAllocator,
+    guest_allocator: &impl FrameAllocator,
+    memory_map: MemoryMap,
+) -> ! {
     initialize_cpu();
     print_vmx_info();
 
     unsafe {
-        let frame = allocator
+        let frame = host_allocator
             .allocate_frame()
             .expect("Failed to allocate VMXON");
         let vmxon = match vmx::vmxon(frame) {
@@ -99,7 +123,7 @@ fn launch_guest(guest: &impl Guest, acpi: &AcpiInfo, allocator: &impl FrameAlloc
             }
         };
 
-        let mut vmcs = guest.instantiate(&vmxon, acpi, allocator);
+        let mut vmcs = guest.instantiate(&vmxon, acpi, host_allocator, guest_allocator, memory_map);
 
         // Debugging hook post initialization.
         info::tyche_hook_done(1);

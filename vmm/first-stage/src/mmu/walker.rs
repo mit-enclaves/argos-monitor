@@ -60,12 +60,14 @@ impl Level {
 
 pub trait Address: Sized + Copy + Ord {
     fn from_u64(addr: u64) -> Self;
-    fn to_u64(self) -> u64;
+    fn as_u64(self) -> u64;
+    fn from_usize(addr: usize) -> Self;
+    fn as_usize(self) -> usize;
 
     /// Adds an offset to the current address.
     #[inline]
     fn add(self, offset: u64) -> Option<Self> {
-        match self.to_u64().checked_add(offset) {
+        match self.as_u64().checked_add(offset) {
             None => None,
             Some(val) => Some(Self::from_u64(val)),
         }
@@ -74,31 +76,31 @@ pub trait Address: Sized + Copy + Ord {
     /// Apply a mask to the address (binary and).
     #[inline]
     fn mask(self, mask: u64) -> Self {
-        Self::from_u64(self.to_u64() & mask)
+        Self::from_u64(self.as_u64() & mask)
     }
 
     /// Returns this address' L4 index.
     #[inline]
     fn l4_index(self) -> usize {
-        ((self.to_u64() >> 39) & PAGE_TABLE_INDEX_MASK) as usize
+        ((self.as_u64() >> 39) & PAGE_TABLE_INDEX_MASK) as usize
     }
 
     /// Returns this address' L3 index.
     #[inline]
     fn l3_index(self) -> usize {
-        ((self.to_u64() >> 30) & PAGE_TABLE_INDEX_MASK) as usize
+        ((self.as_u64() >> 30) & PAGE_TABLE_INDEX_MASK) as usize
     }
 
     /// Returns this address' L2 index.
     #[inline]
     fn l2_index(self) -> usize {
-        ((self.to_u64() >> 21) & PAGE_TABLE_INDEX_MASK) as usize
+        ((self.as_u64() >> 21) & PAGE_TABLE_INDEX_MASK) as usize
     }
 
     /// Returns this address' L1 index.
     #[inline]
     fn l1_index(self) -> usize {
-        ((self.to_u64() >> 12) & PAGE_TABLE_INDEX_MASK) as usize
+        ((self.as_u64() >> 12) & PAGE_TABLE_INDEX_MASK) as usize
     }
 
     /// Returns this address index for a given level.
@@ -120,8 +122,19 @@ macro_rules! addr_impl {
                 Self::new(addr as usize)
             }
 
-            fn to_u64(self) -> u64 {
+            #[inline]
+            fn as_u64(self) -> u64 {
                 Self::as_u64(self)
+            }
+
+            #[inline]
+            fn from_usize(addr: usize) -> Self {
+                Self::new(addr)
+            }
+
+            #[inline]
+            fn as_usize(self) -> usize {
+                Self::as_usize(self)
             }
         }
     };
@@ -152,7 +165,7 @@ pub unsafe trait Walker {
     /// virtual address.
     fn translate(&self, phys_addr: Self::PhysAddr) -> HostVirtAddr;
 
-    /// Returns the host virtual address of the root page (L4).
+    /// Returns the physical address of the root page (L4).
     fn root(&mut self) -> (Self::PhysAddr, Level);
 
     /// Walk the page tables controlling given address' mapping.

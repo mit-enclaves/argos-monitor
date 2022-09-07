@@ -7,9 +7,8 @@ use super::elf::{
     FromBytes,
 };
 use crate::debug::info;
-use crate::mmu::frames::{PhysRange, RangeFrameAllocator};
 use crate::mmu::{FrameAllocator, PtFlag, PtMapper};
-use crate::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
+use crate::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 
 pub enum ElfMapping {
     /// Respect the virtual-to-physical mapping of the ELF file.
@@ -36,9 +35,7 @@ pub struct ElfProgram {
 pub struct LoadedElf {
     /// The root of initial page tables.
     pub pt_root: GuestPhysAddr,
-    /// An allocator that can be used to write datz to the guest address space before launch.
-    allocator: RangeFrameAllocator,
-    guest_memory: PhysRange,
+    /// An allocator that can be used to write data to the guest address space before launch.
     host_physical_offset: HostVirtAddr,
 }
 
@@ -73,7 +70,7 @@ impl ElfProgram {
                 entry = Some(header.p_vaddr + segment_offset);
             }
         }
-        let entry = entry.expect("Couldn't fiend guest entry point");
+        let entry = entry.expect("Couldn't find guest entry point");
 
         // Parse section header table: this is needed to access symbols.
         let mut sections = Vec::<Elf64Shdr>::new();
@@ -114,7 +111,7 @@ impl ElfProgram {
     /// CR3).
     pub fn load(
         &self,
-        guest_memory: PhysRange,
+        guest_allocator: &impl FrameAllocator,
         host_physical_offset: HostVirtAddr,
     ) -> Result<LoadedElf, ()> {
         // Compute the highest physical address used by the guest.
@@ -127,40 +124,10 @@ impl ElfProgram {
             highest_addr = core::cmp::max(highest_addr, seg.p_paddr + seg.p_memsz);
         }
 
-        // Choose where to place PT in guest physical and virtual memory
-        let guest_pt_offset = 0xe0000000; // Pick an arbitrary offset for now
-        let guest_pt_size = 0x1000 * 1000; // enough space for 1000 guest PT
-        let guest_phys_pt_start = highest_addr;
-        let guest_phys_pt_end = guest_phys_pt_start + guest_pt_size;
-        let guest_virt_pt_start = highest_addr + guest_pt_offset;
-        let guest_virt_pt_end = guest_virt_pt_start + guest_pt_size;
-
-        // Check for collisions between PT and other elf segments in guest virtual address space
-        // TODO: handle identity mapping (i.e. check phys addr instead of virt addr).
-        for seg in self.segments.iter() {
-            let seg_start = seg.p_vaddr;
-            let seg_end = seg_start + seg.p_memsz;
-            if seg_end >= guest_virt_pt_start && seg_start <= guest_virt_pt_end {
-                return Err(()); // Collision between PT and elf segment!
-            }
-        }
-
-        // Allocates page tables within the guest
-        let guest_allocator = unsafe {
-            RangeFrameAllocator::new(
-                HostPhysAddr::new((guest_phys_pt_start + guest_memory.start.as_u64()) as usize),
-                HostPhysAddr::new((guest_phys_pt_end + guest_memory.start.as_u64()) as usize),
-                host_physical_offset,
-            )
-        };
         let pt_root = guest_allocator.allocate_frame().ok_or(())?.zeroed();
-        let pt_root_guest_phys_addr =
-            GuestPhysAddr::new((pt_root.phys_addr.as_u64() - guest_memory.start.as_u64()) as usize);
-        let mut pt_mapper = PtMapper::new(
-            host_physical_offset.as_u64() as usize,
-            guest_memory.start.as_u64() as usize,
-            pt_root_guest_phys_addr,
-        );
+        let pt_root_guest_phys_addr = GuestPhysAddr::new(pt_root.phys_addr.as_usize());
+        let mut pt_mapper =
+            PtMapper::new(host_physical_offset.as_usize(), 0, pt_root_guest_phys_addr);
 
         // Load and map segments
         for seg in self.segments.iter() {
@@ -169,8 +136,9 @@ impl ElfProgram {
                 continue;
             }
             unsafe {
-                self.load_segment(&seg, &guest_memory, host_physical_offset);
-                self.map_segment(seg, &mut pt_mapper, &guest_allocator);
+                // TODO: ensure that the segment does not overlap host memory
+                self.load_segment(seg, host_physical_offset);
+                self.map_segment(seg, &mut pt_mapper, guest_allocator);
             }
         }
 
@@ -178,21 +146,22 @@ impl ElfProgram {
         if let Some((stack_address, size)) = self.stack {
             // TODO: properly choose a valid stack physical address. Zero is not ideal...
             let stack_prot = PtFlag::WRITE | PtFlag::PRESENT | PtFlag::EXEC_DISABLE | PtFlag::USER;
+            let range = guest_allocator
+                .allocate_range(size)
+                .expect("Failed to allocate");
             pt_mapper.map_range(
-                &guest_allocator,
+                guest_allocator,
                 stack_address,
-                GuestPhysAddr::new(0),
+                GuestPhysAddr::new(range.start.as_usize()),
                 size,
                 stack_prot,
             );
-            info::hook_set_guest_stack(0, stack_address.as_u64());
+            info::hook_set_guest_stack(range.start.as_u64(), stack_address.as_u64());
         }
 
         Ok(LoadedElf {
             pt_root: pt_root_guest_phys_addr,
-            allocator: guest_allocator,
             host_physical_offset,
-            guest_memory,
         })
     }
 
@@ -269,7 +238,7 @@ impl ElfProgram {
     unsafe fn map_segment(
         &self,
         segment: &Elf64Phdr,
-        mapper: &mut PtMapper,
+        mapper: &mut PtMapper<GuestPhysAddr, GuestVirtAddr>,
         guest_allocator: &impl FrameAllocator,
     ) {
         match self.mapping {
@@ -295,26 +264,15 @@ impl ElfProgram {
     }
 
     /// Loads an elf segment at the desired physical address.
-    unsafe fn load_segment(
-        &self,
-        segment: &Elf64Phdr,
-        guest_memory: &PhysRange,
-        host_physical_offset: HostVirtAddr,
-    ) {
+    unsafe fn load_segment(&self, segment: &Elf64Phdr, host_physical_offset: HostVirtAddr) {
         // Sanity checks
         assert!(segment.p_align >= 0x1000);
         assert!(segment.p_memsz >= segment.p_filesz);
         assert!(segment.p_offset + segment.p_filesz <= self.bytes.len() as u64);
-        assert!(
-            segment.p_paddr + segment.p_memsz
-                <= guest_memory.end.as_u64() - guest_memory.start.as_u64(),
-            "Not enought guest memory"
-        );
 
         // Prepare destination
         let dest = core::slice::from_raw_parts_mut(
-            (guest_memory.start.as_u64() + segment.p_paddr + host_physical_offset.as_u64())
-                as *mut u8,
+            (segment.p_paddr + host_physical_offset.as_u64()) as *mut u8,
             segment.p_filesz as usize,
         );
 
@@ -326,9 +284,12 @@ impl ElfProgram {
 
 impl LoadedElf {
     /// Adds a paylog to a free location of the guest memory and returns the chosen location.
-    pub fn add_payload(&mut self, data: &[u8]) -> GuestPhysAddr {
-        let range = self
-            .allocator
+    pub fn add_payload(
+        &mut self,
+        data: &[u8],
+        guest_allocator: &impl FrameAllocator,
+    ) -> GuestPhysAddr {
+        let range = guest_allocator
             .allocate_range(data.len())
             .expect("Failed to allocate guest payload");
         let host_virt_addr =
@@ -337,13 +298,13 @@ impl LoadedElf {
             let dest = core::slice::from_raw_parts_mut(host_virt_addr, data.len());
             dest.copy_from_slice(data);
         }
-        GuestPhysAddr::new(range.start.as_usize() - self.guest_memory.start.as_usize())
+        GuestPhysAddr::new(range.start.as_usize())
     }
 }
 
 //TODO(aghosn) figure out how to pass a Elf64PhdrFlags argument.
 fn flags_to_prot(flags: u32) -> PtFlag {
-    let mut prots = PtFlag::EMPTY;
+    let mut prots = PtFlag::empty();
     if flags & Elf64PhdrFlags::PF_R.bits() == Elf64PhdrFlags::PF_R.bits() {
         prots |= PtFlag::PRESENT;
     }

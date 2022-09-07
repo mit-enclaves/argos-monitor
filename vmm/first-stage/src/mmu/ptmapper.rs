@@ -1,18 +1,21 @@
-use super::walker::{Level, WalkNext, Walker};
+use super::walker::{Address, Level, WalkNext, Walker};
 use super::FrameAllocator;
-use crate::vmx::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
+use crate::HostVirtAddr;
 use bitflags::bitflags;
+use core::marker::PhantomData;
 
-pub struct PtMapper {
+pub struct PtMapper<PhysAddr, VirtAddr> {
+    /// Offset between host physical memory and virtual memory.
     host_offset: usize,
+    /// Offset between host physical and guest physical.
     offset: usize,
-    root: GuestPhysAddr,
+    root: PhysAddr,
+    _virt: PhantomData<VirtAddr>,
 }
 
 bitflags! {
     pub struct PtFlag: u64 {
-        const EMPTY = 0;
-        const PRESENT = 1;
+        const PRESENT = 1 << 0;
         const WRITE = 1 << 1;
         const USER = 1 << 2;
         const PAGE_WRITE_THROUGH = 1 << 3;
@@ -32,9 +35,13 @@ bitflags! {
 
 pub const DEFAULT_PROTS: PtFlag = PtFlag::PRESENT.union(PtFlag::WRITE).union(PtFlag::USER);
 
-unsafe impl Walker for PtMapper {
-    type PhysAddr = GuestPhysAddr;
-    type VirtAddr = GuestVirtAddr;
+unsafe impl<PhysAddr, VirtAddr> Walker for PtMapper<PhysAddr, VirtAddr>
+where
+    PhysAddr: Address,
+    VirtAddr: Address,
+{
+    type PhysAddr = PhysAddr;
+    type VirtAddr = VirtAddr;
 
     fn translate(&self, phys_addr: Self::PhysAddr) -> HostVirtAddr {
         HostVirtAddr::new(phys_addr.as_usize() + self.offset + self.host_offset)
@@ -45,20 +52,25 @@ unsafe impl Walker for PtMapper {
     }
 }
 
-impl PtMapper {
-    pub fn new(host_offset: usize, offset: usize, root: GuestPhysAddr) -> Self {
+impl<PhysAddr, VirtAddr> PtMapper<PhysAddr, VirtAddr>
+where
+    PhysAddr: Address,
+    VirtAddr: Address,
+{
+    pub fn new(host_offset: usize, offset: usize, root: PhysAddr) -> Self {
         Self {
             host_offset,
             offset,
             root,
+            _virt: PhantomData,
         }
     }
 
     pub fn map_range(
         &mut self,
         allocator: &impl FrameAllocator,
-        gva: GuestVirtAddr,
-        gpa: GuestPhysAddr,
+        virt_addr: VirtAddr,
+        phys_addr: PhysAddr,
         size: usize,
         prot: PtFlag,
     ) {
@@ -66,15 +78,15 @@ impl PtMapper {
         let offset = self.offset;
         unsafe {
             self.walk_range(
-                gva,
-                GuestVirtAddr::new(gva.as_usize() + size),
+                virt_addr,
+                VirtAddr::from_usize(virt_addr.as_usize() + size),
                 &mut |addr, entry, level| {
                     // TODO(aghosn) handle rewrite of access rights.
                     if (*entry & PtFlag::PRESENT.bits()) != 0 {
                         return WalkNext::Continue;
                     }
-                    let end = gva.as_usize() + size;
-                    let phys = gpa.as_u64() + (addr.as_u64() - gva.as_u64());
+                    let end = virt_addr.as_usize() + size;
+                    let phys = phys_addr.as_u64() + (addr.as_u64() - virt_addr.as_u64());
                     // Opportunity to map a 1GB region
                     if level == Level::L3 {
                         if (addr.as_usize() + PageSize::GIANT.bits() <= end)
@@ -104,7 +116,8 @@ impl PtMapper {
                         .expect("map_range: unable to allocate page table entry.")
                         .zeroed();
                     assert!(frame.phys_addr.as_u64() >= offset as u64);
-                    *entry = frame.phys_addr.as_u64() - (offset as u64) | DEFAULT_PROTS.bits();
+                    *entry = (frame.phys_addr.as_u64() - (offset as u64))
+                        | DEFAULT_PROTS.bits();
                     WalkNext::Continue
                 },
             )

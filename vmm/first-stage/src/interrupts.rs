@@ -129,6 +129,7 @@ extern "x86-interrupt" fn page_fault_handler(
     println!("EXCEPTION: PAGE FAULT");
     println!("Accessed Address: {:?}", Cr2::read());
     println!("Error code:       {:?}", error_code);
+    println!("Error code (raw): 0x{:x}", error_code.bits());
     println!("{:#?}", stack_frame);
     panic!();
 }
