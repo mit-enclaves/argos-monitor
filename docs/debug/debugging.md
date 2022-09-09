@@ -32,7 +32,7 @@ Generally speaking, the `host` is responsible for providing a virtual environmen
 This article describes issues we faced while in active development.
 Thus, in this context, the `host` is the OS running QEMU, the `guest` is Tyche, and the `nested-guest` is the Linux instance loaded by Tyche.
 
-![dev_setup](figs/dev_setup.png)
+![dev_setup](figs/dev_setup.jpg)
 
 ## To Debug with QEMU
 
@@ -41,7 +41,7 @@ Most functionalities are available and it only requires a few [extra steps](http
 QEMU even supports switching back and forth between virtual and physical guests addresses.
 With this simple setup, we are able to debug tyche code.
 
-![debugger](figs/debugger.png)
+![debugger](figs/debugger.jpg)
 
 Unfortunatly, things get a little more complicated once tyche starts running nested virtual. 
 GDB is unable to understand the virtual memory mappings set via EPTs and therefore rejects any memory dump (see image below).
@@ -226,7 +226,7 @@ Note that this does not work with relocations or stacks.
 
 The C program gdb session then receives the command, translates addresses surrounded by `@` by adding `dbg_offset` to them, executes, and returns the result of the command via the same socket.
 
-![debugging_session](figs/debugging_session.png)
+![debugging_session](figs/debugging_session.jpg)
 
 #### Conclusion
 
