@@ -6,7 +6,8 @@ target         := "--target x86_64-kernel.json"
 build_std      := "-Zbuild-std=core,alloc"
 build_features := "-Zbuild-std-features=compiler-builtins-mem"
 cargo_args     := target + " " + build_std + " " + build_features
-first-stage    := "--package first-stage"
+linker-script  := "RUSTFLAGS='-C link-arg=-Tsecond-stage-linker-script.x'"
+first-stage    := "--package first-stage --features=first-stage/second-stage"
 second-stage   := "--package second-stage"
 rawc           := "--features=first-stage/guest_rawc"
 linux          := "--features=first-stage/guest_linux"
@@ -17,8 +18,8 @@ help:
 
 # Build the VMM
 build:
+	{{linker-script}} cargo build {{cargo_args}} {{second-stage}} --release
 	cargo build {{cargo_args}} {{first-stage}}
-	cargo build {{cargo_args}} {{second-stage}}
 
 # Typecheck
 check:

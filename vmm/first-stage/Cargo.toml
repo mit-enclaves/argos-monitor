@@ -10,6 +10,7 @@ vga = ["font8x8"]
 # Guest
 guest_linux = []
 guest_rawc = []
+second-stage = []
 
 [dependencies]
 bootloader = { version = "0.10.12" }

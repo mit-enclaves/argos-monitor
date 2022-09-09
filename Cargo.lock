@@ -150,6 +150,9 @@ checksum = "97477e48b4cf8603ad5f7aaf897467cf42ab4218a38ef76fb14c2d6773a6d6a8"
 [[package]]
 name = "second-stage"
 version = "0.1.0"
+dependencies = [
+ "uart_16550",
+]
 
 [[package]]
 name = "spin"

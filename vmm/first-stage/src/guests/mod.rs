@@ -17,8 +17,6 @@ use crate::vmx::{ActiveVmcs, ControlRegister, Register, VmcsRegion, VmxError};
 use x86_64::registers::model_specific::Efer;
 
 pub mod boot_params;
-pub mod elf;
-pub mod elf_program;
 pub mod identity;
 pub mod linux;
 pub mod rawc;

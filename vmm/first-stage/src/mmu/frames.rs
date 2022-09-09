@@ -48,13 +48,22 @@ pub struct MemoryMap {
 ///  - Host frame allocator
 ///  - Guest frame allocator
 ///  - memory map
+///  - The host memory mapper
 ///
 /// SAFETY: This function must be called **at most once**, and the boot info must contain a valid
 /// mapping of the physical memory.
 pub unsafe fn init(
     physical_memory_offset: HostVirtAddr,
     regions: &'static mut [MemoryRegion],
-) -> Result<(impl FrameAllocator, impl FrameAllocator, MemoryMap), ()> {
+) -> Result<
+    (
+        impl FrameAllocator,
+        impl FrameAllocator,
+        MemoryMap,
+        PtMapper<HostPhysAddr, HostVirtAddr>,
+    ),
+    (),
+> {
     // Partition physical memory between host and guest
     let host_region = select_host_region(regions);
     let host_range = PhysRange {
@@ -79,7 +88,7 @@ pub unsafe fn init(
     allocator::init_heap(&mut pt_mapper, &mut host_allocator)?;
     let guest_allocator = SharedFrameAllocator::new(guest_allocator, physical_memory_offset);
 
-    Ok((host_allocator, guest_allocator, memory_map))
+    Ok((host_allocator, guest_allocator, memory_map, pt_mapper))
 }
 
 // ———————————————————————————— Frame Allocator ————————————————————————————— //
@@ -326,11 +335,6 @@ fn select_host_region(regions: &mut [MemoryRegion]) -> &mut MemoryRegion {
     for region in regions.iter_mut().rev() {
         // Select a free region that's big enough
         if region.kind == MemoryRegionKind::Usable && (region.end - region.start) >= 0x1000000 {
-            crate::println!(
-                "DEBUG: host region is 0x{:x} - len: 0x{:x}",
-                region.start,
-                region.end - region.start
-            );
             return region;
         }
     }

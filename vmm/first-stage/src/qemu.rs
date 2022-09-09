@@ -18,9 +18,9 @@ impl ExitCode {
 }
 
 pub fn exit(exit_code: ExitCode) -> ! {
-    println!("========== Exiting QEMU ==========");
+    println!("========= Exiting First Stage =========");
     println!("{}", exit_code.to_str());
-    println!("==================================");
+    println!("=======================================");
     unsafe {
         // Port defined in Cargo.toml under `package.metadata.bootimage.tast-args`
         let mut port = Port::new(0xf4);

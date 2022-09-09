@@ -1,4 +1,4 @@
-//! Elf Definitions
+//! ELF Definitions
 //!
 //! Mostly copied from:
 //! https://github.com/rust-vmm/linux-loader/blob/ca135832b6c9108c8447a023f4c715bf9161fab9/src/loader_gen/x86_64/elf.rs

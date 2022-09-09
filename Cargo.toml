@@ -45,3 +45,5 @@ map-physical-memory = true
 name = "stack_overflow"
 harness = false
 
+[profile.release]
+opt-level = "s"

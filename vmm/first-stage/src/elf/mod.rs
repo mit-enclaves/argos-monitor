@@ -1,14 +1,17 @@
-use core::str::from_utf8;
+//! Executable and Linkable Format - ELF
+
+mod ffi;
 
 use alloc::vec::Vec;
+use core::str::from_utf8;
 
-use super::elf::{
-    Elf64Hdr, Elf64Phdr, Elf64PhdrFlags, Elf64PhdrType, Elf64Shdr, Elf64ShdrType, Elf64Sym,
-    FromBytes,
-};
 use crate::debug::info;
 use crate::mmu::{FrameAllocator, PtFlag, PtMapper};
 use crate::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
+pub use ffi::{
+    Elf64Hdr, Elf64Phdr, Elf64PhdrFlags, Elf64PhdrType, Elf64Shdr, Elf64ShdrType, Elf64Sym,
+    FromBytes,
+};
 
 pub enum ElfMapping {
     /// Respect the virtual-to-physical mapping of the ELF file.
@@ -25,9 +28,9 @@ pub struct ElfProgram {
     ///
     /// To be used with identity mapping.
     pub phys_entry: GuestPhysAddr,
-    segments: Vec<Elf64Phdr>,
-    sections: Vec<Elf64Shdr>,
-    bytes: &'static [u8],
+    pub segments: Vec<Elf64Phdr>,
+    pub sections: Vec<Elf64Shdr>,
+    pub bytes: &'static [u8],
     mapping: ElfMapping,
     stack: Option<(GuestVirtAddr, usize)>,
 }

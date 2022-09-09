@@ -4,6 +4,8 @@ use crate::HostVirtAddr;
 use bitflags::bitflags;
 use core::marker::PhantomData;
 
+static PAGE_MASK: usize = !(0x1000 - 1);
+
 pub struct PtMapper<PhysAddr, VirtAddr> {
     /// Offset between host physical memory and virtual memory.
     host_offset: usize,
@@ -74,7 +76,8 @@ where
         size: usize,
         prot: PtFlag,
     ) {
-        //TODO check alignment
+        // Align physical address first
+        let phys_addr = PhysAddr::from_usize(phys_addr.as_usize() & PAGE_MASK);
         let offset = self.offset;
         unsafe {
             self.walk_range(
@@ -116,12 +119,45 @@ where
                         .expect("map_range: unable to allocate page table entry.")
                         .zeroed();
                     assert!(frame.phys_addr.as_u64() >= offset as u64);
-                    *entry = (frame.phys_addr.as_u64() - (offset as u64))
-                        | DEFAULT_PROTS.bits();
+                    *entry = (frame.phys_addr.as_u64() - (offset as u64)) | DEFAULT_PROTS.bits();
                     WalkNext::Continue
                 },
             )
             .expect("Failed to map PTs");
+        }
+    }
+
+    /// Prints the permissions of page tables for the given range.
+    pub fn debug_range(&mut self, virt_addr: VirtAddr, size: usize) {
+        unsafe {
+            self.walk_range(
+                virt_addr,
+                VirtAddr::from_usize(virt_addr.as_usize() + size),
+                &mut |addr, entry, level| {
+                    let flags = PtFlag::from_bits_truncate(*entry);
+                    let phys = *entry & ((1 << 63) - 1) & (PAGE_MASK as u64);
+                    let padding = match level {
+                        Level::L4 => "",
+                        Level::L3 => "  ",
+                        Level::L2 => "    ",
+                        Level::L1 => "      ",
+                    };
+                    crate::println!(
+                        "{}{:?} Virt: 0x{:x} - Phys: 0x{:x} - {:?}",
+                        padding,
+                        level,
+                        addr.as_usize(),
+                        phys,
+                        flags
+                    );
+                    if flags.contains(PtFlag::PRESENT) {
+                        WalkNext::Continue
+                    } else {
+                        WalkNext::Leaf
+                    }
+                },
+            )
+            .expect("Failed to print PTs");
         }
     }
 }

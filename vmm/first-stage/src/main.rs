@@ -12,12 +12,13 @@ use first_stage::acpi::AcpiInfo;
 use first_stage::debug::info;
 use first_stage::guests;
 use first_stage::guests::Guest;
-use first_stage::mmu::{FrameAllocator, MemoryMap};
+use first_stage::mmu::{FrameAllocator, MemoryMap, PtMapper};
 use first_stage::println;
 use first_stage::qemu;
+use first_stage::second_stage;
 use first_stage::vmx;
 use first_stage::vmx::Register;
-use first_stage::HostVirtAddr;
+use first_stage::{HostPhysAddr, HostVirtAddr};
 use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
 
 entry_point!(kernel_main);
@@ -27,7 +28,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     if let Some(buffer) = boot_info.framebuffer.as_mut().take() {
         first_stage::init_display(buffer);
     }
-    println!("=========== Start QEMU ===========");
+    println!("============= First Stage =============");
 
     // Initialize kernel structures
     first_stage::init();
@@ -46,7 +47,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             as usize,
     );
 
-    let (host_allocator, guest_allocator, memory_map) = unsafe {
+    let (host_allocator, guest_allocator, memory_map, pt_mapper) = unsafe {
         first_stage::init_memory(physical_memory_offset, &mut boot_info.memory_regions)
             .expect("Failed to initialize memory")
     };
@@ -78,6 +79,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             &host_allocator,
             &guest_allocator,
             memory_map,
+            pt_mapper,
         )
     } else if cfg!(feature = "guest_rawc") {
         launch_guest(
@@ -86,6 +88,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             &host_allocator,
             &guest_allocator,
             memory_map,
+            pt_mapper,
         )
     } else {
         launch_guest(
@@ -94,6 +97,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             &host_allocator,
             &guest_allocator,
             memory_map,
+            pt_mapper,
         )
     }
 }
@@ -104,9 +108,11 @@ fn launch_guest(
     host_allocator: &impl FrameAllocator,
     guest_allocator: &impl FrameAllocator,
     memory_map: MemoryMap,
+    mut pt_mapper: PtMapper<HostPhysAddr, HostVirtAddr>,
 ) -> ! {
     initialize_cpu();
     print_vmx_info();
+    second_stage::load(host_allocator, &mut pt_mapper);
 
     unsafe {
         let frame = host_allocator
