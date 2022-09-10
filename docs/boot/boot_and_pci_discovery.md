@@ -86,9 +86,7 @@ communication with devices.
 PCIe extends the configuration space from 256 bytes for PCI to 4096 bytes (i.e.
 a full x86 page). The extended space cannot be accessed through the legacy PCI
 I/O ports method, but uses memory mapped I/O instead. The beginning of the
-configuration region can be found in the system's [ACPI](acpi.md) `MCFG` table.
-
-TODO some more info
+configuration region can be found in the system's ACPI `MCFG` table.
 
 #### Links
 
@@ -97,7 +95,69 @@ TODO some more info
 - [Wikipedia PCI configuration space](https://en.wikipedia.org/wiki/PCI_configuration_space)
 - [PCI BAR size](https://stackoverflow.com/questions/19006632/how-is-a-pci-pcie-bar-size-determined)
 
-# Rust BootLoader BootInfo 
+## What we get at boot time 
 
-The rust [bootloader](https://github.com/rust-osdev/bootloader) used by tyche abstracts over the differences between BIOS and UEFI booting to supply the kernel's entry point with the appropriate information. 
+### Rust BootLoader BootInfo 
 
+The rust [bootloader](https://github.com/rust-osdev/bootloader) used by tyche abstracts over the differences between BIOS and UEFI booting to supply the kernel's entry point with [BootInfo](https://github.com/rust-osdev/bootloader/blob/main/src/boot_info.rs).
+
+First, the `memory_regions` displays all the `e820` regions obtained from the BIOS:
+
+```
+MemoryRegion { start: 7f0a6000, end: 7f0af000, kind: Usable }
+MemoryRegion { start: 7f0af000, end: 7f0b2000, kind: Usable }
+MemoryRegion { start: 7f0b2000, end: 7f0b5000, kind: Usable }
+MemoryRegion { start: 7f0b5000, end: 7f4bf000, kind: Usable }
+MemoryRegion { start: 7f4bf000, end: 7f4c6000, kind: Usable }
+MemoryRegion { start: 7f4c6000, end: 7f4c9000, kind: Usable }
+MemoryRegion { start: 7f4c9000, end: 7f4d1000, kind: Usable }
+MemoryRegion { start: 7f4d1000, end: 7f4d5000, kind: Usable }
+MemoryRegion { start: 7f4d5000, end: 7f4dc000, kind: Usable }
+MemoryRegion { start: 7f4dc000, end: 7f4dd000, kind: Usable }
+MemoryRegion { start: 7f4dd000, end: 7f4e9000, kind: Usable }
+MemoryRegion { start: 7f4e9000, end: 7f4ea000, kind: Usable }
+MemoryRegion { start: 7f4ea000, end: 7f4ef000, kind: Usable }
+MemoryRegion { start: 7f4ef000, end: 7f8ef000, kind: Usable }
+MemoryRegion { start: 7f8ef000, end: 7f9ef000, kind: Usable }
+MemoryRegion { start: 7f9ef000, end: 7faef000, kind: Usable }
+MemoryRegion { start: 7faef000, end: 7fb6f000, kind: UnknownUefi(0) }
+MemoryRegion { start: 7fb6f000, end: 7fb7f000, kind: UnknownUefi(9) }
+MemoryRegion { start: 7fb7f000, end: 7fbff000, kind: UnknownUefi(a) }
+MemoryRegion { start: 7fbff000, end: 7fe00000, kind: Usable }
+MemoryRegion { start: 7fe00000, end: 7fed3000, kind: Usable }
+MemoryRegion { start: 7fed3000, end: 7fef3000, kind: Usable }
+MemoryRegion { start: 7fef3000, end: 7ff23000, kind: Usable }
+MemoryRegion { start: 7ff23000, end: 7ff2c000, kind: Usable }
+MemoryRegion { start: 7ff2c000, end: 7ff58000, kind: Usable }
+MemoryRegion { start: 7ff58000, end: 7ff78000, kind: Usable }
+MemoryRegion { start: 7ff78000, end: 80000000, kind: UnknownUefi(a) }
+MemoryRegion { start: 100000000, end: 140000000, kind: Usable }
+MemoryRegion { start: 140000000, end: 1400cb000, kind: Usable }
+MemoryRegion { start: 1400cb000, end: 200000000, kind: Usable }
+MemoryRegion { start: b0000000, end: c0000000, kind: UnknownUefi(0) }
+```
+Another useful information we get from the `BootInfo` is the `rsdp_addr`.
+This field points to the BIOS/UEFI RSDP data structure used to find the ACPI tables.
+This structure contains a `xsdt` pointer field, i.e., a pointer to entries in a system description table.
+We are interested in two types (signature) of headers: `DMAR` and `MCFG`.
+
+`MCFG` entries are tables with potentially multiple items that each describe a PCI-attached device:
+
+```
+pub struct McfgItem {
+    /// Base address of the configuration address space.
+    pub base_address: u64,
+    /// PCI segment group number.
+    pub segment_group: u16,
+    /// Start PCI bus number decoded by this host bridge.
+    pub start_bus: u8,
+    /// End PCI bus number decoded by this host bridge.
+    pub end_bus: u8,
+    // Reserved.
+    pub reserved: u32,
+}
+```
+
+`DMAR` entries describe DMA remapping tables, i.e., IO MMUs available as well as the unit they are responsible for.
+
+By parsing tables of both of these types, we should have all the information needed to list all available PCI devices and the corresponding I/O MMUs to properly isolate them.
