@@ -172,19 +172,34 @@ impl ElfProgram {
         if self.sections.len() == 0 {
             return None;
         }
+        let symbols_secs = self.find_section(Elf64ShdrType::SHT_SYMTAB);
+        let strings = self.find_section(Elf64ShdrType::SHT_STRTAB);
+        for sym in symbols_secs.iter() {
+            for str_values in strings.iter() {
+                if let Some(symbol) = self.find_symbol_helper(target, sym, str_values) {
+                    return Some(symbol);
+                }
+            }
+        }
+        return None;
+    }
+
+    pub fn find_symbol_helper(
+        &self,
+        target: &str,
+        symbols: &Elf64Shdr,
+        strings: &Elf64Shdr,
+    ) -> Option<Elf64Sym> {
+        if self.sections.len() == 0 {
+            return None;
+        }
 
         // Find the symbol table sections.
-        let symbols = match self.find_section(Elf64ShdrType::SHT_SYMTAB) {
-            Some(symbs) => symbs,
-            None => return None,
-        };
+        //let symbols = self.find_section(Elf64ShdrType::SHT_SYMTAB)?;
 
         // Find the string table.
         // This could be obtained directly from elf header.
-        let strings = match self.find_section(Elf64ShdrType::SHT_STRTAB) {
-            Some(strs) => strs,
-            None => return None,
-        };
+        //let strings = self.find_section(Elf64ShdrType::SHT_STRTAB)?;
 
         let str_start = strings.sh_offset as usize;
         let str_end = str_start + strings.sh_size as usize;
@@ -202,14 +217,11 @@ impl ElfProgram {
             let start = (off + i * symbols.sh_entsize) as usize;
             let end = start + symbols.sh_entsize as usize;
             let symbol = Elf64Sym::from_bytes(&self.bytes[start..end]).expect("parsing symbol");
-            if symbol.st_name == 0 {
+            if symbol.st_name == 0 || symbol.st_name as usize > content.len() {
                 continue;
             }
             let n_start = symbol.st_name as usize;
-            let idx = match self.find_substring(&content[n_start..]) {
-                Some(i) => i,
-                None => return None,
-            };
+            let idx = self.find_substring(&content[n_start..])?;
             let name = from_utf8(&content[n_start..(n_start + idx)]).expect("parsing name");
             // Now find the name for this symbol.
             if name == target {
@@ -228,13 +240,14 @@ impl ElfProgram {
         return None;
     }
 
-    fn find_section(&self, tpe: Elf64ShdrType) -> Option<&Elf64Shdr> {
+    fn find_section(&self, tpe: Elf64ShdrType) -> Vec<&Elf64Shdr> {
+        let mut result = Vec::<&Elf64Shdr>::new();
         for sec in self.sections.iter() {
             if sec.sh_type == tpe.bits() {
-                return Some(&sec);
+                result.push(&sec);
             }
         }
-        return None;
+        return result;
     }
 
     /// Maps an elf segment at the desired virtual address.

@@ -13,6 +13,7 @@ guest_rawc = []
 second-stage = []
 
 [dependencies]
+stage_two_abi = { path = "../../crates/stage_two_abi" }
 bootloader = { version = "0.10.12" }
 volatile = "0.2.6"
 spin = "0.5.2"

@@ -48,6 +48,7 @@ dependencies = [
  "lazy_static",
  "pic8259",
  "spin",
+ "stage_two_abi",
  "uart_16550",
  "volatile 0.2.7",
  "x86_64",
@@ -151,6 +152,7 @@ checksum = "97477e48b4cf8603ad5f7aaf897467cf42ab4218a38ef76fb14c2d6773a6d6a8"
 name = "second-stage"
 version = "0.1.0"
 dependencies = [
+ "stage_two_abi",
  "uart_16550",
 ]
 
@@ -159,6 +161,10 @@ name = "spin"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
+
+[[package]]
+name = "stage_two_abi"
+version = "0.1.0"
 
 [[package]]
 name = "syn"

@@ -4,6 +4,7 @@ use crate::elf::{Elf64PhdrType, ElfProgram};
 use crate::mmu::frames::PhysRange;
 use crate::mmu::{FrameAllocator, PtFlag, PtMapper};
 use crate::{HostPhysAddr, HostVirtAddr};
+use stage_two_abi::{EntryPoint, Manifest, MANIFEST_SYMBOL};
 
 #[cfg(feature = "second-stage")]
 const SECOND_STAGE: &'static [u8] =
@@ -14,8 +15,6 @@ const SECOND_STAGE: &'static [u8] = &[0; 10];
 /// Virtual address to which the guest is loaded. Defined by our linker script.
 const LOAD_VIRT_ADDR: HostVirtAddr = HostVirtAddr::new(0x8000000);
 
-type SecondStageEntry = extern "C" fn() -> !;
-
 pub fn load(
     stage_allocator: &impl FrameAllocator,
     pt_mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
@@ -23,7 +22,7 @@ pub fn load(
     let mut second_stage = ElfProgram::new(SECOND_STAGE);
 
     let range = relocate_elf(&mut second_stage, stage_allocator);
-    second_stage
+    let loaded_elf = second_stage
         .load(stage_allocator, stage_allocator.get_physical_offset())
         .expect("Failed to load second stage");
 
@@ -37,6 +36,18 @@ pub fn load(
         PtFlag::PRESENT | PtFlag::WRITE,
     );
 
+    let manifest_sym = second_stage
+        .find_symbol(MANIFEST_SYMBOL)
+        .expect("Could not find second stage's manifest symbol");
+    // SAFETY: the reference has a static lifetime as it will never be deallocated by the second
+    // stage, but the first stage needs to ensures that the manifest stays mapped until transition to
+    // second stage.
+    let manifest = unsafe {
+        let ptr = (manifest_sym.st_value as usize) as *mut Manifest;
+        &mut *ptr
+    };
+    manifest.cr3 = 0x42;
+
     // jump into second stage
     unsafe {
         // We panic in case of unintended return, hence unreachable code after entry_point
@@ -44,8 +55,8 @@ pub fn load(
 
         // We need to manually ensure that the type correspond to the second stage entry point
         // function.
-        let entry_point: SecondStageEntry = core::mem::transmute(second_stage.entry.as_usize());
-        entry_point();
+        let entry_point: EntryPoint = core::mem::transmute(second_stage.entry.as_usize());
+        entry_point(manifest);
         panic!("Failed to enter second stage");
     }
 }
