@@ -5,6 +5,7 @@ mod ffi;
 use alloc::vec::Vec;
 use core::str::from_utf8;
 
+use crate::mmu::walker::Address;
 use crate::mmu::{FrameAllocator, PtFlag, PtMapper};
 use crate::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 pub use ffi::{
@@ -35,13 +36,13 @@ pub struct ElfProgram {
     mapping: ElfMapping,
 }
 
-pub struct LoadedElf {
+pub struct LoadedElf<PhysAddr, VirtAddr> {
     /// The root of initial page tables.
-    pub pt_root: GuestPhysAddr,
+    pub pt_root: PhysAddr,
     /// An allocator that can be used to write data to the guest address space before launch.
     host_physical_offset: HostVirtAddr,
     /// The page table mapper of the guest.
-    pt_mapper: PtMapper<GuestPhysAddr, GuestVirtAddr>,
+    pt_mapper: PtMapper<PhysAddr, VirtAddr>,
 }
 
 impl ElfProgram {
@@ -108,11 +109,15 @@ impl ElfProgram {
     ///
     /// On success, returns the guest physical address of the guest page table root (to bet set as
     /// CR3).
-    pub fn load(
+    pub fn load<PhysAddr, VirtAddr>(
         &self,
         guest_allocator: &impl FrameAllocator,
         host_physical_offset: HostVirtAddr,
-    ) -> Result<LoadedElf, ()> {
+    ) -> Result<LoadedElf<PhysAddr, VirtAddr>, ()>
+    where
+        PhysAddr: Address,
+        VirtAddr: Address,
+    {
         // Compute the highest physical address used by the guest.
         // The remaining space can be used to allocate page tables.
         let mut highest_addr = 0;
@@ -124,7 +129,7 @@ impl ElfProgram {
         }
 
         let pt_root = guest_allocator.allocate_frame().ok_or(())?.zeroed();
-        let pt_root_guest_phys_addr = GuestPhysAddr::new(pt_root.phys_addr.as_usize());
+        let pt_root_guest_phys_addr = PhysAddr::from_usize(pt_root.phys_addr.as_usize());
         let mut pt_mapper =
             PtMapper::new(host_physical_offset.as_usize(), 0, pt_root_guest_phys_addr);
 
@@ -231,18 +236,21 @@ impl ElfProgram {
     }
 
     /// Maps an elf segment at the desired virtual address.
-    unsafe fn map_segment(
+    unsafe fn map_segment<PhysAddr, VirtAddr>(
         &self,
         segment: &Elf64Phdr,
-        mapper: &mut PtMapper<GuestPhysAddr, GuestVirtAddr>,
+        mapper: &mut PtMapper<PhysAddr, VirtAddr>,
         guest_allocator: &impl FrameAllocator,
-    ) {
+    ) where
+        PhysAddr: Address,
+        VirtAddr: Address,
+    {
         match self.mapping {
             ElfMapping::ElfDefault => {
                 mapper.map_range(
                     guest_allocator,
-                    GuestVirtAddr::new(segment.p_vaddr as usize),
-                    GuestPhysAddr::new(segment.p_paddr as usize),
+                    VirtAddr::from_u64(segment.p_vaddr),
+                    PhysAddr::from_u64(segment.p_paddr),
                     segment.p_memsz as usize,
                     flags_to_prot(segment.p_flags),
                 );
@@ -250,8 +258,8 @@ impl ElfProgram {
             ElfMapping::Identity => {
                 mapper.map_range(
                     guest_allocator,
-                    GuestVirtAddr::new(segment.p_paddr as usize),
-                    GuestPhysAddr::new(segment.p_paddr as usize),
+                    VirtAddr::from_u64(segment.p_paddr),
+                    PhysAddr::from_u64(segment.p_paddr),
                     segment.p_memsz as usize,
                     flags_to_prot(segment.p_flags),
                 );
@@ -278,7 +286,11 @@ impl ElfProgram {
     }
 }
 
-impl LoadedElf {
+impl<PhysAddr, VirtAddr> LoadedElf<PhysAddr, VirtAddr>
+where
+    PhysAddr: Address,
+    VirtAddr: Address,
+{
     /// Adds a paylog to a free location of the guest memory and returns the chosen location.
     pub fn add_payload(
         &mut self,
@@ -304,10 +316,10 @@ impl LoadedElf {
     /// of the stack.
     pub fn add_stack(
         &mut self,
-        stack_virt_addr: GuestVirtAddr,
+        stack_virt_addr: VirtAddr,
         size: usize,
         guest_allocator: &impl FrameAllocator,
-    ) -> (GuestVirtAddr, GuestPhysAddr) {
+    ) -> (VirtAddr, PhysAddr) {
         assert!(
             size % PAGE_SIZE == 0,
             "Stack size must be a multiple of page size"
@@ -317,8 +329,8 @@ impl LoadedElf {
             .expect("Failed to allocate stack");
 
         // Map guard page
-        let guard_virt_addr = GuestVirtAddr::new(stack_virt_addr.as_usize() - PAGE_SIZE);
-        let guard_phys_addr = GuestPhysAddr::new(range.start.as_usize());
+        let guard_virt_addr = VirtAddr::from_usize(stack_virt_addr.as_usize() - PAGE_SIZE);
+        let guard_phys_addr = PhysAddr::from_usize(range.start.as_usize());
         let stack_guard_prot = PtFlag::PRESENT | PtFlag::EXEC_DISABLE;
         self.pt_mapper.map_range(
             guest_allocator,
@@ -329,7 +341,7 @@ impl LoadedElf {
         );
 
         // Map stack
-        let stack_phys_addr = GuestPhysAddr::new(range.start.as_usize() + PAGE_SIZE);
+        let stack_phys_addr = PhysAddr::from_usize(range.start.as_usize() + PAGE_SIZE);
         let stack_prot = PtFlag::WRITE | PtFlag::PRESENT | PtFlag::EXEC_DISABLE | PtFlag::USER;
         self.pt_mapper.map_range(
             guest_allocator,
@@ -341,7 +353,7 @@ impl LoadedElf {
 
         // Start at the top of the stack. Note that the stack must be 16 bytes alignes with SysV
         // conventions.
-        let rsp = GuestVirtAddr::new(stack_virt_addr.as_usize() + size - 16);
+        let rsp = VirtAddr::from_usize(stack_virt_addr.as_usize() + size - 16);
         (rsp, stack_phys_addr)
     }
 }

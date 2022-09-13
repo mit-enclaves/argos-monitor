@@ -4,13 +4,13 @@ use super::Guest;
 use super::HandlerResult;
 use crate::acpi::AcpiInfo;
 use crate::debug::info;
+use crate::elf::{ElfMapping, ElfProgram};
 use crate::guests;
 use crate::guests::boot_params::{
     BootParams, E820Types, KERNEL_BOOT_FLAG_MAGIC, KERNEL_HDR_MAGIC, KERNEL_LOADER_OTHER,
     KERNEL_MIN_ALIGNMENT_BYTES,
 };
 use crate::guests::common::{create_mappings, setup_iommu_context};
-use crate::elf::{ElfMapping, ElfProgram};
 use crate::mmu::eptmapper::EptMapper;
 use crate::mmu::ioptmapper::IoPtMapper;
 use crate::mmu::{FrameAllocator, MemoryMap};
@@ -18,7 +18,7 @@ use crate::println;
 use crate::qemu;
 use crate::vmx;
 use crate::vmx::fields;
-use crate::vmx::{GuestPhysAddr, HostVirtAddr, Register};
+use crate::vmx::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr, Register};
 use crate::vtd::Iommu;
 
 use bootloader::boot_info::MemoryRegionKind;
@@ -79,7 +79,7 @@ impl Guest for Linux {
 
         // Load guest into memory.
         let mut loaded_linux = linux_prog
-            .load(guest_allocator, virtoffset)
+            .load::<GuestPhysAddr, GuestVirtAddr>(guest_allocator, virtoffset)
             .expect("Failed to load guest");
 
         // Setup I/O MMU

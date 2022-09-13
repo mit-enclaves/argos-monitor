@@ -3,7 +3,7 @@
 use crate::elf::{Elf64PhdrType, ElfProgram};
 use crate::mmu::frames::{PhysRange, RangeFrameAllocator};
 use crate::mmu::{FrameAllocator, PtFlag, PtMapper};
-use crate::{GuestVirtAddr, HostPhysAddr, HostVirtAddr};
+use crate::{HostPhysAddr, HostVirtAddr};
 use core::arch::asm;
 use stage_two_abi::{EntryPoint, Manifest, MANIFEST_SYMBOL};
 
@@ -18,7 +18,7 @@ const SECOND_STAGE_SIZE: usize = 0x1000 * 512;
 /// Virtual address to which the guest is loaded. Defined by our linker script.
 const LOAD_VIRT_ADDR: HostVirtAddr = HostVirtAddr::new(0x8000000);
 //  Stack definitions
-const STACK_VIRT_ADDR: GuestVirtAddr = GuestVirtAddr::new(0x9000000);
+const STACK_VIRT_ADDR: HostVirtAddr = HostVirtAddr::new(0x9000000);
 const STACK_SIZE: usize = 0x1000 * 2;
 
 pub fn load(
@@ -40,7 +40,7 @@ pub fn load(
 
     let elf_range = relocate_elf(&mut second_stage, &mut second_stage_allocator);
     let mut loaded_elf = second_stage
-        .load(
+        .load::<HostPhysAddr, HostVirtAddr>(
             &mut second_stage_allocator,
             first_stage_allocator.get_physical_offset(),
         )
@@ -58,8 +58,8 @@ pub fn load(
     );
     pt_mapper.map_range(
         first_stage_allocator,
-        HostVirtAddr::new(STACK_VIRT_ADDR.as_usize()),
-        HostPhysAddr::new(stack_phys.as_usize()),
+        STACK_VIRT_ADDR,
+        stack_phys,
         STACK_SIZE,
         PtFlag::PRESENT | PtFlag::WRITE,
     );

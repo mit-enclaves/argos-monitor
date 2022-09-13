@@ -11,7 +11,7 @@ use crate::qemu;
 use crate::vmx;
 use crate::vmx::{fields, Register};
 use crate::vtd::Iommu;
-use crate::{GuestVirtAddr, HostVirtAddr};
+use crate::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 
 #[cfg(feature = "guest_rawc")]
 const RAWCBYTES: &'static [u8] = include_bytes!("../../../../guest/rawc");
@@ -71,7 +71,7 @@ impl Guest for RawcBytes {
 
         // Load guest into memory.
         let mut loaded_rawc = rawc_prog
-            .load(guest_allocator, virtoffset)
+            .load::<GuestPhysAddr, GuestVirtAddr>(guest_allocator, virtoffset)
             .expect("Failed to load guest");
         let pt_root = loaded_rawc.pt_root;
 
