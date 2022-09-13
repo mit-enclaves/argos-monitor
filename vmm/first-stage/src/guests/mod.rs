@@ -22,8 +22,6 @@ pub mod linux;
 pub mod rawc;
 pub mod common;
 
-const ONEPAGE: usize = 1 << 12;
-
 #[derive(PartialEq, Debug)]
 pub enum HandlerResult {
     Resume,

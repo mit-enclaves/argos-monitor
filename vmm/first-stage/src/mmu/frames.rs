@@ -93,7 +93,7 @@ pub unsafe fn init(
 
 // ———————————————————————————— Frame Allocator ————————————————————————————— //
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 /// A range of physical memory.
 pub struct PhysRange {
     /// Start of the physical range (inclusive).

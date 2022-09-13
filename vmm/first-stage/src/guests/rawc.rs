@@ -45,9 +45,7 @@ impl Guest for RawcBytes {
         guest_allocator: &impl FrameAllocator,
         memory_map: MemoryMap,
     ) -> vmx::VmcsRegion<'vmx> {
-        let mut rawc_prog = ElfProgram::new(RAWCBYTES);
-        rawc_prog.add_stack(GuestVirtAddr::new(STACK), 0x2000);
-
+        let rawc_prog = ElfProgram::new(RAWCBYTES);
         let virtoffset = host_allocator.get_physical_offset();
 
         // Storing the guest ram start address for debugging.
@@ -72,10 +70,14 @@ impl Guest for RawcBytes {
         );
 
         // Load guest into memory.
-        let pt_root = rawc_prog
+        let mut loaded_rawc = rawc_prog
             .load(guest_allocator, virtoffset)
-            .expect("Failed to load guest")
-            .pt_root;
+            .expect("Failed to load guest");
+        let pt_root = loaded_rawc.pt_root;
+
+        // Setup stack
+        let (rsp, _stack_phys) =
+            loaded_rawc.add_stack(GuestVirtAddr::new(STACK), 0x2000, guest_allocator);
 
         // Setup I/O MMU
         if let Some(iommus) = &acpi.iommu {
@@ -126,7 +128,7 @@ impl Guest for RawcBytes {
                 .ok();
             vcpu.set_nat(fields::GuestStateNat::Cr3, pt_root.as_usize())
                 .ok();
-            vcpu.set_nat(fields::GuestStateNat::Rsp, STACK + guests::ONEPAGE)
+            vcpu.set_nat(fields::GuestStateNat::Rsp, rsp.as_usize())
                 .ok();
             // Zero out the gdt and idt
             vcpu.set_nat(fields::GuestStateNat::GdtrBase, 0x0).ok();

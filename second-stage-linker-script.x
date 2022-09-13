@@ -1,4 +1,4 @@
-/* Forces the linker to look for the manifest symbol */
+/* Force the linker to look for some symbols */
 EXTERN(__second_stage_manifest)
 
 SECTIONS
@@ -14,7 +14,8 @@ SECTIONS
 
   /* Output the rodata */
   .rodata : ALIGN(0x1000) {
-    KEEP(*(.rodata.__second_stage_manifest)) /* Marks symbol as used, to prevent GC*/
+     /* Mark symbol as used, to prevent GC*/
+    KEEP(*(__second_stage_manifest))
     *(.rodata)
     *(.rodata.*)
   }

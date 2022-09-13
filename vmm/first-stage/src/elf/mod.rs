@@ -5,13 +5,14 @@ mod ffi;
 use alloc::vec::Vec;
 use core::str::from_utf8;
 
-use crate::debug::info;
 use crate::mmu::{FrameAllocator, PtFlag, PtMapper};
 use crate::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 pub use ffi::{
     Elf64Hdr, Elf64Phdr, Elf64PhdrFlags, Elf64PhdrType, Elf64Shdr, Elf64ShdrType, Elf64Sym,
     FromBytes,
 };
+
+const PAGE_SIZE: usize = 0x1000;
 
 pub enum ElfMapping {
     /// Respect the virtual-to-physical mapping of the ELF file.
@@ -32,7 +33,6 @@ pub struct ElfProgram {
     pub sections: Vec<Elf64Shdr>,
     pub bytes: &'static [u8],
     mapping: ElfMapping,
-    stack: Option<(GuestVirtAddr, usize)>,
 }
 
 pub struct LoadedElf {
@@ -40,6 +40,8 @@ pub struct LoadedElf {
     pub pt_root: GuestPhysAddr,
     /// An allocator that can be used to write data to the guest address space before launch.
     host_physical_offset: HostVirtAddr,
+    /// The page table mapper of the guest.
+    pt_mapper: PtMapper<GuestPhysAddr, GuestVirtAddr>,
 }
 
 impl ElfProgram {
@@ -93,7 +95,6 @@ impl ElfProgram {
             segments: prog_headers,
             sections,
             mapping: ElfMapping::ElfDefault,
-            stack: None,
             bytes,
         }
     }
@@ -101,11 +102,6 @@ impl ElfProgram {
     /// Configures the mappings for this program.
     pub fn set_mapping(&mut self, mapping: ElfMapping) {
         self.mapping = mapping;
-    }
-
-    /// Configures the guest stack.
-    pub fn add_stack(&mut self, virt_addr: GuestVirtAddr, size: usize) {
-        self.stack = Some((virt_addr, size));
     }
 
     /// Loads the guest program and setup the page table inside the guest memory.
@@ -145,26 +141,10 @@ impl ElfProgram {
             }
         }
 
-        // Create stack, if required
-        if let Some((stack_address, size)) = self.stack {
-            // TODO: properly choose a valid stack physical address. Zero is not ideal...
-            let stack_prot = PtFlag::WRITE | PtFlag::PRESENT | PtFlag::EXEC_DISABLE | PtFlag::USER;
-            let range = guest_allocator
-                .allocate_range(size)
-                .expect("Failed to allocate");
-            pt_mapper.map_range(
-                guest_allocator,
-                stack_address,
-                GuestPhysAddr::new(range.start.as_usize()),
-                size,
-                stack_prot,
-            );
-            info::hook_set_guest_stack(range.start.as_u64(), stack_address.as_u64());
-        }
-
         Ok(LoadedElf {
             pt_root: pt_root_guest_phys_addr,
             host_physical_offset,
+            pt_mapper,
         })
     }
 
@@ -315,6 +295,54 @@ impl LoadedElf {
             dest.copy_from_slice(data);
         }
         GuestPhysAddr::new(range.start.as_usize())
+    }
+
+    /// Adds a stack to the guest, with an extra guard page.
+    ///
+    /// Returns the virtual address of the start of the stack (highest address with SysV
+    /// conventions, to be put in %rsp) as well as the physical address corresponding to the start
+    /// of the stack.
+    pub fn add_stack(
+        &mut self,
+        stack_virt_addr: GuestVirtAddr,
+        size: usize,
+        guest_allocator: &impl FrameAllocator,
+    ) -> (GuestVirtAddr, GuestPhysAddr) {
+        assert!(
+            size % PAGE_SIZE == 0,
+            "Stack size must be a multiple of page size"
+        );
+        let range = guest_allocator
+            .allocate_range(size + PAGE_SIZE)
+            .expect("Failed to allocate stack");
+
+        // Map guard page
+        let guard_virt_addr = GuestVirtAddr::new(stack_virt_addr.as_usize() - PAGE_SIZE);
+        let guard_phys_addr = GuestPhysAddr::new(range.start.as_usize());
+        let stack_guard_prot = PtFlag::PRESENT | PtFlag::EXEC_DISABLE;
+        self.pt_mapper.map_range(
+            guest_allocator,
+            guard_virt_addr,
+            guard_phys_addr,
+            PAGE_SIZE,
+            stack_guard_prot,
+        );
+
+        // Map stack
+        let stack_phys_addr = GuestPhysAddr::new(range.start.as_usize() + PAGE_SIZE);
+        let stack_prot = PtFlag::WRITE | PtFlag::PRESENT | PtFlag::EXEC_DISABLE | PtFlag::USER;
+        self.pt_mapper.map_range(
+            guest_allocator,
+            stack_virt_addr,
+            stack_phys_addr,
+            size,
+            stack_prot,
+        );
+
+        // Start at the top of the stack. Note that the stack must be 16 bytes alignes with SysV
+        // conventions.
+        let rsp = GuestVirtAddr::new(stack_virt_addr.as_usize() + size - 16);
+        (rsp, stack_phys_addr)
     }
 }
 

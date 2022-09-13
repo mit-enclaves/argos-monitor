@@ -1,9 +1,25 @@
 //! Second-stage
 #![no_std]
 
-pub mod debug;
+use core::arch::asm;
+use stage_two_abi::Manifest;
 
-pub fn init() {}
+pub mod debug;
+mod arch;
+
+pub fn init(manifest: &Manifest) {
+    unsafe {
+        set_cr3(manifest.cr3);
+    }
+}
+
+unsafe fn set_cr3(cr3: u64) {
+    asm!(
+        "mov cr3, {}",
+        in(reg) cr3,
+        options(nomem, nostack, preserves_flags)
+    );
+}
 
 /// Halt the CPU in a spinloop;
 pub fn hlt() -> ! {
