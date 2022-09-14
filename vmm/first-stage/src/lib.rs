@@ -13,21 +13,21 @@ extern crate alloc;
 use core::panic::PanicInfo;
 
 use bootloader::boot_info::FrameBuffer;
+use vmx;
 
 pub mod acpi;
 pub mod allocator;
 pub mod debug;
 pub mod gdt;
+pub mod elf;
 pub mod guests;
-pub mod second_stage;
 pub mod interrupts;
 pub mod mmu;
-pub mod elf;
 pub mod print;
 pub mod qemu;
+pub mod second_stage;
 pub mod segments;
 pub mod serial;
-pub mod vmx;
 pub mod vtd;
 
 #[cfg(feature = "vga")]

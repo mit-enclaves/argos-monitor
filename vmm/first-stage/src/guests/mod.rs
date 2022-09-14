@@ -4,7 +4,6 @@ use core::arch::asm;
 use crate::acpi::AcpiInfo;
 use crate::mmu::{FrameAllocator, MemoryMap};
 use crate::println;
-use crate::vmx;
 use crate::vmx::bitmaps::exit_qualification;
 use crate::vmx::bitmaps::{
     EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
@@ -12,15 +11,19 @@ use crate::vmx::bitmaps::{
 };
 use crate::vmx::fields;
 use crate::vmx::fields::traits::*;
-use crate::vmx::{ActiveVmcs, ControlRegister, Register, VmcsRegion, VmxError};
+use crate::vmx::{
+    secondary_controls_capabilities, ActiveVmcs, ControlRegister, Register, VmcsRegion, VmxError,
+    VmxExitReason, Vmxon, CPUID_EBX_X64_FEATURE_INVPCID,
+};
 
 use x86_64::registers::model_specific::Efer;
 
 pub mod boot_params;
+pub mod common;
 pub mod identity;
 pub mod linux;
 pub mod rawc;
-pub mod common;
+pub mod vmx;
 
 #[derive(PartialEq, Debug)]
 pub enum HandlerResult {
@@ -32,17 +35,14 @@ pub enum HandlerResult {
 pub trait Guest {
     unsafe fn instantiate<'vmx>(
         &self,
-        vmxon: &'vmx vmx::Vmxon,
+        vmxon: &'vmx Vmxon,
         acpi: &AcpiInfo,
         host_allocator: &impl FrameAllocator,
         guest_allocator: &impl FrameAllocator,
         memory_map: MemoryMap,
     ) -> VmcsRegion<'vmx>;
 
-    unsafe fn vmcall_handler(
-        &self,
-        vcpu: &mut vmx::ActiveVmcs,
-    ) -> Result<HandlerResult, vmx::VmxError>;
+    unsafe fn vmcall_handler(&self, vcpu: &mut ActiveVmcs) -> Result<HandlerResult, VmxError>;
 
     /// Enables exception interposition in the host.
     ///
@@ -55,12 +55,12 @@ pub trait Guest {
 
     fn handle_exit(
         &self,
-        vcpu: &mut vmx::ActiveVmcs,
-        reason: vmx::VmxExitReason,
-    ) -> Result<HandlerResult, vmx::VmxError> {
+        vcpu: &mut ActiveVmcs,
+        reason: VmxExitReason,
+    ) -> Result<HandlerResult, VmxError> {
         match reason {
-            vmx::VmxExitReason::Vmcall => unsafe { self.vmcall_handler(vcpu) },
-            vmx::VmxExitReason::Cpuid => {
+            VmxExitReason::Vmcall => unsafe { self.vmcall_handler(vcpu) },
+            VmxExitReason::Cpuid => {
                 let input_eax = vcpu.get(Register::Rax);
                 let input_ecx = vcpu.get(Register::Rcx);
                 let eax: u64;
@@ -90,7 +90,7 @@ pub trait Guest {
                 vcpu.next_instruction()?;
                 Ok(HandlerResult::Resume)
             }
-            vmx::VmxExitReason::ControlRegisterAccesses => {
+            VmxExitReason::ControlRegisterAccesses => {
                 let qualification = vcpu.exit_qualification()?.control_register_accesses();
                 match qualification {
                     exit_qualification::ControlRegisterAccesses::MovToCr(cr, reg) => {
@@ -108,12 +108,12 @@ pub trait Guest {
                 };
                 Ok(HandlerResult::Resume)
             }
-            vmx::VmxExitReason::EptViolation => {
+            VmxExitReason::EptViolation => {
                 let addr = vcpu.guest_linear_addr()?;
                 println!("EPT Violation: 0x{:x}", addr.as_u64());
                 Ok(HandlerResult::Crash)
             }
-            vmx::VmxExitReason::Xsetbv => {
+            VmxExitReason::Xsetbv => {
                 let ecx = vcpu.get(Register::Rcx);
                 let eax = vcpu.get(Register::Rax);
                 let edx = vcpu.get(Register::Rdx);
@@ -136,7 +136,7 @@ pub trait Guest {
                 vcpu.next_instruction()?;
                 Ok(HandlerResult::Resume)
             }
-            vmx::VmxExitReason::Wrmsr => {
+            VmxExitReason::Wrmsr => {
                 let ecx = vcpu.get(Register::Rcx);
                 if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
                     // Custom MSR range, used by KVM
@@ -149,7 +149,7 @@ pub trait Guest {
                     Ok(HandlerResult::Crash)
                 }
             }
-            vmx::VmxExitReason::Exception => {
+            VmxExitReason::Exception => {
                 match vcpu.interrupt_info() {
                     Ok(Some(exit)) => {
                         println!("Exception: {:?}", vcpu.interrupt_info());
@@ -177,7 +177,7 @@ pub trait Guest {
     }
 }
 
-fn configure_msr() -> Result<(), vmx::VmxError> {
+fn configure_msr() -> Result<(), VmxError> {
     unsafe {
         fields::Ctrl32::VmExitMsrLoadCount.vmwrite(0)?;
         fields::Ctrl32::VmExitMsrStoreCount.vmwrite(0)?;
@@ -187,7 +187,7 @@ fn configure_msr() -> Result<(), vmx::VmxError> {
     Ok(())
 }
 
-fn setup_guest(vcpu: &mut vmx::ActiveVmcs) -> Result<(), vmx::VmxError> {
+fn setup_guest(vcpu: &mut ActiveVmcs) -> Result<(), VmxError> {
     // Mostly copied from https://nixhacker.com/developing-hypervisor-from-scratch-part-4/
 
     // Control registers
@@ -306,7 +306,7 @@ fn setup_guest(vcpu: &mut vmx::ActiveVmcs) -> Result<(), vmx::VmxError> {
 fn cpuid_secondary_controls() -> SecondaryControls {
     let mut controls = SecondaryControls::empty();
     let cpuid = unsafe { arch::x86_64::__cpuid(7) };
-    if cpuid.ebx & vmx::CPUID_EBX_X64_FEATURE_INVPCID != 0 {
+    if cpuid.ebx & CPUID_EBX_X64_FEATURE_INVPCID != 0 {
         controls |= SecondaryControls::ENABLE_INVPCID;
     }
     return controls;
@@ -315,7 +315,7 @@ fn cpuid_secondary_controls() -> SecondaryControls {
 fn default_vmcs_config(vmcs: &mut ActiveVmcs, switching: bool) {
     // Look for XSAVES capabilities
     let capabilities =
-        vmx::secondary_controls_capabilities().expect("Secondary controls are not supported");
+        secondary_controls_capabilities().expect("Secondary controls are not supported");
     let xsaves = capabilities.contains(SecondaryControls::ENABLE_XSAVES_XRSTORS);
 
     let err = vmcs
@@ -331,7 +331,7 @@ fn default_vmcs_config(vmcs: &mut ActiveVmcs, switching: bool) {
             vmcs.set_vm_entry_ctrls(EntryControls::IA32E_MODE_GUEST | EntryControls::LOAD_IA32_EFER)
         })
         .and_then(|_| vmcs.set_exception_bitmap(ExceptionBitmap::INVALID_OPCODE))
-        .and_then(|_| vmcs.save_host_state())
+        .and_then(|_| vmx::save_host_state(vmcs))
         .and_then(|_| setup_guest(vmcs));
     println!("Config: {:?}", err);
     println!("MSRs:   {:?}", configure_msr());

@@ -3,7 +3,11 @@
 //! Inspired and in part copied from the [x86] crate.
 //!
 //! [x86]: https://hermitcore.github.io/libhermit-rs/x86/bits64/vmx/index.html
+#![no_std]
+#![cfg_attr(test, no_main)]
+#![feature(custom_test_frameworks)]
 
+pub mod address;
 pub mod bitmaps;
 pub mod check;
 pub mod ept;
@@ -12,25 +16,22 @@ pub mod fields;
 pub mod msr;
 pub mod raw;
 
+use core::arch;
 use core::arch::asm;
 use core::marker::PhantomData;
 use core::ptr::NonNull;
-use core::{arch, usize};
 
-use x86_64::instructions::tables::{sgdt, sidt};
-use x86_64::registers::control::{Cr4, Cr4Flags};
-use x86_64::registers::model_specific::Efer;
-use x86_64::registers::segmentation;
-use x86_64::registers::segmentation::Segment;
-
-use crate::gdt;
 use bitmaps::exit_qualification;
 use bitmaps::{
     EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
     SecondaryControls,
 };
-pub use errors::{VmExitInterrupt, VmxError, VmxExitReason, VmxFieldError};
 use fields::traits::*;
+
+pub use crate::errors::{
+    InterruptionType, VmExitInterrupt, VmxError, VmxExitReason, VmxFieldError,
+};
+pub use address::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
 
 /// Mask for keeping only the 32 lower bits.
 const LOW_32_BITS_MASK: u64 = (1 << 32) - 1;
@@ -40,93 +41,6 @@ const CPUID_ECX_VMX_MASK: u32 = 1 << 5;
 
 /// CPUID mask for INVPCID support
 pub const CPUID_EBX_X64_FEATURE_INVPCID: u32 = 1 << 10;
-
-// ————————————————————————————— Address Types —————————————————————————————— //
-
-/// Mask for the last 9 bits, corresponding to the size of page table indexes.
-const PAGE_TABLE_INDEX_MASK: usize = 0b111111111;
-
-/// A macro for implementing addresses types.
-///
-/// An address is just a wrapper around an `usize`, with getter and setter methods.
-macro_rules! addr_impl {
-    ($name:ident) => {
-        #[repr(transparent)]
-        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
-        pub struct $name(usize);
-
-        impl $name {
-            #[inline]
-            pub const fn new(addr: usize) -> Self {
-                Self(addr)
-            }
-
-            #[inline]
-            pub const fn as_usize(self) -> usize {
-                self.0
-            }
-
-            #[inline]
-            pub const fn as_u64(self) -> u64 {
-                self.0 as u64
-            }
-
-            /// Aligns address downwards.
-            #[inline]
-            pub const fn align_down(self, align: usize) -> Self {
-                assert!(align.is_power_of_two(), "`align` must be a power of two");
-                let aligned = self.as_usize() & !(align - 1);
-                Self::new(aligned)
-            }
-
-            /// Aligns address upwards.
-            #[inline]
-            pub const fn align_up(self, align: usize) -> Self {
-                assert!(align.is_power_of_two(), "`align` must be a power of two");
-                let align_mask = align - 1;
-                let addr = self.as_usize();
-                if addr & align_mask == 0 {
-                    self // already aligned
-                } else {
-                    if let Some(aligned) = (addr | align_mask).checked_add(1) {
-                        Self::new(aligned)
-                    } else {
-                        panic!("Attempt to add with overflow");
-                    }
-                }
-            }
-
-            /// Returns this address' L4 index.
-            #[inline]
-            pub fn l4_index(self) -> usize {
-                (self.0 >> 39) & PAGE_TABLE_INDEX_MASK
-            }
-
-            /// Returns this address' L3 index.
-            #[inline]
-            pub fn l3_index(self) -> usize {
-                (self.0 >> 30) & PAGE_TABLE_INDEX_MASK
-            }
-
-            /// Returns this address' L2 index.
-            #[inline]
-            pub fn l2_index(self) -> usize {
-                (self.0 >> 21) & PAGE_TABLE_INDEX_MASK
-            }
-
-            /// Returns this address' L1 index.
-            #[inline]
-            pub fn l1_index(self) -> usize {
-                (self.0 >> 12) & PAGE_TABLE_INDEX_MASK
-            }
-        }
-    };
-}
-
-addr_impl!(GuestVirtAddr);
-addr_impl!(GuestPhysAddr);
-addr_impl!(HostPhysAddr);
-addr_impl!(HostVirtAddr);
 
 // ——————————————————————————— Frame Abstraction ———————————————————————————— //
 
@@ -204,6 +118,8 @@ pub struct VmxBasicInfo {
 /// If VMX is available but not enabled, the configuration registers are updated properly to enable
 /// it.
 pub fn vmx_available() -> Result<(), VmxError> {
+    const VIRTUAL_MACHINE_EXTENSION: u64 = 1 << 13;
+
     // SAFETY: the CPUID instruction is not supported under SGX, we assume that this function is
     // never executed under SGX.
     let cpuid = unsafe { arch::x86_64::__cpuid(0x01) };
@@ -212,12 +128,12 @@ pub fn vmx_available() -> Result<(), VmxError> {
     }
 
     // Enable VMX if available but not configured.
-    let cr4 = Cr4::read();
-    if !Cr4::read().contains(Cr4Flags::VIRTUAL_MACHINE_EXTENSIONS) {
+    let cr4 = read_cr4();
+    if (cr4 & VIRTUAL_MACHINE_EXTENSION) == 0 {
         // SAFETY: it is always (really?) possible to set the VMX bit, but removing it during VMX
         // operation causes #UD.
         unsafe {
-            Cr4::write(cr4 | Cr4Flags::VIRTUAL_MACHINE_EXTENSIONS);
+            write_cr4(cr4 | VIRTUAL_MACHINE_EXTENSION);
         }
     }
 
@@ -521,7 +437,7 @@ where
         }
 
         let vector = (info & 0xFF) as u8;
-        let int_type = errors::InterruptionType::from_raw(info);
+        let int_type = InterruptionType::from_raw(info);
         let error_code = if (info & (1 << 11)) != 0 {
             Some(unsafe { fields::GuestState32Ro::VmExitInterruptErrCode.vmread()? })
         } else {
@@ -716,76 +632,6 @@ where
         Self::validate_flags_allowed(flags.bits(), allowed_vmfuncs.bits())
             .map_err(|err| err.set_field(VmxFieldError::VmFuncControls))?;
         unsafe { fields::Ctrl64::VmFuncCtrls.vmwrite(1) }
-    }
-
-    /// Saves the host state (control registers, segments...), so that they are restored on VM Exit.
-    pub fn save_host_state(&mut self) -> Result<(), VmxError> {
-        // NOTE: See section 24.5 of volume 3C.
-
-        // Segments
-        let cs = segmentation::CS::get_reg();
-        let ds = segmentation::DS::get_reg();
-        let es = segmentation::ES::get_reg();
-        let fs = segmentation::FS::get_reg();
-        let gs = segmentation::GS::get_reg();
-        let ss = segmentation::SS::get_reg();
-        let tr: u16;
-        let gdt = sgdt();
-        let idt = sidt();
-
-        unsafe {
-            // There is no nice wrapper to read `tr` in the x86_64 crate.
-            asm!("str {0:x}",
-                out(reg) tr,
-                options(att_syntax, nostack, nomem, preserves_flags));
-        }
-
-        unsafe {
-            fields::HostState16::CsSelector.vmwrite(cs.0)?;
-            fields::HostState16::DsSelector.vmwrite(ds.0)?;
-            fields::HostState16::EsSelector.vmwrite(es.0)?;
-            fields::HostState16::FsSelector.vmwrite(fs.0)?;
-            fields::HostState16::GsSelector.vmwrite(gs.0)?;
-            fields::HostState16::SsSelector.vmwrite(ss.0)?;
-            fields::HostState16::TrSelector.vmwrite(tr)?;
-
-            // NOTE: those might throw an exception depending on the CPU features, let's just
-            // ignore them for now.
-            // VmcsHostStateNat::FsBase.vmwrite(FS::read_base().as_u64() as usize)?;
-            // VmcsHostStateNat::GsBase.vmwrite(GS::read_base().as_u64() as usize)?;
-
-            fields::HostStateNat::IdtrBase.vmwrite(idt.base.as_u64() as usize)?;
-            fields::HostStateNat::GdtrBase.vmwrite(gdt.base.as_u64() as usize)?;
-
-            // Save TR base
-            let tr_offset = (tr >> 3) as usize;
-            let gdt = gdt::gdt().as_raw_slice();
-            let low = gdt[tr_offset];
-            let high = gdt[tr_offset + 1];
-            let tr_base = get_tr_base(high, low);
-            fields::HostStateNat::TrBase.vmwrite(tr_base as usize)?;
-        }
-
-        // MSRs
-        unsafe {
-            fields::HostStateNat::Ia32SysenterEsp.vmwrite(msr::SYSENTER_ESP.read() as usize)?;
-            fields::HostStateNat::Ia32SysenterEip.vmwrite(msr::SYSENTER_EIP.read() as usize)?;
-            fields::HostState32::Ia32SysenterCs.vmwrite(msr::SYSENTER_CS.read() as u32)?;
-            fields::HostState64::Ia32Efer.vmwrite(Efer::read().bits())?;
-        }
-
-        // Control registers
-        let cr0: usize;
-        let cr3: usize;
-        let cr4: usize;
-        unsafe {
-            asm!("mov {}, cr0", out(reg) cr0, options(nomem, nostack, preserves_flags));
-            asm!("mov {}, cr3", out(reg) cr3, options(nomem, nostack, preserves_flags));
-            asm!("mov {}, cr4", out(reg) cr4, options(nomem, nostack, preserves_flags));
-            fields::HostStateNat::Cr0.vmwrite(cr0)?;
-            fields::HostStateNat::Cr3.vmwrite(cr3)?;
-            fields::HostStateNat::Cr4.vmwrite(cr4)
-        }
     }
 
     /// Sets a control setting for the current VMCS.
@@ -1010,22 +856,6 @@ impl VmxExitQualification {
     }
 }
 
-// ———————————————————————————— Helper Functions ———————————————————————————— //
-
-/// Construct the TR base from its system segment descriptor.
-///
-/// See Intel manual 7.2.3.
-fn get_tr_base(desc_high: u64, desc_low: u64) -> u64 {
-    const BASE_2_MASK: u64 = ((1 << 8) - 1) << 24;
-    const BASE_1_MASK: u64 = ((1 << 24) - 1) << 16;
-
-    let mut ptr = 0;
-    ptr |= (desc_high & LOW_32_BITS_MASK) << 32;
-    ptr |= (desc_low & BASE_2_MASK) >> 32;
-    ptr |= (desc_low & BASE_1_MASK) >> 16;
-    ptr
-}
-
 // ————————————————————————————————— Tests —————————————————————————————————— //
 
 #[cfg(test)]
@@ -1109,4 +939,26 @@ mod test {
             Err(VmxError::Disallowed0(VmxFieldError::Unknown, 0)),
         );
     }
+}
+
+// ————————————————————————————————— Utils —————————————————————————————————— //
+
+fn read_cr4() -> u64 {
+    let cr4: u64;
+    unsafe {
+        asm! {
+            "mov {}, cr4",
+            out(reg) cr4,
+            options(nomem, nostack, preserves_flags),
+        };
+    }
+    cr4
+}
+
+unsafe fn write_cr4(cr4: u64) {
+    asm! {
+        "mov cr4, {}",
+        in(reg) cr4,
+        options(nomem, nostack, preserves_flags),
+    };
 }

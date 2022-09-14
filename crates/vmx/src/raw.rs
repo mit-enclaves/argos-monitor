@@ -6,11 +6,10 @@
 
 use core::arch::asm;
 
-use x86_64::registers::rflags::RFlags;
-
-use super::errors::{VmxError, VmxInstructionError};
-use super::fields;
-use crate::vmx;
+use crate::bitmaps::RFlags;
+use crate::errors::{VmxError, VmxInstructionError};
+use crate::fields;
+use crate::{ActiveVmcs, Register};
 
 /// Executes VMXON.
 ///
@@ -73,7 +72,7 @@ pub unsafe fn vmptrld(addr: u64) -> Result<(), VmxError> {
 /// - If the guest is not properly loaded, configured, and sandboxed, this might result in
 ///   arbitrary execution.
 /// - This function expects a 64 bits architecture for now.
-pub unsafe fn vmlaunch(vmcs: &mut vmx::ActiveVmcs) -> Result<(), VmxError> {
+pub unsafe fn vmlaunch(vmcs: &mut ActiveVmcs) -> Result<(), VmxError> {
     let rip_field = fields::HostStateNat::Rip as u64;
     let rsp_field = fields::HostStateNat::Rsp as u64;
     let vcpu_ptr = vmcs.region.regs.as_mut_ptr();
@@ -113,21 +112,21 @@ pub unsafe fn vmlaunch(vmcs: &mut vmx::ActiveVmcs) -> Result<(), VmxError> {
         "pop rbx",                    // Restore %rbx
 
         // Registers used
-        inout("rax") vcpu_ptr => regs[vmx::Register::Rax as usize],     // VCPU RBX pointer
-        inout("rcx") rsp_field => regs[vmx::Register::Rcx as usize],    // RSP host VMCS field
-        inout("rdx") rip_field => regs[vmx::Register::Rdx as usize],    // RIP host VMCS field
+        inout("rax") vcpu_ptr => regs[Register::Rax as usize],     // VCPU RBX pointer
+        inout("rcx") rsp_field => regs[Register::Rcx as usize],    // RSP host VMCS field
+        inout("rdx") rip_field => regs[Register::Rdx as usize],    // RIP host VMCS field
 
         // Register automatically loaded and restored
-        inout("rsi") regs[vmx::Register::Rsi as usize] => regs[vmx::Register::Rsi as usize],
-        inout("rdi") regs[vmx::Register::Rdi as usize] => regs[vmx::Register::Rdi as usize],
-        inout("r8")  regs[vmx::Register::R8  as usize] => regs[vmx::Register::R8  as usize],
-        inout("r9")  regs[vmx::Register::R9  as usize] => regs[vmx::Register::R9  as usize],
-        inout("r10") regs[vmx::Register::R10 as usize] => regs[vmx::Register::R10 as usize],
-        inout("r11") regs[vmx::Register::R11 as usize] => regs[vmx::Register::R11 as usize],
-        inout("r12") regs[vmx::Register::R12 as usize] => regs[vmx::Register::R12 as usize],
-        inout("r13") regs[vmx::Register::R13 as usize] => regs[vmx::Register::R13 as usize],
-        inout("r14") regs[vmx::Register::R14 as usize] => regs[vmx::Register::R14 as usize],
-        inout("r15") regs[vmx::Register::R15 as usize] => regs[vmx::Register::R15 as usize],
+        inout("rsi") regs[Register::Rsi as usize] => regs[Register::Rsi as usize],
+        inout("rdi") regs[Register::Rdi as usize] => regs[Register::Rdi as usize],
+        inout("r8")  regs[Register::R8  as usize] => regs[Register::R8  as usize],
+        inout("r9")  regs[Register::R9  as usize] => regs[Register::R9  as usize],
+        inout("r10") regs[Register::R10 as usize] => regs[Register::R10 as usize],
+        inout("r11") regs[Register::R11 as usize] => regs[Register::R11 as usize],
+        inout("r12") regs[Register::R12 as usize] => regs[Register::R12 as usize],
+        inout("r13") regs[Register::R13 as usize] => regs[Register::R13 as usize],
+        inout("r14") regs[Register::R14 as usize] => regs[Register::R14 as usize],
+        inout("r15") regs[Register::R15 as usize] => regs[Register::R15 as usize],
     );
     // NOTE: it is correct to check the flag even after a nop and pop instructions since none of
     // them modifies any flags.
@@ -143,7 +142,7 @@ pub unsafe fn vmlaunch(vmcs: &mut vmx::ActiveVmcs) -> Result<(), VmxError> {
 /// - If the guest is not properly loaded, configured, and sandboxed, this might result in
 ///   arbitrary execution.
 /// - This function expects a 64 bits architecture for now.
-pub unsafe fn vmresume(vmcs: &mut vmx::ActiveVmcs) -> Result<(), VmxError> {
+pub unsafe fn vmresume(vmcs: &mut ActiveVmcs) -> Result<(), VmxError> {
     let rip_field = fields::HostStateNat::Rip as u64;
     let rsp_field = fields::HostStateNat::Rsp as u64;
     let vcpu_ptr = vmcs.region.regs.as_mut_ptr();
@@ -183,21 +182,21 @@ pub unsafe fn vmresume(vmcs: &mut vmx::ActiveVmcs) -> Result<(), VmxError> {
         "pop rbx",                    // Restore %rbx
 
         // Registers used
-        inout("rax") vcpu_ptr => regs[vmx::Register::Rax as usize],     // VCPU RBX pointer
-        inout("rcx") rsp_field => regs[vmx::Register::Rcx as usize],    // RSP host VMCS field
-        inout("rdx") rip_field => regs[vmx::Register::Rdx as usize],    // RIP host VMCS field
+        inout("rax") vcpu_ptr => regs[Register::Rax as usize],     // VCPU RBX pointer
+        inout("rcx") rsp_field => regs[Register::Rcx as usize],    // RSP host VMCS field
+        inout("rdx") rip_field => regs[Register::Rdx as usize],    // RIP host VMCS field
 
         // Register automatically loaded and restored
-        inout("rsi") regs[vmx::Register::Rsi as usize] => regs[vmx::Register::Rsi as usize],
-        inout("rdi") regs[vmx::Register::Rdi as usize] => regs[vmx::Register::Rdi as usize],
-        inout("r8")  regs[vmx::Register::R8  as usize] => regs[vmx::Register::R8  as usize],
-        inout("r9")  regs[vmx::Register::R9  as usize] => regs[vmx::Register::R9  as usize],
-        inout("r10") regs[vmx::Register::R10 as usize] => regs[vmx::Register::R10 as usize],
-        inout("r11") regs[vmx::Register::R11 as usize] => regs[vmx::Register::R11 as usize],
-        inout("r12") regs[vmx::Register::R12 as usize] => regs[vmx::Register::R12 as usize],
-        inout("r13") regs[vmx::Register::R13 as usize] => regs[vmx::Register::R13 as usize],
-        inout("r14") regs[vmx::Register::R14 as usize] => regs[vmx::Register::R14 as usize],
-        inout("r15") regs[vmx::Register::R15 as usize] => regs[vmx::Register::R15 as usize],
+        inout("rsi") regs[Register::Rsi as usize] => regs[Register::Rsi as usize],
+        inout("rdi") regs[Register::Rdi as usize] => regs[Register::Rdi as usize],
+        inout("r8")  regs[Register::R8  as usize] => regs[Register::R8  as usize],
+        inout("r9")  regs[Register::R9  as usize] => regs[Register::R9  as usize],
+        inout("r10") regs[Register::R10 as usize] => regs[Register::R10 as usize],
+        inout("r11") regs[Register::R11 as usize] => regs[Register::R11 as usize],
+        inout("r12") regs[Register::R12 as usize] => regs[Register::R12 as usize],
+        inout("r13") regs[Register::R13 as usize] => regs[Register::R13 as usize],
+        inout("r14") regs[Register::R14 as usize] => regs[Register::R14 as usize],
+        inout("r15") regs[Register::R15 as usize] => regs[Register::R15 as usize],
     );
     // NOTE: it is correct to check the flag even after a nop and pop instructions since none of
     // them modifies any flags.

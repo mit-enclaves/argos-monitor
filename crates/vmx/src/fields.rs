@@ -35,9 +35,9 @@
 //!
 //! See Intel 3D Appendix B.
 
-use super::msr::VMX_VMCS_ENUM;
-use super::raw;
 use super::VmxError;
+use crate::msr::VMX_VMCS_ENUM;
+use crate::raw;
 
 // ————————————————————————————————— Traits ————————————————————————————————— //
 

@@ -50,6 +50,7 @@ dependencies = [
  "spin",
  "stage_two_abi",
  "uart_16550",
+ "vmx",
  "volatile 0.2.7",
  "x86_64",
 ]
@@ -213,6 +214,14 @@ name = "unicode-ident"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4f5b37a154999a8f3f98cc23a628d850e154479cd94decf3414696e12e31aaf"
+
+[[package]]
+name = "vmx"
+version = "0.1.0"
+dependencies = [
+ "bit_field",
+ "bitflags",
+]
 
 [[package]]
 name = "volatile"

@@ -9,6 +9,7 @@ members = [
     "vmm/first-stage",
     "vmm/second-stage",
     "crates/stage_two_abi",
+    "crates/vmx",
     "boot_toolchain",
 ]
 

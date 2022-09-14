@@ -16,9 +16,9 @@ use first_stage::mmu::{FrameAllocator, MemoryMap, PtMapper};
 use first_stage::println;
 use first_stage::qemu;
 use first_stage::second_stage;
-use first_stage::vmx;
-use first_stage::vmx::Register;
 use first_stage::{HostPhysAddr, HostVirtAddr};
+use vmx;
+use vmx::Register;
 use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
 
 entry_point!(kernel_main);
