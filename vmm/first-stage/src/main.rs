@@ -105,17 +105,18 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 fn launch_guest(
     guest: &impl Guest,
     acpi: &AcpiInfo,
-    host_allocator: &impl FrameAllocator,
+    stage1_allocator: &impl FrameAllocator,
     guest_allocator: &impl FrameAllocator,
     memory_map: MemoryMap,
     mut pt_mapper: PtMapper<HostPhysAddr, HostVirtAddr>,
 ) -> ! {
     initialize_cpu();
     print_vmx_info();
-    second_stage::load(host_allocator, &mut pt_mapper);
+
+    let mut stage2_allocator = second_stage::second_stage_allocator(stage1_allocator);
 
     unsafe {
-        let frame = host_allocator
+        let frame = stage2_allocator
             .allocate_frame()
             .expect("Failed to allocate VMXON");
         let vmxon = match vmx::vmxon(frame) {
@@ -129,7 +130,15 @@ fn launch_guest(
             }
         };
 
-        let mut vmcs = guest.instantiate(&vmxon, acpi, host_allocator, guest_allocator, memory_map);
+        let mut vmcs = guest.instantiate(
+            &vmxon,
+            acpi,
+            &mut stage2_allocator,
+            guest_allocator,
+            memory_map,
+        );
+
+        second_stage::load(stage1_allocator, &mut stage2_allocator, &mut pt_mapper);
 
         // Debugging hook post initialization.
         info::tyche_hook_done(1);

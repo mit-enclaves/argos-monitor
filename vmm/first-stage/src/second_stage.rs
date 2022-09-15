@@ -21,43 +21,46 @@ const LOAD_VIRT_ADDR: HostVirtAddr = HostVirtAddr::new(0x8000000);
 const STACK_VIRT_ADDR: HostVirtAddr = HostVirtAddr::new(0x9000000);
 const STACK_SIZE: usize = 0x1000 * 2;
 
+pub fn second_stage_allocator(stage1_allocator: &impl FrameAllocator) -> RangeFrameAllocator {
+    let second_stage_range = stage1_allocator
+        .allocate_range(SECOND_STAGE_SIZE)
+        .expect("Failed to allocate second stage range");
+    unsafe {
+        RangeFrameAllocator::new(
+            second_stage_range.start,
+            second_stage_range.end,
+            stage1_allocator.get_physical_offset(),
+        )
+    }
+}
+
 pub fn load(
-    first_stage_allocator: &impl FrameAllocator,
+    stage1_allocator: &impl FrameAllocator,
+    stage2_allocator: &impl FrameAllocator,
     pt_mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
 ) {
     // Read elf and allocate second stage memory
     let mut second_stage = ElfProgram::new(SECOND_STAGE);
-    let second_stage_range = first_stage_allocator
-        .allocate_range(SECOND_STAGE_SIZE)
-        .expect("Failed to allocate second stage range");
-    let mut second_stage_allocator = unsafe {
-        RangeFrameAllocator::new(
-            second_stage_range.start,
-            second_stage_range.end,
-            first_stage_allocator.get_physical_offset(),
-        )
-    };
 
-    let elf_range = relocate_elf(&mut second_stage, &mut second_stage_allocator);
+    let elf_range = relocate_elf(&mut second_stage, stage2_allocator);
     let mut loaded_elf = second_stage
         .load::<HostPhysAddr, HostVirtAddr>(
-            &mut second_stage_allocator,
-            first_stage_allocator.get_physical_offset(),
+            stage2_allocator,
+            stage1_allocator.get_physical_offset(),
         )
         .expect("Failed to load second stage");
-    let (rsp, stack_phys) =
-        loaded_elf.add_stack(STACK_VIRT_ADDR, STACK_SIZE, &mut second_stage_allocator);
+    let (rsp, stack_phys) = loaded_elf.add_stack(STACK_VIRT_ADDR, STACK_SIZE, stage2_allocator);
 
     // Map stage 2 into stage 1 page tables
     pt_mapper.map_range(
-        first_stage_allocator,
+        stage1_allocator,
         LOAD_VIRT_ADDR,
         elf_range.start,
         elf_range.size(),
         PtFlag::PRESENT | PtFlag::WRITE,
     );
     pt_mapper.map_range(
-        first_stage_allocator,
+        stage1_allocator,
         STACK_VIRT_ADDR,
         stack_phys,
         STACK_SIZE,
