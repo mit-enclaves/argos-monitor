@@ -19,6 +19,7 @@ unsafe fn set_cr3(cr3: u64) {
         in(reg) cr3,
         options(nomem, nostack, preserves_flags)
     );
+    arch::init();
 }
 
 /// Halt the CPU in a spinloop;
