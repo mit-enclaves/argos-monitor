@@ -34,6 +34,11 @@ pub static MANIFEST_SYMBOL: &'static str = "__second_stage_manifest";
 pub struct Manifest {
     /// The root of the page tables for stage 2.
     pub cr3: u64,
+    /// Physical offset of stage 2.
+    pub poffset: u64,
+    /// Virtual offset of stage 2.
+    pub voffset: u64,
+    pub info: GuestInfo,
 }
 
 /// Defines a static manifest and corresponding symbol to be filled-up by the first stage.
@@ -45,6 +50,47 @@ macro_rules! add_manifest {
         #[export_name = "__second_stage_manifest"]
         pub static __MANIFEST: Manifest = Manifest {
             cr3: 0,
+            poffset: 0,
+            voffset: 0,
+            info: GuestInfo::default_config(),
         };
     };
+}
+
+/// GuestInfo passed from stage 1 to stage 2.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct GuestInfo {
+    // Guest information.
+    pub ept_root: usize,
+    pub cr3: usize,
+    pub rip: usize,
+    pub rsp: usize,
+    pub rsi: usize,
+    // Host segments.
+    pub cs: u16,
+    pub ds: u16,
+    pub es: u16,
+    pub fs: u16,
+    pub gs: u16,
+    pub ss: u16,
+    pub efer: u64,
+}
+
+impl GuestInfo {
+    pub const fn default_config() -> Self {
+        GuestInfo {
+            ept_root: 0,
+            cr3: 0,
+            rip: 0,
+            rsp: 0,
+            rsi: 0,
+            cs: 0,
+            ds: 0,
+            es: 0,
+            fs: 0,
+            gs: 0,
+            ss: 0,
+            efer: 0,
+        }
+    }
 }

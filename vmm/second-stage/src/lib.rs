@@ -3,9 +3,10 @@
 
 use core::arch::asm;
 use stage_two_abi::Manifest;
-
-pub mod debug;
+pub mod allocator;
 mod arch;
+pub mod debug;
+pub mod guest;
 
 pub fn init(manifest: &Manifest) {
     unsafe {

@@ -5,7 +5,6 @@ use super::HandlerResult;
 use crate::acpi::AcpiInfo;
 use crate::debug::info;
 use crate::elf::{ElfMapping, ElfProgram};
-use crate::guests;
 use crate::guests::boot_params::{
     BootParams, E820Types, KERNEL_BOOT_FLAG_MAGIC, KERNEL_HDR_MAGIC, KERNEL_LOADER_OTHER,
     KERNEL_MIN_ALIGNMENT_BYTES,
@@ -15,13 +14,12 @@ use crate::mmu::eptmapper::EptMapper;
 use crate::mmu::ioptmapper::IoPtMapper;
 use crate::mmu::{FrameAllocator, MemoryMap};
 use crate::println;
-use crate::qemu;
 use crate::vmx;
-use crate::vmx::fields;
-use crate::vmx::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr, Register};
+use crate::vmx::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 use crate::vtd::Iommu;
 
 use bootloader::boot_info::MemoryRegionKind;
+use stage_two_abi::GuestInfo;
 
 #[cfg(feature = "guest_linux")]
 const LINUXBYTES: &'static [u8] = include_bytes!("../../../../linux-image/images/vmlinux");
@@ -43,14 +41,13 @@ pub struct Linux {}
 pub const LINUX: Linux = Linux {};
 
 impl Guest for Linux {
-    unsafe fn instantiate<'vmx>(
+    unsafe fn instantiate(
         &self,
-        vmxon: &'vmx vmx::Vmxon,
         acpi: &AcpiInfo,
         host_allocator: &impl FrameAllocator,
         guest_allocator: &impl FrameAllocator,
         memory_map: MemoryMap,
-    ) -> vmx::VmcsRegion<'vmx> {
+    ) -> GuestInfo {
         let mut linux_prog = ElfProgram::new(LINUXBYTES);
         linux_prog.set_mapping(ElfMapping::Identity);
 
@@ -104,62 +101,14 @@ impl Guest for Linux {
         boot_params.hdr.cmd_line_ptr = command_line_addr_low;
         boot_params.hdr.cmdline_size = COMMAND_LINE.len() as u32;
         let boot_params = loaded_linux.add_payload(boot_params.as_bytes(), guest_allocator);
-
-        // Setup the vmcs.
-        let frame = host_allocator
-            .allocate_frame()
-            .expect("Failed to allocate VMCS");
-        let mut vmcs = match vmxon.create_vm(frame) {
-            Err(err) => {
-                println!("VMCS:   Err({:?})", err);
-                qemu::exit(qemu::ExitCode::Failure);
-            }
-            Ok(vmcs) => {
-                println!("VMCS:   Ok(())");
-                vmcs
-            }
-        };
-
-        {
-            // VMCS is active in this block
-            let mut vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");
-            guests::default_vmcs_config(&mut vcpu, false);
-
-            // Configure MSRs
-            let frame = host_allocator
-                .allocate_frame()
-                .expect("Failed to allocate MSR bitmaps");
-            let msr_bitmaps = vcpu
-                .initialize_msr_bitmaps(frame)
-                .expect("Failed to install MSR bitmap");
-            msr_bitmaps.allow_all();
-
-            // Setup the roots.
-            vcpu.set_ept_ptr(ept_mapper.get_root()).unwrap();
-            let entry_point = linux_prog.phys_entry;
-            vcpu.set_nat(fields::GuestStateNat::Rip, entry_point.as_usize())
-                .unwrap();
-            vcpu.set_nat(fields::GuestStateNat::Cr3, loaded_linux.pt_root.as_usize())
-                .unwrap();
-            vcpu.set_nat(fields::GuestStateNat::Rsp, 0).unwrap();
-
-            // Zero out the gdt and idt
-            vcpu.set_nat(fields::GuestStateNat::GdtrBase, 0x0).unwrap();
-            vcpu.set_nat(fields::GuestStateNat::IdtrBase, 0x0).unwrap();
-
-            // Setup control registers
-            let vmxe = 1 << 13; // VMXE flags, required during VMX operations.
-            let cr4 = 0xA0 | vmxe;
-            vcpu.set_nat(fields::GuestStateNat::Cr4, cr4).unwrap();
-            vcpu.set_cr4_mask(vmxe).unwrap();
-            vcpu.set_cr4_shadow(vmxe).unwrap();
-
-            // Setup boot_params
-            vcpu.set(Register::Rsi, boot_params.as_u64());
-
-            vmx::check::check().expect("check error");
-        }
-        vmcs
+        let entry_point = linux_prog.phys_entry;
+        let mut info = GuestInfo::default();
+        info.ept_root = ept_mapper.get_root().as_usize();
+        info.cr3 = loaded_linux.pt_root.as_usize();
+        info.rip = entry_point.as_usize();
+        info.rsp = 0;
+        info.rsi = boot_params.as_usize();
+        info
     }
 
     unsafe fn vmcall_handler(

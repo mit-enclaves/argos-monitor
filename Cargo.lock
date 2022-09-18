@@ -155,6 +155,7 @@ version = "0.1.0"
 dependencies = [
  "stage_two_abi",
  "uart_16550",
+ "vmx",
 ]
 
 [[package]]

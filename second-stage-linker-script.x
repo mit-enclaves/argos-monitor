@@ -4,7 +4,7 @@ EXTERN(__second_stage_manifest)
 SECTIONS
 {
   /* Start address */
-  . = 0x8000000;
+  . = 0x80000000000;
 
   /* Output a text section */
   .text : ALIGN(0x1000) {

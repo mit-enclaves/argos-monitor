@@ -2,19 +2,32 @@
 
 use core::arch::asm;
 
+use crate::gdt;
+use stage_two_abi::GuestInfo;
 use vmx::fields;
 use vmx::fields::traits::*;
 use vmx::msr;
 use vmx::{ActiveVmcs, VmxError};
-use crate::gdt;
 
 use x86_64::instructions::tables::{sgdt, sidt};
 use x86_64::registers::model_specific::Efer;
 use x86_64::registers::segmentation;
 use x86_64::registers::segmentation::Segment;
 
+pub fn save_host_info(info: &mut GuestInfo) {
+    info.cs = segmentation::CS::get_reg().0;
+    info.ds = segmentation::DS::get_reg().0;
+    info.es = segmentation::ES::get_reg().0;
+    info.fs = segmentation::FS::get_reg().0;
+    info.gs = segmentation::GS::get_reg().0;
+    info.ss = segmentation::SS::get_reg().0;
+    info.efer = Efer::read().bits();
+}
+
 /// Saves the host state (control registers, segments...), so that they are restored on VM Exit.
-pub fn save_host_state<'active, 'vmx>(_vmcs: &mut ActiveVmcs<'active, 'vmx>) -> Result<(), VmxError> {
+pub fn save_host_state<'active, 'vmx>(
+    _vmcs: &mut ActiveVmcs<'active, 'vmx>,
+) -> Result<(), VmxError> {
     // NOTE: See section 24.5 of volume 3C.
 
     // Segments
