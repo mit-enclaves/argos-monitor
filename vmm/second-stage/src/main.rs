@@ -16,14 +16,12 @@ add_manifest!();
 pub extern "C" fn second_stage_entry_point(manifest: &'static Manifest) -> ! {
     println!("============= Second Stage =============");
     println!("Hello from second stage!");
-    println!("Manifest CR3: 0x{:x}", manifest.cr3);
     second_stage::init(manifest);
     println!("Initialization: done");
     let mut allocator = FrameAllocator::new(manifest.poffset, manifest.voffset);
     launch_guest(&mut allocator, &manifest.info);
     // Exit
     qemu::exit(qemu::ExitCode::Success);
-    hlt();
 }
 
 fn launch_guest(allocator: &mut FrameAllocator, infos: &GuestInfo) {
@@ -31,6 +29,7 @@ fn launch_guest(allocator: &mut FrameAllocator, infos: &GuestInfo) {
         .allocate_frame()
         .expect("Failed to allocate VMXON");
     unsafe {
+        println!("Init the guest");
         let vmxon = match vmx::vmxon(frame) {
             Ok(vmxon) => {
                 println!("VMXON: ok(vmxon)");
@@ -39,12 +38,9 @@ fn launch_guest(allocator: &mut FrameAllocator, infos: &GuestInfo) {
             Err(err) => {
                 println!("VMXON: {:?}", err);
                 qemu::exit(qemu::ExitCode::Failure);
-                //TODO figure out why the compiler does not like me
-                panic!("a");
             }
         };
 
-        println!("Init the guest");
         let mut vmcs = init_guest(&vmxon, allocator, infos);
         println!("Done with the guest init");
         let mut vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");

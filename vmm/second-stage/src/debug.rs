@@ -61,11 +61,12 @@ impl ExitCode {
 
 pub mod qemu {
     pub use super::ExitCode;
+    use crate::hlt;
     use core::arch::asm;
 
     const QEMU_EXIT_PORT: u16 = 0xf4;
 
-    pub fn exit(exit_code: ExitCode) {
+    pub fn exit(exit_code: ExitCode) -> ! {
         println!("========= Exiting Second Stage =========");
         println!("{}", exit_code.to_str());
         println!("========================================");
@@ -79,5 +80,7 @@ pub mod qemu {
                 options(nomem, nostack, preserves_flags)
             );
         }
+
+        hlt();
     }
 }

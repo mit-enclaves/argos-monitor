@@ -309,9 +309,21 @@ pub fn save_host_state<'active, 'vmx>(
     }
 }
 
-unsafe fn vmcall_handler(_vcpu: &mut vmx::ActiveVmcs) -> Result<HandlerResult, vmx::VmxError> {
-    crate::println!("Linux: VMCall - exiting...");
-    Ok(HandlerResult::Exit)
+unsafe fn vmcall_handler(vcpu: &mut vmx::ActiveVmcs) -> Result<HandlerResult, vmx::VmxError> {
+    let rip = vcpu.get(Register::Rip);
+    let rax = vcpu.get(Register::Rax);
+
+    // Move to next instruction
+    vcpu.set(Register::Rip, rip + 3);
+
+    // Interpret VMCall
+    if rax == 0x777 {
+        return Ok(HandlerResult::Exit);
+    }
+    if rax == 0x888 {
+        return Ok(HandlerResult::Resume);
+    }
+    Ok(HandlerResult::Crash)
 }
 
 pub fn handle_exit(
