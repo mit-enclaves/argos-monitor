@@ -191,7 +191,7 @@ impl MsrBitmaps {
 mod test {
     use super::*;
 
-    #[test_case]
+    #[test]
     fn msr_bitmaps() {
         // Initializes a bitmap with some "unitialized" values
         let garbage = 0b10101010;

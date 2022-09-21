@@ -9,7 +9,6 @@ extern crate alloc;
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
 use first_stage::acpi::AcpiInfo;
-use first_stage::debug::info;
 use first_stage::guests;
 use first_stage::guests::Guest;
 use first_stage::mmu::{FrameAllocator, MemoryMap, PtMapper};
@@ -18,7 +17,6 @@ use first_stage::qemu;
 use first_stage::second_stage;
 use first_stage::{HostPhysAddr, HostVirtAddr};
 use vmx;
-use vmx::Register;
 use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
 
 entry_point!(kernel_main);
@@ -114,89 +112,17 @@ fn launch_guest(
     print_vmx_info();
 
     let mut stage2_allocator = second_stage::second_stage_allocator(stage1_allocator);
-
     unsafe {
-        let frame = stage2_allocator
-            .allocate_frame()
-            .expect("Failed to allocate VMXON");
-        let vmxon = match vmx::vmxon(frame) {
-            Ok(vmxon) => {
-                println!("VMXON:  Ok(vmxon)");
-                vmxon
-            }
-            Err(err) => {
-                println!("VMXON:  {:?}", err);
-                qemu::exit(qemu::ExitCode::Failure);
-            }
-        };
-
-        let mut vmcs = guest.instantiate(
-            &vmxon,
-            acpi,
+        let mut info = guest.instantiate(acpi, &mut stage2_allocator, guest_allocator, memory_map);
+        guests::vmx::save_host_info(&mut info);
+        second_stage::load(
+            &info,
+            stage1_allocator,
             &mut stage2_allocator,
-            guest_allocator,
-            memory_map,
-        );
-
-        second_stage::load(stage1_allocator, &mut stage2_allocator, &mut pt_mapper);
-
-        // Debugging hook post initialization.
-        info::tyche_hook_done(1);
-
-        let mut vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");
-
-        let mut result = vcpu.launch();
-        let mut launch = "Launch";
-        let mut counter = 0;
-        loop {
-            let rip = vcpu.get(Register::Rip);
-            let rax = vcpu.get(Register::Rax);
-            let rcx = vcpu.get(Register::Rcx);
-            let rbp = vcpu.get(Register::Rbp);
-            println!(
-                "{}: {} {:?} - rip: 0x{:x} - rbp: 0x{:x} - rax: 0x{:x} - rcx: 0x{:x}",
-                launch,
-                counter,
-                vcpu.exit_reason(),
-                rip,
-                rbp,
-                rax,
-                rcx
-            );
-
-            let exit_reason = if let Ok(exit_reason) = result {
-                guest
-                    .handle_exit(&mut vcpu, exit_reason)
-                    .expect("Failed to handle VM exit")
-            } else {
-                println!("VMXerror {:?}", result);
-                guests::HandlerResult::Crash
-            };
-
-            if exit_reason != guests::HandlerResult::Resume {
-                break;
-            }
-
-            // Shutdown after too many VM exits
-            counter += 1;
-            if counter >= 200 {
-                println!("Too many iterations: stoping guest");
-                break;
-            }
-
-            // Resume VM
-            launch = "Resume";
-            result = vcpu.resume();
-        }
-
-        println!("Info:   {:?}", vcpu.interrupt_info());
-        println!(
-            "Qualif: {:?}",
-            vcpu.exit_qualification()
-                .map(|qualif| qualif.ept_violation())
+            &mut pt_mapper,
         );
     }
-    qemu::exit(qemu::ExitCode::Success);
+    qemu::exit(qemu::ExitCode::Failure);
 }
 
 fn initialize_cpu() {

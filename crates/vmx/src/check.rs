@@ -381,7 +381,7 @@ mod test {
 
     /// See manual Annex A.7 & A.8
     #[rustfmt::skip]
-    #[test_case]
+    #[test]
     fn validate_cr() {
         // Testing valid combinations
         let fixed_0: usize = 0b001_000;

@@ -8,3 +8,4 @@ stage_two_abi = { path = "../../crates/stage_two_abi" }
 
 # TODO: move the untrusted dependencies behing a feature flag
 uart_16550 = "0.2.0"
+vmx = { version = "0.1.0", path = "../../crates/vmx" }

@@ -1,15 +1,15 @@
+use stage_two_abi::GuestInfo;
+
 use super::Guest;
 use super::HandlerResult;
 use crate::acpi::AcpiInfo;
 use crate::debug::info;
 use crate::elf::ElfProgram;
-use crate::guests;
 use crate::guests::common::{create_mappings, setup_iommu_context};
 use crate::mmu::{EptMapper, FrameAllocator, IoPtMapper, MemoryMap};
 use crate::println;
-use crate::qemu;
 use crate::vmx;
-use crate::vmx::{fields, Register};
+use crate::vmx::Register;
 use crate::vtd::Iommu;
 use crate::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 
@@ -37,14 +37,13 @@ impl Guest for RawcBytes {
     /// 2. Copy the program rawc to this memory region.
     /// 3. Generate the EPT mappings with hpa == gpa.
     /// 4. Set the EPT and return the vmcs.
-    unsafe fn instantiate<'vmx>(
+    unsafe fn instantiate(
         &self,
-        vmxon: &'vmx vmx::Vmxon,
         acpi: &AcpiInfo,
         host_allocator: &impl FrameAllocator,
         guest_allocator: &impl FrameAllocator,
         memory_map: MemoryMap,
-    ) -> vmx::VmcsRegion<'vmx> {
+    ) -> GuestInfo {
         let rawc_prog = ElfProgram::new(RAWCBYTES);
         let virtoffset = host_allocator.get_physical_offset();
 
@@ -92,58 +91,14 @@ impl Guest for RawcBytes {
             println!("I/O MMU: {:?}", iommu.get_global_status());
         }
 
-        // Setup the vmcs.
-        let frame = host_allocator
-            .allocate_frame()
-            .expect("Failed to allocate VMCS");
-        let mut vmcs = match vmxon.create_vm(frame) {
-            Err(err) => {
-                println!("VMCS:   Err({:?})", err);
-                qemu::exit(qemu::ExitCode::Failure);
-            }
-            Ok(vmcs) => {
-                println!("VMCS:   Ok(())");
-                vmcs
-            }
-        };
-
-        {
-            // VMCS is active in this block
-            let mut vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");
-            guests::default_vmcs_config(&mut vcpu, false);
-
-            // Configure MSRs
-            let frame = host_allocator
-                .allocate_frame()
-                .expect("Failed to allocate MSR bitmaps");
-            let msr_bitmaps = vcpu
-                .initialize_msr_bitmaps(frame)
-                .expect("Failed to install MSR bitmap");
-            msr_bitmaps.allow_all();
-
-            // Setup the roots.
-            vcpu.set_ept_ptr(ept_mapper.get_root()).ok();
-            let entry_point = rawc_prog.entry;
-            vcpu.set_nat(fields::GuestStateNat::Rip, entry_point.as_usize())
-                .ok();
-            vcpu.set_nat(fields::GuestStateNat::Cr3, pt_root.as_usize())
-                .ok();
-            vcpu.set_nat(fields::GuestStateNat::Rsp, rsp.as_usize())
-                .ok();
-            // Zero out the gdt and idt
-            vcpu.set_nat(fields::GuestStateNat::GdtrBase, 0x0).ok();
-            vcpu.set_nat(fields::GuestStateNat::IdtrBase, 0x0).ok();
-
-            // Setup control registers
-            let vmxe = 1 << 13; // VMXE flags, required during VMX operations.
-            let cr4 = 0xA0 | vmxe;
-            vcpu.set_nat(fields::GuestStateNat::Cr4, cr4).unwrap();
-            vcpu.set_cr4_mask(vmxe).unwrap();
-            vcpu.set_cr4_shadow(vmxe).unwrap();
-
-            vmx::check::check().expect("check error");
-        }
-        vmcs
+        let entry_point = rawc_prog.entry;
+        let mut info = GuestInfo::default();
+        info.ept_root = ept_mapper.get_root().as_usize();
+        info.cr3 = pt_root.as_usize();
+        info.rip = entry_point.as_usize();
+        info.rsp = rsp.as_usize();
+        info.rsi = 0;
+        info
     }
 
     unsafe fn vmcall_handler(

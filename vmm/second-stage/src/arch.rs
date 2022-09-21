@@ -11,7 +11,7 @@ pub unsafe fn init() {
         base: GDT.as_ptr() as u64,
     };
     let idt_desc = DescriptorTablePointer {
-        limit: 256,
+        limit: IDT.len() as u16,
         base: IDT.as_ptr() as u64,
     };
     asm! {
@@ -23,10 +23,28 @@ pub unsafe fn init() {
     };
 }
 
+/// Get the address of the current GDT.
+#[inline]
+pub fn sgdt() -> DescriptorTablePointer {
+    DescriptorTablePointer {
+        limit: GDT.len() as u16,
+        base: GDT.as_ptr() as u64,
+    }
+}
+
+/// Get the address of the current IDT.
+#[inline]
+pub fn sidt() -> DescriptorTablePointer {
+    DescriptorTablePointer {
+        limit: IDT.len() as u16,
+        base: IDT.as_ptr() as u64,
+    }
+}
+
 #[repr(C, packed(2))]
-struct DescriptorTablePointer {
-    limit: u16,
-    base: u64,
+pub struct DescriptorTablePointer {
+    pub limit: u16,
+    pub base: u64,
 }
 
 // —————————————————————————————————— GDT ——————————————————————————————————— //

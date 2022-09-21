@@ -3,9 +3,7 @@
 //! Inspired and in part copied from the [x86] crate.
 //!
 //! [x86]: https://hermitcore.github.io/libhermit-rs/x86/bits64/vmx/index.html
-#![no_std]
-#![cfg_attr(test, no_main)]
-#![feature(custom_test_frameworks)]
+#![cfg_attr(not(test), no_std)]
 
 pub mod address;
 pub mod bitmaps;
@@ -864,7 +862,7 @@ mod test {
 
     /// See manual Annex A.3.
     #[rustfmt::skip]
-    #[test_case]
+    #[test]
     fn ctls_flags_spec() {
         // testing valid combinations
         let spec_0_setting: u64 = 0b001_00_01;
@@ -897,7 +895,7 @@ mod test {
 
     /// See manual Annex A.3.
     #[rustfmt::skip]
-    #[test_case]
+    #[test]
     fn ctls_flags_true_spec() {
         // testing valid combinations
         let spec_0_setting:      u64 = 0b000_1_00_011;

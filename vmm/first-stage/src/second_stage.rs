@@ -5,7 +5,7 @@ use crate::mmu::frames::{PhysRange, RangeFrameAllocator};
 use crate::mmu::{FrameAllocator, PtFlag, PtMapper};
 use crate::{HostPhysAddr, HostVirtAddr};
 use core::arch::asm;
-use stage_two_abi::{EntryPoint, Manifest, MANIFEST_SYMBOL};
+use stage_two_abi::{EntryPoint, GuestInfo, Manifest, MANIFEST_SYMBOL};
 
 #[cfg(feature = "second-stage")]
 const SECOND_STAGE: &'static [u8] =
@@ -16,9 +16,9 @@ const SECOND_STAGE: &'static [u8] = &[0; 10];
 /// Size of memory allocated by the second stage.
 const SECOND_STAGE_SIZE: usize = 0x1000 * 512;
 /// Virtual address to which the guest is loaded. Defined by our linker script.
-const LOAD_VIRT_ADDR: HostVirtAddr = HostVirtAddr::new(0x8000000);
+const LOAD_VIRT_ADDR: HostVirtAddr = HostVirtAddr::new(0x80000000000);
 //  Stack definitions
-const STACK_VIRT_ADDR: HostVirtAddr = HostVirtAddr::new(0x9000000);
+const STACK_VIRT_ADDR: HostVirtAddr = HostVirtAddr::new(0x90000000000);
 const STACK_SIZE: usize = 0x1000 * 2;
 
 pub fn second_stage_allocator(stage1_allocator: &impl FrameAllocator) -> RangeFrameAllocator {
@@ -35,6 +35,7 @@ pub fn second_stage_allocator(stage1_allocator: &impl FrameAllocator) -> RangeFr
 }
 
 pub fn load(
+    info: &GuestInfo,
     stage1_allocator: &impl FrameAllocator,
     stage2_allocator: &impl FrameAllocator,
     pt_mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
@@ -87,6 +88,9 @@ pub fn load(
         &mut *ptr
     };
     manifest.cr3 = loaded_elf.pt_root.as_u64();
+    manifest.info = *info;
+    manifest.poffset = elf_range.start.as_u64();
+    manifest.voffset = LOAD_VIRT_ADDR.as_u64();
 
     // jump into second stage
     unsafe {
