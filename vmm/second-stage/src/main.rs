@@ -2,6 +2,7 @@
 #![no_main]
 
 use core::panic::PanicInfo;
+use debug;
 use second_stage;
 use second_stage::allocator::FrameAllocator;
 use second_stage::debug::qemu;
@@ -44,6 +45,9 @@ fn launch_guest(allocator: &mut FrameAllocator, infos: &GuestInfo) {
         let mut vmcs = init_guest(&vmxon, allocator, infos);
         println!("Done with the guest init");
         let mut vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");
+
+        // Hook for debugging.
+        debug::tyche_hook_stage2(1);
 
         println!("Launching");
         let mut result = vcpu.launch();

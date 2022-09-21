@@ -28,19 +28,18 @@ end
 define symbol_linux
   add-symbol-file linux-image/images/vmlinux
   set $tyche_guest_image=1
+  source linux-image/builds/linux-tyche-embedded/vmlinux-gdb.py
+  #lx-symbols
 end
 
-# Load custom memory dump python script
+define plog
+  lx-dmesg
+end
+
 source scripts/tyche_debug.py
 
-# TODO create short versions of the complicated command with default args
-
-# Automatically get the value of the guest start phys address
-# TODO for some reason it does not work if we put a cont, thus exec blocks
-# on that breakpoint for the moment.
-b tyche_hook_done
+b tyche_hook_stage1
 commands
-silent
 tyche_set_convenience_vars
-tyche_start_server
+tyche_load_stage2
 end

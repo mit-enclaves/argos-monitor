@@ -5,6 +5,8 @@ import gdb
 import socket
 from enum import Enum
 
+from scripts.capture_variable import *
+
 """ Special commands for the server. """
 class SpecialCommands(Enum):
     QUIT = 0
@@ -69,6 +71,9 @@ def execute_backtrace(command):
     except gdb.error as err:
         output = "[SERVER]\n"+str(err)
     return output
+
+def get_convenience(name):
+     return int(gdb.execute("p/x $tyche_"+name, to_string=True).split()[-1], 16)
 
 class DebugServer(gdb.Command):
     def __init__(self):
@@ -136,11 +141,12 @@ class LoadDebugInfo(gdb.Command):
         with open("/tmp/guest_info", 'r') as fd:
             lines = fd.readlines()
             path = paths[lines[0].strip()]
-            offset = lines[1].strip()
-            gdb.execute("set $tyche_guest_address="+offset)
-            goff = int(offset, 16)
-            value = goff + get_offset()
-            gdb.execute("add-symbol-file "+path+" -o "+hex(value))
+            line = 1
+            for c in CAPTURED_VARIABLES:
+                content = lines[line].strip()
+                gdb.execute("set $tyche_"+c+"="+content)
+        value = get_offset()
+        gdb.execute("add-symbol-file "+path+" -o "+hex(value))
 
 DebugServer()
 LoadDebugInfo()

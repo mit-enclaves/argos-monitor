@@ -3,7 +3,6 @@
 use super::Guest;
 use super::HandlerResult;
 use crate::acpi::AcpiInfo;
-use crate::debug::info;
 use crate::elf::{ElfMapping, ElfProgram};
 use crate::guests::boot_params::{
     BootParams, E820Types, KERNEL_BOOT_FLAG_MAGIC, KERNEL_HDR_MAGIC, KERNEL_LOADER_OTHER,
@@ -17,7 +16,6 @@ use crate::println;
 use crate::vmx;
 use crate::vmx::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 use crate::vtd::Iommu;
-
 use bootloader::boot_info::MemoryRegionKind;
 use stage_two_abi::GuestInfo;
 
@@ -52,9 +50,6 @@ impl Guest for Linux {
         linux_prog.set_mapping(ElfMapping::Identity);
 
         let virtoffset = host_allocator.get_physical_offset();
-
-        // Storing the guest ram start address for debugging.
-        info::tyche_hook_set_guest_start(0);
 
         // // Setup the EPT first.
         let ept_root = host_allocator

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+debug = { version = "0.1.0", path = "../../crates/debug" }
 stage_two_abi = { path = "../../crates/stage_two_abi" }
 
 # TODO: move the untrusted dependencies behing a feature flag

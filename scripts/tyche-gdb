@@ -1,14 +1,14 @@
 #!/bin/bash
 
 if [[ "$#" != "1" ]]; then
-  echo "You should provide an argument within {linux,rawc}"
+  echo "You should provide one argument {linux,rawc}"
   exit 1
 fi
 
 if [[ "$1" == "linux" ]]; then
-  rust-gdb -q -ex "file target/x86_64-kernel/debug/kernel" -ex "target remote :1234" -ex "source scripts/tyche-gdb.gdb" -ex "symbol_linux"
+  rust-gdb -q -ex "file target/x86_64-kernel/debug/first-stage" -ex "target remote :1234" -ex "source scripts/tyche-gdb.gdb" -ex "symbol_linux"
 elif [[ "$1" == "rawc" ]]; then
-  rust-gdb -q -ex "file target/x86_64-kernel/debug/kernel" -ex "target remote :1234" -ex "source scripts/tyche-gdb.gdb" -ex "symbol_rawc"
+  rust-gdb -q -ex "file target/x86_64-kernel/debug/first-stage" -ex "target remote :1234" -ex "source scripts/tyche-gdb.gdb" -ex "symbol_rawc"
 else
-  echo "You should provide an argument within {linux,rawc}"
+  echo "Argument should be {linux,rawc}"
 fi

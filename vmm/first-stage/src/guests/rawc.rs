@@ -3,7 +3,6 @@ use stage_two_abi::GuestInfo;
 use super::Guest;
 use super::HandlerResult;
 use crate::acpi::AcpiInfo;
-use crate::debug::info;
 use crate::elf::ElfProgram;
 use crate::guests::common::{create_mappings, setup_iommu_context};
 use crate::mmu::{EptMapper, FrameAllocator, IoPtMapper, MemoryMap};
@@ -46,9 +45,6 @@ impl Guest for RawcBytes {
     ) -> GuestInfo {
         let rawc_prog = ElfProgram::new(RAWCBYTES);
         let virtoffset = host_allocator.get_physical_offset();
-
-        // Storing the guest ram start address for debugging.
-        info::tyche_hook_set_guest_start(0); // Identity mapping
 
         // Setup the EPT first.
         let ept_root = host_allocator

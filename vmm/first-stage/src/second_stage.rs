@@ -92,6 +92,9 @@ pub fn load(
     manifest.poffset = elf_range.start.as_u64();
     manifest.voffset = LOAD_VIRT_ADDR.as_u64();
 
+    debug::hook_stage2_offsets(manifest.poffset, manifest.voffset);
+    debug::tyche_hook_stage1(1);
+
     // jump into second stage
     unsafe {
         // We need to manually ensure that the type correspond to the second stage entry point

@@ -52,6 +52,7 @@ pub unsafe fn init_guest<'vmx>(
     vcpu.set_nat(fields::GuestStateNat::Rip, info.rip).ok();
     vcpu.set_nat(fields::GuestStateNat::Cr3, info.cr3).ok();
     vcpu.set_nat(fields::GuestStateNat::Rsp, info.rsp).ok();
+    vcpu.set(Register::Rsi, info.rsi as u64);
     // Zero out the gdt and idt.
     vcpu.set_nat(fields::GuestStateNat::GdtrBase, 0x0).ok();
     vcpu.set_nat(fields::GuestStateNat::IdtrBase, 0x0).ok();

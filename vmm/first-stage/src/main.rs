@@ -89,14 +89,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             pt_mapper,
         )
     } else {
-        launch_guest(
-            &guests::identity::Identity {},
-            &acpi_info,
-            &host_allocator,
-            &guest_allocator,
-            memory_map,
-            pt_mapper,
-        )
+        panic!("Unrecognized guest");
     }
 }
 

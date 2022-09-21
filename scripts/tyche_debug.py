@@ -31,60 +31,15 @@ AddressContext = {
 
 QEMU_RAMFILE="/tmp/tyche"
 
-class TycheGuestMemoryDump (gdb.Command):
-    def __init__(self):
-        super (TycheGuestMemoryDump, self).__init__("tmd", gdb.COMMAND_USER)
 
-    """ The command expects arg =  context format start size.
-        `context` is a value of AddressContext enum. 
-        `format` can be b (bytes), w (word, i.e., 4 bytes), g (giant, 8 bytes).
-        `start` is the start address in tyche physical memory. 
-        `size` is the number of elements to print.
-        Both `start` and `size` are passed as is to the linux xxd command."""
-    def invoke(self, arg, from_tty):
-        args = arg.split(" ")
-        if len(args) != 4:
-            print("Wrong number of arguments ", len(args))
-            return
-        (context, fmt, offset, size) = args
-        
-        format_size = FormatSize[fmt]
-        context_real = AddressContext[context]
-
-        """ Here we have a choice of either calling an external program to read
-         the tyche ram, or doing it directly in python.
-         For now, we use xxd but this might change later on.
-        """
-        import os
-        # Convert the size into an int.
-        b_size = 0
-        try:
-            b_size = int(size)
-        except ValueError:
-            print("Error: size is not an int ", size)
-            return
-        b_size = b_size * format_size.value
-        
-        start = str(int(offset, 16) + context_real)
-        command = [
-                "xxd",
-                "-seek",
-                start,
-                "-l",
-                str(b_size),
-                QEMU_RAMFILE,
-                ]
-        os.system(" ".join(command))
-
-
-""" Global static rust variable that we want to capture right after instantiation.
-This is done automatically by the tyche_set_convenience_vars command as we reach
-the tyche_hook_done function."""
-CAPTURED_VARIABLES = [
-        "GUEST_START",
-        "GUEST_STACK_PHYS",
-        "GUEST_STACK_VIRT",
-        ]
+from scripts.capture_variable import *
+#""" Global static rust variable that we want to capture right after instantiation.
+#This is done automatically by the tyche_set_convenience_vars command as we reach
+#the tyche_hook_done function."""
+#CAPTURED_VARIABLES = [
+#        "STAGE2_POFF",
+#        "STAGE2_VOFF",
+#        ]
 
 def get_global_var(name):
     infos = gdb.execute("info variables -q "+name, to_string=True).split()
@@ -112,6 +67,14 @@ class TycheSetConvenienceVars(gdb.Command):
         for e in CAPTURED_VARIABLES:
             set_global_var(e)
 
+class TycheLoadStage2(gdb.Command):
+    def __init__(self):
+        super (TycheLoadStage2, self).__init__("tyche_load_stage2", gdb.COMMAND_USER)
+
+    def invoke(self, arg, from_tty):
+        offset = get_convenience("STAGE2_VOFF")
+        gdb.execute("add-symbol-file target/x86_64-kernel/release/second-stage")
+
 """ Starts the remote gdb session attached to the debugger/debugger executable.
 The remote gdb session executes until QEMU file-backed memory is mmaped into
 the process'address space. It then blocks on gdb_block function and starts the server."""
@@ -128,7 +91,9 @@ class TycheStartServer(gdb.Command):
         goff = get_convenience("GUEST_START")
         with open("/tmp/guest_info", 'w') as fd:
             fd.write(name+"\n")
-            fd.write(hex(goff)+"\n")
+            for c in CAPTURED_VARIABLES:
+                v = get_convenience(c)
+                fd.write(hex(v)+"\n")
         command = [
                 "nohup",
                 "gdb",
@@ -145,6 +110,7 @@ class TycheStartServer(gdb.Command):
                 "&"
                 ]
         os.system(" ".join(command)) 
+        # TODO Load stage 2 file 
 
 """ Receiving the entire message """
 def recvall(sock):
@@ -256,3 +222,4 @@ class TycheClient(gdb.Command):
 TycheSetConvenienceVars()
 TycheStartServer()
 TycheClient()
+TycheLoadStage2()

@@ -17,9 +17,8 @@ use vmx;
 
 pub mod acpi;
 pub mod allocator;
-pub mod debug;
-pub mod gdt;
 pub mod elf;
+pub mod gdt;
 pub mod guests;
 pub mod interrupts;
 pub mod mmu;

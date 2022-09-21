@@ -11,7 +11,6 @@ use stage_two_abi::GuestInfo;
 
 pub mod boot_params;
 pub mod common;
-pub mod identity;
 pub mod linux;
 pub mod rawc;
 pub mod vmx;

@@ -39,11 +39,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "debug"
+version = "0.1.0"
+
+[[package]]
 name = "first-stage"
 version = "0.1.0"
 dependencies = [
  "bitflags",
  "bootloader",
+ "debug",
  "font8x8",
  "lazy_static",
  "pic8259",
@@ -153,6 +158,7 @@ checksum = "97477e48b4cf8603ad5f7aaf897467cf42ab4218a38ef76fb14c2d6773a6d6a8"
 name = "second-stage"
 version = "0.1.0"
 dependencies = [
+ "debug",
  "stage_two_abi",
  "uart_16550",
  "vmx",
