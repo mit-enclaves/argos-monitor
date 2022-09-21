@@ -58,6 +58,7 @@ macro_rules! add_manifest {
 }
 
 /// GuestInfo passed from stage 1 to stage 2.
+#[repr(C)]
 #[derive(Copy, Clone, Debug, Default)]
 pub struct GuestInfo {
     // Guest information.

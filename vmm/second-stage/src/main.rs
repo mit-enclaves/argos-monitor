@@ -6,7 +6,7 @@ use second_stage;
 use second_stage::allocator::FrameAllocator;
 use second_stage::debug::qemu;
 use second_stage::guest::{handle_exit, init_guest, HandlerResult};
-use second_stage::{hlt, println};
+use second_stage::println;
 use stage_two_abi::{add_manifest, entry_point, GuestInfo, Manifest};
 use vmx::Register;
 
@@ -101,5 +101,4 @@ fn launch_guest(allocator: &mut FrameAllocator, infos: &GuestInfo) {
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
     qemu::exit(qemu::ExitCode::Failure);
-    hlt();
 }
