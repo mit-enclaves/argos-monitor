@@ -95,3 +95,14 @@ impl FrameAllocator {
         LINKED_LIST_FREE_PAGES[id].next_free = old_head;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    // Import all the file items:
+    use super::*;
+
+    #[test]
+    fn test_something() {
+        assert_eq!(2 + 2, 4);
+    }
+}
