@@ -22,15 +22,15 @@
 //!
 //! Usage:
 //!
-//! ```
+//! ```no_run
 //! // Bring all traits to current scope, this avoid having to import each trait individually
-//! use fields::traits::*;
+//! use vmx::fields::traits::*;
 //!
 //! // Import the desired fields
-//! use fields::Ctrls64;
+//! use vmx::fields::Ctrl64;
 //!
 //! // Write a value into that field
-//! Ctrls64::IoBitmapA.vmwrite(0);
+//! unsafe { Ctrl64::IoBitmapA.vmwrite(0) };
 //! ```
 //!
 //! See Intel 3D Appendix B.
