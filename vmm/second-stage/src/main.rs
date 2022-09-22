@@ -28,7 +28,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use second_stage::allocator::FrameAllocator;
+    use second_stage::frame_allocator::FrameAllocator;
 
     #[test]
     fn test_alloc_works() {
@@ -46,6 +46,16 @@ mod tests {
         }
         let new_frame = frame_alloc.allocate_frame();
         assert!(new_frame.is_none());
+    }
+
+    #[test]
+    fn test_alloc_and_dealloc_several_times() {
+        let mut frame_alloc = FrameAllocator::new(0, 0);
+        for _ in 0..second_stage::frame_allocator::NB_PAGES * 10 {
+            let new_frame = frame_alloc.allocate_frame();
+            assert!(new_frame.is_some());
+            unsafe {frame_alloc.deallocate_frame(new_frame.unwrap())};
+        }
     }
 }
 
