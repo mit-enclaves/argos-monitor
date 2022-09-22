@@ -82,7 +82,7 @@ fn launch_guest(allocator: &mut FrameAllocator, infos: &GuestInfo) {
 
             // Shutdown after too many VM exits
             counter += 1;
-            if counter >= 200 {
+            if counter >= 200000 {
                 println!("Too many iterations: stoping guest");
                 break;
             }

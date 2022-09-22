@@ -130,7 +130,7 @@ fn build_bootparams(memory_map: &MemoryMap) -> BootParams {
         let size = region.end - region.start;
         let kind = match region.kind {
             MemoryRegionKind::Usable => E820Types::Ram,
-            MemoryRegionKind::Bootloader => E820Types::Reserved,
+            MemoryRegionKind::Bootloader => E820Types::Ram,
             MemoryRegionKind::UnknownUefi(_) => E820Types::Reserved,
             MemoryRegionKind::UnknownBios(_) => E820Types::Reserved,
             _ => todo!("Add missing kind when updating bootloader crate"),

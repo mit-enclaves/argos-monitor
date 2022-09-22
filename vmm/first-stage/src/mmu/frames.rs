@@ -70,7 +70,7 @@ pub unsafe fn init(
         start: HostPhysAddr::new(host_region.start as usize),
         end: HostPhysAddr::new(host_region.end as usize),
     };
-    host_region.kind = MemoryRegionKind::Bootloader;
+    host_region.kind = MemoryRegionKind::UnknownBios(1);
     let memory_map = MemoryMap {
         guest: regions,
         host: host_range,

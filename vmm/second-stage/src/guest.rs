@@ -335,7 +335,7 @@ pub fn handle_exit(
             Ok(HandlerResult::Resume)
         }
         VmxExitReason::EptViolation => {
-            let addr = vcpu.guest_linear_addr()?;
+            let addr = vcpu.guest_phys_addr()?;
             println!("EPT Violation: 0x{:x}", addr.as_u64());
             Ok(HandlerResult::Crash)
         }
