@@ -91,9 +91,9 @@ impl FrameAllocator {
         }
     }
 
-    unsafe fn deallocate_frame(&mut self, frame: Frame) {
+    pub unsafe fn deallocate_frame(&mut self, frame: Frame) {
         let id = (frame.virt_addr as *const _ as usize) - (&MEMORY_PAGES[0] as *const _ as usize);
-        if 0 < id || id <= NB_PAGES {
+        if id >= NB_PAGES {
             // Simply return if index is out of bounds
             return;
         }
