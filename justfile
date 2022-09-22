@@ -11,6 +11,7 @@ first-stage    := "--package first-stage --features=first-stage/second-stage"
 second-stage   := "--package second-stage"
 rawc           := "--features=first-stage/guest_rawc"
 linux          := "--features=first-stage/guest_linux"
+vga            := "--features=first-stage/vga"
 
 # Print list of commands
 help:
@@ -40,6 +41,11 @@ rawc-uefi:
 linux:
 	@just build
 	-cargo run {{cargo_args}} {{first-stage}} {{linux}} -- --uefi
+
+# Build the VMM for bare metal platform
+build-metal:
+	@just build
+	-cargo run {{cargo_args}} {{first-stage}} {{linux}} {{vga}} -- --uefi --no-run
 
 # Install the required dependencies
 setup:
