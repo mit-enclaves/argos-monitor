@@ -1,6 +1,7 @@
 target
 .vim
 .gdb_history
+*__pycache__*
 
 # OVMF UEFI firmware
 OVMF-pure-efi.fd
