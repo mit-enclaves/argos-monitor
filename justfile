@@ -37,10 +37,14 @@ rawc-uefi:
 	@just build
 	-cargo run {{cargo_args}} {{first-stage}} {{rawc}} -- --uefi
 
+# Build linux image.
+build-linux:
+  make -C linux-image/
+
 # Run linux guest with UEFI
 linux:
-	@just build
-	-cargo run {{cargo_args}} {{first-stage}} {{linux}} -- --uefi
+  @just build
+  -cargo run {{cargo_args}} {{first-stage}} {{linux}} -- --uefi -S
 
 # Build the VMM for bare metal platform
 build-metal:
