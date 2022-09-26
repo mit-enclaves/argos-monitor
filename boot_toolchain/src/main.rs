@@ -14,9 +14,7 @@ const RUN_ARGS: &[&str] = &[
     "-machine", "q35",
     "-accel", "kvm,kernel-irqchip=split",
     "-m", "6G",
-    "-object", "memory-backend-file,id=pc.ram,share=on,mem-path=/tmp/tyche,size=6G",
-    "-machine", "memory-backend=pc.ram",
-    "-s",
+    "-chardev",
 ];
 const TEST_ARGS: &[&str] = &[
     "--no-reboot",
@@ -54,6 +52,21 @@ fn main() {
         None => false,
     };
 
+    let dbg = match args.iter().position(|arg| arg.starts_with("--dbg_path=")) {
+        Some(idx) => {
+            let mut value: String = args[idx]
+                .strip_prefix("--dbg_path=")
+                .expect("Error parsing")
+                .to_string();
+            args.remove(idx);
+            if value.len() == 0 {
+                value = String::from("gdb0");
+            }
+            value
+        }
+        None => String::from("gdb0"),
+    };
+
     let image = create_disk_images(&kernel_binary_path, uefi);
 
     if no_boot {
@@ -82,6 +95,13 @@ fn main() {
     } else {
         run_cmd.args(RUN_ARGS);
         run_cmd.args(&args);
+        run_cmd
+            .arg(format!(
+                "socket,path=/tmp/{},server=on,wait=off,id={}",
+                dbg, dbg
+            ))
+            .arg("-gdb")
+            .arg(format!("chardev:{}", dbg));
         println!(
             "Running:\n{} {}",
             run_cmd.get_program().to_str().unwrap(),

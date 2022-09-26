@@ -12,6 +12,7 @@ second-stage   := "--package second-stage"
 rawc           := "--features=first-stage/guest_rawc"
 linux          := "--features=first-stage/guest_linux"
 vga            := "--features=first-stage/vga"
+default_dbg    := "gdb0"
 
 # Print list of commands
 help:
@@ -32,10 +33,17 @@ rawc:
 	@just build
 	-cargo run {{cargo_args}} {{first-stage}} {{rawc}} --
 
+common TARGET DBG:
+  @just build
+  -cargo run {{cargo_args}} {{first-stage}} {{TARGET}} -- --uefi "--dbg_path={{DBG}}"
+
 # Run rawc guest with UEFI
 rawc-uefi:
-	@just build
-	-cargo run {{cargo_args}} {{first-stage}} {{rawc}} -- --uefi
+  @just common {{rawc}} {{default_dbg}}
+
+# Run rawc guest, specify debug socket name.
+rawc-uefi-dbg SOCKET:
+  @just common {{rawc}} {{SOCKET}}
 
 # Build linux image.
 build-linux:
@@ -43,8 +51,13 @@ build-linux:
 
 # Run linux guest with UEFI
 linux:
-  @just build
-  -cargo run {{cargo_args}} {{first-stage}} {{linux}} -- --uefi -S
+  @just build-linux
+  @just common {{linux}} {{default_dbg}}
+
+# Run linux guest, specify debug socket name.
+linux-dbg SOCKET:
+  @just build-linux
+  @just common {{linux}} {{SOCKET}}
 
 # Build the VMM for bare metal platform
 build-metal:

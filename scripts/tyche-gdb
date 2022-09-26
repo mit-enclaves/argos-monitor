@@ -1,14 +1,32 @@
 #!/bin/bash
 
-if [[ "$#" != "1" ]]; then
-  echo "You should provide one argument {linux,rawc}"
+DBG="/tmp/gdb0"
+TGT="linux"
+
+print_usage() {
+  echo "Expected arguments {linux, rawc} [gdb_socket]"
+  echo "With gdb_socket of the form /tmp/gdbX"
   exit 1
+}
+
+if [[ "$#" == "0" ]]; then
+  print_usage
+fi
+
+if [[ "$#" > "2" ]]; then
+  print_usage
+fi
+
+if [[ "$#" == "2" ]]; then
+  DBG="$2"
 fi
 
 if [[ "$1" == "linux" ]]; then
-  rust-gdb -q -ex "file target/x86_64-kernel/debug/first-stage" -ex "target remote :1234" -ex "source scripts/tyche-gdb.gdb" -ex "symbol_linux"
+  TGT="symbol_linux"
 elif [[ "$1" == "rawc" ]]; then
-  rust-gdb -q -ex "file target/x86_64-kernel/debug/first-stage" -ex "target remote :1234" -ex "source scripts/tyche-gdb.gdb" -ex "symbol_rawc"
+  TGT="symbol_rawc"
 else
-  echo "Argument should be {linux,rawc}"
+  print_usage
 fi
+
+rust-gdb -q -ex "file target/x86_64-kernel/debug/first-stage" -ex "target remote ${DBG}" -ex "source scripts/tyche-gdb.gdb" -ex "${TGT}"

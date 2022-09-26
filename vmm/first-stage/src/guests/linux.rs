@@ -32,7 +32,7 @@ const LINUX_MASK: u64 = 0xffffffff82000000;
 const SETUP_HDR: u64 = 0x1f1;
 
 // WARNING: Don't forget that the command line must be null terminated ('\0')!
-static COMMAND_LINE: &'static [u8] = b"apic=debug\0";
+static COMMAND_LINE: &'static [u8] = b"apic=debug earlyprintk=serial,ttyS0 console=ttyS0\0";
 
 pub struct Linux {}
 
