@@ -16,7 +16,6 @@ pub struct Page {
 
 #[derive(Clone, Copy)]
 pub struct PageInfo {
-    pub frame_id: usize,
     pub next_free: Option<usize>,
 }
 
@@ -26,7 +25,6 @@ static mut MEMORY_PAGES: [Page; NB_PAGES] = [Page {
 
 // Linked list stored as an array
 static mut LINKED_LIST_FREE_PAGES: [PageInfo; NB_PAGES] = [PageInfo {
-    frame_id: 0,
     next_free: Some(0),
 }; NB_PAGES];
 
@@ -50,12 +48,10 @@ impl FrameAllocator {
         unsafe {
             for i in 0..NB_PAGES - 1 {
                 LINKED_LIST_FREE_PAGES[i] = PageInfo {
-                    frame_id: i,
                     next_free: Some(i + 1),
                 }
             }
             LINKED_LIST_FREE_PAGES[NB_PAGES - 1] = PageInfo {
-                frame_id: NB_PAGES - 1,
                 next_free: None,
             }
         }
