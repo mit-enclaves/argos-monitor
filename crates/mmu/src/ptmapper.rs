@@ -1,8 +1,8 @@
+use super::frame_allocator::FrameAllocator;
 use super::walker::{Address, Level, WalkNext, Walker};
-use super::FrameAllocator;
-use crate::HostVirtAddr;
 use bitflags::bitflags;
 use core::marker::PhantomData;
+use vmx::HostVirtAddr;
 
 static PAGE_MASK: usize = !(0x1000 - 1);
 
@@ -127,7 +127,7 @@ where
         }
     }
 
-    /// Prints the permissions of page tables for the given range.
+    /*/// Prints the permissions of page tables for the given range.
     pub fn debug_range(&mut self, virt_addr: VirtAddr, size: usize) {
         unsafe {
             self.walk_range(
@@ -159,5 +159,5 @@ where
             )
             .expect("Failed to print PTs");
         }
-    }
+    }*/
 }

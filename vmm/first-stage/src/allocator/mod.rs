@@ -1,10 +1,10 @@
 //! # Heap Allocator
 
-use crate::mmu::frames::FrameAllocator;
-use crate::mmu::{PtFlag, PtMapper};
 use crate::{HostPhysAddr, HostVirtAddr};
 use alloc::alloc::GlobalAlloc;
 use core::sync::atomic::{AtomicBool, Ordering};
+use mmu::FrameAllocator;
+use mmu::{PtFlag, PtMapper};
 use x86_64::instructions::tlb;
 
 mod fallback;

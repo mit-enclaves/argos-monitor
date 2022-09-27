@@ -51,12 +51,12 @@ build-linux:
 
 # Run linux guest with UEFI
 linux:
-  @just build-linux
+  #@just build-linux
   @just common {{linux}} {{default_dbg}}
 
 # Run linux guest, specify debug socket name.
 linux-dbg SOCKET:
-  @just build-linux
+  #@just build-linux
   @just common {{linux}} {{SOCKET}}
 
 # Build the VMM for bare metal platform

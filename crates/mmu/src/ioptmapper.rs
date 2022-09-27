@@ -1,23 +1,37 @@
-use super::{
-    walker::{Level, WalkNext, Walker},
-    FrameAllocator,
-};
-use crate::vmx::{
-    bitmaps::EptEntryFlags,
-    ept::{GIANT_PAGE_SIZE, HUGE_PAGE_SIZE, PAGE_SIZE},
-};
-use crate::vmx::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
+use bitflags::bitflags;
 
-pub struct EptMapper {
+use crate::frame_allocator::FrameAllocator;
+use crate::walker::{Level, WalkNext, Walker};
+use vmx::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
+
+pub struct IoPtMapper {
     host_offset: usize,
     root: HostPhysAddr,
 }
 
-pub const EPT_PRESENT: EptEntryFlags = EptEntryFlags::READ
-    .union(EptEntryFlags::WRITE)
-    .union(EptEntryFlags::SUPERVISOR_EXECUTE);
+bitflags! {
+    pub struct IoPtFlag: u64 {
+        const READ      = 1 << 0;
+        const WRITE     = 1 << 1;
+        const EXECUTE   = 1 << 2;
+        const PAGE_SIZE = 1 << 7;
+        const ACCESSED  = 1 << 8;
+        const DIRTY     = 1 << 9;
+        const SNOOP     = 1 << 11;
+    }
+}
 
-unsafe impl Walker for EptMapper {
+pub const HUGE_PAGE_SIZE: usize = 1 << 21;
+pub const PAGE_SIZE: usize = 1 << 12;
+
+pub const DEFAULT_PROTS: IoPtFlag = IoPtFlag::READ
+    .union(IoPtFlag::WRITE)
+    .union(IoPtFlag::EXECUTE);
+pub const PRESENT: IoPtFlag = IoPtFlag::READ
+    .union(IoPtFlag::WRITE)
+    .union(IoPtFlag::EXECUTE);
+
+unsafe impl Walker for IoPtMapper {
     type PhysAddr = HostPhysAddr;
     type VirtAddr = GuestPhysAddr;
 
@@ -30,7 +44,7 @@ unsafe impl Walker for EptMapper {
     }
 }
 
-impl EptMapper {
+impl IoPtMapper {
     pub fn new(host_offset: usize, root: HostPhysAddr) -> Self {
         Self { host_offset, root }
     }
@@ -41,33 +55,25 @@ impl EptMapper {
         gpa: GuestPhysAddr,
         hpa: HostPhysAddr,
         size: usize,
-        prot: EptEntryFlags,
+        prot: IoPtFlag,
     ) {
         unsafe {
             self.walk_range(
                 gpa,
                 GuestPhysAddr::new(gpa.as_usize() + size),
                 &mut |addr, entry, level| {
-                    if (*entry & EPT_PRESENT.bits()) != 0 {
+                    if (*entry & PRESENT.bits()) != 0 {
                         return WalkNext::Continue;
                     }
 
                     let end = gpa.as_usize() + size;
                     let hphys = hpa.as_usize() + (addr.as_usize() - gpa.as_usize());
 
-                    if level == Level::L3 {
-                        if (addr.as_usize() + GIANT_PAGE_SIZE <= end)
-                            && (hphys % GIANT_PAGE_SIZE == 0)
-                        {
-                            *entry = hphys as u64 | EptEntryFlags::PAGE.bits() | prot.bits();
-                            return WalkNext::Leaf;
-                        }
-                    }
                     if level == Level::L2 {
                         if (addr.as_usize() + HUGE_PAGE_SIZE <= end)
                             && (hphys % HUGE_PAGE_SIZE == 0)
                         {
-                            *entry = hphys as u64 | EptEntryFlags::PAGE.bits() | prot.bits();
+                            *entry = hphys as u64 | IoPtFlag::PAGE_SIZE.bits() | prot.bits();
                             return WalkNext::Leaf;
                         }
                     }
@@ -76,22 +82,20 @@ impl EptMapper {
                         *entry = hphys as u64 | prot.bits();
                         return WalkNext::Leaf;
                     }
+                    // Create an entry
                     let frame = allocator
                         .allocate_frame()
-                        .expect("map_range: unable to allocate page table entry")
+                        .expect("map_range: unable to allocate page table entry.")
                         .zeroed();
-                    *entry = frame.phys_addr.as_u64() | prot.bits();
+                    *entry = frame.phys_addr.as_u64() | DEFAULT_PROTS.bits();
                     WalkNext::Continue
                 },
             )
-            .expect("Failed to map EPTs");
+            .expect("Failed to map I/O PTs");
         }
     }
 
     pub fn get_root(&self) -> HostPhysAddr {
-        let memory_kind = 6 << 0; // write-back usize
-        let walk_length = 3 << 3; // walk length of 4 usize
-
-        HostPhysAddr::new(self.root.as_usize() | memory_kind | walk_length)
+        HostPhysAddr::new(self.root.as_usize())
     }
 }

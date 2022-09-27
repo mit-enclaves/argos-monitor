@@ -32,7 +32,7 @@ pub mod vtd;
 #[cfg(feature = "vga")]
 pub mod vga;
 
-pub use mmu::init as init_memory;
+pub use crate::mmu::init as init_memory;
 pub use vmx::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
 
 // Entry point for `cargo test`

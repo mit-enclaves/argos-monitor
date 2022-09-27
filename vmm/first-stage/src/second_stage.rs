@@ -1,10 +1,10 @@
 //! Second-Stage
 
 use crate::elf::{Elf64PhdrType, ElfProgram};
-use crate::mmu::frames::{PhysRange, RangeFrameAllocator};
-use crate::mmu::{FrameAllocator, PtFlag, PtMapper};
+use crate::mmu::frames::RangeFrameAllocator;
 use crate::{HostPhysAddr, HostVirtAddr};
 use core::arch::asm;
+use mmu::{frame_allocator::PhysRange, FrameAllocator, PtFlag, PtMapper};
 use stage_two_abi::{EntryPoint, GuestInfo, Manifest, MANIFEST_SYMBOL};
 
 #[cfg(feature = "second-stage")]

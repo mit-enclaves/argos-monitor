@@ -11,6 +11,7 @@ members = [
     "crates/stage_two_abi",
     "crates/vmx",
     "crates/debug",
+    "crates/mmu",
     "boot_toolchain",
 ]
 

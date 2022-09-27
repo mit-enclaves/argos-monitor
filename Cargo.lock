@@ -51,6 +51,7 @@ dependencies = [
  "debug",
  "font8x8",
  "lazy_static",
+ "mmu",
  "pic8259",
  "spin",
  "stage_two_abi",
@@ -109,6 +110,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db985b63431fe09e8d71f50aeceffcc31e720cb86be8dad2f38d084c5a328466"
 dependencies = [
  "json",
+]
+
+[[package]]
+name = "mmu"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "vmx",
 ]
 
 [[package]]

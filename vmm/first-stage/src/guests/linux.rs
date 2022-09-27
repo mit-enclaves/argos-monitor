@@ -9,14 +9,15 @@ use crate::guests::boot_params::{
     KERNEL_MIN_ALIGNMENT_BYTES,
 };
 use crate::guests::common::{create_mappings, setup_iommu_context};
-use crate::mmu::eptmapper::EptMapper;
-use crate::mmu::ioptmapper::IoPtMapper;
-use crate::mmu::{FrameAllocator, MemoryMap};
+use crate::mmu::MemoryMap;
 use crate::println;
 use crate::vmx;
 use crate::vmx::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 use crate::vtd::Iommu;
 use bootloader::boot_info::MemoryRegionKind;
+use mmu::eptmapper::EptMapper;
+use mmu::ioptmapper::IoPtMapper;
+use mmu::FrameAllocator;
 use stage_two_abi::GuestInfo;
 
 #[cfg(feature = "guest_linux")]

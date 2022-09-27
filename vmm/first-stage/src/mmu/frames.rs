@@ -9,27 +9,13 @@ use x86_64::structures::paging::frame::PhysFrame;
 use x86_64::PhysAddr;
 
 use crate::allocator;
-use crate::mmu::PtMapper;
 use crate::vmx;
 use crate::{HostPhysAddr, HostVirtAddr};
+use mmu::frame_allocator::PhysRange;
+use mmu::ptmapper::PtMapper;
+use mmu::FrameAllocator;
 
 const PAGE_SIZE: usize = 0x1000;
-
-// ————————————————————————— Re-export definitions —————————————————————————— //
-
-pub unsafe trait FrameAllocator {
-    /// Allocates a frame.
-    fn allocate_frame(&self) -> Option<vmx::Frame>;
-
-    /// Allocates a range of physical memory.
-    fn allocate_range(&self, size: usize) -> Option<PhysRange>;
-
-    /// Returns the boundaries of usable physical memory.
-    fn get_boundaries(&self) -> (usize, usize);
-
-    /// Returns the offset between physical and virtual addresses.
-    fn get_physical_offset(&self) -> HostVirtAddr;
-}
 
 // ————————————————————————— Memory Initialization —————————————————————————— //
 
@@ -92,21 +78,6 @@ pub unsafe fn init(
 }
 
 // ———————————————————————————— Frame Allocator ————————————————————————————— //
-
-#[derive(Debug, Clone, Copy)]
-/// A range of physical memory.
-pub struct PhysRange {
-    /// Start of the physical range (inclusive).
-    pub start: HostPhysAddr,
-    /// End of the physical range (exclusive).
-    pub end: HostPhysAddr,
-}
-
-impl PhysRange {
-    pub fn size(&self) -> usize {
-        (self.end.as_u64() - self.start.as_u64()) as usize
-    }
-}
 
 /// A FrameAllocator that returns usable frames from the bootloader's memory map.
 pub struct BootInfoFrameAllocator {

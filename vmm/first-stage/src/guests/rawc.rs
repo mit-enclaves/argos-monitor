@@ -5,12 +5,13 @@ use super::HandlerResult;
 use crate::acpi::AcpiInfo;
 use crate::elf::ElfProgram;
 use crate::guests::common::{create_mappings, setup_iommu_context};
-use crate::mmu::{EptMapper, FrameAllocator, IoPtMapper, MemoryMap};
+use crate::mmu::MemoryMap;
 use crate::println;
 use crate::vmx;
 use crate::vmx::Register;
 use crate::vtd::Iommu;
 use crate::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
+use mmu::{EptMapper, FrameAllocator, IoPtMapper};
 
 #[cfg(feature = "guest_rawc")]
 const RAWCBYTES: &'static [u8] = include_bytes!("../../../../guest/rawc");

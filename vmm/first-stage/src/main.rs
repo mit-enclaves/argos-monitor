@@ -11,11 +11,12 @@ use core::panic::PanicInfo;
 use first_stage::acpi::AcpiInfo;
 use first_stage::guests;
 use first_stage::guests::Guest;
-use first_stage::mmu::{FrameAllocator, MemoryMap, PtMapper};
+use first_stage::mmu::MemoryMap;
 use first_stage::println;
 use first_stage::qemu;
 use first_stage::second_stage;
 use first_stage::{HostPhysAddr, HostVirtAddr};
+use mmu::{FrameAllocator, PtMapper};
 use vmx;
 use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
 

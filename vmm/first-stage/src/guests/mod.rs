@@ -1,11 +1,12 @@
 use core::arch::asm;
 
 use crate::acpi::AcpiInfo;
-use crate::mmu::{FrameAllocator, MemoryMap};
+use crate::mmu::MemoryMap;
 use crate::println;
 use crate::vmx::bitmaps::exit_qualification;
 use crate::vmx::bitmaps::ExceptionBitmap;
 use crate::vmx::{ActiveVmcs, ControlRegister, Register, VmxError, VmxExitReason};
+use mmu::FrameAllocator;
 
 use stage_two_abi::GuestInfo;
 
