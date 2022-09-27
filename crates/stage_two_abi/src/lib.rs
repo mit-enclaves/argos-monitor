@@ -14,6 +14,7 @@ pub type EntryPoint = extern "C" fn(&'static Manifest) -> !;
 #[macro_export]
 macro_rules! entry_point {
     ($path:path) => {
+        #[cfg(not(test))]
         #[no_mangle]
         pub extern "C" fn _start(manifest: &'static Manifest) -> ! {
             // Validate the signature of the entry point.
