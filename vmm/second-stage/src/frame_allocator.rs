@@ -102,3 +102,54 @@ impl FrameAllocator {
         LINKED_LIST_FREE_PAGES[id as usize].next_free = old_head;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_alloc_works() {
+        let mut frame_alloc = FrameAllocator::new(0, 0);
+        let new_frame = frame_alloc.allocate_frame();
+        assert!(new_frame.is_some());
+    }
+
+    #[test]
+    fn test_alloc_when_full() {
+        let mut frame_alloc = FrameAllocator::new(0, 0);
+        for _ in 0..NB_PAGES {
+            let new_frame = frame_alloc.allocate_frame();
+            assert!(new_frame.is_some());
+        }
+        let new_frame = frame_alloc.allocate_frame();
+        assert!(new_frame.is_none());
+    }
+
+    #[test]
+    fn test_alloc_and_dealloc_several_times() {
+        let mut frame_alloc = FrameAllocator::new(0, 0);
+        for _ in 0..NB_PAGES * 10 {
+            let new_frame = frame_alloc.allocate_frame();
+            assert!(new_frame.is_some());
+            unsafe { frame_alloc.deallocate_frame(new_frame.unwrap()) };
+        }
+    }
+
+    #[test]
+    fn test_two_allocated_frame_are_diff() {
+        let mut frame_alloc = FrameAllocator::new(0, 0);
+        let frame1 = frame_alloc.allocate_frame();
+        assert!(frame1.is_some());
+        let frame2 = frame_alloc.allocate_frame();
+        assert!(frame2.is_some());
+
+        assert_ne!(
+            frame1.as_ref().unwrap().phys_addr,
+            frame2.as_ref().unwrap().phys_addr
+        );
+        assert_ne!(
+            frame1.as_ref().unwrap().virt_addr,
+            frame2.as_ref().unwrap().virt_addr
+        );
+    }
+}
