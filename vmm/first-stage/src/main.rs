@@ -18,6 +18,7 @@ use first_stage::second_stage;
 use first_stage::{HostPhysAddr, HostVirtAddr};
 use mmu::{FrameAllocator, PtMapper};
 use vmx;
+use vtd;
 use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
 
 entry_point!(kernel_main);
@@ -63,7 +64,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         let iommu_addr = HostVirtAddr::new(
             iommus[0].base_address.as_usize() + physical_memory_offset.as_usize(),
         );
-        let iommu = unsafe { first_stage::vtd::Iommu::new(iommu_addr) };
+        let iommu = unsafe { vtd::Iommu::new(iommu_addr) };
         println!("IO MMU: capabilities {:?}", iommu.get_capability(),);
         println!("        extended {:?}", iommu.get_extended_capability());
     } else {

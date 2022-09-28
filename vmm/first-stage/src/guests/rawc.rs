@@ -9,9 +9,9 @@ use crate::mmu::MemoryMap;
 use crate::println;
 use crate::vmx;
 use crate::vmx::Register;
-use crate::vtd::Iommu;
 use crate::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 use mmu::{EptMapper, FrameAllocator, IoPtMapper};
+use vtd::Iommu;
 
 #[cfg(feature = "guest_rawc")]
 const RAWCBYTES: &'static [u8] = include_bytes!("../../../../guest/rawc");

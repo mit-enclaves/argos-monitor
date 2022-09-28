@@ -27,7 +27,6 @@ pub mod qemu;
 pub mod second_stage;
 pub mod segments;
 pub mod serial;
-pub mod vtd;
 
 #[cfg(feature = "vga")]
 pub mod vga;

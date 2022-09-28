@@ -13,8 +13,14 @@ guest_rawc = []
 second-stage = []
 
 [dependencies]
+# Internal
 stage_two_abi = { path = "../../crates/stage_two_abi" }
 vmx = { path = "../../crates/vmx" }
+vtd = { path = "../../crates/vtd" }
+mmu = {  path = "../../crates/mmu" }
+debug = { path = "../../crates/debug" }
+
+# External
 bootloader = { version = "0.10.12" }
 volatile = "0.2.6"
 spin = "0.5.2"
@@ -22,8 +28,6 @@ x86_64 = "0.14.9"
 uart_16550 = "0.2.0"
 pic8259 = "0.10.1"
 bitflags = "1.3.2"
-debug = { version = "0.1.0", path = "../../crates/debug" }
-mmu = { version = "0.1.0", path = "../../crates/mmu" }
 
 [dependencies.font8x8]
 version = "0.2.5"

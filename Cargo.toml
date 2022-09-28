@@ -10,6 +10,7 @@ members = [
     "vmm/second-stage",
     "crates/stage_two_abi",
     "crates/vmx",
+    "crates/vtd",
     "crates/debug",
     "crates/mmu",
     "boot_toolchain",

@@ -13,12 +13,12 @@ use crate::mmu::MemoryMap;
 use crate::println;
 use crate::vmx;
 use crate::vmx::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
-use crate::vtd::Iommu;
 use bootloader::boot_info::MemoryRegionKind;
 use mmu::eptmapper::EptMapper;
 use mmu::ioptmapper::IoPtMapper;
 use mmu::FrameAllocator;
 use stage_two_abi::GuestInfo;
+use vtd::Iommu;
 
 #[cfg(feature = "guest_linux")]
 const LINUXBYTES: &'static [u8] = include_bytes!("../../../../linux-image/images/vmlinux");

@@ -58,6 +58,7 @@ dependencies = [
  "uart_16550",
  "vmx",
  "volatile 0.2.7",
+ "vtd",
  "x86_64",
 ]
 
@@ -251,6 +252,14 @@ name = "volatile"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3ca98349dda8a60ae74e04fd90c7fb4d6a4fbe01e6d3be095478aa0b76f6c0c"
+
+[[package]]
+name = "vtd"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "vmx",
+]
 
 [[package]]
 name = "wait-timeout"
