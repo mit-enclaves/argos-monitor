@@ -3,8 +3,9 @@
 
 use core::panic::PanicInfo;
 use debug;
+use mmu::FrameAllocator;
 use second_stage;
-use second_stage::allocator::FrameAllocator;
+use second_stage::allocator::BumpAllocator;
 use second_stage::debug::qemu;
 use second_stage::guest::{handle_exit, init_guest, HandlerResult};
 use second_stage::println;
@@ -19,13 +20,13 @@ pub extern "C" fn second_stage_entry_point(manifest: &'static Manifest) -> ! {
     println!("Hello from second stage!");
     second_stage::init(manifest);
     println!("Initialization: done");
-    let mut allocator = FrameAllocator::new(manifest.poffset, manifest.voffset);
+    let mut allocator = BumpAllocator::new(manifest.poffset, manifest.voffset);
     launch_guest(&mut allocator, &manifest.info);
     // Exit
     qemu::exit(qemu::ExitCode::Success);
 }
 
-fn launch_guest(allocator: &mut FrameAllocator, infos: &GuestInfo) {
+fn launch_guest(allocator: &impl FrameAllocator, infos: &GuestInfo) {
     let frame = allocator
         .allocate_frame()
         .expect("Failed to allocate VMXON");

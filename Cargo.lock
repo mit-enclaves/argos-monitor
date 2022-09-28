@@ -168,6 +168,7 @@ name = "second-stage"
 version = "0.1.0"
 dependencies = [
  "debug",
+ "mmu",
  "stage_two_abi",
  "uart_16550",
  "vmx",

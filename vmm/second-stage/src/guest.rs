@@ -1,10 +1,10 @@
 //! Guests implements the vmx-related operations for stage 2.
 
-use crate::allocator::FrameAllocator;
 use crate::debug::qemu;
 use crate::println;
 use core::arch;
 use core::arch::asm;
+use mmu::FrameAllocator;
 use stage_two_abi::GuestInfo;
 use vmx::bitmaps::{
     exit_qualification, EntryControls, ExceptionBitmap, ExitControls, PinbasedControls,
@@ -24,7 +24,7 @@ pub enum HandlerResult {
 
 pub unsafe fn init_guest<'vmx>(
     vmxon: &'vmx vmx::Vmxon,
-    allocator: &mut FrameAllocator,
+    allocator: &impl FrameAllocator,
     info: &GuestInfo,
 ) -> vmx::VmcsRegion<'vmx> {
     // Setup the vmcs.
