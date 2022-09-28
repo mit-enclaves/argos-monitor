@@ -22,14 +22,14 @@ pub struct DeviceId {
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
 pub struct RootEntry {
-    pub reserved: u64,
     pub entry: u64,
+    pub reserved: u64,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct ContextEntry {
-    pub upper: u64,
     pub lower: u64,
+    pub upper: u64,
 }
 
 // ———————————————————————————————— I/O MMU ————————————————————————————————— //
@@ -67,6 +67,11 @@ macro_rules! wo_reg {
 macro_rules! rw_reg {
     ($t:ty, $addr:expr, $get:ident, $set:ident) => {
         ro_reg!($t, $addr, $get);
+        wo_reg!($t, $addr, $set);
+    };
+
+    ($t:ty, $addr:expr, $get:ident, $set:ident, $bitflag:ident) => {
+        ro_reg!($t, $addr, $get, $bitflag);
         wo_reg!($t, $addr, $set);
     };
 }
@@ -131,7 +136,7 @@ impl Iommu {
     ro_reg!(u32, 0x01C, get_global_status, Command);
     rw_reg!(u64, 0x020, get_root_table_addr, set_root_table_addr);
     rw_reg!(u64, 0x028, get_context_command, set_context_command);
-    rw_reg!(u32, 0x034, get_fault_status, set_fault_status);
+    rw_reg!(u32, 0x034, get_fault_status, set_fault_status, FaultStatus);
     rw_reg!(u32, 0x038, get_fault_event_control, set_fault_event_control);
     rw_reg!(u32, 0x03C, get_fault_event_data, set_fault_event_data);
     rw_reg!(u32, 0x040, get_fault_event_addr, set_fault_event_addr);
@@ -190,11 +195,14 @@ bitflags! {
         const PROTECTED_LOW_MEMORY    = 1 << 5;
         const PROTECTED_HIGH_MEMORY   = 1 << 6;
         const CACHING_MODE            = 1 << 7;
-        const SUPPORTED_GUEST_WIDTH   = 0b11111  << 8;
+        const PT_39_BITS              = 1 << 9;
+        const PT_48_BITS              = 1 << 10;
+        const PT_57_BITS              = 1 << 11;
         const MAXIMUM_GUEST_WIDTH     = 0b111111 << 16;
         const ZERO_LENGTH_READ        = 1 << 22;
         const FAULT_RECORDING_REG     = 0b1111111111 << 24;
-        const S_STAGE_LARGE_PAGE      = 0b1111 << 34;
+        const SECOND_STAGE_2MB        = 1 << 34;
+        const SECOND_STAGE_1GB        = 1 << 35;
         const PAGE_SELECTIVE_INVAL    = 1 << 39;
         const NB_FAULT_RECORDING_REG  = 0b11111111 << 40;
         const MAX_ADDR_MASK_VALUE     = 0b111111 << 48;
@@ -249,5 +257,14 @@ bitflags! {
         const WRITE_FLUSH_BUFFER       = 1 << 27;
         const SET_ROOT_PTR             = 1 << 30;
         const TRANSLATION_ENABLE       = 1 << 31;
+    }
+
+    pub struct FaultStatus: u32 {
+        const PRIMARY_FAULT_OVERFLOW        = 1 << 0;
+        const PRIMARY_PENDING_FAULT         = 1 << 1;
+        const INVALIDATION_QUEUE_ERROR      = 1 << 4;
+        const INVALIDATION_COMPLETION_ERROR = 1 << 5;
+        const INVALIDATION_TIME_OUT_ERROR   = 1 << 6;
+        const FAULT_RECORD_INDEX            = 0b11111111 << 8;
     }
 }

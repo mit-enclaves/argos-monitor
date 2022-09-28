@@ -86,6 +86,7 @@ impl Guest for Linux {
             iommu.update_root_table_addr();
             iommu.enable_translation();
             println!("I/O MMU: {:?}", iommu.get_global_status());
+            println!("I/O MMU Fault: {:?}", iommu.get_fault_status());
         }
 
         // Build the boot params

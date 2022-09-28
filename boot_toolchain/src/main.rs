@@ -9,7 +9,7 @@ const RUN_ARGS: &[&str] = &[
     "--no-reboot",
     "-nographic",
     "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
-    "-device", "intel-iommu,intremap=on",
+    "-device", "intel-iommu,intremap=on,aw-bits=48",
     "-cpu", "host,+kvm",
     "-machine", "q35",
     "-accel", "kvm,kernel-irqchip=split",
