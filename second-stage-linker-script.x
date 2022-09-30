@@ -1,5 +1,7 @@
-/* Force the linker to look for some symbols */
-EXTERN(__second_stage_manifest)
+/* Force the linker to look for some symbols.                              */
+/* In our case those symbols all start with '__', and are copied in their */
+/* respective sections with `KEEP(*(__*))`*/
+EXTERN(__manifest __statics __pages)
 
 SECTIONS
 {
@@ -14,8 +16,7 @@ SECTIONS
 
   /* Output the rodata */
   .rodata : ALIGN(0x1000) {
-     /* Mark symbol as used, to prevent GC*/
-    KEEP(*(__second_stage_manifest))
+    KEEP(*(__*))
     *(.rodata)
     *(.rodata.*)
   }
@@ -23,6 +24,7 @@ SECTIONS
   /* Finally, all data                                         */
   /* NOTE: no need to page-align bss, both bss and data are RW */
   .data : ALIGN(0x1000) {
+    KEEP(*(__*))
     *(.data)
     *(.data.*)
   }

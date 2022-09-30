@@ -9,18 +9,26 @@ use second_stage::allocator::BumpAllocator;
 use second_stage::debug::qemu;
 use second_stage::guest::{handle_exit, init_guest, HandlerResult};
 use second_stage::println;
-use stage_two_abi::{add_manifest, entry_point, GuestInfo, Manifest};
+use second_stage::statics::Statics;
+use stage_two_abi::{entry_point, GuestInfo, Manifest};
 use vmx::Register;
 
-entry_point!(second_stage_entry_point);
-add_manifest!();
+entry_point!(second_stage_entry_point, Statics);
 
-pub extern "C" fn second_stage_entry_point(manifest: &'static Manifest) -> ! {
+pub extern "C" fn second_stage_entry_point(manifest: &'static mut Manifest<Statics>) -> ! {
     println!("============= Second Stage =============");
     println!("Hello from second stage!");
     second_stage::init(manifest);
     println!("Initialization: done");
-    let mut allocator = BumpAllocator::new(manifest.poffset, manifest.voffset);
+    let statics = manifest
+        .statics
+        .take()
+        .expect("Missing statics in manifest");
+    let mut allocator = BumpAllocator::new(
+        manifest.poffset,
+        manifest.voffset,
+        statics.pages.take().expect("No pages in statics"),
+    );
     launch_guest(&mut allocator, &manifest.info);
     // Exit
     qemu::exit(qemu::ExitCode::Success);

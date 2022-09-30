@@ -3,12 +3,14 @@
 
 use core::arch::asm;
 use stage_two_abi::Manifest;
+
 pub mod allocator;
 mod arch;
 pub mod debug;
 pub mod guest;
+pub mod statics;
 
-pub fn init(manifest: &Manifest) {
+pub fn init(manifest: &Manifest<statics::Statics>) {
     unsafe {
         set_cr3(manifest.cr3);
     }

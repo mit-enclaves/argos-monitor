@@ -5,7 +5,7 @@ use crate::mmu::frames::RangeFrameAllocator;
 use crate::{HostPhysAddr, HostVirtAddr};
 use core::arch::asm;
 use mmu::{frame_allocator::PhysRange, FrameAllocator, PtFlag, PtMapper};
-use stage_two_abi::{EntryPoint, GuestInfo, Manifest, MANIFEST_SYMBOL};
+use stage_two_abi::{EntryPoint, GuestInfo, Manifest, RawStatics};
 
 #[cfg(feature = "second-stage")]
 const SECOND_STAGE: &'static [u8] =
@@ -77,16 +77,13 @@ pub fn load(
     }
 
     // Locate and fill manifest
-    let manifest_sym = second_stage
-        .find_symbol(MANIFEST_SYMBOL)
-        .expect("Could not find second stage's manifest symbol");
-    let manifest = unsafe {
-        // SAFETY: the reference has a static lifetime as it will never be deallocated by the
-        // second stage, but the first stage needs to ensures that the manifest stays mapped until
-        // transition to second stage.
-        let ptr = (manifest_sym.st_value as usize) as *mut Manifest;
-        &mut *ptr
+    let find_symbol = |symbol: &str| {
+        second_stage
+            .find_symbol(symbol)
+            .map(|symbol| symbol.st_value as usize)
     };
+    let manifest =
+        unsafe { Manifest::from_symbol_finder(find_symbol).expect("Missing symbol in stage 2") };
     manifest.cr3 = loaded_elf.pt_root.as_u64();
     manifest.info = *info;
     manifest.poffset = elf_range.start.as_u64();
@@ -99,7 +96,8 @@ pub fn load(
     unsafe {
         // We need to manually ensure that the type correspond to the second stage entry point
         // function.
-        let entry_point: EntryPoint = core::mem::transmute(second_stage.entry.as_usize());
+        let entry_point: EntryPoint<RawStatics> =
+            core::mem::transmute(second_stage.entry.as_usize());
         call_second_stage(entry_point, manifest, rsp.as_u64());
     }
 }
@@ -150,8 +148,8 @@ fn relocate_elf(elf: &mut ElfProgram, allocator: &impl FrameAllocator) -> PhysRa
 }
 
 unsafe fn call_second_stage(
-    entry_point: EntryPoint,
-    manifest: &'static Manifest,
+    entry_point: EntryPoint<RawStatics>,
+    manifest: &'static Manifest<RawStatics>,
     stack_addr: u64,
 ) -> ! {
     asm! {
