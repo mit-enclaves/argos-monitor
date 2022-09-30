@@ -95,6 +95,7 @@ impl Guest for RawcBytes {
         info.rip = entry_point.as_usize();
         info.rsp = rsp.as_usize();
         info.rsi = 0;
+        info.loaded = true;
         info
     }
 

@@ -11,6 +11,7 @@ first-stage    := "--package first-stage --features=first-stage/second-stage"
 second-stage   := "--package second-stage"
 rawc           := "--features=first-stage/guest_rawc"
 linux          := "--features=first-stage/guest_linux"
+no-guest       := "--features=first-stage/no_guest"
 vga            := "--features=first-stage/vga"
 default_dbg    := "gdb0"
 
@@ -37,6 +38,10 @@ common TARGET DBG:
   @just build
   -cargo run {{cargo_args}} {{first-stage}} {{TARGET}} -- --uefi "--dbg_path={{DBG}}"
 
+# Run the VMM without any guest
+no-guest:
+  @just common {{no-guest}} {{default_dbg}}
+
 # Run rawc guest with UEFI
 rawc-uefi:
   @just common {{rawc}} {{default_dbg}}
@@ -51,12 +56,10 @@ build-linux:
 
 # Run linux guest with UEFI
 linux:
-  #@just build-linux
   @just common {{linux}} {{default_dbg}}
 
 # Run linux guest, specify debug socket name.
 linux-dbg SOCKET:
-  #@just build-linux
   @just common {{linux}} {{SOCKET}}
 
 # Build the VMM for bare metal platform

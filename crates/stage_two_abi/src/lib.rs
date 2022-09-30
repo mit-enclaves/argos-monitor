@@ -154,6 +154,8 @@ pub struct GuestInfo {
     pub gs: u16,
     pub ss: u16,
     pub efer: u64,
+    // Guest is loaded
+    pub loaded: bool,
 }
 
 impl GuestInfo {
@@ -171,6 +173,7 @@ impl GuestInfo {
             gs: 0,
             ss: 0,
             efer: 0,
+            loaded: false,
         }
     }
 }

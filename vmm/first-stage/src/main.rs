@@ -90,6 +90,15 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             memory_map,
             pt_mapper,
         )
+    } else if cfg!(feature = "no_guest") {
+        launch_guest(
+            &guests::void::VOID_GUEST,
+            &acpi_info,
+            &host_allocator,
+            &guest_allocator,
+            memory_map,
+            pt_mapper,
+        )
     } else {
         panic!("Unrecognized guest");
     }

@@ -35,6 +35,11 @@ pub extern "C" fn second_stage_entry_point(manifest: &'static mut Manifest<Stati
 }
 
 fn launch_guest(allocator: &impl FrameAllocator, infos: &GuestInfo) {
+    if !infos.loaded {
+        println!("No guest found, exiting");
+        return;
+    }
+
     let frame = allocator
         .allocate_frame()
         .expect("Failed to allocate VMXON");

@@ -14,6 +14,7 @@ pub mod boot_params;
 pub mod common;
 pub mod linux;
 pub mod rawc;
+pub mod void;
 pub mod vmx;
 
 #[derive(PartialEq, Debug)]

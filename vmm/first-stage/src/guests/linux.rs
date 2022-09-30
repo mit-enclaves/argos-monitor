@@ -105,6 +105,7 @@ impl Guest for Linux {
         info.rip = entry_point.as_usize();
         info.rsp = 0;
         info.rsi = boot_params.as_usize();
+        info.loaded = true;
         info
     }
 
