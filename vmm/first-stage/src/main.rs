@@ -29,6 +29,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         first_stage::init_display(buffer);
     }
     println!("============= First Stage =============");
+    println!("CR4: {:?}", Cr4::read());
+    println!("SMX support: {:?}", first_stage::smx::smx_is_available());
 
     // Initialize kernel structures
     first_stage::init();

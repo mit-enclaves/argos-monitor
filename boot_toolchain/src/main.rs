@@ -10,10 +10,13 @@ const RUN_ARGS: &[&str] = &[
     "-nographic",
     "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
     "-device", "intel-iommu,intremap=on,aw-bits=48",
+    "-device", "tpm-tis,tpmdev=tpm0",
+    "-tpmdev", "emulator,id=tpm0,chardev=tpm-chardev",
     "-cpu", "host,+kvm",
     "-machine", "q35",
     "-accel", "kvm,kernel-irqchip=split",
     "-m", "6G",
+    "-chardev", "socket,id=tpm-chardev,path=/tmp/tpm-dev/sock",
     "-chardev",
 ];
 const TEST_ARGS: &[&str] = &[

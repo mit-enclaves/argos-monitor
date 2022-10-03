@@ -35,37 +35,50 @@ rawc:
 	-cargo run {{cargo_args}} {{first-stage}} {{rawc}} --
 
 common TARGET DBG:
-  @just build
-  -cargo run {{cargo_args}} {{first-stage}} {{TARGET}} -- --uefi "--dbg_path={{DBG}}"
+	@just build
+	@just tpm
+	-cargo run {{cargo_args}} {{first-stage}} {{TARGET}} -- --uefi "--dbg_path={{DBG}}"
 
 # Run the VMM without any guest
 no-guest:
-  @just common {{no-guest}} {{default_dbg}}
+	@just common {{no-guest}} {{default_dbg}}
 
 # Run rawc guest with UEFI
 rawc-uefi:
-  @just common {{rawc}} {{default_dbg}}
+	@just common {{rawc}} {{default_dbg}}
 
 # Run rawc guest, specify debug socket name.
 rawc-uefi-dbg SOCKET:
-  @just common {{rawc}} {{SOCKET}}
+	@just common {{rawc}} {{SOCKET}}
 
 # Build linux image.
 build-linux:
-  make -C linux-image/
+	make -C linux-image/
 
 # Run linux guest with UEFI
 linux:
-  @just common {{linux}} {{default_dbg}}
+	@just common {{linux}} {{default_dbg}}
 
 # Run linux guest, specify debug socket name.
 linux-dbg SOCKET:
-  @just common {{linux}} {{SOCKET}}
+	@just common {{linux}} {{SOCKET}}
 
 # Build the VMM for bare metal platform
 build-metal:
 	@just build
 	-cargo run {{cargo_args}} {{first-stage}} {{linux}} {{vga}} -- --uefi --no-run
+
+# Start the software TPM emulator, if not already running
+tpm:
+	#!/usr/bin/env sh
+	if pgrep swtpm;
+	then
+		echo "TPM is running"
+	else
+		echo "Starting TPM"
+		mkdir -p /tmp/tpm-dev/
+		swtpm socket --tpm2 --tpmstate dir=/tmp/tpm-dev --ctrl type=unixio,path=/tmp/tpm-dev/sock &
+	fi
 
 # Install the required dependencies
 setup:
@@ -76,6 +89,10 @@ setup:
 
 	# Download UEFI firmware for QEMU usage
 	wget https://github.com/rust-osdev/ovmf-prebuilt/releases/download/v0.20220719.209%2Bgf0064ac3af/OVMF-pure-efi.fd
+
+	# -----------------------------------------------------------
+	# IMPORTANT: You might need to perform some additional steps:
+	# - Install `swtpm` (software TPM emulator)
 
 # The following line gives highlighting on vim
 # vim: set ft=make :
