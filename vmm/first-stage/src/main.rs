@@ -29,11 +29,35 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         first_stage::init_display(buffer);
     }
     println!("============= First Stage =============");
-    println!("CR4: {:?}", Cr4::read());
-    println!("SMX support: {:?}", first_stage::smx::smx_is_available());
 
     // Initialize kernel structures
     first_stage::init();
+
+    println!("CR4: {:?}", Cr4::read());
+    println!("SMX support: {:?}", first_stage::smx::smx_is_available());
+    unsafe {
+        let rax: u64;
+        let rbx: u64;
+        let rcx: u64;
+        use core::arch::asm;
+        asm! {
+            "push rbx",
+            "mov rax, 1",
+            "mov rbx, 2",
+            "mov rcx, 3",
+            "getsec",
+            "mov rdx, rbx",
+            "pop rbx",
+            out("rax") rax,
+            out("rdx") rbx,
+            out("rcx") rcx,
+        };
+
+        println!(
+            "GETSEC  rax: 0x{:x} - rbx: 0x{:x} - rcx: 0x{:x}",
+            rax, rbx, rcx
+        );
+    }
 
     // Run tests and exit in test configuration
     if cfg!(test) {

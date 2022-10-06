@@ -5,6 +5,8 @@
 #![feature(alloc_error_handler)]
 #![feature(abi_x86_interrupt)]
 #![feature(const_mut_refs)]
+#![feature(naked_functions)]
+#![feature(asm_sym)]
 #![test_runner(crate::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
@@ -19,6 +21,7 @@ pub mod acpi;
 pub mod allocator;
 pub mod elf;
 pub mod gdt;
+pub mod getsec;
 pub mod guests;
 pub mod interrupts;
 pub mod mmu;

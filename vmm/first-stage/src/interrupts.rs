@@ -5,6 +5,7 @@ use x86_64::registers::control::Cr2;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
 use crate::gdt;
+use crate::getsec;
 use crate::print;
 use crate::println;
 
@@ -53,6 +54,13 @@ lazy_static! {
                 .set_stack_index(gdt::DOUBLE_FAULT_IST_INDEX);
         }
         idt[InterruptIndex::Timer.as_usize()].set_handler_fn(timer_interrupt_handler);
+
+        // Override invalid opcode handler to emulate getsec.
+        unsafe {
+            let opcode_handler_ptr = x86_64::VirtAddr::new((getsec::invalid_opcode as *const ()) as u64);
+            idt.invalid_opcode.set_handler_addr(opcode_handler_ptr);
+        }
+
         idt
     };
 }
