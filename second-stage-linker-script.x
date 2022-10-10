@@ -1,7 +1,7 @@
 /* Force the linker to look for some symbols.                              */
 /* In our case those symbols all start with '__', and are copied in their */
 /* respective sections with `KEEP(*(__*))`*/
-EXTERN(__manifest __statics __pages)
+EXTERN(__manifest __statics __pages __current_domain)
 
 SECTIONS
 {

@@ -3,17 +3,10 @@
 const int RO = 0x888;
 int bss;
 
-int rawc_test_function() {
-  return 5; 
-}
+int rawc_test_function() { return 5; }
 
 __attribute__((force_align_arg_pointer)) void _start() {
   bss = RO;
-  for (int i = 0; i < rawc_test_function(); i++) {
-    asm("movl $0x888, %eax;"
-        "movl $0x777, %ebx;"
-        "vmcall");
-  }
 
   asm("movq $0x400A0, %rax;"
       "movq %rax, %cr4;");
@@ -23,7 +16,8 @@ __attribute__((force_align_arg_pointer)) void _start() {
       "movl $0x0, %ecx;"
       "xsetbv");
 
-  asm("movl $0x666, %eax;"
+  // Exit
+  asm("movl $0x500, %eax;"
       "movl $0x777, %ebx;"
       "vmcall");
   __builtin_unreachable();

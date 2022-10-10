@@ -13,6 +13,7 @@
 //!    root of the repository.
 
 use crate::allocator::{Page, NB_PAGES, PAGE_SIZE};
+use crate::hypercalls::DomainId;
 use stage_two_abi::make_static;
 
 const EMPTY_PAGE: Page = Page {
@@ -21,4 +22,5 @@ const EMPTY_PAGE: Page = Page {
 
 make_static! {
     static mut pages: [Page; NB_PAGES] = [EMPTY_PAGE; NB_PAGES];
+    static mut current_domain: DomainId = DomainId(0);
 }

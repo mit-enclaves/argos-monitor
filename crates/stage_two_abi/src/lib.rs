@@ -44,7 +44,7 @@ pub struct Manifest<S: 'static> {
 /// Creates a RawStatics struct from a list of static symbols, and creates an helper method to
 /// pupulate that struct from a symbol reader.
 macro_rules! find_statics {
-    ($($name:ident)*) => {
+    ($($name:ident $(,)?)*) => {
         pub struct RawStatics {
             $(pub $name: usize,)*
         }
@@ -84,7 +84,7 @@ macro_rules! find_statics {
     };
 }
 
-find_statics!(pages);
+find_statics!(pages, current_domain);
 
 /// Crate static symbols using a familiar static declaration statement.
 /// A `Statics` struct and a manifest are created and are expected to be populated by stage 1.
@@ -93,7 +93,7 @@ macro_rules! make_static {
     ($(static mut $name:ident : $type:ty = $init:expr;)*) => {
         // Create a structure listing the static items
         pub struct Statics {
-            $(pub $name: Option<&'static mut $type>)*,
+            $(pub $name: Option<&'static mut $type>,)*
         }
 
         // Create the static items
@@ -124,7 +124,7 @@ macro_rules! make_static {
         #[used]
         #[export_name = "__statics"]
         pub static mut __STATICS: Statics = Statics {
-            $($name: None::<&'static mut $type>)*,
+            $($name: None::<&'static mut $type>,)*
         };
 
         // Check that both statics have the same size at compile time.

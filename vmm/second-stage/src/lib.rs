@@ -4,6 +4,7 @@
 use core::arch::asm;
 use stage_two_abi::Manifest;
 
+pub mod hypercalls;
 pub mod allocator;
 mod arch;
 pub mod debug;

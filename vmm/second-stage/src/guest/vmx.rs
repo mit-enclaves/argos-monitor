@@ -1,6 +1,8 @@
-//! Guests implements the vmx-related operations for stage 2.
+//! VMX guest backend
 
+use super::{Guest, HandlerResult};
 use crate::debug::qemu;
+use crate::hypercalls::{Hypercalls, Parameters};
 use crate::println;
 use core::arch;
 use core::arch::asm;
@@ -15,11 +17,175 @@ use vmx::fields::traits::*;
 use vmx::secondary_controls_capabilities;
 use vmx::{ActiveVmcs, ControlRegister, HostPhysAddr, Register, VmxError, VmxExitReason};
 
-#[derive(PartialEq, Debug)]
-pub enum HandlerResult {
-    Resume,
-    Exit,
-    Crash,
+pub struct VmxGuest<'active, 'vmx> {
+    vcpu: &'active mut vmx::ActiveVmcs<'active, 'vmx>,
+    hypercalls: Hypercalls,
+}
+
+impl<'active, 'vmx> VmxGuest<'active, 'vmx> {
+    pub fn new(vcpu: &'active mut ActiveVmcs<'active, 'vmx>, hypercalls: Hypercalls) -> Self {
+        Self { vcpu, hypercalls }
+    }
+}
+
+impl<'active, 'vmx> Guest for VmxGuest<'active, 'vmx> {
+    type ExitReason = vmx::VmxExitReason;
+
+    type Error = vmx::VmxError;
+
+    fn launch(&mut self) -> Result<Self::ExitReason, Self::Error> {
+        unsafe { self.vcpu.launch() }
+    }
+
+    fn resume(&mut self) -> Result<Self::ExitReason, Self::Error> {
+        unsafe { self.vcpu.resume() }
+    }
+
+    fn handle_exit(&mut self, reason: VmxExitReason) -> Result<HandlerResult, Self::Error> {
+        let vcpu = &mut self.vcpu;
+        let rip = vcpu.get(Register::Rip);
+        let rax = vcpu.get(Register::Rax);
+        let rcx = vcpu.get(Register::Rcx);
+        let rbp = vcpu.get(Register::Rbp);
+        println!(
+            "VM Exit: {:?} - rip: 0x{:x} - rbp: 0x{:x} - rax: 0x{:x} - rcx: 0x{:x}",
+            reason, rip, rbp, rax, rcx
+        );
+
+        match reason {
+            VmxExitReason::Vmcall => {
+                let params = Parameters {
+                    vmcall: vcpu.get(Register::Rax) as usize,
+                    arg_1: vcpu.get(Register::Rcx) as usize,
+                    arg_2: vcpu.get(Register::Rdx) as usize,
+                    arg_3: vcpu.get(Register::Rsi) as usize,
+                };
+                if self.hypercalls.is_exit(&params) {
+                    Ok(HandlerResult::Exit)
+                } else {
+                    let result = self.hypercalls.dispatch(params);
+                    vcpu.set(Register::Rax, result.result as u64);
+                    vcpu.set(Register::Rcx, result.value_1 as u64);
+                    vcpu.set(Register::Rdx, result.value_2 as u64);
+                    vcpu.set(Register::Rsi, result.value_3 as u64);
+                    Ok(HandlerResult::Resume)
+                }
+            }
+            VmxExitReason::Cpuid => {
+                let input_eax = vcpu.get(Register::Rax);
+                let input_ecx = vcpu.get(Register::Rcx);
+                let eax: u64;
+                let ebx: u64;
+                let ecx: u64;
+                let edx: u64;
+
+                unsafe {
+                    // Note: LLVM reserves %rbx for its internal use, so we need to use a scratch
+                    // register for %rbx here.
+                    asm!(
+                        "mov rbx, {tmp}",
+                        "cpuid",
+                        "mov {tmp}, rbx",
+                        tmp = out(reg) ebx ,
+                        inout("rax") input_eax => eax,
+                        inout("rcx") input_ecx => ecx,
+                        out("rdx") edx,
+                    )
+                }
+
+                vcpu.set(Register::Rax, eax);
+                vcpu.set(Register::Rbx, ebx);
+                vcpu.set(Register::Rcx, ecx);
+                vcpu.set(Register::Rdx, edx);
+
+                vcpu.next_instruction()?;
+                Ok(HandlerResult::Resume)
+            }
+            VmxExitReason::ControlRegisterAccesses => {
+                let qualification = vcpu.exit_qualification()?.control_register_accesses();
+                match qualification {
+                    exit_qualification::ControlRegisterAccesses::MovToCr(cr, reg) => {
+                        if cr != ControlRegister::Cr4 {
+                            todo!("Handle {:?}", cr);
+                        }
+                        let value = vcpu.get(reg) as usize;
+                        vcpu.set_cr4_shadow(value)?;
+                        let real_value = value | (1 << 13); // VMXE
+                        vcpu.set_cr(cr, real_value);
+
+                        vcpu.next_instruction()?;
+                    }
+                    _ => todo!("Emulation not yet implemented for {:?}", qualification),
+                };
+                Ok(HandlerResult::Resume)
+            }
+            VmxExitReason::EptViolation => {
+                let addr = vcpu.guest_phys_addr()?;
+                println!("EPT Violation: 0x{:x}", addr.as_u64());
+                Ok(HandlerResult::Crash)
+            }
+            VmxExitReason::Xsetbv => {
+                let ecx = vcpu.get(Register::Rcx);
+                let eax = vcpu.get(Register::Rax);
+                let edx = vcpu.get(Register::Rdx);
+
+                let xrc_id = ecx & 0xFFFFFFFF; // Ignore 32 high-order bits
+                if xrc_id != 0 {
+                    println!("Xsetbv: invalid rcx 0x{:x}", ecx);
+                    return Ok(HandlerResult::Crash);
+                }
+
+                unsafe {
+                    asm!(
+                        "xsetbv",
+                        in("ecx") ecx,
+                        in("eax") eax,
+                        in("edx") edx,
+                    );
+                }
+
+                vcpu.next_instruction()?;
+                Ok(HandlerResult::Resume)
+            }
+            VmxExitReason::Wrmsr => {
+                let ecx = vcpu.get(Register::Rcx);
+                if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
+                    // Custom MSR range, used by KVM
+                    // See https://docs.kernel.org/virt/kvm/x86/msr.html
+                    // TODO: just ignore them for now, should add support in the future
+                    vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                } else {
+                    println!("Unknown MSR: 0x{:x}", ecx);
+                    Ok(HandlerResult::Crash)
+                }
+            }
+            VmxExitReason::Exception => {
+                match vcpu.interrupt_info() {
+                    Ok(Some(exit)) => {
+                        println!("Exception: {:?}", vcpu.interrupt_info());
+                        // Inject the fault back into the guest.
+                        let injection = exit.as_injectable_u32();
+                        vcpu.set_vm_entry_interruption_information(injection)?;
+                        Ok(HandlerResult::Resume)
+                    }
+                    _ => {
+                        println!("VM received an exception");
+                        println!("{:?}", vcpu);
+                        Ok(HandlerResult::Crash)
+                    }
+                }
+            }
+            _ => {
+                println!(
+                    "Emulation is not yet implemented for exit reason: {:?}",
+                    reason
+                );
+                println!("{:?}", vcpu);
+                Ok(HandlerResult::Crash)
+            }
+        }
+    }
 }
 
 pub unsafe fn init_guest<'vmx>(
@@ -260,144 +426,5 @@ pub fn save_host_state<'active, 'vmx>(
         fields::HostStateNat::Cr0.vmwrite(cr0)?;
         fields::HostStateNat::Cr3.vmwrite(cr3)?;
         fields::HostStateNat::Cr4.vmwrite(cr4)
-    }
-}
-
-unsafe fn vmcall_handler(vcpu: &mut vmx::ActiveVmcs) -> Result<HandlerResult, vmx::VmxError> {
-    let rip = vcpu.get(Register::Rip);
-    let rax = vcpu.get(Register::Rax);
-
-    // Move to next instruction
-    vcpu.set(Register::Rip, rip + 3);
-
-    // Interpret VMCall
-    if rax == 0x777 {
-        return Ok(HandlerResult::Exit);
-    }
-    if rax == 0x888 {
-        return Ok(HandlerResult::Resume);
-    }
-    Ok(HandlerResult::Crash)
-}
-
-pub fn handle_exit(
-    vcpu: &mut ActiveVmcs,
-    reason: VmxExitReason,
-) -> Result<HandlerResult, VmxError> {
-    match reason {
-        VmxExitReason::Vmcall => unsafe { vmcall_handler(vcpu) },
-        VmxExitReason::Cpuid => {
-            let input_eax = vcpu.get(Register::Rax);
-            let input_ecx = vcpu.get(Register::Rcx);
-            let eax: u64;
-            let ebx: u64;
-            let ecx: u64;
-            let edx: u64;
-
-            unsafe {
-                // Note: LLVM reserves %rbx for its internal use, so we need to use a scratch
-                // register for %rbx here.
-                asm!(
-                    "mov rbx, {tmp}",
-                    "cpuid",
-                    "mov {tmp}, rbx",
-                    tmp = out(reg) ebx ,
-                    inout("rax") input_eax => eax,
-                    inout("rcx") input_ecx => ecx,
-                    out("rdx") edx,
-                )
-            }
-
-            vcpu.set(Register::Rax, eax);
-            vcpu.set(Register::Rbx, ebx);
-            vcpu.set(Register::Rcx, ecx);
-            vcpu.set(Register::Rdx, edx);
-
-            vcpu.next_instruction()?;
-            Ok(HandlerResult::Resume)
-        }
-        VmxExitReason::ControlRegisterAccesses => {
-            let qualification = vcpu.exit_qualification()?.control_register_accesses();
-            match qualification {
-                exit_qualification::ControlRegisterAccesses::MovToCr(cr, reg) => {
-                    if cr != ControlRegister::Cr4 {
-                        todo!("Handle {:?}", cr);
-                    }
-                    let value = vcpu.get(reg) as usize;
-                    vcpu.set_cr4_shadow(value)?;
-                    let real_value = value | (1 << 13); // VMXE
-                    vcpu.set_cr(cr, real_value);
-
-                    vcpu.next_instruction()?;
-                }
-                _ => todo!("Emulation not yet implemented for {:?}", qualification),
-            };
-            Ok(HandlerResult::Resume)
-        }
-        VmxExitReason::EptViolation => {
-            let addr = vcpu.guest_phys_addr()?;
-            println!("EPT Violation: 0x{:x}", addr.as_u64());
-            Ok(HandlerResult::Crash)
-        }
-        VmxExitReason::Xsetbv => {
-            let ecx = vcpu.get(Register::Rcx);
-            let eax = vcpu.get(Register::Rax);
-            let edx = vcpu.get(Register::Rdx);
-
-            let xrc_id = ecx & 0xFFFFFFFF; // Ignore 32 high-order bits
-            if xrc_id != 0 {
-                println!("Xsetbv: invalid rcx 0x{:x}", ecx);
-                return Ok(HandlerResult::Crash);
-            }
-
-            unsafe {
-                asm!(
-                    "xsetbv",
-                    in("ecx") ecx,
-                    in("eax") eax,
-                    in("edx") edx,
-                );
-            }
-
-            vcpu.next_instruction()?;
-            Ok(HandlerResult::Resume)
-        }
-        VmxExitReason::Wrmsr => {
-            let ecx = vcpu.get(Register::Rcx);
-            if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
-                // Custom MSR range, used by KVM
-                // See https://docs.kernel.org/virt/kvm/x86/msr.html
-                // TODO: just ignore them for now, should add support in the future
-                vcpu.next_instruction()?;
-                Ok(HandlerResult::Resume)
-            } else {
-                println!("Unknown MSR: 0x{:x}", ecx);
-                Ok(HandlerResult::Crash)
-            }
-        }
-        VmxExitReason::Exception => {
-            match vcpu.interrupt_info() {
-                Ok(Some(exit)) => {
-                    println!("Exception: {:?}", vcpu.interrupt_info());
-                    // Inject the fault back into the guest.
-                    let injection = exit.as_injectable_u32();
-                    vcpu.set_vm_entry_interruption_information(injection)?;
-                    Ok(HandlerResult::Resume)
-                }
-                _ => {
-                    println!("VM received an exception");
-                    println!("{:?}", vcpu);
-                    Ok(HandlerResult::Crash)
-                }
-            }
-        }
-        _ => {
-            println!(
-                "Emulation is not yet implemented for exit reason: {:?}",
-                reason
-            );
-            println!("{:?}", vcpu);
-            Ok(HandlerResult::Crash)
-        }
     }
 }
