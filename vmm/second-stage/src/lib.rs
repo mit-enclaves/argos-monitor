@@ -8,6 +8,7 @@ mod arch;
 pub mod debug;
 pub mod guest;
 pub mod frame_allocator;
+pub mod buddy_allocator;
 
 pub fn init(manifest: &Manifest) {
     unsafe {
