@@ -12,15 +12,45 @@
 //!    symbols). The linker script is called `second-stage-linker-script.x` and is located at the
 //!    root of the repository.
 
-use crate::allocator::{Page, NB_PAGES, PAGE_SIZE};
-use crate::hypercalls::DomainId;
+use crate::allocator::{Page, PAGE_SIZE};
+use crate::arena::Handle;
+use crate::hypercalls::{Domain, Region, RegionCapability};
 use stage_two_abi::make_static;
+
+// ————————————————————— Static Resources Configuration ————————————————————— //
+
+pub const NB_PAGES: usize = 40;
+pub const NB_DOMAINS: usize = 16;
+pub const NB_REGIONS: usize = 64;
+pub const NB_REGIONS_PER_DOMAIN: usize = 16;
+
+// —————————————————————— Static Resources Declaration —————————————————————— //
 
 const EMPTY_PAGE: Page = Page {
     data: [0; PAGE_SIZE as usize],
 };
 
+const EMPTY_REGION_CAPABILITY: RegionCapability = RegionCapability {
+    do_own: false,
+    is_shared: false,
+    is_valid: false,
+    index: 0,
+};
+
+const EMPTY_DOMAIN: Domain = Domain {
+    sealed: false,
+    regions: [EMPTY_REGION_CAPABILITY; NB_REGIONS_PER_DOMAIN],
+};
+
+const EMPTY_REGION: Region = Region {
+    ref_count: 0,
+    start: 0,
+    end: 0,
+};
+
 make_static! {
     static mut pages: [Page; NB_PAGES] = [EMPTY_PAGE; NB_PAGES];
-    static mut current_domain: DomainId = DomainId(0);
+    static mut current_domain: Handle<Domain> = Handle::new_unchecked(0);
+    static mut domains_arena: [Domain; NB_DOMAINS] = [EMPTY_DOMAIN; NB_DOMAINS];
+    static mut regions_arena: [Region; NB_REGIONS] = [EMPTY_REGION; NB_REGIONS];
 }

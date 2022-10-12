@@ -1,0 +1,47 @@
+//! Typed Arenas
+//!
+//! Memory can be allocated dynamically for some pre-configured types. Each type gets a statically
+//! allocated regions (the arena) from which objetcs can be allocated.
+
+/// A typed arena, from which objects can be dynamicalle allocated and freed.
+pub struct TypedArena<T, const N: usize> {
+    /// The baking store from which objects are allocated.
+    store: [T; N],
+
+    /// For now we use a simple bump allocator, we will move to a better allocator later.
+    bumper: usize,
+}
+
+/// An handle to an object of type T allocated in a Typed Arena.
+///
+/// The handle can not be cloned or copied, so it represents ownership of the resource.
+pub struct Handle<T>(*mut T);
+
+
+
+impl<T, const N: usize> TypedArena<T, N>
+where
+    T: Copy,
+{
+    pub const fn new(initial_value: T) -> Self {
+        Self {
+            store: [initial_value; N],
+            bumper: 0,
+        }
+    }
+}
+
+impl<T, const N: usize> TypedArena<T, N> {
+    pub fn allocate(&'static mut self) -> Option<Handle<T>> {
+        if self.bumper >= N {
+            return None;
+        }
+
+        let ptr = &mut self.store[self.bumper];
+        let ptr = ptr as *mut T;
+
+        self.bumper += 1;
+
+        Some(Handle(ptr))
+    }
+}

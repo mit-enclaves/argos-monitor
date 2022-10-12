@@ -2,7 +2,7 @@
 
 use super::{Guest, HandlerResult};
 use crate::debug::qemu;
-use crate::hypercalls::{Hypercalls, Parameters};
+use crate::hypercalls::{ErrorCode, Hypercalls, Parameters};
 use crate::println;
 use core::arch;
 use core::arch::asm;
@@ -63,11 +63,17 @@ impl<'active, 'vmx> Guest for VmxGuest<'active, 'vmx> {
                 if self.hypercalls.is_exit(&params) {
                     Ok(HandlerResult::Exit)
                 } else {
-                    let result = self.hypercalls.dispatch(params);
-                    vcpu.set(Register::Rax, result.result as u64);
-                    vcpu.set(Register::Rcx, result.value_1 as u64);
-                    vcpu.set(Register::Rdx, result.value_2 as u64);
-                    vcpu.set(Register::Rsi, result.value_3 as u64);
+                    match self.hypercalls.dispatch(params) {
+                        Ok(values) => {
+                            vcpu.set(Register::Rax, ErrorCode::Success as u64);
+                            vcpu.set(Register::Rcx, values.value_1 as u64);
+                            vcpu.set(Register::Rdx, values.value_2 as u64);
+                            vcpu.set(Register::Rsi, values.value_3 as u64);
+                        }
+                        Err(err) => {
+                            vcpu.set(Register::Rax, err as u64);
+                        }
+                    }
                     Ok(HandlerResult::Resume)
                 }
             }

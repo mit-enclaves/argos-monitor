@@ -1,7 +1,8 @@
 //! Application Binary Interface
 #![allow(unused)]
 
-use crate::statics::Statics;
+use crate::arena::{Handle, TypedArena};
+use crate::statics::{Statics, NB_DOMAINS, NB_REGIONS_PER_DOMAIN};
 
 // ——————————————————————————————— Hypercalls ——————————————————————————————— //
 
@@ -21,6 +22,7 @@ pub enum ErrorCode {
     Success = 0,
     Failure = 1,
     UnknownVmCall = 2,
+    OutOfMemory = 3,
 }
 
 // —————————————————————————————————— ABI ——————————————————————————————————— //
@@ -33,16 +35,16 @@ pub struct Parameters {
 }
 
 pub struct Registers {
-    pub result: ErrorCode,
     pub value_1: usize,
     pub value_2: usize,
     pub value_3: usize,
 }
 
+pub type HypercallResult = Result<Registers, ErrorCode>;
+
 impl Default for Registers {
     fn default() -> Self {
         Self {
-            result: ErrorCode::Failure,
             value_1: 0,
             value_2: 0,
             value_3: 0,
@@ -50,28 +52,70 @@ impl Default for Registers {
     }
 }
 
+// ——————————————————————————————— ABI Types ———————————————————————————————— //
+
+pub struct Domain {
+    pub sealed: bool,
+    pub regions: [RegionCapability; NB_REGIONS_PER_DOMAIN],
+}
+
+/// Each region has a single owner and can be marked either as owned or exclusive.
+pub struct RegionCapability {
+    pub do_own: bool,
+    pub is_shared: bool,
+    pub is_valid: bool,
+    pub index: usize,
+}
+
+pub struct Region {
+    pub ref_count: usize,
+    pub start: usize,
+    pub end: usize,
+}
+
+// ———————————————————————————————— VM Calls ———————————————————————————————— //
+
 pub struct Hypercalls {
-    current_domain: &'static mut DomainId,
+    root_domain: Handle<Domain>,
+    current_domain: &'static mut Handle<Domain>,
+    domains_arena: TypedArena<Domain>,
 }
 
 impl Hypercalls {
     pub fn new(statics: &mut Statics) -> Self {
+        let current_domain = statics
+            .current_domain
+            .take()
+            .expect("Missing current_domain_static");
+        let domains_arena = statics
+            .domains_arena
+            .take()
+            .expect("Missing domains_arena static");
+        let mut domains_arena = TypedArena::new(domains_arena);
+        let root_domain = Self::create_root_domain(&mut domains_arena);
+
         Self {
-            current_domain: statics
-                .current_domain
-                .take()
-                .expect("Missing current_domain static"),
+            root_domain,
+            current_domain,
+            domains_arena,
         }
     }
 
-    pub fn dispatch(&mut self, params: Parameters) -> Registers {
+    fn create_root_domain(domains_arena: &mut TypedArena<Domain>) -> Handle<Domain> {
+        let handle = domains_arena
+            .allocate()
+            .expect("Failed to allocate root domain");
+        let root_domain = &mut domains_arena[handle.clone()];
+        root_domain.sealed = true;
+
+        handle
+    }
+
+    pub fn dispatch(&mut self, params: Parameters) -> HypercallResult {
         match params.vmcall {
             vmcalls::DOMAIN_GET_OWN_ID => self.domain_get_own_id(),
-            vmcalls::DOMAIN_CREATE => self.domain_create(params.arg_1.into()),
-            _ => Registers {
-                result: ErrorCode::UnknownVmCall,
-                ..Default::default()
-            },
+            vmcalls::DOMAIN_CREATE => self.domain_create(),
+            _ => Err(ErrorCode::UnknownVmCall),
         }
     }
 
@@ -80,101 +124,28 @@ impl Hypercalls {
     }
 }
 
-// ——————————————————————————————— ABI Types ———————————————————————————————— //
-
-#[derive(Clone, Copy)]
-#[repr(transparent)]
-pub struct Capability(usize);
-
-impl From<Capability> for usize {
-    fn from(capa: Capability) -> Self {
-        capa.0
-    }
-}
-
-impl From<usize> for Capability {
-    fn from(capa: usize) -> Self {
-        Capability(capa)
-    }
-}
-
-#[derive(Clone, Copy)]
-#[repr(transparent)]
-pub struct DomainId(pub usize);
-
-impl From<DomainId> for usize {
-    fn from(id: DomainId) -> Self {
-        id.0
-    }
-}
-
-impl From<usize> for DomainId {
-    fn from(id: usize) -> Self {
-        DomainId(id)
-    }
-}
-
-pub struct Domain {
-    sealed: bool,
-    receive_shared_region: Option<usize>,
-    receive_exclusive_region: Option<usize>,
-}
-
-// —————————————————————————————— Capabilities —————————————————————————————— //
-
-pub struct DomainCapability {
-    terminate: bool,
-    seal: bool,
-}
-
-/// Each region has a single owner and can be marked either as owned or exclusive.
-pub struct RegionCapability {
-    is_owned: bool,
-    is_exclusive: bool,
-}
-
-// ———————————————————————————————— VM Calls ———————————————————————————————— //
-
 impl Hypercalls {
     /// Returns the Domain ID of the current domain.
-    fn domain_get_own_id(&mut self) -> Registers {
+    fn domain_get_own_id(&mut self) -> HypercallResult {
         let domain = *self.current_domain;
-        Registers {
-            result: ErrorCode::Success,
+        Ok(Registers {
             value_1: domain.into(),
             ..Default::default()
-        }
+        })
     }
 
-    fn domain_create(&mut self, region: Capability) -> Registers {
-        todo!();
-    }
+    /// Creates a fresh domain.
+    fn domain_create(&mut self) -> HypercallResult {
+        let handle = self
+            .domains_arena
+            .allocate()
+            .ok_or(ErrorCode::OutOfMemory)?;
+        let domain = &mut self.domains_arena[handle];
+        domain.sealed = false;
 
-    fn domain_register_gate(
-        &mut self,
-        domain: Capability,
-        gate_kind: usize,
-        gate_addr: usize,
-    ) -> Registers {
-        todo!();
-    }
-
-    fn domain_seal(&mut self, domain: Capability) -> Registers {
-        todo!();
-    }
-
-    /// Only owned exclusive regions can be split.
-    pub fn region_split(&mut self, region: Capability, at: usize) -> Registers {
-        todo!();
-    }
-
-    /// Mark an exclusive region as shared.
-    pub fn region_share(&mut self, region: Capability) -> Registers {
-        todo!();
-    }
-
-    /// If the region is owned, unmap it from one of the other domain with shared ownership.
-    pub fn region_uneshare_one(&mut self, region: Capability) -> Registers {
-        todo!();
+        Ok(Registers {
+            value_1: handle.into(),
+            ..Default::default()
+        })
     }
 }

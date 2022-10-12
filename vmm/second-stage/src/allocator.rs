@@ -6,8 +6,9 @@ use core::cell::RefCell;
 use mmu::{frame_allocator::PhysRange, FrameAllocator};
 use vmx::{Frame, HostPhysAddr, HostVirtAddr};
 
+use crate::statics::NB_PAGES;
+
 pub const PAGE_SIZE: u64 = 0x1000;
-pub const NB_PAGES: usize = 40;
 
 #[derive(Copy, Clone)]
 #[repr(C, align(0x1000))]

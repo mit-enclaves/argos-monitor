@@ -7,6 +7,7 @@ use stage_two_abi::Manifest;
 pub mod hypercalls;
 pub mod allocator;
 mod arch;
+mod arena;
 pub mod debug;
 pub mod guest;
 pub mod statics;
