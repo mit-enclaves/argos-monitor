@@ -1,7 +1,7 @@
 //! Application Binary Interface
 #![allow(unused)]
 
-use crate::arena::{Handle, TypedArena};
+use crate::arena::{ArenaItem, Handle, TypedArena};
 use crate::statics::{Statics, NB_DOMAINS, NB_REGIONS, NB_REGIONS_PER_DOMAIN};
 use stage_two_abi::Manifest;
 
@@ -11,19 +11,26 @@ use stage_two_abi::Manifest;
 pub mod vmcalls {
     pub const DOMAIN_GET_OWN_ID: usize    = 0x100;
     pub const DOMAIN_CREATE: usize        = 0x101;
-    pub const DOMAIN_REGISTER_GATE: usize = 0x102;
-    pub const DOMAIN_SEAL: usize          = 0x103;
+    pub const DOMAIN_SEAL: usize          = 0x102;
+    pub const REGION_SPLIT: usize         = 0x200;
     pub const EXIT: usize                 = 0x500;
 }
 
 // —————————————————————————————— Error Codes ——————————————————————————————— //
 
+#[derive(Debug, Clone, Copy)]
 #[repr(usize)]
 pub enum ErrorCode {
     Success = 0,
     Failure = 1,
     UnknownVmCall = 2,
     OutOfMemory = 3,
+    DomainOutOfBound = 4,
+    RegionOutOfBound = 5,
+    RegionCapaOutOfBound = 6,
+    InvalidRegionCapa = 7,
+    RegionNotExclusive = 8,
+    InvalidAddress = 9,
 }
 
 // —————————————————————————————————— ABI ——————————————————————————————————— //
@@ -57,18 +64,13 @@ impl Default for Registers {
 
 type DomainArena = TypedArena<Domain, NB_DOMAINS>;
 type RegionArena = TypedArena<Region, NB_REGIONS>;
+type DomainHandle = Handle<Domain, NB_DOMAINS>;
+type RegionHandle = Handle<Region, NB_REGIONS>;
+type RegionCapaHandle = Handle<RegionCapability, NB_REGIONS_PER_DOMAIN>;
 
 pub struct Domain {
     pub sealed: bool,
     pub regions: TypedArena<RegionCapability, NB_REGIONS_PER_DOMAIN>,
-}
-
-/// Each region has a single owner and can be marked either as owned or exclusive.
-pub struct RegionCapability {
-    pub do_own: bool,
-    pub is_shared: bool,
-    pub is_valid: bool,
-    pub handle: Handle<Region>,
 }
 
 pub struct Region {
@@ -77,12 +79,65 @@ pub struct Region {
     pub end: usize,
 }
 
+/// Each region has a single owner and can be marked either as owned or exclusive.
+pub struct RegionCapability {
+    pub do_own: bool,
+    pub is_shared: bool,
+    pub is_valid: bool,
+    pub handle: RegionHandle,
+}
+
+impl Region {
+    fn do_contain(&self, addr: usize) -> Result<(), ErrorCode> {
+        if self.start <= addr && addr < self.end {
+            Ok(())
+        } else {
+            Err(ErrorCode::InvalidAddress)
+        }
+    }
+}
+
+impl RegionCapability {
+    fn is_valid(&self) -> Result<(), ErrorCode> {
+        match self.is_valid {
+            true => Ok(()),
+            false => Err(ErrorCode::InvalidRegionCapa),
+        }
+    }
+
+    fn is_exclusive(&self) -> Result<(), ErrorCode> {
+        match self.is_shared {
+            true => Err(ErrorCode::RegionNotExclusive),
+            false => Ok(()),
+        }
+    }
+}
+
+impl ArenaItem for Domain {
+    type Error = ErrorCode;
+    const OUT_OF_BOUND_ERROR: ErrorCode = ErrorCode::DomainOutOfBound;
+    const ALLOCATION_ERROR: Self::Error = ErrorCode::OutOfMemory;
+}
+
+impl ArenaItem for Region {
+    type Error = ErrorCode;
+    const OUT_OF_BOUND_ERROR: ErrorCode = ErrorCode::RegionOutOfBound;
+    const ALLOCATION_ERROR: Self::Error = ErrorCode::OutOfMemory;
+}
+
+impl ArenaItem for RegionCapability {
+    type Error = ErrorCode;
+    const OUT_OF_BOUND_ERROR: ErrorCode = ErrorCode::RegionCapaOutOfBound;
+    const ALLOCATION_ERROR: Self::Error = ErrorCode::OutOfMemory;
+}
+
 // ———————————————————————————————— VM Calls ———————————————————————————————— //
 
 pub struct Hypercalls {
-    root_domain: Handle<Domain>,
-    current_domain: &'static mut Handle<Domain>,
+    root_domain: DomainHandle,
+    current_domain: &'static mut DomainHandle,
     domains_arena: &'static mut DomainArena,
+    regions_arena: &'static mut RegionArena,
 }
 
 impl Hypercalls {
@@ -108,13 +163,14 @@ impl Hypercalls {
             root_domain,
             current_domain,
             domains_arena,
+            regions_arena,
         }
     }
 
     fn create_root_region(
         manifest: &Manifest<Statics>,
         regions_arena: &mut RegionArena,
-    ) -> Handle<Region> {
+    ) -> RegionHandle {
         let handle = regions_arena
             .allocate()
             .expect("Failed to allocate root region");
@@ -127,9 +183,9 @@ impl Hypercalls {
     }
 
     fn create_root_domain(
-        root_region: Handle<Region>,
+        root_region: RegionHandle,
         domains_arena: &mut DomainArena,
-    ) -> Handle<Domain> {
+    ) -> DomainHandle {
         let handle = domains_arena
             .allocate()
             .expect("Failed to allocate root domain");
@@ -154,6 +210,7 @@ impl Hypercalls {
         match params.vmcall {
             vmcalls::DOMAIN_GET_OWN_ID => self.domain_get_own_id(),
             vmcalls::DOMAIN_CREATE => self.domain_create(),
+            vmcalls::REGION_SPLIT => self.region_split(params.arg_1, params.arg_2),
             _ => Err(ErrorCode::UnknownVmCall),
         }
     }
@@ -175,15 +232,40 @@ impl Hypercalls {
 
     /// Creates a fresh domain.
     fn domain_create(&mut self) -> HypercallResult {
-        let handle = self
-            .domains_arena
-            .allocate()
-            .ok_or(ErrorCode::OutOfMemory)?;
+        let handle = self.domains_arena.allocate()?;
         let domain = &mut self.domains_arena[handle];
         domain.sealed = false;
 
         Ok(Registers {
             value_1: handle.into(),
+            ..Default::default()
+        })
+    }
+
+    /// Split a region at the given address.
+    fn region_split(&mut self, region: usize, addr: usize) -> HypercallResult {
+        let old_region_handle: RegionCapaHandle = region.try_into()?;
+        let domain = &mut self.domains_arena[*self.current_domain];
+        let old_region_capa = &mut domain.regions[old_region_handle];
+
+        // Region must be valid, exclusive, and contain the address.
+        old_region_capa.is_valid()?;
+        old_region_capa.is_exclusive()?;
+        self.regions_arena[old_region_capa.handle].do_contain(addr)?;
+
+        // All the check passed, split the region
+        let new_region = self.regions_arena.allocate()?;
+        let old_region = &mut self.regions_arena[old_region_capa.handle];
+        let end_addr = old_region.end;
+        old_region.end = addr;
+        self.regions_arena[new_region] = Region {
+            ref_count: 1,
+            start: addr,
+            end: end_addr,
+        };
+
+        Ok(Registers {
+            value_1: new_region.into(),
             ..Default::default()
         })
     }

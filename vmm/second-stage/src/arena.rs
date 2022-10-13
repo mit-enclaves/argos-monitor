@@ -6,6 +6,14 @@
 use core::marker::PhantomData;
 use core::ops::{Index, IndexMut};
 
+// ——————————————————————————————— Item Trait ——————————————————————————————— //
+
+pub trait ArenaItem {
+    type Error;
+    const OUT_OF_BOUND_ERROR: Self::Error;
+    const ALLOCATION_ERROR: Self::Error;
+}
+
 // —————————————————————————————— Typed Arena ——————————————————————————————— //
 
 /// A typed arena, from which objects can be dynamicalle allocated and freed.
@@ -20,14 +28,17 @@ where
     bumper: usize,
 }
 
-impl<T, const N: usize> TypedArena<T, N> {
+impl<T, const N: usize> TypedArena<T, N>
+where
+    T: ArenaItem,
+{
     pub const fn new(store: [T; N]) -> Self {
         Self { store, bumper: 0 }
     }
 
-    pub fn allocate(&mut self) -> Option<Handle<T>> {
+    pub fn allocate(&mut self) -> Result<Handle<T, N>, T::Error> {
         if self.bumper >= self.store.len() {
-            return None;
+            return Err(T::ALLOCATION_ERROR);
         }
 
         let handle = Handle {
@@ -36,25 +47,25 @@ impl<T, const N: usize> TypedArena<T, N> {
         };
         self.bumper += 1;
 
-        Some(handle)
+        Ok(handle)
     }
 
     #[allow(unused)]
-    pub fn free(&mut self, _object: Handle<T>) {
+    pub fn free(&mut self, _object: Handle<T, N>) {
         // TODO
     }
 }
 
-impl<T, const N: usize> Index<Handle<T>> for TypedArena<T, N> {
+impl<T, const N: usize> Index<Handle<T, N>> for TypedArena<T, N> {
     type Output = T;
 
-    fn index(&self, index: Handle<T>) -> &Self::Output {
+    fn index(&self, index: Handle<T, N>) -> &Self::Output {
         &self.store[index.idx]
     }
 }
 
-impl<T, const N: usize> IndexMut<Handle<T>> for TypedArena<T, N> {
-    fn index_mut(&mut self, index: Handle<T>) -> &mut Self::Output {
+impl<T, const N: usize> IndexMut<Handle<T, N>> for TypedArena<T, N> {
+    fn index_mut(&mut self, index: Handle<T, N>) -> &mut Self::Output {
         &mut self.store[index.idx]
     }
 }
@@ -62,12 +73,12 @@ impl<T, const N: usize> IndexMut<Handle<T>> for TypedArena<T, N> {
 // ————————————————————————————— Object Handle —————————————————————————————— //
 
 /// An handle to an object of type T allocated in a Typed Arena.
-pub struct Handle<T> {
+pub struct Handle<T, const N: usize> {
     idx: usize,
     _type: PhantomData<*const T>,
 }
 
-impl<T> Handle<T> {
+impl<T, const N: usize> Handle<T, N> {
     /// Creates a new chandle from raw index.
     ///
     /// Even though the index is not checked, out-of-bound indexes will only cause panic and no UB
@@ -80,9 +91,9 @@ impl<T> Handle<T> {
     }
 }
 
-impl<T> Copy for Handle<T> {}
+impl<T, const N: usize> Copy for Handle<T, N> {}
 
-impl<T> Clone for Handle<T> {
+impl<T, const N: usize> Clone for Handle<T, N> {
     fn clone(&self) -> Self {
         Self {
             idx: self.idx,
@@ -91,8 +102,23 @@ impl<T> Clone for Handle<T> {
     }
 }
 
-impl<T> From<Handle<T>> for usize {
-    fn from(handle: Handle<T>) -> Self {
+impl<T, const N: usize> From<Handle<T, N>> for usize {
+    fn from(handle: Handle<T, N>) -> Self {
         handle.idx
+    }
+}
+
+impl<T, const N: usize> TryFrom<usize> for Handle<T, N>
+where
+    T: ArenaItem,
+{
+    type Error = T::Error;
+
+    fn try_from(idx: usize) -> Result<Self, Self::Error> {
+        if idx < N {
+            Ok(Self::new_unchecked(idx))
+        } else {
+            Err(T::OUT_OF_BOUND_ERROR)
+        }
     }
 }

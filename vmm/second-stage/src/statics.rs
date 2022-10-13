@@ -50,7 +50,7 @@ const EMPTY_REGION: Region = Region {
 
 make_static! {
     static mut pages: [Page; NB_PAGES] = [EMPTY_PAGE; NB_PAGES];
-    static mut current_domain: Handle<Domain> = Handle::new_unchecked(0);
+    static mut current_domain: Handle<Domain, NB_DOMAINS> = Handle::new_unchecked(0);
     static mut domains_arena: TypedArena<Domain, NB_DOMAINS> = TypedArena::new([EMPTY_DOMAIN; NB_DOMAINS]);
     static mut regions_arena: TypedArena<Region, NB_REGIONS> = TypedArena::new([EMPTY_REGION; NB_REGIONS]);
 }
