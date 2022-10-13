@@ -3,6 +3,7 @@
 
 use crate::arena::{Handle, TypedArena};
 use crate::statics::{Statics, NB_DOMAINS, NB_REGIONS_PER_DOMAIN};
+use stage_two_abi::Manifest;
 
 // ——————————————————————————————— Hypercalls ——————————————————————————————— //
 
@@ -64,7 +65,7 @@ pub struct RegionCapability {
     pub do_own: bool,
     pub is_shared: bool,
     pub is_valid: bool,
-    pub index: usize,
+    pub handle: Handle<Region>,
 }
 
 pub struct Region {
@@ -82,7 +83,7 @@ pub struct Hypercalls {
 }
 
 impl Hypercalls {
-    pub fn new(statics: &mut Statics) -> Self {
+    pub fn new(statics: &mut Statics, manifest: &Manifest<Statics>) -> Self {
         let current_domain = statics
             .current_domain
             .take()
@@ -92,7 +93,15 @@ impl Hypercalls {
             .take()
             .expect("Missing domains_arena static");
         let mut domains_arena = TypedArena::new(domains_arena);
+        let regions_arena = statics
+            .regions_arena
+            .take()
+            .expect("Missing regions_arena static");
+        let mut regions_arena = TypedArena::new(regions_arena);
+
+        let root_region = Self::create_root_region(manifest, &mut regions_arena);
         let root_domain = Self::create_root_domain(&mut domains_arena);
+        *current_domain = root_domain;
 
         Self {
             root_domain,
@@ -101,11 +110,26 @@ impl Hypercalls {
         }
     }
 
+    fn create_root_region(
+        manifest: &Manifest<Statics>,
+        regions_arena: &mut TypedArena<Region>,
+    ) -> Handle<Region> {
+        let handle = regions_arena
+            .allocate()
+            .expect("Failed to allocate root region");
+        let root_region = &mut regions_arena[handle];
+        root_region.start = 0;
+        root_region.end = manifest.poffset as usize;
+        root_region.ref_count = 1;
+
+        handle
+    }
+
     fn create_root_domain(domains_arena: &mut TypedArena<Domain>) -> Handle<Domain> {
         let handle = domains_arena
             .allocate()
             .expect("Failed to allocate root domain");
-        let root_domain = &mut domains_arena[handle.clone()];
+        let root_domain = &mut domains_arena[handle];
         root_domain.sealed = true;
 
         handle

@@ -46,10 +46,9 @@ pub fn setup_iommu_context(
 
 /// Creates the EPT and I/O PT mappings.
 ///
-/// The memory is divided in three regions:
+/// The memory is divided in two regions:
 /// - A lower region, used by the guest
-/// - A middle region, reserved for host use and not mapped within the EPT and I/O PT
-/// - A upper region, used by the guest
+/// - An upper region, reserved for host use and not mapped within the EPT and I/O PT
 pub fn create_mappings(
     memory_map: &MemoryMap,
     ept_mapper: &mut EptMapper,
@@ -57,13 +56,7 @@ pub fn create_mappings(
     host_allocator: &impl FrameAllocator,
 ) {
     let host_range = memory_map.host;
-    let max_addr = memory_map.guest.iter().fold(
-        0,
-        |max, region| if region.end > max { region.end } else { max },
-    ) as usize;
-    let upper_size = max_addr - host_range.end.as_usize();
 
-    // Before host region (lower region)
     ept_mapper.map_range(
         host_allocator,
         GuestPhysAddr::new(0),
@@ -76,22 +69,6 @@ pub fn create_mappings(
         GuestPhysAddr::new(0),
         HostPhysAddr::new(0),
         host_range.start.as_usize(),
-        IoPtFlag::WRITE | IoPtFlag::READ | IoPtFlag::EXECUTE,
-    );
-
-    // After host region (upper region)
-    ept_mapper.map_range(
-        host_allocator,
-        GuestPhysAddr::new(host_range.end.as_usize()),
-        host_range.end,
-        upper_size,
-        EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::SUPERVISOR_EXECUTE,
-    );
-    iopt_mapper.map_range(
-        host_allocator,
-        GuestPhysAddr::new(host_range.end.as_usize()),
-        host_range.end,
-        upper_size,
         IoPtFlag::WRITE | IoPtFlag::READ | IoPtFlag::EXECUTE,
     );
 }

@@ -56,7 +56,7 @@ pub unsafe fn init(
         start: HostPhysAddr::new(host_region.start as usize),
         end: HostPhysAddr::new(host_region.end as usize),
     };
-    host_region.kind = MemoryRegionKind::UnknownBios(1);
+    invalidate_higher_regions(host_region.start, regions);
     let memory_map = MemoryMap {
         guest: regions,
         host: host_range,
@@ -311,6 +311,15 @@ fn select_host_region(regions: &mut [MemoryRegion]) -> &mut MemoryRegion {
     }
 
     panic!("Could not find a memory region big enough");
+}
+
+/// Invalidates memory regions higher than the selected region.
+fn invalidate_higher_regions(start_addr: u64, regions: &mut [MemoryRegion]) {
+    for region in regions {
+        if region.start >= start_addr {
+            region.kind = MemoryRegionKind::UnknownBios(1);
+        }
+    }
 }
 
 // ————————————————————————————————— Tests —————————————————————————————————— //

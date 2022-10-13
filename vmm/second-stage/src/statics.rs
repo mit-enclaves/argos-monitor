@@ -34,7 +34,7 @@ const EMPTY_REGION_CAPABILITY: RegionCapability = RegionCapability {
     do_own: false,
     is_shared: false,
     is_valid: false,
-    index: 0,
+    handle: Handle::new_unchecked(0),
 };
 
 const EMPTY_DOMAIN: Domain = Domain {

@@ -84,7 +84,8 @@ impl Guest for Linux {
             let root_addr = setup_iommu_context(iopt_mapper.get_root(), host_allocator);
             iommu.set_root_table_addr(root_addr.as_u64() | (0b00 << 10)); // Set legacy mode
             iommu.update_root_table_addr();
-            iommu.enable_translation();
+            // TODO: fix I/O MMU
+            // iommu.enable_translation();
             println!("I/O MMU: {:?}", iommu.get_global_status());
             println!("I/O MMU Fault: {:?}", iommu.get_fault_status());
         }

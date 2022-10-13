@@ -30,7 +30,7 @@ pub extern "C" fn second_stage_entry_point(manifest: &'static mut Manifest<Stati
         manifest.voffset,
         statics.pages.take().expect("No pages in statics"),
     );
-    let hypercalls = Hypercalls::new(&mut statics);
+    let hypercalls = Hypercalls::new(&mut statics, &manifest);
     launch_guest(&mut allocator, &manifest.info, hypercalls);
     // Exit
     qemu::exit(qemu::ExitCode::Success);
