@@ -2,7 +2,7 @@
 #![allow(unused)]
 
 use crate::arena::{Handle, TypedArena};
-use crate::statics::{Statics, NB_DOMAINS, NB_REGIONS_PER_DOMAIN};
+use crate::statics::{Statics, NB_DOMAINS, NB_REGIONS, NB_REGIONS_PER_DOMAIN};
 use stage_two_abi::Manifest;
 
 // ——————————————————————————————— Hypercalls ——————————————————————————————— //
@@ -55,9 +55,12 @@ impl Default for Registers {
 
 // ——————————————————————————————— ABI Types ———————————————————————————————— //
 
+type DomainArena = TypedArena<Domain, NB_DOMAINS>;
+type RegionArena = TypedArena<Region, NB_REGIONS>;
+
 pub struct Domain {
     pub sealed: bool,
-    pub regions: [RegionCapability; NB_REGIONS_PER_DOMAIN],
+    pub regions: TypedArena<RegionCapability, NB_REGIONS_PER_DOMAIN>,
 }
 
 /// Each region has a single owner and can be marked either as owned or exclusive.
@@ -79,7 +82,7 @@ pub struct Region {
 pub struct Hypercalls {
     root_domain: Handle<Domain>,
     current_domain: &'static mut Handle<Domain>,
-    domains_arena: TypedArena<Domain>,
+    domains_arena: &'static mut DomainArena,
 }
 
 impl Hypercalls {
@@ -92,15 +95,13 @@ impl Hypercalls {
             .domains_arena
             .take()
             .expect("Missing domains_arena static");
-        let mut domains_arena = TypedArena::new(domains_arena);
         let regions_arena = statics
             .regions_arena
             .take()
             .expect("Missing regions_arena static");
-        let mut regions_arena = TypedArena::new(regions_arena);
 
-        let root_region = Self::create_root_region(manifest, &mut regions_arena);
-        let root_domain = Self::create_root_domain(&mut domains_arena);
+        let root_region = Self::create_root_region(manifest, regions_arena);
+        let root_domain = Self::create_root_domain(root_region, domains_arena);
         *current_domain = root_domain;
 
         Self {
@@ -112,7 +113,7 @@ impl Hypercalls {
 
     fn create_root_region(
         manifest: &Manifest<Statics>,
-        regions_arena: &mut TypedArena<Region>,
+        regions_arena: &mut RegionArena,
     ) -> Handle<Region> {
         let handle = regions_arena
             .allocate()
@@ -125,12 +126,26 @@ impl Hypercalls {
         handle
     }
 
-    fn create_root_domain(domains_arena: &mut TypedArena<Domain>) -> Handle<Domain> {
+    fn create_root_domain(
+        root_region: Handle<Region>,
+        domains_arena: &mut DomainArena,
+    ) -> Handle<Domain> {
         let handle = domains_arena
             .allocate()
             .expect("Failed to allocate root domain");
         let root_domain = &mut domains_arena[handle];
         root_domain.sealed = true;
+
+        let root_region_capa = root_domain
+            .regions
+            .allocate()
+            .expect("Failed to allocate root region capability");
+        root_domain.regions[root_region_capa] = RegionCapability {
+            do_own: true,
+            is_shared: false,
+            is_valid: true,
+            handle: root_region,
+        };
 
         handle
     }

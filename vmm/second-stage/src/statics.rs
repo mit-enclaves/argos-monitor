@@ -13,7 +13,7 @@
 //!    root of the repository.
 
 use crate::allocator::{Page, PAGE_SIZE};
-use crate::arena::Handle;
+use crate::arena::{Handle, TypedArena};
 use crate::hypercalls::{Domain, Region, RegionCapability};
 use stage_two_abi::make_static;
 
@@ -39,7 +39,7 @@ const EMPTY_REGION_CAPABILITY: RegionCapability = RegionCapability {
 
 const EMPTY_DOMAIN: Domain = Domain {
     sealed: false,
-    regions: [EMPTY_REGION_CAPABILITY; NB_REGIONS_PER_DOMAIN],
+    regions: TypedArena::new([EMPTY_REGION_CAPABILITY; NB_REGIONS_PER_DOMAIN]),
 };
 
 const EMPTY_REGION: Region = Region {
@@ -51,6 +51,6 @@ const EMPTY_REGION: Region = Region {
 make_static! {
     static mut pages: [Page; NB_PAGES] = [EMPTY_PAGE; NB_PAGES];
     static mut current_domain: Handle<Domain> = Handle::new_unchecked(0);
-    static mut domains_arena: [Domain; NB_DOMAINS] = [EMPTY_DOMAIN; NB_DOMAINS];
-    static mut regions_arena: [Region; NB_REGIONS] = [EMPTY_REGION; NB_REGIONS];
+    static mut domains_arena: TypedArena<Domain, NB_DOMAINS> = TypedArena::new([EMPTY_DOMAIN; NB_DOMAINS]);
+    static mut regions_arena: TypedArena<Region, NB_REGIONS> = TypedArena::new([EMPTY_REGION; NB_REGIONS]);
 }

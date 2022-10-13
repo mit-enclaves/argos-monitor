@@ -9,19 +9,19 @@ use core::ops::{Index, IndexMut};
 // —————————————————————————————— Typed Arena ——————————————————————————————— //
 
 /// A typed arena, from which objects can be dynamicalle allocated and freed.
-pub struct TypedArena<T>
+pub struct TypedArena<T, const N: usize>
 where
     T: 'static,
 {
     /// The baking store from which objects are allocated.
-    store: &'static mut [T],
+    store: [T; N],
 
     /// For now we use a simple bump allocator, we will move to a better allocator later.
     bumper: usize,
 }
 
-impl<T> TypedArena<T> {
-    pub fn new(store: &'static mut [T]) -> Self {
+impl<T, const N: usize> TypedArena<T, N> {
+    pub const fn new(store: [T; N]) -> Self {
         Self { store, bumper: 0 }
     }
 
@@ -45,7 +45,7 @@ impl<T> TypedArena<T> {
     }
 }
 
-impl<T> Index<Handle<T>> for TypedArena<T> {
+impl<T, const N: usize> Index<Handle<T>> for TypedArena<T, N> {
     type Output = T;
 
     fn index(&self, index: Handle<T>) -> &Self::Output {
@@ -53,7 +53,7 @@ impl<T> Index<Handle<T>> for TypedArena<T> {
     }
 }
 
-impl<T> IndexMut<Handle<T>> for TypedArena<T> {
+impl<T, const N: usize> IndexMut<Handle<T>> for TypedArena<T, N> {
     fn index_mut(&mut self, index: Handle<T>) -> &mut Self::Output {
         &mut self.store[index.idx]
     }
