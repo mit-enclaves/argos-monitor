@@ -55,6 +55,13 @@ rawc-uefi-dbg SOCKET:
 build-linux:
 	make -C linux-image/
 
+# Build the ramfs, packing all the userspace binaries
+build-ramfs:
+	cargo build --package libtyche --target=x86_64-unknown-linux-musl --release
+	cp target/x86_64-unknown-linux-musl/release/tyche linux-image/builds/initramfs/x86-busybox/
+
+	@just build-linux
+
 # Run linux guest with UEFI
 linux:
 	@just common {{linux}} {{default_dbg}}
@@ -86,6 +93,7 @@ setup:
 	rustup toolchain install {{toolchain}}
 	rustup component add llvm-tools-preview --toolchain {{toolchain}}
 	rustup component add rust-src --toolchain {{toolchain}}
+	rustup target add x86_64-unknown-linux-musl
 
 	# Download UEFI firmware for QEMU usage
 	wget https://github.com/rust-osdev/ovmf-prebuilt/releases/download/v0.20220719.209%2Bgf0064ac3af/OVMF-pure-efi.fd

@@ -1,0 +1,11 @@
+[package]
+name = "libtyche"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "tyche"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.0.15", features = ["derive"] }

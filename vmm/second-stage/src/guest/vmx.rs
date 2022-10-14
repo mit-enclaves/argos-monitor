@@ -74,6 +74,7 @@ impl<'active, 'vmx> Guest for VmxGuest<'active, 'vmx> {
                             vcpu.set(Register::Rax, err as u64);
                         }
                     }
+                    vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
             }
