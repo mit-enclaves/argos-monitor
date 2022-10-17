@@ -6,11 +6,12 @@ use core::arch::asm;
 #[repr(usize)]
 #[rustfmt::skip]
 pub enum VmCalls {
-    DomainGetOwnId = 0x100,
-    DomainCreate   = 0x101,
-    DomainSeal     = 0x102,
-    RegionSplit    = 0x200,
-    Exit           = 0x500,
+    DomainGetOwnId    = 0x100,
+    DomainCreate      = 0x101,
+    DomainSeal        = 0x102,
+    DomainGrantRegion = 0x103,
+    RegionSplit       = 0x200,
+    Exit              = 0x500,
 }
 
 // —————————————————————————————— Error Codes ——————————————————————————————— //
@@ -26,8 +27,10 @@ pub enum ErrorCode {
     RegionOutOfBound = 5,
     RegionCapaOutOfBound = 6,
     InvalidRegionCapa = 7,
-    RegionNotExclusive = 8,
+    RegionNotOwned = 8,
     InvalidAddress = 9,
+    InvalidDomain = 10,
+    DomainIsSealed = 11,
 }
 
 // ————————————————————————————————— Calls —————————————————————————————————— //
@@ -35,12 +38,23 @@ pub enum ErrorCode {
 #[derive(Debug)]
 pub struct DomainId(pub usize);
 
+pub struct RegionHandle(pub usize);
+
 pub fn domain_get_own_id() -> Result<DomainId, ErrorCode> {
     do_vmcall(VmCalls::DomainGetOwnId, 0, 0, 0).map(|(id, _, _)| DomainId(id))
 }
 
 pub fn domain_create() -> Result<DomainId, ErrorCode> {
     do_vmcall(VmCalls::DomainCreate, 0, 0, 0).map(|(id, _, _)| DomainId(id))
+}
+
+pub fn domain_grant_region(domain: usize, region: usize) -> Result<RegionHandle, ErrorCode> {
+    do_vmcall(VmCalls::DomainGrantRegion, domain, region, 0)
+        .map(|(handle, _, _)| RegionHandle(handle))
+}
+
+pub fn region_split(region: usize, addr: usize) -> Result<RegionHandle, ErrorCode> {
+    do_vmcall(VmCalls::RegionSplit, region, addr, 0).map(|(handle, _, _)| RegionHandle(handle))
 }
 
 pub fn exit() -> Result<(), ErrorCode> {

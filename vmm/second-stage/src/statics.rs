@@ -31,14 +31,15 @@ const EMPTY_PAGE: Page = Page {
 };
 
 const EMPTY_REGION_CAPABILITY: RegionCapability = RegionCapability {
-    do_own: false,
+    is_owned: false,
     is_shared: false,
     is_valid: false,
     handle: Handle::new_unchecked(0),
 };
 
 const EMPTY_DOMAIN: Domain = Domain {
-    sealed: false,
+    is_sealed: false,
+    is_valid: false,
     regions: TypedArena::new([EMPTY_REGION_CAPABILITY; NB_REGIONS_PER_DOMAIN]),
 };
 

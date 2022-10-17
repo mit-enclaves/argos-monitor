@@ -12,6 +12,7 @@ pub mod vmcalls {
     pub const DOMAIN_GET_OWN_ID: usize    = 0x100;
     pub const DOMAIN_CREATE: usize        = 0x101;
     pub const DOMAIN_SEAL: usize          = 0x102;
+    pub const DOMAIN_GRANT_REGION: usize  = 0x103;
     pub const REGION_SPLIT: usize         = 0x200;
     pub const EXIT: usize                 = 0x500;
 }
@@ -29,8 +30,10 @@ pub enum ErrorCode {
     RegionOutOfBound = 5,
     RegionCapaOutOfBound = 6,
     InvalidRegionCapa = 7,
-    RegionNotExclusive = 8,
+    RegionNotOwned = 8,
     InvalidAddress = 9,
+    InvalidDomain = 10,
+    DomainIsSealed = 11,
 }
 
 // —————————————————————————————————— ABI ——————————————————————————————————— //
@@ -69,7 +72,8 @@ type RegionHandle = Handle<Region, NB_REGIONS>;
 type RegionCapaHandle = Handle<RegionCapability, NB_REGIONS_PER_DOMAIN>;
 
 pub struct Domain {
-    pub sealed: bool,
+    pub is_sealed: bool,
+    pub is_valid: bool,
     pub regions: TypedArena<RegionCapability, NB_REGIONS_PER_DOMAIN>,
 }
 
@@ -81,10 +85,26 @@ pub struct Region {
 
 /// Each region has a single owner and can be marked either as owned or exclusive.
 pub struct RegionCapability {
-    pub do_own: bool,
+    pub is_owned: bool,
     pub is_shared: bool,
     pub is_valid: bool,
     pub handle: RegionHandle,
+}
+
+impl Domain {
+    fn is_valid(&self) -> Result<(), ErrorCode> {
+        match self.is_valid {
+            true => Ok(()),
+            false => Err(ErrorCode::InvalidDomain),
+        }
+    }
+
+    fn is_unsealed(&self) -> Result<(), ErrorCode> {
+        match self.is_sealed {
+            true => Err(ErrorCode::DomainIsSealed),
+            false => Ok(()),
+        }
+    }
 }
 
 impl Region {
@@ -105,11 +125,21 @@ impl RegionCapability {
         }
     }
 
-    fn is_exclusive(&self) -> Result<(), ErrorCode> {
-        match self.is_shared {
-            true => Err(ErrorCode::RegionNotExclusive),
-            false => Ok(()),
+    fn is_owned(&self) -> Result<(), ErrorCode> {
+        match self.is_owned {
+            true => Ok(()),
+            false => Err(ErrorCode::RegionNotOwned),
         }
+    }
+
+    /// Reset this capability, marking it as invalid.
+    fn reset(&mut self) {
+        *self = RegionCapability {
+            is_owned: false,
+            is_shared: false,
+            is_valid: false,
+            handle: Handle::new_unchecked(0),
+        };
     }
 }
 
@@ -190,14 +220,15 @@ impl Hypercalls {
             .allocate()
             .expect("Failed to allocate root domain");
         let root_domain = &mut domains_arena[handle];
-        root_domain.sealed = true;
+        root_domain.is_sealed = true;
+        root_domain.is_valid = true;
 
         let root_region_capa = root_domain
             .regions
             .allocate()
             .expect("Failed to allocate root region capability");
         root_domain.regions[root_region_capa] = RegionCapability {
-            do_own: true,
+            is_owned: true,
             is_shared: false,
             is_valid: true,
             handle: root_region,
@@ -210,6 +241,7 @@ impl Hypercalls {
         match params.vmcall {
             vmcalls::DOMAIN_GET_OWN_ID => self.domain_get_own_id(),
             vmcalls::DOMAIN_CREATE => self.domain_create(),
+            vmcalls::DOMAIN_GRANT_REGION => self.domain_grant_region(params.arg_1, params.arg_2),
             vmcalls::REGION_SPLIT => self.region_split(params.arg_1, params.arg_2),
             _ => Err(ErrorCode::UnknownVmCall),
         }
@@ -234,7 +266,8 @@ impl Hypercalls {
     fn domain_create(&mut self) -> HypercallResult {
         let handle = self.domains_arena.allocate()?;
         let domain = &mut self.domains_arena[handle];
-        domain.sealed = false;
+        domain.is_sealed = false;
+        domain.is_valid = true;
 
         Ok(Registers {
             value_1: handle.into(),
@@ -242,15 +275,50 @@ impl Hypercalls {
         })
     }
 
+    fn domain_grant_region(&mut self, domain: usize, region: usize) -> HypercallResult {
+        let region_handle: RegionCapaHandle = region.try_into()?;
+        let current_domain = &mut self.domains_arena[*self.current_domain];
+        let region_capa = &mut current_domain.regions[region_handle];
+        let handle = region_capa.handle;
+
+        // Region must be valid and exclusively owned
+        region_capa.is_valid()?;
+        region_capa.is_owned()?;
+
+        let domain_handle = domain.try_into()?;
+        let domain = &mut self.domains_arena[domain_handle];
+
+        // Domain must be valid and not sealed yet
+        domain.is_valid()?;
+        domain.is_unsealed()?;
+
+        // Allocate new region for target domain
+        let new_region_capa = domain.regions.allocate()?;
+        domain.regions[new_region_capa] = RegionCapability {
+            is_owned: true,
+            is_shared: false,
+            is_valid: false,
+            handle,
+        };
+
+        // Reset old capacity
+        self.domains_arena[*self.current_domain].regions[region_handle].reset();
+
+        Ok(Registers {
+            value_1: new_region_capa.into(),
+            ..Default::default()
+        })
+    }
+
     /// Split a region at the given address.
     fn region_split(&mut self, region: usize, addr: usize) -> HypercallResult {
-        let old_region_handle: RegionCapaHandle = region.try_into()?;
+        let old_region_handle = region.try_into()?;
         let domain = &mut self.domains_arena[*self.current_domain];
         let old_region_capa = &mut domain.regions[old_region_handle];
 
         // Region must be valid, exclusive, and contain the address.
         old_region_capa.is_valid()?;
-        old_region_capa.is_exclusive()?;
+        old_region_capa.is_owned()?;
         self.regions_arena[old_region_capa.handle].do_contain(addr)?;
 
         // All the check passed, split the region

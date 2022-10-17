@@ -58,7 +58,7 @@ build-linux:
 # Build the ramfs, packing all the userspace binaries
 build-ramfs:
 	cargo build --package libtyche --target=x86_64-unknown-linux-musl --release
-	cp target/x86_64-unknown-linux-musl/release/tyche linux-image/builds/initramfs/x86-busybox/
+	cp target/x86_64-unknown-linux-musl/release/tyche linux-image/builds/initramfs/x86-busybox/bin/
 
 	@just build-linux
 
