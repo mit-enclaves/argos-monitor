@@ -315,15 +315,20 @@ impl Hypercalls {
         let old_region_handle = region.try_into()?;
         let domain = &mut self.domains_arena[*self.current_domain];
         let old_region_capa = &mut domain.regions[old_region_handle];
+        let old_region_handle = old_region_capa.handle;
 
         // Region must be valid, exclusive, and contain the address.
         old_region_capa.is_valid()?;
         old_region_capa.is_owned()?;
         self.regions_arena[old_region_capa.handle].do_contain(addr)?;
 
+        // Allocate a new capability
+        let domain = &mut self.domains_arena[*self.current_domain];
+        let new_region_capa = domain.regions.allocate()?;
+
         // All the check passed, split the region
-        let new_region = self.regions_arena.allocate()?;
-        let old_region = &mut self.regions_arena[old_region_capa.handle];
+        let new_region = self.regions_arena.allocate()?; // TODO: free domain capa if alloc fail
+        let old_region = &mut self.regions_arena[old_region_handle];
         let end_addr = old_region.end;
         old_region.end = addr;
         self.regions_arena[new_region] = Region {
@@ -331,10 +336,22 @@ impl Hypercalls {
             start: addr,
             end: end_addr,
         };
+        domain.regions[new_region_capa] = RegionCapability {
+            is_owned: true,
+            is_shared: false,
+            is_valid: true,
+            handle: new_region,
+        };
 
         Ok(Registers {
             value_1: new_region.into(),
             ..Default::default()
         })
+    }
+
+    // ———————————————————————————————— Helpers ————————————————————————————————— //
+
+    fn get_current_domain_mut(&mut self) -> &mut Domain {
+        &mut self.domains_arena[*self.current_domain]
     }
 }
