@@ -1,5 +1,8 @@
 use clap::Parser;
-use libtyche::{domain_create, domain_get_own_id, domain_grant_region, exit, region_split};
+use libtyche::{
+    domain_create, domain_get_own_id, domain_grant_region, exit, region_split, store_read,
+    store_write,
+};
 use libtyche::{region_get_info, ErrorCode};
 
 #[derive(clap::Parser)]
@@ -14,6 +17,8 @@ enum Subcommand {
     Domain(Domain),
     #[command(subcommand)]
     Region(Region),
+    #[command(subcommand)]
+    Store(Store),
     Exit,
 }
 
@@ -30,11 +35,18 @@ enum Region {
     GetInfo { region: usize },
 }
 
+#[derive(clap::Subcommand)]
+enum Store {
+    Read { offset: usize, nb_items: usize },
+    Write { offset: usize, value: usize },
+}
+
 pub fn main() {
     let args = Args::parse();
     let result = match args.subcommand {
         Subcommand::Domain(cmd) => handle_domain(cmd),
         Subcommand::Region(cmd) => handle_region(cmd),
+        Subcommand::Store(cmd) => handle_store(cmd),
         Subcommand::Exit => exit(),
     };
     if let Err(err) = result {
@@ -83,6 +95,30 @@ fn handle_region(cmd: Region) -> Result<(), ErrorCode> {
                 "Region {}:\n  start: 0x{:x}\n  end:   0x{:x}\n  flags: {}",
                 region, info.start, info.end, flags
             );
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_store(cmd: Store) -> Result<(), ErrorCode> {
+    match cmd {
+        Store::Read { offset, nb_items } => {
+            let (val_1, val_2, val_3) = store_read(offset, nb_items)?;
+            if nb_items == 1 {
+                println!("Store offset {}:\n  {}", offset, val_1);
+            } else if nb_items == 2 {
+                println!("Store offset {}:\n  {}\n  {}", offset, val_1, val_2);
+            } else {
+                println!(
+                    "Store offset {}:\n  {}\n  {}\n  {}",
+                    offset, val_1, val_2, val_3
+                );
+            }
+        }
+        Store::Write { offset, value } => {
+            store_write(offset, value)?;
+            println!("Wrote {} at offset {}", value, offset);
         }
     }
 

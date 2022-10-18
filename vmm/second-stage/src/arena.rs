@@ -89,6 +89,10 @@ impl<T, const N: usize> Handle<T, N> {
             _type: PhantomData,
         }
     }
+
+    pub fn idx(&self) -> usize {
+        self.idx
+    }
 }
 
 impl<T, const N: usize> Copy for Handle<T, N> {}

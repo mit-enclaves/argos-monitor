@@ -2,7 +2,7 @@
 #![allow(unused)]
 
 use crate::arena::{ArenaItem, Handle, TypedArena};
-use crate::statics::{Statics, NB_DOMAINS, NB_REGIONS, NB_REGIONS_PER_DOMAIN};
+use crate::statics::{Statics, NB_DOMAINS, NB_REGIONS, NB_REGIONS_PER_DOMAIN, PRIVATE_STORE_SIZE};
 use stage_two_abi::Manifest;
 
 // ——————————————————————————————— Hypercalls ——————————————————————————————— //
@@ -15,6 +15,8 @@ pub mod vmcalls {
     pub const DOMAIN_GRANT_REGION: usize  = 0x103;
     pub const REGION_SPLIT: usize         = 0x200;
     pub const REGION_GET_INFO: usize      = 0x201;
+    pub const STORE_READ: usize           = 0x400;
+    pub const STORE_WRITE: usize          = 0x401;
     pub const EXIT: usize                 = 0x500;
 }
 
@@ -35,6 +37,8 @@ pub enum ErrorCode {
     InvalidAddress = 9,
     InvalidDomain = 10,
     DomainIsSealed = 11,
+    StoreAccesOutOfBound = 12,
+    BadParameters = 13,
 }
 
 // ————————————————————————————————— Flags —————————————————————————————————— //
@@ -84,6 +88,7 @@ pub struct Domain {
     pub is_sealed: bool,
     pub is_valid: bool,
     pub regions: TypedArena<RegionCapability, NB_REGIONS_PER_DOMAIN>,
+    pub store: [usize; PRIVATE_STORE_SIZE],
 }
 
 pub struct Region {
@@ -231,6 +236,8 @@ impl Hypercalls {
         let root_domain = &mut domains_arena[handle];
         root_domain.is_sealed = true;
         root_domain.is_valid = true;
+        root_domain.store[0] = 1;
+        root_domain.store[1] = root_region.idx();
 
         let root_region_capa = root_domain
             .regions
@@ -253,6 +260,8 @@ impl Hypercalls {
             vmcalls::DOMAIN_GRANT_REGION => self.domain_grant_region(params.arg_1, params.arg_2),
             vmcalls::REGION_SPLIT => self.region_split(params.arg_1, params.arg_2),
             vmcalls::REGION_GET_INFO => self.region_get_info(params.arg_1),
+            vmcalls::STORE_READ => self.store_read(params.arg_1, params.arg_2),
+            vmcalls::STORE_WRITE => self.store_write(params.arg_1, params.arg_2),
             _ => Err(ErrorCode::UnknownVmCall),
         }
     }
@@ -380,5 +389,43 @@ impl Hypercalls {
             value_2: region.end,
             value_3: flags,
         })
+    }
+
+    fn store_read(&self, offset: usize, nb_items: usize) -> HypercallResult {
+        if offset + nb_items >= PRIVATE_STORE_SIZE {
+            return Err(ErrorCode::StoreAccesOutOfBound);
+        }
+
+        let store = &self.domains_arena[*self.current_domain].store;
+        let registers = match nb_items {
+            1 => Registers {
+                value_1: store[offset],
+                ..Default::default()
+            },
+            2 => Registers {
+                value_1: store[offset],
+                value_2: store[offset + 1],
+                ..Default::default()
+            },
+            3 => Registers {
+                value_1: store[offset],
+                value_2: store[offset + 1],
+                value_3: store[offset + 2],
+            },
+            _ => return Err(ErrorCode::BadParameters),
+        };
+
+        Ok(registers)
+    }
+
+    fn store_write(&mut self, offset: usize, value: usize) -> HypercallResult {
+        if offset >= PRIVATE_STORE_SIZE {
+            return Err(ErrorCode::StoreAccesOutOfBound);
+        }
+
+        let store = &mut self.domains_arena[*self.current_domain].store;
+        store[offset] = value;
+
+        Ok(Default::default())
     }
 }

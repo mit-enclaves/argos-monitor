@@ -23,6 +23,7 @@ pub const NB_PAGES: usize = 40;
 pub const NB_DOMAINS: usize = 16;
 pub const NB_REGIONS: usize = 64;
 pub const NB_REGIONS_PER_DOMAIN: usize = 16;
+pub const PRIVATE_STORE_SIZE: usize = 16;
 
 // —————————————————————— Static Resources Declaration —————————————————————— //
 
@@ -41,6 +42,7 @@ const EMPTY_DOMAIN: Domain = Domain {
     is_sealed: false,
     is_valid: false,
     regions: TypedArena::new([EMPTY_REGION_CAPABILITY; NB_REGIONS_PER_DOMAIN]),
+    store: [0; PRIVATE_STORE_SIZE],
 };
 
 const EMPTY_REGION: Region = Region {

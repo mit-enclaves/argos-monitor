@@ -12,6 +12,8 @@ pub enum VmCalls {
     DomainGrantRegion = 0x103,
     RegionSplit       = 0x200,
     RegionGetInfo     = 0x201,
+    StoreRead         = 0x400,
+    StoreWrite        = 0x401,
     Exit              = 0x500,
 }
 
@@ -32,6 +34,8 @@ pub enum ErrorCode {
     InvalidAddress = 9,
     InvalidDomain = 10,
     DomainIsSealed = 11,
+    StoreAccessOutOfBound = 12,
+    BadParameters = 13,
 }
 
 // ———————————————————————————— Data Structures ————————————————————————————— //
@@ -72,6 +76,14 @@ pub fn region_get_info(region: usize) -> Result<RegionInfo, ErrorCode> {
         end,
         flags,
     })
+}
+
+pub fn store_read(offset: usize, nb_items: usize) -> Result<(usize, usize, usize), ErrorCode> {
+    do_vmcall(VmCalls::StoreRead, offset, nb_items, 0)
+}
+
+pub fn store_write(offset: usize, value: usize) -> Result<(), ErrorCode> {
+    do_vmcall(VmCalls::StoreWrite, offset, value, 0).map(|(_, _, _)| ())
 }
 
 pub fn exit() -> Result<(), ErrorCode> {
