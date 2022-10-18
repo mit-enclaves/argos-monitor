@@ -1,9 +1,9 @@
 use clap::Parser;
+use libtyche::ErrorCode;
 use libtyche::{
-    domain_create, domain_get_own_id, domain_grant_region, exit, region_split, store_read,
-    store_write,
+    config_nb_regions, config_read_region, domain_create, domain_get_own_id, domain_grant_region,
+    exit, region_get_info, region_split,
 };
-use libtyche::{region_get_info, ErrorCode};
 
 #[derive(clap::Parser)]
 struct Args {
@@ -18,7 +18,7 @@ enum Subcommand {
     #[command(subcommand)]
     Region(Region),
     #[command(subcommand)]
-    Store(Store),
+    Config(Config),
     Exit,
 }
 
@@ -36,9 +36,9 @@ enum Region {
 }
 
 #[derive(clap::Subcommand)]
-enum Store {
-    Read { offset: usize, nb_items: usize },
-    Write { offset: usize, value: usize },
+enum Config {
+    NbRegions,
+    ReadRegion { offset: usize, nb_items: usize },
 }
 
 pub fn main() {
@@ -46,7 +46,7 @@ pub fn main() {
     let result = match args.subcommand {
         Subcommand::Domain(cmd) => handle_domain(cmd),
         Subcommand::Region(cmd) => handle_region(cmd),
-        Subcommand::Store(cmd) => handle_store(cmd),
+        Subcommand::Config(cmd) => handle_store(cmd),
         Subcommand::Exit => exit(),
     };
     if let Err(err) = result {
@@ -101,10 +101,14 @@ fn handle_region(cmd: Region) -> Result<(), ErrorCode> {
     Ok(())
 }
 
-fn handle_store(cmd: Store) -> Result<(), ErrorCode> {
+fn handle_store(cmd: Config) -> Result<(), ErrorCode> {
     match cmd {
-        Store::Read { offset, nb_items } => {
-            let (val_1, val_2, val_3) = store_read(offset, nb_items)?;
+        Config::NbRegions => {
+            let nb_reg = config_nb_regions()?;
+            println!("Number of initial regions: {}", nb_reg);
+        }
+        Config::ReadRegion { offset, nb_items } => {
+            let (val_1, val_2, val_3) = config_read_region(offset, nb_items)?;
             if nb_items == 1 {
                 println!("Store offset {}:\n  {}", offset, val_1);
             } else if nb_items == 2 {
@@ -115,10 +119,6 @@ fn handle_store(cmd: Store) -> Result<(), ErrorCode> {
                     offset, val_1, val_2, val_3
                 );
             }
-        }
-        Store::Write { offset, value } => {
-            store_write(offset, value)?;
-            println!("Wrote {} at offset {}", value, offset);
         }
     }
 

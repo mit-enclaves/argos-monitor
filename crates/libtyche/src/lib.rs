@@ -12,8 +12,8 @@ pub enum VmCalls {
     DomainGrantRegion = 0x103,
     RegionSplit       = 0x200,
     RegionGetInfo     = 0x201,
-    StoreRead         = 0x400,
-    StoreWrite        = 0x401,
+    ConfigNbRegions   = 0x400,
+    ConfigReadRegion  = 0x401,
     Exit              = 0x500,
 }
 
@@ -78,12 +78,15 @@ pub fn region_get_info(region: usize) -> Result<RegionInfo, ErrorCode> {
     })
 }
 
-pub fn store_read(offset: usize, nb_items: usize) -> Result<(usize, usize, usize), ErrorCode> {
-    do_vmcall(VmCalls::StoreRead, offset, nb_items, 0)
+pub fn config_nb_regions() -> Result<usize, ErrorCode> {
+    do_vmcall(VmCalls::ConfigNbRegions, 0, 0, 0).map(|(n, _, _)| n)
 }
 
-pub fn store_write(offset: usize, value: usize) -> Result<(), ErrorCode> {
-    do_vmcall(VmCalls::StoreWrite, offset, value, 0).map(|(_, _, _)| ())
+pub fn config_read_region(
+    offset: usize,
+    nb_items: usize,
+) -> Result<(usize, usize, usize), ErrorCode> {
+    do_vmcall(VmCalls::ConfigReadRegion, offset, nb_items, 0)
 }
 
 pub fn exit() -> Result<(), ErrorCode> {
@@ -110,7 +113,7 @@ fn do_vmcall(
             inout("esi") arg_3 => val_3,
         );
         result = match res {
-            0..=9 => core::mem::transmute(res),
+            0..=13 => core::mem::transmute(res),
             _ => ErrorCode::Failure,
         };
     }
