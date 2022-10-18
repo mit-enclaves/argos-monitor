@@ -1,6 +1,6 @@
 use clap::Parser;
-use libtyche::ErrorCode;
 use libtyche::{domain_create, domain_get_own_id, domain_grant_region, exit, region_split};
+use libtyche::{region_get_info, ErrorCode};
 
 #[derive(clap::Parser)]
 struct Args {
@@ -27,6 +27,7 @@ enum Domain {
 #[derive(clap::Subcommand)]
 enum Region {
     Split { region: usize, addr: usize },
+    GetInfo { region: usize },
 }
 
 pub fn main() {
@@ -68,6 +69,20 @@ fn handle_region(cmd: Region) -> Result<(), ErrorCode> {
         Region::Split { region, addr } => {
             let handle = region_split(region, addr)?;
             println!("Split region at 0x{:x}, new region id: {}", addr, handle.0);
+        }
+        Region::GetInfo { region } => {
+            let info = region_get_info(region)?;
+            let mut flags = String::new();
+            if info.flags & 0b001 != 0 {
+                flags.push_str("OWNED ");
+            }
+            if info.flags & 0b010 != 0 {
+                flags.push_str("SHARED ");
+            }
+            println!(
+                "Region {}:\n  start: 0x{:x}\n  end:   0x{:x}\n  flags: {}",
+                region, info.start, info.end, flags
+            );
         }
     }
 

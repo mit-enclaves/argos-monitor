@@ -14,6 +14,7 @@ pub mod vmcalls {
     pub const DOMAIN_SEAL: usize          = 0x102;
     pub const DOMAIN_GRANT_REGION: usize  = 0x103;
     pub const REGION_SPLIT: usize         = 0x200;
+    pub const REGION_GET_INFO: usize      = 0x201;
     pub const EXIT: usize                 = 0x500;
 }
 
@@ -34,6 +35,14 @@ pub enum ErrorCode {
     InvalidAddress = 9,
     InvalidDomain = 10,
     DomainIsSealed = 11,
+}
+
+// ————————————————————————————————— Flags —————————————————————————————————— //
+
+#[rustfmt::skip]
+pub mod region {
+    pub const OWNED: usize  = 0b001;
+    pub const SHARED: usize = 0b010;
 }
 
 // —————————————————————————————————— ABI ——————————————————————————————————— //
@@ -243,6 +252,7 @@ impl Hypercalls {
             vmcalls::DOMAIN_CREATE => self.domain_create(),
             vmcalls::DOMAIN_GRANT_REGION => self.domain_grant_region(params.arg_1, params.arg_2),
             vmcalls::REGION_SPLIT => self.region_split(params.arg_1, params.arg_2),
+            vmcalls::REGION_GET_INFO => self.region_get_info(params.arg_1),
             _ => Err(ErrorCode::UnknownVmCall),
         }
     }
@@ -349,9 +359,26 @@ impl Hypercalls {
         })
     }
 
-    // ———————————————————————————————— Helpers ————————————————————————————————— //
+    fn region_get_info(&mut self, region: usize) -> HypercallResult {
+        let domain = &mut self.domains_arena[*self.current_domain];
+        let region_capa = region.try_into()?;
+        let region_capa = &domain.regions[region_capa];
+        region_capa.is_valid()?;
 
-    fn get_current_domain_mut(&mut self) -> &mut Domain {
-        &mut self.domains_arena[*self.current_domain]
+        // Region is valid
+        let region = &self.regions_arena[region_capa.handle];
+        let mut flags = 0;
+        if region_capa.is_owned {
+            flags |= region::OWNED;
+        }
+        if region_capa.is_shared {
+            flags |= region::SHARED;
+        }
+
+        Ok(Registers {
+            value_1: region.start,
+            value_2: region.end,
+            value_3: flags,
+        })
     }
 }

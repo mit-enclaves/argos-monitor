@@ -11,6 +11,7 @@ pub enum VmCalls {
     DomainSeal        = 0x102,
     DomainGrantRegion = 0x103,
     RegionSplit       = 0x200,
+    RegionGetInfo     = 0x201,
     Exit              = 0x500,
 }
 
@@ -31,6 +32,14 @@ pub enum ErrorCode {
     InvalidAddress = 9,
     InvalidDomain = 10,
     DomainIsSealed = 11,
+}
+
+// ———————————————————————————— Data Structures ————————————————————————————— //
+
+pub struct RegionInfo {
+    pub start: usize,
+    pub end: usize,
+    pub flags: usize,
 }
 
 // ————————————————————————————————— Calls —————————————————————————————————— //
@@ -55,6 +64,14 @@ pub fn domain_grant_region(domain: usize, region: usize) -> Result<RegionHandle,
 
 pub fn region_split(region: usize, addr: usize) -> Result<RegionHandle, ErrorCode> {
     do_vmcall(VmCalls::RegionSplit, region, addr, 0).map(|(handle, _, _)| RegionHandle(handle))
+}
+
+pub fn region_get_info(region: usize) -> Result<RegionInfo, ErrorCode> {
+    do_vmcall(VmCalls::RegionGetInfo, region, 0, 0).map(|(start, end, flags)| RegionInfo {
+        start,
+        end,
+        flags,
+    })
 }
 
 pub fn exit() -> Result<(), ErrorCode> {
