@@ -41,8 +41,8 @@ impl BuddyAllocator {
     pub fn init() {}
 
     fn bsf(input: u64) -> usize {
-        input.trailing_zeros().try_into().unwrap()
-        /* let mut pos: usize;
+        assert!(input > 0);
+        let mut pos: usize;
         unsafe {
             asm! {
                 "bsf {pos}, {input}",
@@ -51,50 +51,57 @@ impl BuddyAllocator {
                 options(nomem, nostack, preserves_flags),
             };
         };
-        pos */
+        assert!(pos < 64);
+        pos
     }
 
     pub fn allocate_frame(&mut self) -> Option<Frame> {
         unsafe {
             // First level search
+            if TREE_4KB[0] == 0 {
+                return None;
+            }
             let l1_idx = Self::bsf(TREE_4KB[0]);
             if l1_idx >= NB_GB {
+                assert!(false);
                 return None;
             }
 
             // Second level search
-            let first_block_l2 = TREE_1GB_SIZE + 8 * l1_idx; // 512/64 = 8
-            let mut block_chosen_l2 = 0;
+            let first_block_l2 = TREE_1GB_SIZE + 8 * l1_idx;
+            let mut block_chosen_l2 = 8;
             for i in 0..8 {
                 if TREE_4KB[first_block_l2 + i] != 0 {
                     block_chosen_l2 = i;
                     break;
                 }
             }
+            assert!(block_chosen_l2 < 8);
+            assert!(TREE_4KB[first_block_l2 + block_chosen_l2] != 0u64);
             let l2_idx =
                 Self::bsf(TREE_4KB[first_block_l2 + block_chosen_l2]) + 64 * block_chosen_l2;
 
             // Third level search
-            let first_block_l3 = TREE_1GB_SIZE + 8 * NB_GB + (512 * l2_idx) / 64;
-            let mut block_chosen_l3 = 0;
-            for i in 0..8 {
-                if TREE_4KB[first_block_l3 + i] != 0 {
-                    block_chosen_l3 = i;
+            let first_block_l3 = TREE_1GB_SIZE + 8 * NB_GB + 512 * 8 * l1_idx + 8 * l2_idx;
+            let mut block_chosen_l3 = 8;
+            for j in 0..8 {
+                if TREE_4KB[first_block_l3 + j] != 0u64 {
+                    block_chosen_l3 = j;
                     break;
                 }
             }
+            assert!(block_chosen_l3 < 8);
+            assert!(TREE_4KB[first_block_l3 + block_chosen_l3] != 0);
             let l3_idx =
                 Self::bsf(TREE_4KB[first_block_l3 + block_chosen_l3]) + 64 * block_chosen_l3;
 
             // Set bits to 0
-            TREE_4KB[first_block_l3 + block_chosen_l3] ^=
-                1 << Self::bsf(TREE_4KB[first_block_l3 + block_chosen_l3]);
+            TREE_4KB[first_block_l3 + block_chosen_l3] &= !(1u64 << (l3_idx % 64));
             // if block is full set upper level to 0
             if l3_idx == 511 {
-                TREE_4KB[first_block_l2 + block_chosen_l2] ^=
-                    1 << Self::bsf(TREE_4KB[first_block_l2 + block_chosen_l2]);
+                TREE_4KB[first_block_l2 + block_chosen_l2] &= !(1u64 << (l2_idx % 64));
                 if l2_idx == 511 {
-                    TREE_4KB[0] ^= 1 << l1_idx;
+                    TREE_4KB[0] &= !(1u64 << l1_idx);
                 }
             }
             // TODO need to switch other bits from TREE_1GB and TREE_2MB
@@ -121,11 +128,15 @@ impl BuddyAllocator {
 
         // TODO check that frame was previously allocated
         let l1_tree_idx = 0; // assume l1_block_idx is between 0 and 63
-        TREE_4KB[l1_tree_idx] |= 1 << l1_block_idx;
+        TREE_4KB[l1_tree_idx] |= 1u64 << l1_block_idx;
         let l2_tree_idx = TREE_1GB_SIZE + 8 * l1_block_idx + l2_block_idx / 64;
-        TREE_4KB[l2_tree_idx] |= 1 << (l2_block_idx % 64);
-        let l3_tree_idx = TREE_1GB_SIZE + 8 * NB_GB + (512 * l3_block_idx) / 64;
-        TREE_4KB[l3_tree_idx] |= 1 << (l3_block_idx % 64);
+        TREE_4KB[l2_tree_idx] |= 1u64 << (l2_block_idx % 64);
+        let l3_tree_idx = TREE_1GB_SIZE
+            + 8 * NB_GB
+            + 512 * 8 * l1_block_idx
+            + 8 * l2_block_idx
+            + l3_block_idx / 64;
+        TREE_4KB[l3_tree_idx] |= 1u64 << (l3_block_idx % 64);
     }
 }
 
