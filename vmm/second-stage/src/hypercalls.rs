@@ -13,6 +13,7 @@ pub mod vmcalls {
     pub const DOMAIN_CREATE: usize       = 0x101;
     pub const DOMAIN_SEAL: usize         = 0x102;
     pub const DOMAIN_GRANT_REGION: usize = 0x103;
+    pub const DOMAIN_SHARE_REGION: usize = 0x104;
     pub const REGION_SPLIT: usize        = 0x200;
     pub const REGION_GET_INFO: usize     = 0x201;
     pub const CONFIG_NB_REGIONS: usize   = 0x400;
@@ -40,6 +41,7 @@ pub enum ErrorCode {
     DomainIsSealed = 11,
     StoreAccesOutOfBound = 12,
     BadParameters = 13,
+    RegionIsShared = 14,
 }
 
 // ————————————————————————————————— Flags —————————————————————————————————— //
@@ -151,6 +153,13 @@ impl RegionCapability {
         match self.is_owned {
             true => Ok(()),
             false => Err(ErrorCode::RegionNotOwned),
+        }
+    }
+
+    fn is_exclusive(&self) -> Result<(), ErrorCode> {
+        match self.is_shared {
+            true => Err(ErrorCode::RegionIsShared),
+            false => Ok(())
         }
     }
 
@@ -274,6 +283,7 @@ where
             vmcalls::DOMAIN_GET_OWN_ID => self.domain_get_own_id(),
             vmcalls::DOMAIN_CREATE => self.domain_create(),
             vmcalls::DOMAIN_GRANT_REGION => self.domain_grant_region(params.arg_1, params.arg_2),
+            vmcalls::DOMAIN_SHARE_REGION => self.domain_share_region(params.arg_1, params.arg_2),
             vmcalls::REGION_SPLIT => self.region_split(params.arg_1, params.arg_2),
             vmcalls::REGION_GET_INFO => self.region_get_info(params.arg_1),
             vmcalls::CONFIG_NB_REGIONS => self.config_nb_regions(),
@@ -323,6 +333,7 @@ where
         // Region must be valid and exclusively owned
         region_capa.is_valid()?;
         region_capa.is_owned()?;
+        region_capa.is_exclusive()?;
 
         let domain_handle = domain.try_into()?;
         let domain = &mut self.domains_arena[domain_handle];
@@ -336,7 +347,7 @@ where
         domain.regions[new_region_capa] = RegionCapability {
             is_owned: true,
             is_shared: false,
-            is_valid: false,
+            is_valid: true,
             handle,
         };
 
@@ -346,6 +357,44 @@ where
 
         // Reset old capacity
         self.domains_arena[*self.current_domain].regions[region_handle].reset();
+
+        Ok(Registers {
+            value_1: new_region_capa.into(),
+            ..Default::default()
+        })
+    }
+
+    fn domain_share_region(&mut self, domain: usize, region: usize) -> HypercallResult {
+        let region_handle: RegionCapaHandle = region.try_into()?;
+        let current_domain = &mut self.domains_arena[*self.current_domain];
+        let region_capa = &mut current_domain.regions[region_handle];
+        let handle = region_capa.handle;
+
+        // Region must be valid, no need to be owned
+        region_capa.is_valid()?;
+
+        let domain_handle = domain.try_into()?;
+        let domain = &mut self.domains_arena[domain_handle];
+
+        // Domain must be valid and not sealed yet
+        domain.is_valid()?;
+        domain.is_unsealed()?;
+
+        // Allocate new region for target domain
+        let new_region_capa = domain.regions.allocate()?;
+        domain.regions[new_region_capa] = RegionCapability {
+            is_owned: false,
+            is_shared: true,
+            is_valid: true,
+            handle,
+        };
+
+        // Maintain the list of initial capabilities
+        domain.initial_regions_capa[domain.nb_initial_regions] = new_region_capa;
+        domain.nb_initial_regions += 1;
+
+        // Mark old capacity as shared
+        self.domains_arena[*self.current_domain].regions[region_handle].is_shared = true;
 
         Ok(Registers {
             value_1: new_region_capa.into(),
@@ -363,6 +412,7 @@ where
         // Region must be valid, exclusive, and contain the address.
         old_region_capa.is_valid()?;
         old_region_capa.is_owned()?;
+        old_region_capa.is_exclusive()?;
         self.regions_arena[old_region_capa.handle].do_contain(addr)?;
 
         // Allocate a new capability

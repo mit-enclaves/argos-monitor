@@ -10,6 +10,7 @@ pub enum VmCalls {
     DomainCreate      = 0x101,
     DomainSeal        = 0x102,
     DomainGrantRegion = 0x103,
+    DomainShareRegion = 0x104,
     RegionSplit       = 0x200,
     RegionGetInfo     = 0x201,
     ConfigNbRegions   = 0x400,
@@ -37,6 +38,7 @@ pub enum ErrorCode {
     DomainIsSealed = 11,
     StoreAccessOutOfBound = 12,
     BadParameters = 13,
+    RegionIsShared = 14,
 }
 
 // ———————————————————————————— Data Structures ————————————————————————————— //
@@ -64,6 +66,11 @@ pub fn domain_create() -> Result<DomainId, ErrorCode> {
 
 pub fn domain_grant_region(domain: usize, region: usize) -> Result<RegionHandle, ErrorCode> {
     do_vmcall(VmCalls::DomainGrantRegion, domain, region, 0)
+        .map(|(handle, _, _)| RegionHandle(handle))
+}
+
+pub fn domain_share_region(domain: usize, region: usize) -> Result<RegionHandle, ErrorCode> {
+    do_vmcall(VmCalls::DomainShareRegion, domain, region, 0)
         .map(|(handle, _, _)| RegionHandle(handle))
 }
 
@@ -118,7 +125,7 @@ fn do_vmcall(
             inout("esi") arg_3 => val_3,
         );
         result = match res {
-            0..=13 => core::mem::transmute(res),
+            0..=14 => core::mem::transmute(res),
             _ => ErrorCode::Failure,
         };
     }

@@ -2,7 +2,7 @@ use clap::Parser;
 use libtyche::ErrorCode;
 use libtyche::{
     config_nb_regions, config_read_region, debug_iommu, domain_create, domain_get_own_id,
-    domain_grant_region, exit, region_get_info, region_split,
+    domain_grant_region, domain_share_region, exit, region_get_info, region_split,
 };
 
 #[derive(clap::Parser)]
@@ -29,6 +29,7 @@ enum Domain {
     Id,
     Create,
     GrantRegion { domain: usize, region: usize },
+    ShareRegion { domain: usize, region: usize },
 }
 
 #[derive(clap::Subcommand)]
@@ -76,6 +77,13 @@ fn handle_domain(cmd: Domain) -> Result<(), ErrorCode> {
             let handle = domain_grant_region(domain, region)?;
             println!(
                 "Granted region to domain {} with region id: {}",
+                domain, handle.0
+            );
+        }
+        Domain::ShareRegion { domain, region } => {
+            let handle = domain_share_region(domain, region)?;
+            println!(
+                "Shared region to domain {} with region id: {}",
                 domain, handle.0
             );
         }
