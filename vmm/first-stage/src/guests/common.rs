@@ -22,7 +22,7 @@ pub fn setup_iommu_context(
         .zeroed();
     let ctx_entry = ContextEntry {
         upper: 0b010, // 4 lvl pages
-        lower: iopt_root.as_u64(),
+        lower: iopt_root.as_u64() | 0b0001,
     };
     let root_entry = RootEntry {
         reserved: 0,
