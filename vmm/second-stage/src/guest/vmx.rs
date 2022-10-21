@@ -2,7 +2,7 @@
 
 use super::{Guest, HandlerResult};
 use crate::debug::qemu;
-use crate::hypercalls::{ErrorCode, Hypercalls, Parameters};
+use crate::hypercalls::{Backend, ErrorCode, Hypercalls, Parameters};
 use crate::println;
 use core::arch;
 use core::arch::asm;
@@ -17,18 +17,21 @@ use vmx::fields::traits::*;
 use vmx::secondary_controls_capabilities;
 use vmx::{ActiveVmcs, ControlRegister, HostPhysAddr, Register, VmxError, VmxExitReason};
 
-pub struct VmxGuest<'active, 'vmx> {
+pub struct VmxGuest<'active, 'vmx, B> {
     vcpu: &'active mut vmx::ActiveVmcs<'active, 'vmx>,
-    hypercalls: Hypercalls,
+    hypercalls: Hypercalls<B>,
 }
 
-impl<'active, 'vmx> VmxGuest<'active, 'vmx> {
-    pub fn new(vcpu: &'active mut ActiveVmcs<'active, 'vmx>, hypercalls: Hypercalls) -> Self {
+impl<'active, 'vmx, B> VmxGuest<'active, 'vmx, B> {
+    pub fn new(vcpu: &'active mut ActiveVmcs<'active, 'vmx>, hypercalls: Hypercalls<B>) -> Self {
         Self { vcpu, hypercalls }
     }
 }
 
-impl<'active, 'vmx> Guest for VmxGuest<'active, 'vmx> {
+impl<'active, 'vmx, B> Guest for VmxGuest<'active, 'vmx, B>
+where
+    B: Backend,
+{
     type ExitReason = vmx::VmxExitReason;
 
     type Error = vmx::VmxError;

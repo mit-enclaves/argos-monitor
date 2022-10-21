@@ -1,11 +1,12 @@
 //! Second-Stage
 
 use crate::elf::{Elf64PhdrType, ElfProgram};
+use crate::guests::ManifestInfo;
 use crate::mmu::frames::RangeFrameAllocator;
 use crate::{HostPhysAddr, HostVirtAddr};
 use core::arch::asm;
 use mmu::{frame_allocator::PhysRange, FrameAllocator, PtFlag, PtMapper};
-use stage_two_abi::{EntryPoint, GuestInfo, Manifest, RawStatics};
+use stage_two_abi::{EntryPoint, Manifest, RawStatics};
 
 #[cfg(feature = "second-stage")]
 const SECOND_STAGE: &'static [u8] =
@@ -35,7 +36,7 @@ pub fn second_stage_allocator(stage1_allocator: &impl FrameAllocator) -> RangeFr
 }
 
 pub fn load(
-    info: &GuestInfo,
+    info: &ManifestInfo,
     stage1_allocator: &impl FrameAllocator,
     stage2_allocator: &impl FrameAllocator,
     pt_mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
@@ -51,6 +52,20 @@ pub fn load(
         )
         .expect("Failed to load second stage");
     let (rsp, stack_phys) = loaded_elf.add_stack(STACK_VIRT_ADDR, STACK_SIZE, stage2_allocator);
+    if info.iommu != 0 {
+        // Map I/O MMU page, using one to one mapping
+        // TODO: unmap from guest EPT
+        let virt_addr = HostVirtAddr::new(info.iommu as usize);
+        let phys_addr = HostPhysAddr::new(info.iommu as usize);
+        let size = 0x1000;
+        loaded_elf.pt_mapper.map_range(
+            stage2_allocator,
+            virt_addr,
+            phys_addr,
+            size,
+            PtFlag::PRESENT | PtFlag::WRITE,
+        );
+    }
 
     // Map stage 2 into stage 1 page tables
     pt_mapper.map_range(
@@ -85,7 +100,8 @@ pub fn load(
     let manifest =
         unsafe { Manifest::from_symbol_finder(find_symbol).expect("Missing symbol in stage 2") };
     manifest.cr3 = loaded_elf.pt_root.as_u64();
-    manifest.info = *info;
+    manifest.info = info.guest_info;
+    manifest.iommu = info.iommu;
     manifest.poffset = elf_range.start.as_u64();
     manifest.voffset = LOAD_VIRT_ADDR.as_u64();
 

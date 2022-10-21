@@ -1,8 +1,7 @@
 //! Empty guest
-use stage_two_abi::GuestInfo;
 
-use super::Guest;
 use super::HandlerResult;
+use super::{Guest, ManifestInfo};
 use crate::acpi::AcpiInfo;
 use crate::mmu::MemoryMap;
 use crate::vmx;
@@ -19,8 +18,8 @@ impl Guest for VoidGuest {
         _host_allocator: &impl FrameAllocator,
         _guest_allocator: &impl FrameAllocator,
         _memory_map: MemoryMap,
-    ) -> GuestInfo {
-        GuestInfo::default_config()
+    ) -> ManifestInfo {
+        ManifestInfo::default()
     }
 
     unsafe fn vmcall_handler(

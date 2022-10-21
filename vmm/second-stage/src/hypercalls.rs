@@ -18,6 +18,7 @@ pub mod vmcalls {
     pub const CONFIG_NB_REGIONS: usize   = 0x400;
     pub const CONFIG_READ_REGION: usize  = 0x401;
     pub const EXIT: usize                = 0x500;
+    pub const DEBUG_IOMMU: usize         = 0x600;
 }
 
 // —————————————————————————————— Error Codes ——————————————————————————————— //
@@ -74,6 +75,12 @@ impl Default for Registers {
             value_3: 0,
         }
     }
+}
+
+// ————————————————————— Architecture-Specific Backend —————————————————————— //
+
+pub trait Backend {
+    fn debug_iommu(&mut self) -> HypercallResult;
 }
 
 // ——————————————————————————————— ABI Types ———————————————————————————————— //
@@ -178,15 +185,21 @@ impl ArenaItem for RegionCapability {
 
 // ———————————————————————————————— VM Calls ———————————————————————————————— //
 
-pub struct Hypercalls {
+pub struct Hypercalls<B> {
     root_domain: DomainHandle,
     current_domain: &'static mut DomainHandle,
     domains_arena: &'static mut DomainArena,
     regions_arena: &'static mut RegionArena,
+
+    /// Architecture-specifig backend
+    backend: B,
 }
 
-impl Hypercalls {
-    pub fn new(statics: &mut Statics, manifest: &Manifest<Statics>) -> Self {
+impl<B> Hypercalls<B>
+where
+    B: Backend,
+{
+    pub fn new(statics: &mut Statics, manifest: &Manifest<Statics>, backend: B) -> Self {
         let current_domain = statics
             .current_domain
             .take()
@@ -209,6 +222,7 @@ impl Hypercalls {
             current_domain,
             domains_arena,
             regions_arena,
+            backend,
         }
     }
 
@@ -264,6 +278,7 @@ impl Hypercalls {
             vmcalls::REGION_GET_INFO => self.region_get_info(params.arg_1),
             vmcalls::CONFIG_NB_REGIONS => self.config_nb_regions(),
             vmcalls::CONFIG_READ_REGION => self.config_read_region(params.arg_1, params.arg_2),
+            vmcalls::DEBUG_IOMMU => self.backend.debug_iommu(),
             _ => Err(ErrorCode::UnknownVmCall),
         }
     }
@@ -273,7 +288,10 @@ impl Hypercalls {
     }
 }
 
-impl Hypercalls {
+impl<B> Hypercalls<B>
+where
+    B: Backend,
+{
     /// Returns the Domain ID of the current domain.
     fn domain_get_own_id(&mut self) -> HypercallResult {
         let domain = *self.current_domain;

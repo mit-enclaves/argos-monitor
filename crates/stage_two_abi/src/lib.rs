@@ -37,6 +37,8 @@ pub struct Manifest<S: 'static> {
     pub voffset: u64,
     pub info: GuestInfo,
     pub statics: Option<&'static mut S>,
+    /// Optionnal address of the I/O MMU. Absent if set to 0.
+    pub iommu: u64,
 }
 
 // ———————————————————————————————— Statics ————————————————————————————————— //
@@ -114,6 +116,7 @@ macro_rules! make_static {
             poffset: 0,
             voffset: 0,
             info: $crate::GuestInfo::default_config(),
+            iommu: 0,
 
             // The reference will be patched by stage 1
             statics: None,

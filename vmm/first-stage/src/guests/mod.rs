@@ -24,6 +24,17 @@ pub enum HandlerResult {
     Crash,
 }
 
+pub struct ManifestInfo {
+    pub guest_info: GuestInfo,
+    pub iommu: u64,
+}
+
+impl Default for ManifestInfo {
+    fn default() -> Self {
+        Self { guest_info: Default::default(), iommu: Default::default() }
+    }
+}
+
 pub trait Guest {
     unsafe fn instantiate(
         &self,
@@ -31,7 +42,7 @@ pub trait Guest {
         host_allocator: &impl FrameAllocator,
         guest_allocator: &impl FrameAllocator,
         memory_map: MemoryMap,
-    ) -> GuestInfo;
+    ) -> ManifestInfo;
 
     unsafe fn vmcall_handler(&self, vcpu: &mut ActiveVmcs) -> Result<HandlerResult, VmxError>;
 

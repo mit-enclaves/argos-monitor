@@ -9,6 +9,7 @@ use crate::guests::boot_params::{
     KERNEL_MIN_ALIGNMENT_BYTES,
 };
 use crate::guests::common::{create_mappings, setup_iommu_context};
+use crate::guests::ManifestInfo;
 use crate::mmu::MemoryMap;
 use crate::println;
 use crate::vmx;
@@ -46,7 +47,8 @@ impl Guest for Linux {
         host_allocator: &impl FrameAllocator,
         guest_allocator: &impl FrameAllocator,
         memory_map: MemoryMap,
-    ) -> GuestInfo {
+    ) -> ManifestInfo {
+        let mut manifest = ManifestInfo::default();
         let mut linux_prog = ElfProgram::new(LINUXBYTES);
         linux_prog.set_mapping(ElfMapping::Identity);
 
@@ -85,7 +87,8 @@ impl Guest for Linux {
             iommu.set_root_table_addr(root_addr.as_u64() | (0b00 << 10)); // Set legacy mode
             iommu.update_root_table_addr();
             // TODO: fix I/O MMU
-            // iommu.enable_translation();
+            iommu.enable_translation();
+            manifest.iommu = iommus[0].base_address.as_u64();
             println!("I/O MMU: {:?}", iommu.get_global_status());
             println!("I/O MMU Fault: {:?}", iommu.get_fault_status());
         }
@@ -107,7 +110,9 @@ impl Guest for Linux {
         info.rsp = 0;
         info.rsi = boot_params.as_usize();
         info.loaded = true;
-        info
+        manifest.guest_info = info;
+
+        manifest
     }
 
     unsafe fn vmcall_handler(

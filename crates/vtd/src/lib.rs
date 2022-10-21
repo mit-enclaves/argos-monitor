@@ -92,6 +92,30 @@ impl Iommu {
         self.execute_toggle_command(Command::TRANSLATION_ENABLE, true);
     }
 
+    pub fn iter_fault(&mut self) -> FaultIterator {
+        let capability = self.get_capability().bits();
+        let fault_reg_offset = ((capability >> 24) & 0b1111111111) * 16;
+        let fault_reg_start = unsafe {
+            let iommu_start = self.addr as *mut u8;
+            iommu_start.offset(fault_reg_offset as isize)
+        };
+        let nb_regs = ((capability >> 40) & 0b11111111) + 1;
+
+        let fault_status = self.get_fault_status();
+        let fault_idx = if fault_status.contains(FaultStatus::PRIMARY_PENDING_FAULT) {
+            (fault_status.bits() >> 8) & 0b11111111
+        } else {
+            0
+        };
+
+        FaultIterator {
+            fault_reg_start,
+            nb_regs: nb_regs as usize,
+            idx: fault_idx as usize,
+            iommu: self,
+        }
+    }
+
     /// Executes a one-shot command (e.g. reloading the root table pointer).
     fn execute_oneshoot_command(&mut self, cmd: Command) {
         let status = self.get_global_status() & !ONE_SHOOT_COMMAND_BITS;
@@ -187,6 +211,64 @@ impl Iommu {
     ro_reg!(u64, 0x100, get_mttr_capability);
 }
 
+// ————————————————————————————— Fault Iterator ————————————————————————————— //
+
+#[derive(Debug)]
+pub struct FaultInfo {
+    pub addr: u64,
+    pub record: FaultRecording,
+}
+
+pub struct FaultIterator<'iommu> {
+    /// Start of the fault recording registers.
+    fault_reg_start: *mut u8,
+    /// Number of fault registers.
+    nb_regs: usize,
+    /// Index of the next fault.
+    idx: usize,
+    /// Keep track of iommu lifetime to avoid race conditions
+    iommu: &'iommu mut Iommu,
+}
+
+impl<'iommu> Iterator for FaultIterator<'iommu> {
+    type Item = FaultInfo;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (low, high) = unsafe {
+            let ptr_low = self.fault_reg_start.offset((self.idx * 16) as isize) as *mut u64;
+            let ptr_high = ptr_low.offset(1);
+
+            let low = ptr::read_volatile(ptr_low);
+            let high = FaultRecording::from_bits_unchecked(ptr::read_volatile(ptr_high));
+
+            if high.contains(FaultRecording::FAULT) {
+                // Clear fault bit, this is done by writing 1 to the bit.
+                ptr::write_volatile(ptr_high, high.bits());
+            } else {
+                // Clean overflow bit
+                self.iommu
+                    .set_fault_status(self.iommu.get_fault_status().bits());
+                return None;
+            }
+
+            (low, high)
+        };
+
+        // Increment index
+        self.idx += 1;
+        if self.idx >= self.nb_regs {
+            self.idx = 0;
+        }
+
+        Some(FaultInfo {
+            addr: low,
+            record: high,
+        })
+    }
+}
+
+// ————————————————————————————————— Flags —————————————————————————————————— //
+
 bitflags! {
     pub struct Capability: u64 {
         /// Number of domains supported
@@ -267,5 +349,24 @@ bitflags! {
         const INVALIDATION_COMPLETION_ERROR = 1 << 5;
         const INVALIDATION_TIME_OUT_ERROR   = 1 << 6;
         const FAULT_RECORD_INDEX            = 0b11111111 << 8;
+    }
+
+    pub struct FaultRecording: u64 {
+        const SOURCE_ID           = 0b111111111111111;
+        const T2                  = 1 << 28;
+        const PRIVILEGE_MODE_REQ  = 1 << 29;
+        const EXEC_ACCESS_REQUEST = 1 << 30;
+        const PASID_PRESENT       = 1 << 31;
+        const FAULT_RESON         = 0b11111111 << 32;
+        const PASID               = 0b11111111111111111111 << 40;
+        const ADDRESS_TYPE        = 0b11 << 60;
+        const T1                  = 1 << 62;
+        const FAULT               = 1 << 63;
+    }
+}
+
+impl FaultRecording {
+    pub fn reason(self) -> u8 {
+        ((self.bits() >> 32) & 0b11111111) as u8
     }
 }

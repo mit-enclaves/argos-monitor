@@ -8,6 +8,9 @@ debug = { version = "0.1.0", path = "../../crates/debug" }
 mmu = { version = "0.1.0", path = "../../crates/mmu" }
 stage_two_abi = { path = "../../crates/stage_two_abi" }
 
+# x86_64 dependencies
+vtd = { path = "../../crates/vtd" }
+vmx = { version = "0.1.0", path = "../../crates/vmx" }
+
 # TODO: move the untrusted dependencies behing a feature flag
 uart_16550 = "0.2.0"
-vmx = { version = "0.1.0", path = "../../crates/vmx" }

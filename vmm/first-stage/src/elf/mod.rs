@@ -39,10 +39,10 @@ pub struct ElfProgram {
 pub struct LoadedElf<PhysAddr, VirtAddr> {
     /// The root of initial page tables.
     pub pt_root: PhysAddr,
-    /// An allocator that can be used to write data to the guest address space before launch.
+    /// Offset in the host, used to load the guest into memory.
     host_physical_offset: HostVirtAddr,
     /// The page table mapper of the guest.
-    pt_mapper: PtMapper<PhysAddr, VirtAddr>,
+    pub pt_mapper: PtMapper<PhysAddr, VirtAddr>,
 }
 
 impl ElfProgram {

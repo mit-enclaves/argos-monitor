@@ -5,6 +5,7 @@ use super::HandlerResult;
 use crate::acpi::AcpiInfo;
 use crate::elf::ElfProgram;
 use crate::guests::common::{create_mappings, setup_iommu_context};
+use crate::guests::ManifestInfo;
 use crate::mmu::MemoryMap;
 use crate::println;
 use crate::vmx;
@@ -43,7 +44,8 @@ impl Guest for RawcBytes {
         host_allocator: &impl FrameAllocator,
         guest_allocator: &impl FrameAllocator,
         memory_map: MemoryMap,
-    ) -> GuestInfo {
+    ) -> ManifestInfo {
+        let mut manifest = ManifestInfo::default();
         let rawc_prog = ElfProgram::new(RAWCBYTES);
         let virtoffset = host_allocator.get_physical_offset();
 
@@ -85,6 +87,7 @@ impl Guest for RawcBytes {
             iommu.set_root_table_addr(root_addr.as_u64() | (0b00 << 10)); // Set legacy mode
             iommu.update_root_table_addr();
             iommu.enable_translation();
+            manifest.iommu = iommus[0].base_address.as_u64();
             println!("I/O MMU: {:?}", iommu.get_global_status());
         }
 
@@ -96,7 +99,9 @@ impl Guest for RawcBytes {
         info.rsp = rsp.as_usize();
         info.rsi = 0;
         info.loaded = true;
-        info
+        manifest.guest_info = info;
+
+        manifest
     }
 
     unsafe fn vmcall_handler(

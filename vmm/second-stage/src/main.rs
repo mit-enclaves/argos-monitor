@@ -9,9 +9,10 @@ use second_stage::allocator::BumpAllocator;
 use second_stage::debug::qemu;
 use second_stage::guest::vmx::{init_guest, VmxGuest};
 use second_stage::guest::Guest;
-use second_stage::hypercalls::Hypercalls;
+use second_stage::hypercalls::{Backend, Hypercalls};
 use second_stage::println;
 use second_stage::statics::Statics;
+use second_stage::x86_64::Arch;
 use stage_two_abi::{entry_point, GuestInfo, Manifest};
 
 entry_point!(second_stage_entry_point, Statics);
@@ -30,13 +31,18 @@ pub extern "C" fn second_stage_entry_point(manifest: &'static mut Manifest<Stati
         manifest.voffset,
         statics.pages.take().expect("No pages in statics"),
     );
-    let hypercalls = Hypercalls::new(&mut statics, &manifest);
+    let arch = Arch::new(manifest.iommu);
+    let hypercalls = Hypercalls::new(&mut statics, &manifest, arch);
     launch_guest(&mut allocator, &manifest.info, hypercalls);
     // Exit
     qemu::exit(qemu::ExitCode::Success);
 }
 
-fn launch_guest(allocator: &impl FrameAllocator, infos: &GuestInfo, hypercalls: Hypercalls) {
+fn launch_guest(
+    allocator: &impl FrameAllocator,
+    infos: &GuestInfo,
+    hypercalls: Hypercalls<impl Backend>,
+) {
     if !infos.loaded {
         println!("No guest found, exiting");
         return;

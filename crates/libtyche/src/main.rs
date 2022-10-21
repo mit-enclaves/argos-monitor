@@ -1,8 +1,8 @@
 use clap::Parser;
 use libtyche::ErrorCode;
 use libtyche::{
-    config_nb_regions, config_read_region, domain_create, domain_get_own_id, domain_grant_region,
-    exit, region_get_info, region_split,
+    config_nb_regions, config_read_region, debug_iommu, domain_create, domain_get_own_id,
+    domain_grant_region, exit, region_get_info, region_split,
 };
 
 #[derive(clap::Parser)]
@@ -19,6 +19,8 @@ enum Subcommand {
     Region(Region),
     #[command(subcommand)]
     Config(Config),
+    #[command(subcommand)]
+    Debug(Debug),
     Exit,
 }
 
@@ -41,12 +43,18 @@ enum Config {
     ReadRegion { offset: usize, nb_items: usize },
 }
 
+#[derive(clap::Subcommand)]
+enum Debug {
+    Iommu,
+}
+
 pub fn main() {
     let args = Args::parse();
     let result = match args.subcommand {
         Subcommand::Domain(cmd) => handle_domain(cmd),
         Subcommand::Region(cmd) => handle_region(cmd),
         Subcommand::Config(cmd) => handle_store(cmd),
+        Subcommand::Debug(cmd) => handle_debug(cmd),
         Subcommand::Exit => exit(),
     };
     if let Err(err) = result {
@@ -120,6 +128,14 @@ fn handle_store(cmd: Config) -> Result<(), ErrorCode> {
                 );
             }
         }
+    }
+
+    Ok(())
+}
+
+fn handle_debug(cmd: Debug) -> Result<(), ErrorCode> {
+    match cmd {
+        Debug::Iommu => debug_iommu()?,
     }
 
     Ok(())

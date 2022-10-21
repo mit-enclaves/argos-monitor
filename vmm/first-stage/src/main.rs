@@ -144,7 +144,7 @@ fn launch_guest(
     let mut stage2_allocator = second_stage::second_stage_allocator(stage1_allocator);
     unsafe {
         let mut info = guest.instantiate(acpi, &mut stage2_allocator, guest_allocator, memory_map);
-        guests::vmx::save_host_info(&mut info);
+        guests::vmx::save_host_info(&mut info.guest_info);
         second_stage::load(
             &info,
             stage1_allocator,

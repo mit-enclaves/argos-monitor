@@ -15,6 +15,7 @@ pub enum VmCalls {
     ConfigNbRegions   = 0x400,
     ConfigReadRegion  = 0x401,
     Exit              = 0x500,
+    DebugIommu        = 0x600,
 }
 
 // —————————————————————————————— Error Codes ——————————————————————————————— //
@@ -91,6 +92,10 @@ pub fn config_read_region(
 
 pub fn exit() -> Result<(), ErrorCode> {
     do_vmcall(VmCalls::Exit, 0, 0, 0).map(|_| ())
+}
+
+pub fn debug_iommu() -> Result<(), ErrorCode> {
+    do_vmcall(VmCalls::DebugIommu, 0, 0, 0).map(|_| ())
 }
 
 fn do_vmcall(

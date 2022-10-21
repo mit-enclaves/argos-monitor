@@ -4,13 +4,14 @@
 use core::arch::asm;
 use stage_two_abi::Manifest;
 
-pub mod hypercalls;
 pub mod allocator;
 mod arch;
 mod arena;
 pub mod debug;
 pub mod guest;
+pub mod hypercalls;
 pub mod statics;
+pub mod x86_64;
 
 pub fn init(manifest: &Manifest<statics::Statics>) {
     unsafe {

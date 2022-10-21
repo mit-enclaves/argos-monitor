@@ -279,6 +279,7 @@ dependencies = [
  "stage_two_abi",
  "uart_16550",
  "vmx",
+ "vtd",
 ]
 
 [[package]]
