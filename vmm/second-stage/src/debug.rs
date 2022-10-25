@@ -5,6 +5,7 @@
 
 // ———————————————————————————— Print Facilities ———————————————————————————— //
 
+#[cfg(target_arch = "x86_64")]
 pub mod serial {
     use core::fmt;
     use core::fmt::Write;
@@ -25,6 +26,16 @@ pub mod serial {
                 .write_fmt(args)
                 .expect("Printing to serial failed");
         }
+    }
+}
+
+#[cfg(target_arch = "riscv64")]
+pub mod serial {
+    use core::fmt;
+
+    /// Internal function used to print to stdout when running in Qemu.
+    pub fn _print(_args: fmt::Arguments) {
+        // TODO
     }
 }
 
@@ -60,27 +71,19 @@ impl ExitCode {
 }
 
 pub mod qemu {
-    pub use super::ExitCode;
-    use crate::hlt;
-    use core::arch::asm;
+    #[cfg(target_arch = "x86_64")]
+    use crate::x86_64::{exit_qemu, hlt};
+    #[cfg(target_arch = "riscv64")]
+    use crate::riscv::{exit_qemu, hlt};
 
-    const QEMU_EXIT_PORT: u16 = 0xf4;
+    pub use super::ExitCode;
 
     pub fn exit(exit_code: ExitCode) -> ! {
         println!("========= Exiting Second Stage =========");
         println!("{}", exit_code.to_str());
         println!("========================================");
 
-        unsafe {
-            let exit_code = exit_code as u32;
-            asm!(
-                "out dx, eax",
-                in("dx") QEMU_EXIT_PORT,
-                in("eax") exit_code,
-                options(nomem, nostack, preserves_flags)
-            );
-        }
-
+        exit_qemu(exit_code);
         hlt();
     }
 }

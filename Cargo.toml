@@ -2,17 +2,19 @@
 name = "kernel"
 version = "0.1.0"
 authors = ["CharlyCst <castes.ch@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 [workspace]
+resolver = "2"
 members = [
     "vmm/first-stage",
     "vmm/second-stage",
     "crates/stage_two_abi",
     "crates/vmx",
     "crates/vtd",
-    "crates/debug",
     "crates/mmu",
+    "crates/debug",
+    "crates/utils",
     "crates/libtyche",
     "boot_toolchain",
 ]

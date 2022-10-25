@@ -2,7 +2,7 @@ use bitflags::bitflags;
 
 use crate::frame_allocator::FrameAllocator;
 use crate::walker::{Level, WalkNext, Walker};
-use vmx::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
+use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
 
 pub struct IoPtMapper {
     host_offset: usize,

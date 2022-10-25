@@ -1,6 +1,6 @@
 //! The trait for the FrameAllocator used in both stage 1 and 2.
 
-use vmx::{Frame, HostPhysAddr, HostVirtAddr};
+use utils::{Frame, HostPhysAddr, HostVirtAddr};
 
 pub unsafe trait FrameAllocator {
     /// Allocates a frame.

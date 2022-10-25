@@ -1,7 +1,14 @@
 //! x86_64 backend for stage 2
 
+mod arch;
+pub mod guest;
+
+use crate::debug::ExitCode;
 use crate::hypercalls::{Backend, ErrorCode, HypercallResult};
 use crate::println;
+use crate::statics;
+use core::arch::asm;
+use stage_two_abi::Manifest;
 use vmx::HostVirtAddr;
 use vtd::Iommu;
 
@@ -40,5 +47,38 @@ impl Backend for Arch {
         }
 
         Ok(Default::default())
+    }
+}
+
+/// Architecture specific initialization.
+pub fn init(manifest: &Manifest<statics::Statics>) {
+    unsafe {
+        asm!(
+            "mov cr3, {}",
+            in(reg) manifest.cr3,
+            options(nomem, nostack, preserves_flags)
+        );
+        arch::init();
+    }
+}
+
+/// Halt the CPU in a spinloop;
+pub fn hlt() -> ! {
+    loop {
+        unsafe { core::arch::x86_64::_mm_pause() };
+    }
+}
+
+pub fn exit_qemu(exit_code: ExitCode) {
+    const QEMU_EXIT_PORT: u16 = 0xf4;
+
+    unsafe {
+        let exit_code = exit_code as u32;
+        asm!(
+            "out dx, eax",
+            in("dx") QEMU_EXIT_PORT,
+            in("eax") exit_code,
+            options(nomem, nostack, preserves_flags)
+        );
     }
 }

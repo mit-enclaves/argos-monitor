@@ -2,10 +2,11 @@
 # https://github.com/casey/just
 
 toolchain      := "nightly-2022-08-01"
-target         := "--target x86_64-kernel.json"
+x86_64         := "--target targets/x86_64-unknown-kernel.json"
+riscv          := "--target targets/riscv-unknown-kernel.json"
 build_std      := "-Zbuild-std=core,alloc"
 build_features := "-Zbuild-std-features=compiler-builtins-mem"
-cargo_args     := target + " " + build_std + " " + build_features
+cargo_args     := build_std + " " + build_features
 linker-script  := "RUSTFLAGS='-C link-arg=-Tsecond-stage-linker-script.x'"
 first-stage    := "--package first-stage --features=first-stage/second-stage"
 second-stage   := "--package second-stage"
@@ -21,23 +22,27 @@ help:
 
 # Build the VMM
 build:
-	{{linker-script}} cargo build {{cargo_args}} {{second-stage}} --release
-	cargo build {{cargo_args}} {{first-stage}}
+	{{linker-script}} cargo build {{cargo_args}} {{x86_64}} {{second-stage}} --release
+	cargo build {{cargo_args}} {{x86_64}} {{first-stage}}
+
+build-riscv:
+	cargo build {{cargo_args}} {{riscv}} {{second-stage}} --release
 
 # Typecheck
 check:
-	cargo check {{cargo_args}} {{first-stage}}
-	cargo check {{cargo_args}} {{second-stage}}
+	cargo check {{cargo_args}} {{x86_64}} {{first-stage}}
+	cargo check {{cargo_args}} {{x86_64}} {{second-stage}}
+	cargo check {{cargo_args}} {{riscv}}  {{second-stage}}
 
 # Run rawc guest
 rawc:
 	@just build
-	-cargo run {{cargo_args}} {{first-stage}} {{rawc}} --
+	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{rawc}} --
 
 common TARGET DBG:
 	@just build
 	@just tpm
-	-cargo run {{cargo_args}} {{first-stage}} {{TARGET}} -- --uefi "--dbg_path={{DBG}}"
+	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{TARGET}} -- --uefi "--dbg_path={{DBG}}"
 
 # Run the VMM without any guest
 no-guest:
@@ -73,7 +78,7 @@ linux-dbg SOCKET:
 # Build the VMM for bare metal platform
 build-metal:
 	@just build
-	-cargo run {{cargo_args}} {{first-stage}} {{linux}} {{vga}} -- --uefi --no-run
+	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{linux}} {{vga}} -- --uefi --no-run
 
 # Start the software TPM emulator, if not already running
 tpm:

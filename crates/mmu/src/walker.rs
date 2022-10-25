@@ -3,7 +3,7 @@
 //! This module provides abstractions for manipulating virtual memory mappings (i.e. page tables).
 
 use core::slice;
-use vmx::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
+use utils::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
 
 /// Number of entries per page.
 const NB_ENTRIES: usize = 512;

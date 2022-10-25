@@ -2,7 +2,7 @@ use super::frame_allocator::FrameAllocator;
 use super::walker::{Address, Level, WalkNext, Walker};
 use bitflags::bitflags;
 use core::marker::PhantomData;
-use vmx::HostVirtAddr;
+use utils::HostVirtAddr;
 
 static PAGE_MASK: usize = !(0x1000 - 1);
 

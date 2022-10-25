@@ -1,8 +1,6 @@
-//! Guests implements the vmx-related operations for stage 2.
+//! Guests implements the guest-related operations for stage 2.
 
 use crate::println;
-
-pub mod vmx;
 
 #[derive(PartialEq, Debug)]
 pub enum HandlerResult {

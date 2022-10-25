@@ -4,13 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+utils = { path = "../../crates/utils/" }
 debug = { version = "0.1.0", path = "../../crates/debug" }
 mmu = { version = "0.1.0", path = "../../crates/mmu" }
 stage_two_abi = { path = "../../crates/stage_two_abi" }
 
-# x86_64 dependencies
+# TODO: move the untrusted dependencies behing a feature flag
+uart_16550 = "0.2.0"
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
 vtd = { path = "../../crates/vtd" }
 vmx = { version = "0.1.0", path = "../../crates/vmx" }
 
-# TODO: move the untrusted dependencies behing a feature flag
-uart_16550 = "0.2.0"
+[target.'cfg(target_arch = "risc64")'.dependencies]

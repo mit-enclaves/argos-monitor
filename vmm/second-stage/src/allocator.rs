@@ -4,7 +4,7 @@
 use core::cell::RefCell;
 
 use mmu::{frame_allocator::PhysRange, FrameAllocator};
-use vmx::{Frame, HostPhysAddr, HostVirtAddr};
+use utils::{Frame, HostPhysAddr, HostVirtAddr};
 
 use crate::statics::NB_PAGES;
 

@@ -2,18 +2,15 @@
 #![no_main]
 
 use core::panic::PanicInfo;
-use debug;
-use mmu::FrameAllocator;
 use second_stage;
 use second_stage::allocator::BumpAllocator;
+use second_stage::arch::Arch;
+use second_stage::arch::guest::launch_guest;
 use second_stage::debug::qemu;
-use second_stage::guest::vmx::{init_guest, VmxGuest};
-use second_stage::guest::Guest;
-use second_stage::hypercalls::{Backend, Hypercalls};
+use second_stage::hypercalls::Hypercalls;
 use second_stage::println;
 use second_stage::statics::Statics;
-use second_stage::x86_64::Arch;
-use stage_two_abi::{entry_point, GuestInfo, Manifest};
+use stage_two_abi::{entry_point, Manifest};
 
 entry_point!(second_stage_entry_point, Statics);
 
@@ -35,47 +32,6 @@ pub extern "C" fn second_stage_entry_point(manifest: &'static mut Manifest<Stati
     let hypercalls = Hypercalls::new(&mut statics, &manifest, arch);
     launch_guest(&mut allocator, &manifest.info, hypercalls);
     // Exit
-    qemu::exit(qemu::ExitCode::Success);
-}
-
-fn launch_guest(
-    allocator: &impl FrameAllocator,
-    infos: &GuestInfo,
-    hypercalls: Hypercalls<impl Backend>,
-) {
-    if !infos.loaded {
-        println!("No guest found, exiting");
-        return;
-    }
-
-    let frame = allocator
-        .allocate_frame()
-        .expect("Failed to allocate VMXON");
-    unsafe {
-        println!("Init the guest");
-        let vmxon = match vmx::vmxon(frame) {
-            Ok(vmxon) => {
-                println!("VMXON: ok(vmxon)");
-                vmxon
-            }
-            Err(err) => {
-                println!("VMXON: {:?}", err);
-                qemu::exit(qemu::ExitCode::Failure);
-            }
-        };
-
-        let mut vmcs = init_guest(&vmxon, allocator, infos);
-        println!("Done with the guest init");
-        let mut vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");
-
-        // Hook for debugging.
-        debug::tyche_hook_stage2(1);
-
-        println!("Launching");
-        let mut guest = VmxGuest::new(&mut vcpu, hypercalls);
-        guest.main_loop();
-    }
-
     qemu::exit(qemu::ExitCode::Success);
 }
 

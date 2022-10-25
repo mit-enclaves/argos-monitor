@@ -6,7 +6,7 @@ use vmx::{
     bitmaps::EptEntryFlags,
     ept::{GIANT_PAGE_SIZE, HUGE_PAGE_SIZE, PAGE_SIZE},
 };
-use vmx::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
+use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
 
 pub struct EptMapper {
     host_offset: usize,
