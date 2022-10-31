@@ -10,7 +10,7 @@ use stage_two_abi::{EntryPoint, Manifest, RawStatics};
 
 #[cfg(feature = "second-stage")]
 const SECOND_STAGE: &'static [u8] =
-    include_bytes!("../../../target/x86_64-kernel/release/second-stage");
+    include_bytes!("../../../target/x86_64-unknown-kernel/release/second-stage");
 #[cfg(not(feature = "second-stage"))]
 const SECOND_STAGE: &'static [u8] = &[0; 10];
 

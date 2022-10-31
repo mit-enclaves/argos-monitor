@@ -17,6 +17,7 @@ pub enum VmCalls {
     ConfigReadRegion  = 0x401,
     Exit              = 0x500,
     DebugIommu        = 0x600,
+    Transition        = 0x999,
 }
 
 // —————————————————————————————— Error Codes ——————————————————————————————— //

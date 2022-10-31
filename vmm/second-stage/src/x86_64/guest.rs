@@ -88,14 +88,16 @@ where
 
     fn handle_exit(&mut self, reason: VmxExitReason) -> Result<HandlerResult, Self::Error> {
         let vcpu = &mut self.vcpu;
-        let rip = vcpu.get(Register::Rip);
-        let rax = vcpu.get(Register::Rax);
-        let rcx = vcpu.get(Register::Rcx);
-        let rbp = vcpu.get(Register::Rbp);
-        println!(
-            "VM Exit: {:?} - rip: 0x{:x} - rbp: 0x{:x} - rax: 0x{:x} - rcx: 0x{:x}",
-            reason, rip, rbp, rax, rcx
-        );
+        let dump = |vcpu: &mut &mut ActiveVmcs| {
+            let rip = vcpu.get(Register::Rip);
+            let rax = vcpu.get(Register::Rax);
+            let rcx = vcpu.get(Register::Rcx);
+            let rbp = vcpu.get(Register::Rbp);
+            println!(
+                "VM Exit: {:?} - rip: 0x{:x} - rbp: 0x{:x} - rax: 0x{:x} - rcx: 0x{:x}",
+                reason, rip, rbp, rax, rcx
+            );
+        };
 
         match reason {
             VmxExitReason::Vmcall => {
@@ -104,9 +106,29 @@ where
                     arg_1: vcpu.get(Register::Rcx) as usize,
                     arg_2: vcpu.get(Register::Rdx) as usize,
                     arg_3: vcpu.get(Register::Rsi) as usize,
+                    arg_4: vcpu.get(Register::R9) as usize,
                 };
                 if self.hypercalls.is_exit(&params) {
+                    dump(vcpu);
                     Ok(HandlerResult::Exit)
+                } else if self.hypercalls.is_transition(&params) {
+                    match self.hypercalls.transition(params.arg_1) {
+                        Ok(values) => {
+                            // TODO(aghosn): we need to figure out how to save
+                            // the previous context.
+                            vcpu.set_cr(ControlRegister::Cr3, values.value_1);
+                            vcpu.set(Register::Rip, values.value_2 as u64);
+                            vcpu.set(Register::Rsp, values.value_3 as u64);
+                            vcpu.set(Register::Rax, ErrorCode::Success as u64);
+                            return Ok(HandlerResult::Resume);
+                        }
+                        Err(err) => {
+                            dump(vcpu);
+                            vcpu.set(Register::Rax, err as u64);
+                            vcpu.next_instruction()?;
+                            return Ok(HandlerResult::Resume);
+                        }
+                    }
                 } else {
                     match self.hypercalls.dispatch(params) {
                         Ok(values) => {
@@ -116,6 +138,7 @@ where
                             vcpu.set(Register::Rsi, values.value_3 as u64);
                         }
                         Err(err) => {
+                            dump(vcpu);
                             vcpu.set(Register::Rax, err as u64);
                         }
                     }

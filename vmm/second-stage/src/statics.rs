@@ -22,7 +22,7 @@ use stage_two_abi::make_static;
 pub const NB_PAGES: usize = 40;
 pub const NB_DOMAINS: usize = 16;
 pub const NB_REGIONS: usize = 64;
-pub const NB_REGIONS_PER_DOMAIN: usize = 16;
+pub const NB_REGIONS_PER_DOMAIN: usize = 46;
 
 // —————————————————————— Static Resources Declaration —————————————————————— //
 
@@ -43,6 +43,9 @@ const EMPTY_DOMAIN: Domain = Domain {
     regions: TypedArena::new([EMPTY_REGION_CAPABILITY; NB_REGIONS_PER_DOMAIN]),
     nb_initial_regions: 0,
     initial_regions_capa: [Handle::new_unchecked(0); NB_REGIONS_PER_DOMAIN],
+    cr3: 0,
+    entry: 0,
+    stack: 0,
 };
 
 const EMPTY_REGION: Region = Region {

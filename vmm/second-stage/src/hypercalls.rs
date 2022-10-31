@@ -20,6 +20,7 @@ pub mod vmcalls {
     pub const CONFIG_READ_REGION: usize  = 0x401;
     pub const EXIT: usize                = 0x500;
     pub const DEBUG_IOMMU: usize         = 0x600;
+    pub const TRANSITION: usize          = 0x999;
 }
 
 // —————————————————————————————— Error Codes ——————————————————————————————— //
@@ -39,9 +40,10 @@ pub enum ErrorCode {
     InvalidAddress = 9,
     InvalidDomain = 10,
     DomainIsSealed = 11,
-    StoreAccesOutOfBound = 12,
-    BadParameters = 13,
-    RegionIsShared = 14,
+    DomainIsNotSealed = 12,
+    StoreAccesOutOfBound = 13,
+    BadParameters = 14,
+    RegionIsShared = 15,
 }
 
 // ————————————————————————————————— Flags —————————————————————————————————— //
@@ -59,6 +61,7 @@ pub struct Parameters {
     pub arg_1: usize,
     pub arg_2: usize,
     pub arg_3: usize,
+    pub arg_4: usize,
 }
 
 pub struct Registers {
@@ -99,6 +102,9 @@ pub struct Domain {
     pub regions: TypedArena<RegionCapability, NB_REGIONS_PER_DOMAIN>,
     pub nb_initial_regions: usize,
     pub initial_regions_capa: [RegionCapaHandle; NB_REGIONS_PER_DOMAIN],
+    pub cr3: usize,
+    pub entry: usize,
+    pub stack: usize,
 }
 
 pub struct Region {
@@ -159,7 +165,7 @@ impl RegionCapability {
     fn is_exclusive(&self) -> Result<(), ErrorCode> {
         match self.is_shared {
             true => Err(ErrorCode::RegionIsShared),
-            false => Ok(())
+            false => Ok(()),
         }
     }
 
@@ -289,12 +295,32 @@ where
             vmcalls::CONFIG_NB_REGIONS => self.config_nb_regions(),
             vmcalls::CONFIG_READ_REGION => self.config_read_region(params.arg_1, params.arg_2),
             vmcalls::DEBUG_IOMMU => self.backend.debug_iommu(),
+            vmcalls::DOMAIN_SEAL => {
+                self.domain_seal(params.arg_1, params.arg_2, params.arg_3, params.arg_4)
+            }
             _ => Err(ErrorCode::UnknownVmCall),
         }
     }
 
     pub fn is_exit(&self, params: &Parameters) -> bool {
         params.vmcall == vmcalls::EXIT
+    }
+
+    pub fn is_transition(&self, params: &Parameters) -> bool {
+        params.vmcall == vmcalls::TRANSITION
+    }
+
+    pub fn transition(&self, handle: usize) -> HypercallResult {
+        let domain_handle = handle.try_into()?;
+        let domain = &self.domains_arena[domain_handle];
+        if !domain.is_sealed {
+            return Err(ErrorCode::DomainIsSealed);
+        }
+        Ok(Registers {
+            value_1: domain.cr3,
+            value_2: domain.entry,
+            value_3: domain.stack,
+        })
     }
 }
 
@@ -499,5 +525,24 @@ where
         };
 
         Ok(registers)
+    }
+
+    fn domain_seal(
+        &mut self,
+        handle: usize,
+        cr3: usize,
+        entry: usize,
+        stack: usize,
+    ) -> HypercallResult {
+        let domain_handle = handle.try_into()?;
+        let domain = &mut self.domains_arena[domain_handle];
+        if domain.is_sealed {
+            return Err(ErrorCode::DomainIsSealed);
+        }
+        domain.cr3 = cr3;
+        domain.entry = entry;
+        domain.stack = stack;
+        domain.is_sealed = true;
+        Ok(Default::default())
     }
 }
