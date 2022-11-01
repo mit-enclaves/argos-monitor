@@ -4,8 +4,8 @@
 use core::panic::PanicInfo;
 use second_stage;
 use second_stage::allocator::BumpAllocator;
-use second_stage::arch::Arch;
 use second_stage::arch::guest::launch_guest;
+use second_stage::arch::Arch;
 use second_stage::debug::qemu;
 use second_stage::hypercalls::Hypercalls;
 use second_stage::println;
@@ -29,7 +29,8 @@ pub extern "C" fn second_stage_entry_point(manifest: &'static mut Manifest<Stati
         statics.pages.take().expect("No pages in statics"),
     );
     let arch = Arch::new(manifest.iommu);
-    let hypercalls = Hypercalls::new(&mut statics, &manifest, arch);
+    let mut hypercalls = Hypercalls::new(&mut statics, &manifest, arch);
+    manifest.info.ept_root = hypercalls.set_root_ept(&mut allocator, manifest.poffset as usize);
     launch_guest(&mut allocator, &manifest.info, hypercalls);
     // Exit
     qemu::exit(qemu::ExitCode::Success);

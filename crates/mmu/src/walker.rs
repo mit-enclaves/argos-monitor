@@ -46,7 +46,7 @@ impl Level {
         }
     }
 
-    fn mask(self) -> u64 {
+    pub fn mask(self) -> u64 {
         match self {
             Level::L4 => !((1 << 39) - 1),
             Level::L3 => !((1 << 30) - 1),

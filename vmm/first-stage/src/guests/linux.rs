@@ -8,18 +8,18 @@ use crate::guests::boot_params::{
     BootParams, E820Types, KERNEL_BOOT_FLAG_MAGIC, KERNEL_HDR_MAGIC, KERNEL_LOADER_OTHER,
     KERNEL_MIN_ALIGNMENT_BYTES,
 };
-use crate::guests::common::{create_mappings, setup_iommu_context};
+use crate::guests::common::setup_iommu_context;
 use crate::guests::ManifestInfo;
 use crate::mmu::MemoryMap;
 use crate::println;
 use crate::vmx;
 use crate::vmx::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 use bootloader::boot_info::MemoryRegionKind;
-use mmu::eptmapper::EptMapper;
-use mmu::ioptmapper::IoPtMapper;
-use mmu::FrameAllocator;
 use stage_two_abi::GuestInfo;
+use vmx::HostPhysAddr;
 use vtd::Iommu;
+
+use mmu::{FrameAllocator, IoPtFlag, IoPtMapper};
 
 #[cfg(feature = "guest_linux")]
 const LINUXBYTES: &'static [u8] = include_bytes!("../../../../linux-image/images/vmlinux");
@@ -53,23 +53,18 @@ impl Guest for Linux {
         linux_prog.set_mapping(ElfMapping::Identity);
 
         let virtoffset = host_allocator.get_physical_offset();
-
-        // // Setup the EPT first.
-        let ept_root = host_allocator
-            .allocate_frame()
-            .expect("EPT root allocation")
-            .zeroed();
         let iopt_root = host_allocator
             .allocate_frame()
             .expect("I/O PT root allocation")
             .zeroed();
-        let mut ept_mapper = EptMapper::new(virtoffset.as_usize(), ept_root.phys_addr);
         let mut iopt_mapper = IoPtMapper::new(virtoffset.as_usize(), iopt_root.phys_addr);
-        create_mappings(
-            &memory_map,
-            &mut ept_mapper,
-            &mut iopt_mapper,
+        let host_range = memory_map.host;
+        iopt_mapper.map_range(
             host_allocator,
+            GuestPhysAddr::new(0),
+            HostPhysAddr::new(0),
+            host_range.start.as_usize(),
+            IoPtFlag::WRITE | IoPtFlag::READ | IoPtFlag::EXECUTE,
         );
 
         // Load guest into memory.
@@ -103,7 +98,7 @@ impl Guest for Linux {
         let boot_params = loaded_linux.add_payload(boot_params.as_bytes(), guest_allocator);
         let entry_point = linux_prog.phys_entry;
         let mut info = GuestInfo::default();
-        info.ept_root = ept_mapper.get_root().as_usize();
+        info.ept_root = 0; //ept_mapper.get_root().as_usize();
         info.cr3 = loaded_linux.pt_root.as_usize();
         info.rip = entry_point.as_usize();
         info.rsp = 0;

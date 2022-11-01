@@ -1,9 +1,7 @@
 use core::slice;
 
-use crate::mmu::MemoryMap;
-use crate::vmx::bitmaps::EptEntryFlags;
-use crate::{GuestPhysAddr, HostPhysAddr};
-use mmu::{EptMapper, FrameAllocator, IoPtFlag, IoPtMapper};
+use crate::HostPhysAddr;
+use mmu::FrameAllocator;
 use vtd::{ContextEntry, RootEntry};
 
 /// Setups the I/O MMU context, i.e. a root and context frame for which all entries points to the
@@ -44,7 +42,7 @@ pub fn setup_iommu_context(
     root_frame.phys_addr
 }
 
-/// Creates the EPT and I/O PT mappings.
+/*/// Creates the EPT and I/O PT mappings.
 ///
 /// The memory is divided in two regions:
 /// - A lower region, used by the guest
@@ -71,4 +69,4 @@ pub fn create_mappings(
         host_range.start.as_usize(),
         IoPtFlag::WRITE | IoPtFlag::READ | IoPtFlag::EXECUTE,
     );
-}
+}*/

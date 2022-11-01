@@ -58,7 +58,7 @@ impl BumpInfo {
     }
 
     fn get_physical_offset(&self) -> HostVirtAddr {
-        return HostVirtAddr::new(self.phys_offset as usize);
+        return HostVirtAddr::new((self.virt_offset - self.phys_offset) as usize);
     }
 
     fn allocate_range(&mut self, size: usize) -> Option<PhysRange> {

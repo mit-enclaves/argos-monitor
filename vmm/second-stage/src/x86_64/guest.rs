@@ -1,5 +1,6 @@
 //! VMX guest backend
 
+use crate::allocator::BumpAllocator;
 use crate::debug::qemu;
 use crate::guest::{Guest, HandlerResult};
 use crate::hypercalls::{Backend, ErrorCode, Hypercalls, Parameters};
@@ -7,6 +8,7 @@ use crate::println;
 use core::arch;
 use core::arch::asm;
 use debug;
+use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::FrameAllocator;
 use stage_two_abi::GuestInfo;
 use vmx::bitmaps::{
@@ -19,7 +21,7 @@ use vmx::secondary_controls_capabilities;
 use vmx::{ActiveVmcs, ControlRegister, HostPhysAddr, Register, VmxError, VmxExitReason};
 
 pub fn launch_guest(
-    allocator: &impl FrameAllocator,
+    allocator: &BumpAllocator,
     infos: &GuestInfo,
     hypercalls: Hypercalls<impl Backend>,
 ) {
@@ -52,7 +54,7 @@ pub fn launch_guest(
         debug::tyche_hook_stage2(1);
 
         println!("Launching");
-        let mut guest = VmxGuest::new(&mut vcpu, hypercalls);
+        let mut guest = VmxGuest::new(&mut vcpu, hypercalls, allocator);
         guest.main_loop();
     }
 
@@ -62,11 +64,20 @@ pub fn launch_guest(
 pub struct VmxGuest<'active, 'vmx, B> {
     vcpu: &'active mut vmx::ActiveVmcs<'active, 'vmx>,
     hypercalls: Hypercalls<B>,
+    allocator: &'vmx BumpAllocator,
 }
 
 impl<'active, 'vmx, B> VmxGuest<'active, 'vmx, B> {
-    pub fn new(vcpu: &'active mut ActiveVmcs<'active, 'vmx>, hypercalls: Hypercalls<B>) -> Self {
-        Self { vcpu, hypercalls }
+    pub fn new(
+        vcpu: &'active mut ActiveVmcs<'active, 'vmx>,
+        hypercalls: Hypercalls<B>,
+        allocator: &'vmx BumpAllocator,
+    ) -> Self {
+        Self {
+            vcpu,
+            hypercalls,
+            allocator,
+        }
     }
 }
 
@@ -120,6 +131,8 @@ where
                             vcpu.set(Register::Rip, values.value_2 as u64);
                             vcpu.set(Register::Rsp, values.value_3 as u64);
                             vcpu.set(Register::Rax, ErrorCode::Success as u64);
+                            vcpu.set_ept_ptr(HostPhysAddr::new(values.value_4 | EPT_ROOT_FLAGS))
+                                .expect("Failed to replace ept root during transition");
                             return Ok(HandlerResult::Resume);
                         }
                         Err(err) => {
@@ -130,7 +143,7 @@ where
                         }
                     }
                 } else {
-                    match self.hypercalls.dispatch(params) {
+                    match self.hypercalls.dispatch(self.allocator, params) {
                         Ok(values) => {
                             vcpu.set(Register::Rax, ErrorCode::Success as u64);
                             vcpu.set(Register::Rcx, values.value_1 as u64);
@@ -196,7 +209,13 @@ where
             }
             VmxExitReason::EptViolation => {
                 let addr = vcpu.guest_phys_addr()?;
-                println!("EPT Violation: 0x{:x}", addr.as_u64());
+                println!(
+                    "EPT Violation! virt: 0x{:x}, phys: 0x{:x}",
+                    vcpu.guest_linear_addr()
+                        .expect("unable to get the virt addr")
+                        .as_u64(),
+                    addr.as_u64()
+                );
                 Ok(HandlerResult::Crash)
             }
             VmxExitReason::Xsetbv => {

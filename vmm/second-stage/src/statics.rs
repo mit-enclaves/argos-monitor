@@ -19,7 +19,7 @@ use stage_two_abi::make_static;
 
 // ————————————————————— Static Resources Configuration ————————————————————— //
 
-pub const NB_PAGES: usize = 40;
+pub const NB_PAGES: usize = 200;
 pub const NB_DOMAINS: usize = 16;
 pub const NB_REGIONS: usize = 64;
 pub const NB_REGIONS_PER_DOMAIN: usize = 46;
@@ -46,6 +46,7 @@ const EMPTY_DOMAIN: Domain = Domain {
     cr3: 0,
     entry: 0,
     stack: 0,
+    ept: 0,
 };
 
 const EMPTY_REGION: Region = Region {

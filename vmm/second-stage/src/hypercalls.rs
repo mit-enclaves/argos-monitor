@@ -1,8 +1,12 @@
 //! Application Binary Interface
 #![allow(unused)]
 
+use core::ops::Index;
+
 use crate::arena::{ArenaItem, Handle, TypedArena};
 use crate::statics::{Statics, NB_DOMAINS, NB_REGIONS, NB_REGIONS_PER_DOMAIN};
+use mmu::eptmapper::EPT_ROOT_FLAGS;
+use mmu::FrameAllocator;
 use stage_two_abi::Manifest;
 
 // ——————————————————————————————— Hypercalls ——————————————————————————————— //
@@ -68,6 +72,7 @@ pub struct Registers {
     pub value_1: usize,
     pub value_2: usize,
     pub value_3: usize,
+    pub value_4: usize,
 }
 
 pub type HypercallResult = Result<Registers, ErrorCode>;
@@ -78,6 +83,7 @@ impl Default for Registers {
             value_1: 0,
             value_2: 0,
             value_3: 0,
+            value_4: 0,
         }
     }
 }
@@ -86,6 +92,22 @@ impl Default for Registers {
 
 pub trait Backend {
     fn debug_iommu(&mut self) -> HypercallResult;
+
+    fn identity_add(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        ept: usize,
+        start: usize,
+        end: usize,
+    ) -> Result<(), vmx::VmxError>;
+
+    fn identity_remove(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        ept: usize,
+        start: usize,
+        end: usize,
+    ) -> Result<(), vmx::VmxError>;
 }
 
 // ——————————————————————————————— ABI Types ———————————————————————————————— //
@@ -105,6 +127,7 @@ pub struct Domain {
     pub cr3: usize,
     pub entry: usize,
     pub stack: usize,
+    pub ept: usize,
 }
 
 pub struct Region {
@@ -266,7 +289,6 @@ where
         let root_domain = &mut domains_arena[handle];
         root_domain.is_sealed = true;
         root_domain.is_valid = true;
-
         let root_region_capa = root_domain
             .regions
             .allocate()
@@ -284,12 +306,31 @@ where
         handle
     }
 
-    pub fn dispatch(&mut self, params: Parameters) -> HypercallResult {
+    pub fn set_root_ept(&mut self, allocator: &impl FrameAllocator, end: usize) -> usize {
+        let domain = &mut self.domains_arena[*self.current_domain];
+        domain.ept = allocator
+            .allocate_frame()
+            .expect("Unable to perform allocation")
+            .phys_addr
+            .as_usize();
+        self.backend.identity_add(allocator, domain.ept, 0, end);
+        return (domain.ept | EPT_ROOT_FLAGS);
+    }
+
+    pub fn dispatch(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        params: Parameters,
+    ) -> HypercallResult {
         match params.vmcall {
             vmcalls::DOMAIN_GET_OWN_ID => self.domain_get_own_id(),
-            vmcalls::DOMAIN_CREATE => self.domain_create(),
-            vmcalls::DOMAIN_GRANT_REGION => self.domain_grant_region(params.arg_1, params.arg_2),
-            vmcalls::DOMAIN_SHARE_REGION => self.domain_share_region(params.arg_1, params.arg_2),
+            vmcalls::DOMAIN_CREATE => self.domain_create(allocator),
+            vmcalls::DOMAIN_GRANT_REGION => {
+                self.domain_grant_region(allocator, params.arg_1, params.arg_2)
+            }
+            vmcalls::DOMAIN_SHARE_REGION => {
+                self.domain_share_region(allocator, params.arg_1, params.arg_2)
+            }
             vmcalls::REGION_SPLIT => self.region_split(params.arg_1, params.arg_2),
             vmcalls::REGION_GET_INFO => self.region_get_info(params.arg_1),
             vmcalls::CONFIG_NB_REGIONS => self.config_nb_regions(),
@@ -320,6 +361,7 @@ where
             value_1: domain.cr3,
             value_2: domain.entry,
             value_3: domain.stack,
+            value_4: domain.ept,
         })
     }
 }
@@ -338,11 +380,13 @@ where
     }
 
     /// Creates a fresh domain.
-    fn domain_create(&mut self) -> HypercallResult {
+    fn domain_create(&mut self, allocator: &impl FrameAllocator) -> HypercallResult {
         let handle = self.domains_arena.allocate()?;
         let domain = &mut self.domains_arena[handle];
+        let ept = allocator.allocate_frame().expect("Unable to allocate ept");
         domain.is_sealed = false;
         domain.is_valid = true;
+        domain.ept = ept.phys_addr.as_usize();
 
         Ok(Registers {
             value_1: handle.into(),
@@ -350,7 +394,12 @@ where
         })
     }
 
-    fn domain_grant_region(&mut self, domain: usize, region: usize) -> HypercallResult {
+    fn domain_grant_region(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        domain: usize,
+        region: usize,
+    ) -> HypercallResult {
         let region_handle: RegionCapaHandle = region.try_into()?;
         let current_domain = &mut self.domains_arena[*self.current_domain];
         let region_capa = &mut current_domain.regions[region_handle];
@@ -384,13 +433,33 @@ where
         // Reset old capacity
         self.domains_arena[*self.current_domain].regions[region_handle].reset();
 
+        // Call the backend to effect the changes.
+        let reg = &self.regions_arena[handle];
+        self.backend.identity_remove(
+            allocator,
+            self.domains_arena[*self.current_domain].ept,
+            reg.start,
+            reg.end,
+        );
+        self.backend.identity_add(
+            allocator,
+            self.domains_arena[domain_handle].ept,
+            reg.start,
+            reg.end,
+        );
+
         Ok(Registers {
             value_1: new_region_capa.into(),
             ..Default::default()
         })
     }
 
-    fn domain_share_region(&mut self, domain: usize, region: usize) -> HypercallResult {
+    fn domain_share_region(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        domain: usize,
+        region: usize,
+    ) -> HypercallResult {
         let region_handle: RegionCapaHandle = region.try_into()?;
         let current_domain = &mut self.domains_arena[*self.current_domain];
         let region_capa = &mut current_domain.regions[region_handle];
@@ -421,6 +490,15 @@ where
 
         // Mark old capacity as shared
         self.domains_arena[*self.current_domain].regions[region_handle].is_shared = true;
+
+        // Call the backend to effect the changes.
+        let reg = &self.regions_arena[handle];
+        self.backend.identity_add(
+            allocator,
+            self.domains_arena[domain_handle].ept,
+            reg.start,
+            reg.end,
+        );
 
         Ok(Registers {
             value_1: new_region_capa.into(),
@@ -488,6 +566,7 @@ where
             value_1: region.start,
             value_2: region.end,
             value_3: flags,
+            value_4: 0,
         })
     }
 
@@ -520,6 +599,7 @@ where
                 value_1: store[offset].into(),
                 value_2: store[offset + 1].into(),
                 value_3: store[offset + 2].into(),
+                value_4: 0,
             },
             _ => return Err(ErrorCode::BadParameters),
         };

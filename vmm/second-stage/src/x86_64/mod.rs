@@ -8,7 +8,11 @@ use crate::hypercalls::{Backend, ErrorCode, HypercallResult};
 use crate::println;
 use crate::statics;
 use core::arch::asm;
+use mmu::eptmapper::EPT_PRESENT;
+use mmu::{EptMapper, FrameAllocator};
 use stage_two_abi::Manifest;
+use utils::{GuestPhysAddr, HostPhysAddr};
+use vmx::bitmaps::EptEntryFlags;
 use vmx::HostVirtAddr;
 use vtd::Iommu;
 
@@ -47,6 +51,47 @@ impl Backend for Arch {
         }
 
         Ok(Default::default())
+    }
+
+    fn identity_add(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        ept: usize,
+        start: usize,
+        end: usize,
+    ) -> Result<(), vmx::VmxError> {
+        let mut mapper = EptMapper::new(
+            allocator.get_physical_offset().as_usize(),
+            HostPhysAddr::new(ept),
+        );
+        mapper.map_range(
+            allocator,
+            GuestPhysAddr::new(start),
+            HostPhysAddr::new(start),
+            end - start,
+            EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::USER_EXECUTE | EPT_PRESENT,
+        );
+        Ok(())
+    }
+
+    fn identity_remove(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        ept: usize,
+        start: usize,
+        end: usize,
+    ) -> Result<(), vmx::VmxError> {
+        let root = HostPhysAddr::new(ept);
+        let offset = allocator.get_physical_offset();
+        let mut mapper = EptMapper::new(offset.as_usize(), root);
+        mapper.unmap_range(
+            allocator,
+            GuestPhysAddr::new(start),
+            end - start,
+            root,
+            offset.as_usize(),
+        );
+        Ok(())
     }
 }
 

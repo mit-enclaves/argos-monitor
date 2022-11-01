@@ -1,17 +1,19 @@
+use mmu::IoPtFlag;
 use stage_two_abi::GuestInfo;
+use vmx::HostPhysAddr;
 
 use super::Guest;
 use super::HandlerResult;
 use crate::acpi::AcpiInfo;
 use crate::elf::ElfProgram;
-use crate::guests::common::{create_mappings, setup_iommu_context};
+use crate::guests::common::setup_iommu_context;
 use crate::guests::ManifestInfo;
 use crate::mmu::MemoryMap;
 use crate::println;
 use crate::vmx;
 use crate::vmx::Register;
 use crate::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
-use mmu::{EptMapper, FrameAllocator, IoPtMapper};
+use mmu::{FrameAllocator, IoPtMapper};
 use vtd::Iommu;
 
 #[cfg(feature = "guest_rawc")]
@@ -49,22 +51,18 @@ impl Guest for RawcBytes {
         let rawc_prog = ElfProgram::new(RAWCBYTES);
         let virtoffset = host_allocator.get_physical_offset();
 
-        // Setup the EPT first.
-        let ept_root = host_allocator
-            .allocate_frame()
-            .expect("EPT root allocation")
-            .zeroed();
         let iopt_root = host_allocator
             .allocate_frame()
             .expect("I/O PT root allocation")
             .zeroed();
-        let mut ept_mapper = EptMapper::new(virtoffset.as_usize(), ept_root.phys_addr);
         let mut iopt_mapper = IoPtMapper::new(virtoffset.as_usize(), iopt_root.phys_addr);
-        create_mappings(
-            &memory_map,
-            &mut ept_mapper,
-            &mut iopt_mapper,
+        let host_range = memory_map.host;
+        iopt_mapper.map_range(
             host_allocator,
+            GuestPhysAddr::new(0),
+            HostPhysAddr::new(0),
+            host_range.start.as_usize(),
+            IoPtFlag::WRITE | IoPtFlag::READ | IoPtFlag::EXECUTE,
         );
 
         // Load guest into memory.
@@ -93,7 +91,7 @@ impl Guest for RawcBytes {
 
         let entry_point = rawc_prog.entry;
         let mut info = GuestInfo::default();
-        info.ept_root = ept_mapper.get_root().as_usize();
+        info.ept_root = 0;
         info.cr3 = pt_root.as_usize();
         info.rip = entry_point.as_usize();
         info.rsp = rsp.as_usize();
