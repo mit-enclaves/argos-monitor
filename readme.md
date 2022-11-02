@@ -46,7 +46,7 @@ required for Linux guests (for performance reasons). To boot with UEFI first
 download the OVMF UEFI firmware at the root of this repo with:
 
 ```sh
- wget https://github.com/rust-osdev/ovmf-prebuilt/releases/download/v0.20220719.209%2Bgf0064ac3af/OVMF-pure-efi.fd
+wget https://github.com/rust-osdev/ovmf-prebuilt/releases/download/v0.20220719.209%2Bgf0064ac3af/OVMF-pure-efi.fd
 ```
 
 And then run:
@@ -54,3 +54,9 @@ And then run:
 ```sh
 cargo krun-linux
 ```
+
+## Booting Ubuntu
+
+Ubuntu images are supported, to use one simple create a `.qcow2` image (follow a
+tutorial for that), and add it at the root of this folder with the name
+`ubuntu.qcow2`.

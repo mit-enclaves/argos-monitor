@@ -32,6 +32,7 @@ const TEST_ARGS: &[&str] = &[
     "-enable-kvm",
 ];
 const TEST_TIMEOUT_SECS: u64 = 10;
+const QCOW2_CANDIDATES: &[&'static str] = &["ubuntu.qcow2"];
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect(); // skip executable name
@@ -105,6 +106,11 @@ fn main() {
             ))
             .arg("-gdb")
             .arg(format!("chardev:{}", dbg));
+        if let Some(qcow2) = find_qcow2() {
+            run_cmd
+                .arg("-drive")
+                .arg(format!("file={},format=qcow2,media=disk", qcow2));
+        }
         println!(
             "Running:\n{} {}",
             run_cmd.get_program().to_str().unwrap(),
@@ -129,7 +135,7 @@ fn run_test_command(mut cmd: Command) -> ExitStatus {
     runner_utils::run_with_timeout(&mut cmd, Duration::from_secs(TEST_TIMEOUT_SECS)).unwrap()
 }
 
-pub fn create_disk_images(kernel_binary_path: &Path, uefi: bool) -> PathBuf {
+fn create_disk_images(kernel_binary_path: &Path, uefi: bool) -> PathBuf {
     let bootloader_manifest_path = bootloader_locator::locate_bootloader("bootloader").unwrap();
     let kernel_manifest_path = locate_cargo_manifest::locate_manifest().unwrap();
 
@@ -165,4 +171,13 @@ pub fn create_disk_images(kernel_binary_path: &Path, uefi: bool) -> PathBuf {
         );
     }
     disk_image
+}
+
+fn find_qcow2() -> Option<&'static str> {
+    for candidate in QCOW2_CANDIDATES {
+        if Path::new(candidate).exists() {
+            return Some(candidate);
+        }
+    }
+    return None;
 }

@@ -5,3 +5,6 @@ target
 
 # OVMF UEFI firmware
 OVMF-pure-efi.fd
+
+# Disk images
+*.qcow2
