@@ -112,7 +112,7 @@ impl EptMapper {
                 GuestPhysAddr::new(gpa.as_usize() + size),
                 &mut |addr, entry, level| {
                     if (*entry & EPT_PRESENT.bits()) == 0 {
-                        return WalkNext::Continue;
+                        return WalkNext::Leaf;
                     }
 
                     let end = gpa.as_usize() + size;
