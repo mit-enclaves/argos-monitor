@@ -14,7 +14,7 @@
 
 use crate::allocator::{Page, PAGE_SIZE};
 use crate::arena::{Handle, TypedArena};
-use crate::hypercalls::{Domain, Region, RegionCapability};
+use crate::hypercalls::{Backend, Domain, Region, RegionCapability};
 use stage_two_abi::make_static;
 
 // ————————————————————— Static Resources Configuration ————————————————————— //
@@ -37,16 +37,15 @@ const EMPTY_REGION_CAPABILITY: RegionCapability = RegionCapability {
     handle: Handle::new_unchecked(0),
 };
 
-const EMPTY_DOMAIN: Domain = Domain {
+type Arch = crate::x86_64::Arch;
+
+const EMPTY_DOMAIN: Domain<Arch> = Domain {
     is_sealed: false,
     is_valid: false,
     regions: TypedArena::new([EMPTY_REGION_CAPABILITY; NB_REGIONS_PER_DOMAIN]),
     nb_initial_regions: 0,
     initial_regions_capa: [Handle::new_unchecked(0); NB_REGIONS_PER_DOMAIN],
-    cr3: 0,
-    entry: 0,
-    stack: 0,
-    ept: 0,
+    store: <Arch as Backend>::EMPTY_STORE,
 };
 
 const EMPTY_REGION: Region = Region {
@@ -57,7 +56,10 @@ const EMPTY_REGION: Region = Region {
 
 make_static! {
     static mut pages: [Page; NB_PAGES] = [EMPTY_PAGE; NB_PAGES];
-    static mut current_domain: Handle<Domain, NB_DOMAINS> = Handle::new_unchecked(0);
-    static mut domains_arena: TypedArena<Domain, NB_DOMAINS> = TypedArena::new([EMPTY_DOMAIN; NB_DOMAINS]);
-    static mut regions_arena: TypedArena<Region, NB_REGIONS> = TypedArena::new([EMPTY_REGION; NB_REGIONS]);
+    static mut current_domain: Handle<Domain<Arch>, NB_DOMAINS> =
+        Handle::new_unchecked(0);
+    static mut domains_arena: TypedArena<Domain<Arch>, NB_DOMAINS> =
+        TypedArena::new([EMPTY_DOMAIN; NB_DOMAINS]);
+    static mut regions_arena: TypedArena<Region, NB_REGIONS> =
+        TypedArena::new([EMPTY_REGION; NB_REGIONS]);
 }

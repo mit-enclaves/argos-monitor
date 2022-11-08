@@ -94,7 +94,8 @@ find_statics!(pages, current_domain, domains_arena, regions_arena);
 macro_rules! make_static {
     ($(static mut $name:ident : $type:ty = $init:expr;)*) => {
         // Create a structure listing the static items
-        pub struct Statics {
+        pub struct Statics<Arch>
+        where Arch: Backend {
             $(pub $name: Option<&'static mut $type>,)*
         }
 
@@ -111,7 +112,7 @@ macro_rules! make_static {
         #[doc(hidden)]
         #[used]
         #[export_name = "__manifest"]
-        pub static mut __MANIFEST: $crate::Manifest::<Statics> = $crate::Manifest::<Statics> {
+        pub static mut __MANIFEST: $crate::Manifest::<Statics<Arch>> = $crate::Manifest::<Statics<Arch>> {
             cr3: 0,
             poffset: 0,
             voffset: 0,
@@ -126,14 +127,14 @@ macro_rules! make_static {
         #[doc(hidden)]
         #[used]
         #[export_name = "__statics"]
-        pub static mut __STATICS: Statics = Statics {
+        pub static mut __STATICS: Statics<Arch> = Statics {
             $($name: None::<&'static mut $type>,)*
         };
 
         // Check that both statics have the same size at compile time.
         // This will throw a compile error if the sizes doesn't match.
         const __STATIC_SIZE_CHECK: [u8; core::mem::size_of::<$crate::RawStatics>()] =
-            [0; core::mem::size_of::<Statics>()];
+            [0; core::mem::size_of::<Statics<Arch>>()];
     };
 }
 
@@ -144,7 +145,6 @@ macro_rules! make_static {
 #[derive(Copy, Clone, Debug, Default)]
 pub struct GuestInfo {
     // Guest information.
-    pub ept_root: usize,
     pub cr3: usize,
     pub rip: usize,
     pub rsp: usize,
@@ -164,7 +164,6 @@ pub struct GuestInfo {
 impl GuestInfo {
     pub const fn default_config() -> Self {
         GuestInfo {
-            ept_root: 0,
             cr3: 0,
             rip: 0,
             rsp: 0,

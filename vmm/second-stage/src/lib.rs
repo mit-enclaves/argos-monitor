@@ -25,6 +25,6 @@ pub mod arch {
     pub use crate::riscv::*;
 }
 
-pub fn init(manifest: &Manifest<statics::Statics>) {
+pub fn init(manifest: &Manifest<statics::Statics<arch::Arch>>) {
     arch::init(manifest);
 }

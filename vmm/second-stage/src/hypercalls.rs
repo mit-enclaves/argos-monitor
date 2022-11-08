@@ -1,11 +1,7 @@
-//! Application Binary Interface
-#![allow(unused)]
-
-use core::ops::Index;
+//! Applicatioe Binary Interface
 
 use crate::arena::{ArenaItem, Handle, TypedArena};
 use crate::statics::{Statics, NB_DOMAINS, NB_REGIONS, NB_REGIONS_PER_DOMAIN};
-use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::FrameAllocator;
 use stage_two_abi::Manifest;
 
@@ -48,6 +44,8 @@ pub enum ErrorCode {
     StoreAccesOutOfBound = 13,
     BadParameters = 14,
     RegionIsShared = 15,
+    DomainIsUnsealed = 16,
+    DomainSwitchFailed = 17,
 }
 
 // ————————————————————————————————— Flags —————————————————————————————————— //
@@ -90,44 +88,68 @@ impl Default for Registers {
 
 // ————————————————————— Architecture-Specific Backend —————————————————————— //
 
-pub trait Backend {
+pub trait Backend: Sized + 'static {
+    type Vcpu<'a>;
+
+    type Store;
+
+    const EMPTY_STORE: Self::Store;
+
+    fn domain_seal(
+        &mut self,
+        store: &mut Self::Store,
+        reg_1: usize,
+        reg_2: usize,
+        reg_3: usize,
+    ) -> Result<(), ErrorCode>;
+
+    fn domain_create(
+        &mut self,
+        store: &mut Self::Store,
+        allocator: &impl FrameAllocator,
+    ) -> Result<(), ErrorCode>;
+
+    fn domain_switch<'a>(
+        &mut self,
+        store: &Self::Store,
+        vcpu: &mut Self::Vcpu<'a>,
+    ) -> HypercallResult;
+
+    fn add_region(
+        &mut self,
+        store: &mut Self::Store,
+        region: &Region,
+        allocator: &impl FrameAllocator,
+    ) -> Result<(), ErrorCode>;
+
+    fn remove_region(
+        &mut self,
+        store: &mut Self::Store,
+        region: &Region,
+        allocator: &impl FrameAllocator,
+    ) -> Result<(), ErrorCode>;
+
     fn debug_iommu(&mut self) -> HypercallResult;
-
-    fn identity_add(
-        &mut self,
-        allocator: &impl FrameAllocator,
-        ept: usize,
-        start: usize,
-        end: usize,
-    ) -> Result<(), vmx::VmxError>;
-
-    fn identity_remove(
-        &mut self,
-        allocator: &impl FrameAllocator,
-        ept: usize,
-        start: usize,
-        end: usize,
-    ) -> Result<(), vmx::VmxError>;
 }
 
 // ——————————————————————————————— ABI Types ———————————————————————————————— //
 
-type DomainArena = TypedArena<Domain, NB_DOMAINS>;
-type RegionArena = TypedArena<Region, NB_REGIONS>;
-type DomainHandle = Handle<Domain, NB_DOMAINS>;
-type RegionHandle = Handle<Region, NB_REGIONS>;
-type RegionCapaHandle = Handle<RegionCapability, NB_REGIONS_PER_DOMAIN>;
+pub type DomainArena<S> = TypedArena<Domain<S>, NB_DOMAINS>;
+pub type RegionArena = TypedArena<Region, NB_REGIONS>;
+pub type DomainHandle<S> = Handle<Domain<S>, NB_DOMAINS>;
+pub type RegionHandle = Handle<Region, NB_REGIONS>;
+pub type RegionCapaHandle = Handle<RegionCapability, NB_REGIONS_PER_DOMAIN>;
 
-pub struct Domain {
+pub struct Domain<B>
+where
+    B: Backend,
+{
     pub is_sealed: bool,
     pub is_valid: bool,
     pub regions: TypedArena<RegionCapability, NB_REGIONS_PER_DOMAIN>,
     pub nb_initial_regions: usize,
     pub initial_regions_capa: [RegionCapaHandle; NB_REGIONS_PER_DOMAIN],
-    pub cr3: usize,
-    pub entry: usize,
-    pub stack: usize,
-    pub ept: usize,
+    pub store: B::Store,
 }
 
 pub struct Region {
@@ -144,18 +166,28 @@ pub struct RegionCapability {
     pub handle: RegionHandle,
 }
 
-impl Domain {
-    fn is_valid(&self) -> Result<(), ErrorCode> {
+impl<B> Domain<B>
+where
+    B: Backend,
+{
+    pub fn is_valid(&self) -> Result<(), ErrorCode> {
         match self.is_valid {
             true => Ok(()),
             false => Err(ErrorCode::InvalidDomain),
         }
     }
 
-    fn is_unsealed(&self) -> Result<(), ErrorCode> {
+    pub fn is_unsealed(&self) -> Result<(), ErrorCode> {
         match self.is_sealed {
             true => Err(ErrorCode::DomainIsSealed),
             false => Ok(()),
+        }
+    }
+
+    pub fn is_sealed(&self) -> Result<(), ErrorCode> {
+        match self.is_sealed {
+            true => Ok(()),
+            false => Err(ErrorCode::DomainIsUnsealed),
         }
     }
 }
@@ -203,7 +235,10 @@ impl RegionCapability {
     }
 }
 
-impl ArenaItem for Domain {
+impl<B> ArenaItem for Domain<B>
+where
+    B: Backend,
+{
     type Error = ErrorCode;
     const OUT_OF_BOUND_ERROR: ErrorCode = ErrorCode::DomainOutOfBound;
     const ALLOCATION_ERROR: Self::Error = ErrorCode::OutOfMemory;
@@ -223,10 +258,12 @@ impl ArenaItem for RegionCapability {
 
 // ———————————————————————————————— VM Calls ———————————————————————————————— //
 
-pub struct Hypercalls<B> {
-    root_domain: DomainHandle,
-    current_domain: &'static mut DomainHandle,
-    domains_arena: &'static mut DomainArena,
+pub struct Hypercalls<B>
+where
+    B: Backend,
+{
+    current_domain: &'static mut DomainHandle<B>,
+    domains_arena: &'static mut DomainArena<B>,
     regions_arena: &'static mut RegionArena,
 
     /// Architecture-specifig backend
@@ -237,7 +274,13 @@ impl<B> Hypercalls<B>
 where
     B: Backend,
 {
-    pub fn new(statics: &mut Statics, manifest: &Manifest<Statics>, backend: B) -> Self {
+    pub fn new<'a>(
+        statics: &mut Statics<B>,
+        manifest: &Manifest<Statics<B>>,
+        mut backend: B,
+        vcpu: &mut B::Vcpu<'a>,
+        allocator: &impl FrameAllocator,
+    ) -> Self {
         let current_domain = statics
             .current_domain
             .take()
@@ -252,11 +295,17 @@ where
             .expect("Missing regions_arena static");
 
         let root_region = Self::create_root_region(manifest, regions_arena);
-        let root_domain = Self::create_root_domain(root_region, domains_arena);
+        let root_domain = Self::create_root_domain(
+            root_region,
+            domains_arena,
+            regions_arena,
+            &mut backend,
+            vcpu,
+            allocator,
+        );
         *current_domain = root_domain;
 
         Self {
-            root_domain,
             current_domain,
             domains_arena,
             regions_arena,
@@ -265,7 +314,7 @@ where
     }
 
     fn create_root_region(
-        manifest: &Manifest<Statics>,
+        manifest: &Manifest<Statics<B>>,
         regions_arena: &mut RegionArena,
     ) -> RegionHandle {
         let handle = regions_arena
@@ -279,10 +328,14 @@ where
         handle
     }
 
-    fn create_root_domain(
+    fn create_root_domain<'a>(
         root_region: RegionHandle,
-        domains_arena: &mut DomainArena,
-    ) -> DomainHandle {
+        domains_arena: &mut DomainArena<B>,
+        regions_arena: &RegionArena,
+        backend: &mut B,
+        vcpu: &mut B::Vcpu<'a>,
+        allocator: &impl FrameAllocator,
+    ) -> DomainHandle<B> {
         let handle = domains_arena
             .allocate()
             .expect("Failed to allocate root domain");
@@ -299,6 +352,20 @@ where
             is_valid: true,
             handle: root_region,
         };
+        // TODO: initialize properly
+        backend
+            .domain_create(&mut root_domain.store, allocator)
+            .expect("Failed to create root domain");
+        backend
+            .add_region(
+                &mut root_domain.store,
+                &regions_arena[root_region],
+                allocator,
+            )
+            .expect("Failed to add root region");
+        backend
+            .domain_switch(&mut root_domain.store, vcpu)
+            .expect("Failed to switch to root domain");
 
         root_domain.nb_initial_regions = 1;
         root_domain.initial_regions_capa[0] = root_region_capa;
@@ -306,20 +373,10 @@ where
         handle
     }
 
-    pub fn set_root_ept(&mut self, allocator: &impl FrameAllocator, end: usize) -> usize {
-        let domain = &mut self.domains_arena[*self.current_domain];
-        domain.ept = allocator
-            .allocate_frame()
-            .expect("Unable to perform allocation")
-            .phys_addr
-            .as_usize();
-        self.backend.identity_add(allocator, domain.ept, 0, end);
-        return (domain.ept | EPT_ROOT_FLAGS);
-    }
-
-    pub fn dispatch(
+    pub fn dispatch<'a>(
         &mut self,
         allocator: &impl FrameAllocator,
+        vcpu: &mut B::Vcpu<'a>,
         params: Parameters,
     ) -> HypercallResult {
         match params.vmcall {
@@ -331,6 +388,7 @@ where
             vmcalls::DOMAIN_SHARE_REGION => {
                 self.domain_share_region(allocator, params.arg_1, params.arg_2)
             }
+            vmcalls::TRANSITION => self.domain_switch(params.arg_1, vcpu),
             vmcalls::REGION_SPLIT => self.region_split(params.arg_1, params.arg_2),
             vmcalls::REGION_GET_INFO => self.region_get_info(params.arg_1),
             vmcalls::CONFIG_NB_REGIONS => self.config_nb_regions(),
@@ -351,25 +409,6 @@ where
         params.vmcall == vmcalls::TRANSITION
     }
 
-    pub fn transition(&self, handle: usize) -> HypercallResult {
-        let domain_handle = handle.try_into()?;
-        let domain = &self.domains_arena[domain_handle];
-        if !domain.is_sealed {
-            return Err(ErrorCode::DomainIsSealed);
-        }
-        Ok(Registers {
-            value_1: domain.cr3,
-            value_2: domain.entry,
-            value_3: domain.stack,
-            value_4: domain.ept,
-        })
-    }
-}
-
-impl<B> Hypercalls<B>
-where
-    B: Backend,
-{
     /// Returns the Domain ID of the current domain.
     fn domain_get_own_id(&mut self) -> HypercallResult {
         let domain = *self.current_domain;
@@ -383,10 +422,11 @@ where
     fn domain_create(&mut self, allocator: &impl FrameAllocator) -> HypercallResult {
         let handle = self.domains_arena.allocate()?;
         let domain = &mut self.domains_arena[handle];
-        let ept = allocator.allocate_frame().expect("Unable to allocate ept");
+
+        // Initialize domain
+        self.backend.domain_create(&mut domain.store, allocator)?;
         domain.is_sealed = false;
         domain.is_valid = true;
-        domain.ept = ept.phys_addr.as_usize();
 
         Ok(Registers {
             value_1: handle.into(),
@@ -434,19 +474,10 @@ where
         self.domains_arena[*self.current_domain].regions[region_handle].reset();
 
         // Call the backend to effect the changes.
-        let reg = &self.regions_arena[handle];
-        self.backend.identity_remove(
-            allocator,
-            self.domains_arena[*self.current_domain].ept,
-            reg.start,
-            reg.end,
-        );
-        self.backend.identity_add(
-            allocator,
-            self.domains_arena[domain_handle].ept,
-            reg.start,
-            reg.end,
-        );
+        let region = &self.regions_arena[handle];
+        let store = &mut self.domains_arena[domain_handle].store;
+        self.backend.remove_region(store, region, allocator)?;
+        self.backend.add_region(store, region, allocator)?;
 
         Ok(Registers {
             value_1: new_region_capa.into(),
@@ -492,18 +523,25 @@ where
         self.domains_arena[*self.current_domain].regions[region_handle].is_shared = true;
 
         // Call the backend to effect the changes.
-        let reg = &self.regions_arena[handle];
-        self.backend.identity_add(
-            allocator,
-            self.domains_arena[domain_handle].ept,
-            reg.start,
-            reg.end,
-        );
+        let region = &self.regions_arena[handle];
+        let store = &mut self.domains_arena[domain_handle].store;
+        self.backend.add_region(store, region, allocator)?;
 
         Ok(Registers {
             value_1: new_region_capa.into(),
             ..Default::default()
         })
+    }
+
+    fn domain_switch<'a>(&mut self, domain: usize, vcpu: &mut B::Vcpu<'a>) -> HypercallResult {
+        let domain_handle = domain.try_into()?;
+        let domain = &mut self.domains_arena[domain_handle];
+
+        // Check that domain is valid and sealed.
+        domain.is_valid()?;
+        domain.is_sealed()?;
+
+        self.backend.domain_switch(&domain.store, vcpu)
     }
 
     /// Split a region at the given address.
@@ -610,18 +648,19 @@ where
     fn domain_seal(
         &mut self,
         handle: usize,
-        cr3: usize,
-        entry: usize,
-        stack: usize,
+        reg_1: usize,
+        reg_2: usize,
+        reg_3: usize,
     ) -> HypercallResult {
         let domain_handle = handle.try_into()?;
         let domain = &mut self.domains_arena[domain_handle];
-        if domain.is_sealed {
-            return Err(ErrorCode::DomainIsSealed);
-        }
-        domain.cr3 = cr3;
-        domain.entry = entry;
-        domain.stack = stack;
+
+        // Check that domain can be sealed
+        domain.is_valid()?;
+        domain.is_unsealed()?;
+
+        self.backend
+            .domain_seal(&mut domain.store, reg_1, reg_2, reg_3)?;
         domain.is_sealed = true;
         Ok(Default::default())
     }

@@ -4,20 +4,27 @@ mod arch;
 pub mod guest;
 
 use crate::debug::ExitCode;
-use crate::hypercalls::{Backend, ErrorCode, HypercallResult};
+use crate::hypercalls::{Backend, ErrorCode, HypercallResult, Region, Registers};
 use crate::println;
 use crate::statics;
 use core::arch::asm;
-use mmu::eptmapper::EPT_PRESENT;
+use mmu::eptmapper::{EPT_PRESENT, EPT_ROOT_FLAGS};
 use mmu::{EptMapper, FrameAllocator};
 use stage_two_abi::Manifest;
-use utils::{GuestPhysAddr, HostPhysAddr};
+use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
 use vmx::bitmaps::EptEntryFlags;
-use vmx::HostVirtAddr;
+use vmx::{ActiveVmcs, ControlRegister, Register};
 use vtd::Iommu;
 
 pub struct Arch {
     iommu: Option<Iommu>,
+}
+
+pub struct Store {
+    ept: HostPhysAddr,
+    cr3: GuestPhysAddr,
+    entry: GuestPhysAddr,
+    stack: GuestPhysAddr,
 }
 
 impl Arch {
@@ -32,6 +39,17 @@ impl Arch {
 }
 
 impl Backend for Arch {
+    type Vcpu<'a> = ActiveVmcs<'a, 'a>;
+
+    type Store = Store;
+
+    const EMPTY_STORE: Self::Store = Store {
+        ept: HostPhysAddr::new(0),
+        cr3: GuestPhysAddr::new(0),
+        entry: GuestPhysAddr::new(0),
+        stack: GuestPhysAddr::new(0),
+    };
+
     fn debug_iommu(&mut self) -> HypercallResult {
         let iommu = match &mut self.iommu {
             Some(iommu) => iommu,
@@ -53,50 +71,77 @@ impl Backend for Arch {
         Ok(Default::default())
     }
 
-    fn identity_add(
+    fn add_region(
         &mut self,
+        store: &mut Store,
+        region: &Region,
         allocator: &impl FrameAllocator,
-        ept: usize,
-        start: usize,
-        end: usize,
-    ) -> Result<(), vmx::VmxError> {
-        let mut mapper = EptMapper::new(
-            allocator.get_physical_offset().as_usize(),
-            HostPhysAddr::new(ept),
-        );
+    ) -> Result<(), ErrorCode> {
+        let mut mapper = EptMapper::new(allocator.get_physical_offset().as_usize(), store.ept);
         mapper.map_range(
             allocator,
-            GuestPhysAddr::new(start),
-            HostPhysAddr::new(start),
-            end - start,
+            GuestPhysAddr::new(region.start),
+            HostPhysAddr::new(region.start),
+            region.end - region.start,
             EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::USER_EXECUTE | EPT_PRESENT,
         );
         Ok(())
     }
 
-    fn identity_remove(
+    fn remove_region(
         &mut self,
+        store: &mut Store,
+        region: &Region,
         allocator: &impl FrameAllocator,
-        ept: usize,
-        start: usize,
-        end: usize,
-    ) -> Result<(), vmx::VmxError> {
-        let root = HostPhysAddr::new(ept);
+    ) -> Result<(), ErrorCode> {
+        let root = store.ept;
         let offset = allocator.get_physical_offset();
         let mut mapper = EptMapper::new(offset.as_usize(), root);
         mapper.unmap_range(
             allocator,
-            GuestPhysAddr::new(start),
-            end - start,
+            GuestPhysAddr::new(region.start),
+            region.end - region.start,
             root,
-            offset.as_usize(),
+            allocator.get_physical_offset().as_usize(),
         );
+        Ok(())
+    }
+
+    fn domain_create(
+        &mut self,
+        store: &mut Store,
+        allocator: &impl FrameAllocator,
+    ) -> Result<(), ErrorCode> {
+        let ept = allocator.allocate_frame().ok_or(ErrorCode::OutOfMemory)?;
+        store.ept = ept.phys_addr;
+        Ok(())
+    }
+
+    fn domain_switch<'a>(&mut self, store: &Store, vcpu: &mut Self::Vcpu<'a>) -> HypercallResult {
+        vcpu.set_cr(ControlRegister::Cr3, store.cr3.as_usize());
+        vcpu.set(Register::Rip, store.entry.as_u64());
+        vcpu.set(Register::Rsp, store.stack.as_u64());
+        vcpu.set_ept_ptr(HostPhysAddr::new(store.ept.as_usize() | EPT_ROOT_FLAGS))
+            .map_err(|_| ErrorCode::DomainSwitchFailed)?;
+        Ok(Registers::default())
+    }
+
+    fn domain_seal(
+        &mut self,
+        store: &mut Self::Store,
+        reg_1: usize,
+        reg_2: usize,
+        reg_3: usize,
+    ) -> Result<(), ErrorCode> {
+        store.cr3 = GuestPhysAddr::new(reg_1);
+        store.entry = GuestPhysAddr::new(reg_2);
+        store.stack = GuestPhysAddr::new(reg_3);
         Ok(())
     }
 }
 
 /// Architecture specific initialization.
-pub fn init(manifest: &Manifest<statics::Statics>) {
+pub fn init(manifest: &Manifest<statics::Statics<Arch>>) {
     unsafe {
         asm!(
             "mov cr3, {}",

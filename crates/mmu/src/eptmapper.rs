@@ -17,6 +17,9 @@ pub const EPT_PRESENT: EptEntryFlags = EptEntryFlags::READ
     .union(EptEntryFlags::WRITE)
     .union(EptEntryFlags::SUPERVISOR_EXECUTE);
 
+/// Flags:
+/// 6 << 0; // write-back
+/// 3 << 3; // walk length of 4
 pub const EPT_ROOT_FLAGS: usize = (6 << 0) | (3 << 3);
 
 unsafe impl Walker for EptMapper {
@@ -189,9 +192,6 @@ impl EptMapper {
     }
 
     pub fn get_root(&self) -> HostPhysAddr {
-        //let memory_kind = 6 << 0; // write-back usize
-        //let walk_length = 3 << 3; // walk length of 4 usize
-
         HostPhysAddr::new(self.root.as_usize() | EPT_ROOT_FLAGS)
     }
 }

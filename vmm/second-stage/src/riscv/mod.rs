@@ -3,9 +3,10 @@
 pub mod guest;
 
 use crate::debug::ExitCode;
-use crate::hypercalls::{Backend, HypercallResult};
+use crate::hypercalls::{Backend, DomainArena, DomainHandle, HypercallResult};
 use crate::statics;
 use core::arch::asm;
+use mmu::FrameAllocator;
 use stage_two_abi::Manifest;
 
 pub struct Arch {}
@@ -20,6 +21,30 @@ impl Backend for Arch {
     fn debug_iommu(&mut self) -> HypercallResult {
         // No I/O MMU with Risc-V backend
         Ok(Default::default())
+    }
+
+    fn identity_add(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        ept: usize,
+        start: usize,
+        end: usize,
+    ) -> Result<(), vmx::VmxError> {
+        todo!();
+    }
+
+    fn identity_remove(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        ept: usize,
+        start: usize,
+        end: usize,
+    ) -> Result<(), vmx::VmxError> {
+        todo!();
+    }
+
+    fn transition(&self, handle: DomainHandle, domains: &DomainArena) -> HypercallResult {
+        todo!();
     }
 }
 

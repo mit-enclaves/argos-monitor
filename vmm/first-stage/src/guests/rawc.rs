@@ -91,7 +91,6 @@ impl Guest for RawcBytes {
 
         let entry_point = rawc_prog.entry;
         let mut info = GuestInfo::default();
-        info.ept_root = 0;
         info.cr3 = pt_root.as_usize();
         info.rip = entry_point.as_usize();
         info.rsp = rsp.as_usize();

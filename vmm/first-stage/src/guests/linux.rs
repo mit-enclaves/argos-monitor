@@ -98,7 +98,6 @@ impl Guest for Linux {
         let boot_params = loaded_linux.add_payload(boot_params.as_bytes(), guest_allocator);
         let entry_point = linux_prog.phys_entry;
         let mut info = GuestInfo::default();
-        info.ept_root = 0; //ept_mapper.get_root().as_usize();
         info.cr3 = loaded_linux.pt_root.as_usize();
         info.rip = entry_point.as_usize();
         info.rsp = 0;

@@ -1,16 +1,17 @@
 //! VMX guest backend
 
+use super::Arch;
 use crate::allocator::BumpAllocator;
 use crate::debug::qemu;
 use crate::guest::{Guest, HandlerResult};
-use crate::hypercalls::{Backend, ErrorCode, Hypercalls, Parameters};
+use crate::hypercalls::{ErrorCode, Hypercalls, Parameters};
 use crate::println;
+use crate::statics::Statics;
 use core::arch;
 use core::arch::asm;
 use debug;
-use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::FrameAllocator;
-use stage_two_abi::GuestInfo;
+use stage_two_abi::{GuestInfo, Manifest};
 use vmx::bitmaps::{
     exit_qualification, EntryControls, ExceptionBitmap, ExitControls, PinbasedControls,
     PrimaryControls, SecondaryControls,
@@ -18,18 +19,23 @@ use vmx::bitmaps::{
 use vmx::fields;
 use vmx::fields::traits::*;
 use vmx::secondary_controls_capabilities;
-use vmx::{ActiveVmcs, ControlRegister, HostPhysAddr, Register, VmxError, VmxExitReason};
+use vmx::{ActiveVmcs, ControlRegister, Register, VmxError, VmxExitReason};
 
-pub fn launch_guest(
-    allocator: &BumpAllocator,
-    infos: &GuestInfo,
-    hypercalls: Hypercalls<impl Backend>,
-) {
-    if !infos.loaded {
+pub fn launch_guest(manifest: &'static mut Manifest<Statics<Arch>>) {
+    if !manifest.info.loaded {
         println!("No guest found, exiting");
         return;
     }
 
+    let mut statics = manifest
+        .statics
+        .take()
+        .expect("Missing statics in manifest");
+    let mut allocator = BumpAllocator::new(
+        manifest.poffset,
+        manifest.voffset,
+        statics.pages.take().expect("No pages in statics"),
+    );
     let frame = allocator
         .allocate_frame()
         .expect("Failed to allocate VMXON");
@@ -46,31 +52,34 @@ pub fn launch_guest(
             }
         };
 
-        let mut vmcs = init_guest(&vmxon, allocator, infos);
+        let mut vmcs = init_vm(&vmxon, &mut allocator);
         println!("Done with the guest init");
         let mut vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");
+        let arch = Arch::new(manifest.iommu);
+        let hypercalls = Hypercalls::new(&mut statics, &manifest, arch, &mut vcpu, &mut allocator);
+        init_vcpu(&mut vcpu, &manifest.info, &mut allocator);
 
         // Hook for debugging.
         debug::tyche_hook_stage2(1);
 
         println!("Launching");
-        let mut guest = VmxGuest::new(&mut vcpu, hypercalls, allocator);
+        let mut guest = VmxGuest::new(&mut vcpu, hypercalls, &mut allocator);
         guest.main_loop();
     }
 
     qemu::exit(qemu::ExitCode::Success);
 }
 
-pub struct VmxGuest<'active, 'vmx, B> {
+pub struct VmxGuest<'active, 'vmx> {
     vcpu: &'active mut vmx::ActiveVmcs<'active, 'vmx>,
-    hypercalls: Hypercalls<B>,
+    hypercalls: Hypercalls<Arch>,
     allocator: &'vmx BumpAllocator,
 }
 
-impl<'active, 'vmx, B> VmxGuest<'active, 'vmx, B> {
+impl<'active, 'vmx> VmxGuest<'active, 'vmx> {
     pub fn new(
         vcpu: &'active mut ActiveVmcs<'active, 'vmx>,
-        hypercalls: Hypercalls<B>,
+        hypercalls: Hypercalls<Arch>,
         allocator: &'vmx BumpAllocator,
     ) -> Self {
         Self {
@@ -81,10 +90,7 @@ impl<'active, 'vmx, B> VmxGuest<'active, 'vmx, B> {
     }
 }
 
-impl<'active, 'vmx, B> Guest for VmxGuest<'active, 'vmx, B>
-where
-    B: Backend,
-{
+impl<'vcpu> Guest for VmxGuest<'vcpu, 'vcpu> {
     type ExitReason = vmx::VmxExitReason;
 
     type Error = vmx::VmxError;
@@ -98,8 +104,8 @@ where
     }
 
     fn handle_exit(&mut self, reason: VmxExitReason) -> Result<HandlerResult, Self::Error> {
-        let vcpu = &mut self.vcpu;
-        let dump = |vcpu: &mut &mut ActiveVmcs| {
+        let vcpu = &mut *self.vcpu;
+        let dump = |vcpu: &mut ActiveVmcs| {
             let rip = vcpu.get(Register::Rip);
             let rax = vcpu.get(Register::Rax);
             let rcx = vcpu.get(Register::Rcx);
@@ -122,28 +128,8 @@ where
                 if self.hypercalls.is_exit(&params) {
                     dump(vcpu);
                     Ok(HandlerResult::Exit)
-                } else if self.hypercalls.is_transition(&params) {
-                    match self.hypercalls.transition(params.arg_1) {
-                        Ok(values) => {
-                            // TODO(aghosn): we need to figure out how to save
-                            // the previous context.
-                            vcpu.set_cr(ControlRegister::Cr3, values.value_1);
-                            vcpu.set(Register::Rip, values.value_2 as u64);
-                            vcpu.set(Register::Rsp, values.value_3 as u64);
-                            vcpu.set(Register::Rax, ErrorCode::Success as u64);
-                            vcpu.set_ept_ptr(HostPhysAddr::new(values.value_4 | EPT_ROOT_FLAGS))
-                                .expect("Failed to replace ept root during transition");
-                            return Ok(HandlerResult::Resume);
-                        }
-                        Err(err) => {
-                            dump(vcpu);
-                            vcpu.set(Register::Rax, err as u64);
-                            vcpu.next_instruction()?;
-                            return Ok(HandlerResult::Resume);
-                        }
-                    }
                 } else {
-                    match self.hypercalls.dispatch(self.allocator, params) {
+                    match self.hypercalls.dispatch(self.allocator, vcpu, params) {
                         Ok(values) => {
                             vcpu.set(Register::Rax, ErrorCode::Success as u64);
                             vcpu.set(Register::Rcx, values.value_1 as u64);
@@ -282,14 +268,12 @@ where
     }
 }
 
-pub unsafe fn init_guest<'vmx>(
+pub unsafe fn init_vm<'vmx>(
     vmxon: &'vmx vmx::Vmxon,
     allocator: &impl FrameAllocator,
-    info: &GuestInfo,
 ) -> vmx::VmcsRegion<'vmx> {
-    // Setup the vmcs.
     let frame = allocator.allocate_frame().expect("Failed to allocate VMCS");
-    let mut vmcs = match vmxon.create_vm(frame) {
+    match vmxon.create_vm(frame) {
         Err(err) => {
             println!("VMCS: Err({:?})", err);
             qemu::exit(qemu::ExitCode::Failure);
@@ -298,9 +282,15 @@ pub unsafe fn init_guest<'vmx>(
             println!("VMCS: Ok()");
             vmcs
         }
-    };
-    let mut vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");
-    default_vmcs_config(&mut vcpu, info, false);
+    }
+}
+
+pub unsafe fn init_vcpu<'active, 'vmx>(
+    vcpu: &mut ActiveVmcs<'active, 'vmx>,
+    info: &GuestInfo,
+    allocator: &impl FrameAllocator,
+) {
+    default_vmcs_config(vcpu, info, false);
     let bit_frame = allocator
         .allocate_frame()
         .expect("Failed to allocate MSR bitmaps");
@@ -308,7 +298,6 @@ pub unsafe fn init_guest<'vmx>(
         .initialize_msr_bitmaps(bit_frame)
         .expect("Failed to install MSR bitmaps");
     msr_bitmaps.allow_all();
-    vcpu.set_ept_ptr(HostPhysAddr::new(info.ept_root)).ok();
     vcpu.set_nat(fields::GuestStateNat::Rip, info.rip).ok();
     vcpu.set_nat(fields::GuestStateNat::Cr3, info.cr3).ok();
     vcpu.set_nat(fields::GuestStateNat::Rsp, info.rsp).ok();
@@ -323,7 +312,6 @@ pub unsafe fn init_guest<'vmx>(
     vcpu.set_cr4_mask(vmxe).unwrap();
     vcpu.set_cr4_shadow(vmxe).unwrap();
     vmx::check::check().expect("check error");
-    vmcs
 }
 
 pub fn default_vmcs_config(vmcs: &mut ActiveVmcs, info: &GuestInfo, switching: bool) {
