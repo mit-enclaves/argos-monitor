@@ -38,7 +38,8 @@ pub fn launch_guest(manifest: &'static mut Manifest<Statics<Arch>>) {
     );
     let frame = allocator
         .allocate_frame()
-        .expect("Failed to allocate VMXON");
+        .expect("Failed to allocate VMXON")
+        .zeroed();
     unsafe {
         println!("Init the guest");
         let vmxon = match vmx::vmxon(frame) {
@@ -129,19 +130,23 @@ impl<'vcpu> Guest for VmxGuest<'vcpu, 'vcpu> {
                     dump(vcpu);
                     Ok(HandlerResult::Exit)
                 } else {
-                    match self.hypercalls.dispatch(self.allocator, vcpu, params) {
+                    let advance = match self.hypercalls.dispatch(self.allocator, vcpu, params) {
                         Ok(values) => {
                             vcpu.set(Register::Rax, ErrorCode::Success as u64);
                             vcpu.set(Register::Rcx, values.value_1 as u64);
                             vcpu.set(Register::Rdx, values.value_2 as u64);
                             vcpu.set(Register::Rsi, values.value_3 as u64);
+                            values.next_instr
                         }
                         Err(err) => {
                             dump(vcpu);
                             vcpu.set(Register::Rax, err as u64);
+                            true
                         }
+                    };
+                    if advance {
+                        vcpu.next_instruction()?;
                     }
-                    vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
             }
@@ -272,7 +277,10 @@ pub unsafe fn init_vm<'vmx>(
     vmxon: &'vmx vmx::Vmxon,
     allocator: &impl FrameAllocator,
 ) -> vmx::VmcsRegion<'vmx> {
-    let frame = allocator.allocate_frame().expect("Failed to allocate VMCS");
+    let frame = allocator
+        .allocate_frame()
+        .expect("Failed to allocate VMCS")
+        .zeroed();
     match vmxon.create_vm(frame) {
         Err(err) => {
             println!("VMCS: Err({:?})", err);
@@ -293,7 +301,8 @@ pub unsafe fn init_vcpu<'active, 'vmx>(
     default_vmcs_config(vcpu, info, false);
     let bit_frame = allocator
         .allocate_frame()
-        .expect("Failed to allocate MSR bitmaps");
+        .expect("Failed to allocate MSR bitmaps")
+        .zeroed();
     let msr_bitmaps = vcpu
         .initialize_msr_bitmaps(bit_frame)
         .expect("Failed to install MSR bitmaps");

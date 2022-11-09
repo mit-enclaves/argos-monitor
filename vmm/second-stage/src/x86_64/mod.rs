@@ -112,7 +112,10 @@ impl Backend for Arch {
         store: &mut Store,
         allocator: &impl FrameAllocator,
     ) -> Result<(), ErrorCode> {
-        let ept = allocator.allocate_frame().ok_or(ErrorCode::OutOfMemory)?;
+        let ept = allocator
+            .allocate_frame()
+            .ok_or(ErrorCode::OutOfMemory)?
+            .zeroed();
         store.ept = ept.phys_addr;
         Ok(())
     }
@@ -123,7 +126,13 @@ impl Backend for Arch {
         vcpu.set(Register::Rsp, store.stack.as_u64());
         vcpu.set_ept_ptr(HostPhysAddr::new(store.ept.as_usize() | EPT_ROOT_FLAGS))
             .map_err(|_| ErrorCode::DomainSwitchFailed)?;
-        Ok(Registers::default())
+        Ok(Registers {
+            value_1: 0,
+            value_2: 0,
+            value_3: 0,
+            value_4: 0,
+            next_instr: false,
+        })
     }
 
     fn domain_seal(

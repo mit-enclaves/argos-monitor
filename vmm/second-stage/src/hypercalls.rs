@@ -71,6 +71,7 @@ pub struct Registers {
     pub value_2: usize,
     pub value_3: usize,
     pub value_4: usize,
+    pub next_instr: bool,
 }
 
 pub type HypercallResult = Result<Registers, ErrorCode>;
@@ -82,6 +83,7 @@ impl Default for Registers {
             value_2: 0,
             value_3: 0,
             value_4: 0,
+            next_instr: true,
         }
     }
 }
@@ -605,6 +607,7 @@ where
             value_2: region.end,
             value_3: flags,
             value_4: 0,
+            next_instr: true,
         })
     }
 
@@ -638,6 +641,7 @@ where
                 value_2: store[offset + 1].into(),
                 value_3: store[offset + 2].into(),
                 value_4: 0,
+                next_instr: true,
             },
             _ => return Err(ErrorCode::BadParameters),
         };
