@@ -121,14 +121,16 @@ impl Backend for Arch {
     }
 
     fn domain_switch<'a>(&mut self, store: &Store, vcpu: &mut Self::Vcpu<'a>) -> HypercallResult {
+        // Capture the passed argument and forward it in the result.
+        let args = vcpu.get(Register::Rdx);
         vcpu.set_cr(ControlRegister::Cr3, store.cr3.as_usize());
         vcpu.set(Register::Rip, store.entry.as_u64());
         vcpu.set(Register::Rsp, store.stack.as_u64());
         vcpu.set_ept_ptr(HostPhysAddr::new(store.ept.as_usize() | EPT_ROOT_FLAGS))
             .map_err(|_| ErrorCode::DomainSwitchFailed)?;
         Ok(Registers {
-            value_1: 0,
-            value_2: 0,
+            value_1: 0, // TODO leave room for the return handle.
+            value_2: args as usize,
             value_3: 0,
             value_4: 0,
             next_instr: false,
