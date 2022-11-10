@@ -477,9 +477,16 @@ where
 
         // Call the backend to effect the changes.
         let region = &self.regions_arena[handle];
-        let store = &mut self.domains_arena[domain_handle].store;
-        self.backend.remove_region(store, region, allocator)?;
-        self.backend.add_region(store, region, allocator)?;
+        self.backend.remove_region(
+            &mut self.domains_arena[*self.current_domain].store,
+            region,
+            allocator,
+        )?;
+        self.backend.add_region(
+            &mut self.domains_arena[domain_handle].store,
+            region,
+            allocator,
+        )?;
 
         Ok(Registers {
             value_1: new_region_capa.into(),
