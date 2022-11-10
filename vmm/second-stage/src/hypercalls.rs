@@ -1,7 +1,9 @@
 //! Applicatioe Binary Interface
 
 use crate::arena::{ArenaItem, Handle, TypedArena};
-use crate::statics::{Statics, NB_DOMAINS, NB_REGIONS, NB_REGIONS_PER_DOMAIN};
+use crate::statics::{
+    Statics, NB_DOMAINS, NB_REGIONS, NB_REGIONS_PER_DOMAIN, NB_SWITCH_PER_DOMAIN,
+};
 use mmu::FrameAllocator;
 use stage_two_abi::Manifest;
 
@@ -21,6 +23,7 @@ pub mod vmcalls {
     pub const EXIT: usize                = 0x500;
     pub const DEBUG_IOMMU: usize         = 0x600;
     pub const TRANSITION: usize          = 0x999;
+    pub const TRANS_RETURN: usize        = 0x998; //TODO merge with transition. 
 }
 
 // —————————————————————————————— Error Codes ——————————————————————————————— //
@@ -46,6 +49,8 @@ pub enum ErrorCode {
     RegionIsShared = 15,
     DomainIsUnsealed = 16,
     DomainSwitchFailed = 17,
+    DomainSwitchOutOfBound = 18,
+    InvalidSwitch = 19,
 }
 
 // ————————————————————————————————— Flags —————————————————————————————————— //
@@ -113,7 +118,15 @@ pub trait Backend: Sized + 'static {
 
     fn domain_switch<'a>(
         &mut self,
-        store: &Self::Store,
+        caller: usize,
+        domain: &mut Domain<Self>,
+        vcpu: &mut Self::Vcpu<'a>,
+    ) -> HypercallResult;
+
+    fn domain_return<'a>(
+        &mut self,
+        target: &Self::Store,
+        switch: &Switch<Self>,
         vcpu: &mut Self::Vcpu<'a>,
     ) -> HypercallResult;
 
@@ -141,6 +154,7 @@ pub type RegionArena = TypedArena<Region, NB_REGIONS>;
 pub type DomainHandle<S> = Handle<Domain<S>, NB_DOMAINS>;
 pub type RegionHandle = Handle<Region, NB_REGIONS>;
 pub type RegionCapaHandle = Handle<RegionCapability, NB_REGIONS_PER_DOMAIN>;
+pub type SwitchHandle<S> = Handle<Switch<S>, NB_SWITCH_PER_DOMAIN>;
 
 pub struct Domain<B>
 where
@@ -152,6 +166,7 @@ where
     pub nb_initial_regions: usize,
     pub initial_regions_capa: [RegionCapaHandle; NB_REGIONS_PER_DOMAIN],
     pub store: B::Store,
+    pub switches: TypedArena<Switch<B>, NB_SWITCH_PER_DOMAIN>,
 }
 
 pub struct Region {
@@ -166,6 +181,19 @@ pub struct RegionCapability {
     pub is_shared: bool,
     pub is_valid: bool,
     pub handle: RegionHandle,
+}
+
+/// A backend-specific saved context upon transition.
+pub struct Switch<B>
+where
+    B: Backend,
+{
+    // The handle is correct.
+    pub is_valid: bool,
+    // The domain that invoked the current one.
+    pub domain: usize,
+    // The state that needs to be saved.
+    pub store: B::Store,
 }
 
 impl<B> Domain<B>
@@ -237,6 +265,21 @@ impl RegionCapability {
     }
 }
 
+impl<B> Switch<B>
+where
+    B: Backend,
+{
+    pub fn is_valid(&self) -> Result<(), ErrorCode> {
+        match self.is_valid {
+            true => Ok(()),
+            false => Err(ErrorCode::InvalidSwitch),
+        }
+    }
+    pub fn reset(&mut self) {
+        self.is_valid = false;
+    }
+}
+
 impl<B> ArenaItem for Domain<B>
 where
     B: Backend,
@@ -255,6 +298,15 @@ impl ArenaItem for Region {
 impl ArenaItem for RegionCapability {
     type Error = ErrorCode;
     const OUT_OF_BOUND_ERROR: ErrorCode = ErrorCode::RegionCapaOutOfBound;
+    const ALLOCATION_ERROR: Self::Error = ErrorCode::OutOfMemory;
+}
+
+impl<B> ArenaItem for Switch<B>
+where
+    B: Backend,
+{
+    type Error = ErrorCode;
+    const OUT_OF_BOUND_ERROR: ErrorCode = ErrorCode::DomainSwitchOutOfBound;
     const ALLOCATION_ERROR: Self::Error = ErrorCode::OutOfMemory;
 }
 
@@ -366,7 +418,7 @@ where
             )
             .expect("Failed to add root region");
         backend
-            .domain_switch(&mut root_domain.store, vcpu)
+            .domain_switch(0, root_domain, vcpu)
             .expect("Failed to switch to root domain");
 
         root_domain.nb_initial_regions = 1;
@@ -391,6 +443,7 @@ where
                 self.domain_share_region(allocator, params.arg_1, params.arg_2)
             }
             vmcalls::TRANSITION => self.domain_switch(params.arg_1, vcpu),
+            vmcalls::TRANS_RETURN => self.domain_return(params.arg_1, vcpu),
             vmcalls::REGION_SPLIT => self.region_split(params.arg_1, params.arg_2),
             vmcalls::REGION_GET_INFO => self.region_get_info(params.arg_1),
             vmcalls::CONFIG_NB_REGIONS => self.config_nb_regions(),
@@ -544,13 +597,35 @@ where
 
     fn domain_switch<'a>(&mut self, domain: usize, vcpu: &mut B::Vcpu<'a>) -> HypercallResult {
         let domain_handle = domain.try_into()?;
-        let domain = &mut self.domains_arena[domain_handle];
+        let mut domain = &mut self.domains_arena[domain_handle];
+        let caller = *self.current_domain;
 
         // Check that domain is valid and sealed.
         domain.is_valid()?;
         domain.is_sealed()?;
+        // Switch the current domain.
+        *self.current_domain = domain_handle;
+        self.backend.domain_switch(caller.into(), &mut domain, vcpu)
+    }
 
-        self.backend.domain_switch(&domain.store, vcpu)
+    fn domain_return<'a>(&mut self, handle: usize, vcpu: &mut B::Vcpu<'a>) -> HypercallResult {
+        let current = &self.domains_arena[*self.current_domain];
+        let switch_context = &current.switches[handle.try_into()?];
+        switch_context.is_valid()?;
+        let domain = switch_context.domain;
+        let target = &self.domains_arena[domain.try_into()?];
+        let res = self
+            .backend
+            .domain_return(&target.store, switch_context, vcpu);
+
+        // Now mutable borrows
+        let current = &mut self.domains_arena[*self.current_domain];
+        let switch_context = &mut current.switches[handle.try_into()?];
+        switch_context.reset();
+
+        // Switch back to the current new domain.
+        *self.current_domain = domain.try_into()?;
+        return res;
     }
 
     /// Split a region at the given address.

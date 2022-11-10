@@ -19,7 +19,7 @@ pub trait Guest {
 
     fn main_loop(&mut self) {
         let mut result = self.launch();
-        let mut counter = 0;
+        //let mut counter = 0;
         loop {
             let exit_reason = match result {
                 Ok(exit_reason) => self
@@ -37,11 +37,11 @@ pub trait Guest {
             }
 
             // Shutdown after too many VM exits
-            counter += 1;
+            /*counter += 1;
             if counter >= 200000 {
                 println!("Too many iterations: stoping guest");
                 break;
-            }
+            }*/
 
             // Resume VM
             result = self.resume();

@@ -14,7 +14,7 @@
 
 use crate::allocator::{Page, PAGE_SIZE};
 use crate::arena::{Handle, TypedArena};
-use crate::hypercalls::{Backend, Domain, Region, RegionCapability};
+use crate::hypercalls::{Backend, Domain, Region, RegionCapability, Switch};
 use stage_two_abi::make_static;
 
 // ————————————————————— Static Resources Configuration ————————————————————— //
@@ -23,6 +23,7 @@ pub const NB_PAGES: usize = 200;
 pub const NB_DOMAINS: usize = 16;
 pub const NB_REGIONS: usize = 64;
 pub const NB_REGIONS_PER_DOMAIN: usize = 46;
+pub const NB_SWITCH_PER_DOMAIN: usize = 10;
 
 // —————————————————————— Static Resources Declaration —————————————————————— //
 
@@ -39,6 +40,12 @@ const EMPTY_REGION_CAPABILITY: RegionCapability = RegionCapability {
 
 type Arch = crate::x86_64::Arch;
 
+const EMPTY_SWITCH: Switch<Arch> = Switch {
+    is_valid: false,
+    domain: 0,
+    store: <Arch as Backend>::EMPTY_STORE,
+};
+
 const EMPTY_DOMAIN: Domain<Arch> = Domain {
     is_sealed: false,
     is_valid: false,
@@ -46,6 +53,7 @@ const EMPTY_DOMAIN: Domain<Arch> = Domain {
     nb_initial_regions: 0,
     initial_regions_capa: [Handle::new_unchecked(0); NB_REGIONS_PER_DOMAIN],
     store: <Arch as Backend>::EMPTY_STORE,
+    switches: TypedArena::new([EMPTY_SWITCH; NB_SWITCH_PER_DOMAIN]),
 };
 
 const EMPTY_REGION: Region = Region {

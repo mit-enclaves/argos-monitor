@@ -4,14 +4,15 @@ mod arch;
 pub mod guest;
 
 use crate::debug::ExitCode;
+use crate::hypercalls::Domain;
 use crate::hypercalls::{Backend, ErrorCode, HypercallResult, Region, Registers};
 use crate::println;
-use crate::statics;
+use crate::statics::{self};
 use core::arch::asm;
 use mmu::eptmapper::{EPT_PRESENT, EPT_ROOT_FLAGS};
 use mmu::{EptMapper, FrameAllocator};
 use stage_two_abi::Manifest;
-use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
+use utils::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
 use vmx::bitmaps::EptEntryFlags;
 use vmx::{ActiveVmcs, ControlRegister, Register};
 use vtd::Iommu;
@@ -23,8 +24,8 @@ pub struct Arch {
 pub struct Store {
     ept: HostPhysAddr,
     cr3: GuestPhysAddr,
-    entry: GuestPhysAddr,
-    stack: GuestPhysAddr,
+    entry: GuestVirtAddr,
+    stack: GuestVirtAddr,
 }
 
 impl Arch {
@@ -46,8 +47,8 @@ impl Backend for Arch {
     const EMPTY_STORE: Self::Store = Store {
         ept: HostPhysAddr::new(0),
         cr3: GuestPhysAddr::new(0),
-        entry: GuestPhysAddr::new(0),
-        stack: GuestPhysAddr::new(0),
+        entry: GuestVirtAddr::new(0),
+        stack: GuestVirtAddr::new(0),
     };
 
     fn debug_iommu(&mut self) -> HypercallResult {
@@ -120,21 +121,51 @@ impl Backend for Arch {
         Ok(())
     }
 
-    fn domain_switch<'a>(&mut self, store: &Store, vcpu: &mut Self::Vcpu<'a>) -> HypercallResult {
+    fn domain_switch<'a>(
+        &mut self,
+        caller: usize,
+        domain: &mut Domain<Self>,
+        vcpu: &mut Self::Vcpu<'a>,
+    ) -> HypercallResult {
         // Capture the passed argument and forward it in the result.
         let args = vcpu.get(Register::Rdx);
-        vcpu.set_cr(ControlRegister::Cr3, store.cr3.as_usize());
-        vcpu.set(Register::Rip, store.entry.as_u64());
-        vcpu.set(Register::Rsp, store.stack.as_u64());
-        vcpu.set_ept_ptr(HostPhysAddr::new(store.ept.as_usize() | EPT_ROOT_FLAGS))
-            .map_err(|_| ErrorCode::DomainSwitchFailed)?;
+        let switch_handle = domain.switches.allocate()?;
+        let switch = &mut domain.switches[switch_handle];
+        switch.domain = caller;
+        switch.store.ept = HostPhysAddr::new(0);
+        switch.store.cr3 = GuestPhysAddr::new(vcpu.get_cr(ControlRegister::Cr3));
+        switch.store.stack = GuestVirtAddr::new(vcpu.get(Register::Rsp) as usize);
+        switch.store.entry = GuestVirtAddr::new(vcpu.get(Register::Rip) as usize);
+        switch.is_valid = true;
+        vcpu.set_cr(ControlRegister::Cr3, domain.store.cr3.as_usize());
+        vcpu.set(Register::Rip, domain.store.entry.as_u64());
+        vcpu.set(Register::Rsp, domain.store.stack.as_u64());
+        vcpu.set_ept_ptr(HostPhysAddr::new(
+            domain.store.ept.as_usize() | EPT_ROOT_FLAGS,
+        ))
+        .map_err(|_| ErrorCode::DomainSwitchFailed)?;
         Ok(Registers {
-            value_1: 0, // TODO leave room for the return handle.
+            value_1: switch_handle.into(),
             value_2: args as usize,
             value_3: 0,
             value_4: 0,
             next_instr: false,
         })
+    }
+
+    fn domain_return<'a>(
+        &mut self,
+        store: &Self::Store,
+        switch: &crate::hypercalls::Switch<Self>,
+        vcpu: &mut Self::Vcpu<'a>,
+    ) -> HypercallResult {
+        vcpu.set_ept_ptr(HostPhysAddr::new(store.ept.as_usize() | EPT_ROOT_FLAGS))
+            .map_err(|_| ErrorCode::DomainSwitchFailed)?;
+        vcpu.set(Register::Rip, switch.store.entry.as_u64());
+        vcpu.set(Register::Rsp, switch.store.stack.as_u64());
+        vcpu.set_cr(ControlRegister::Cr3, switch.store.cr3.as_usize());
+        //TODO pass results in registers.
+        Ok(Default::default())
     }
 
     fn domain_seal(
@@ -145,8 +176,8 @@ impl Backend for Arch {
         reg_3: usize,
     ) -> Result<(), ErrorCode> {
         store.cr3 = GuestPhysAddr::new(reg_1);
-        store.entry = GuestPhysAddr::new(reg_2);
-        store.stack = GuestPhysAddr::new(reg_3);
+        store.entry = GuestVirtAddr::new(reg_2);
+        store.stack = GuestVirtAddr::new(reg_3);
         Ok(())
     }
 }
