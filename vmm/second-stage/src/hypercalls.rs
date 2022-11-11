@@ -22,8 +22,7 @@ pub mod vmcalls {
     pub const CONFIG_READ_REGION: usize  = 0x401;
     pub const EXIT: usize                = 0x500;
     pub const DEBUG_IOMMU: usize         = 0x600;
-    pub const TRANSITION: usize          = 0x999;
-    pub const TRANS_RETURN: usize        = 0x998; //TODO merge with transition. 
+    pub const DOMAIN_SWITCH: usize       = 0x999;
 }
 
 // —————————————————————————————— Error Codes ——————————————————————————————— //
@@ -99,16 +98,19 @@ pub trait Backend: Sized + 'static {
     type Vcpu<'a>;
 
     type Store;
+    type Context;
 
     const EMPTY_STORE: Self::Store;
+    const EMPTY_CONTEXT: Self::Context;
 
     fn domain_seal(
         &mut self,
-        store: &mut Self::Store,
+        target: usize,
+        current: &mut Domain<Self>,
         reg_1: usize,
         reg_2: usize,
         reg_3: usize,
-    ) -> Result<(), ErrorCode>;
+    ) -> HypercallResult;
 
     fn domain_create(
         &mut self,
@@ -116,19 +118,18 @@ pub trait Backend: Sized + 'static {
         allocator: &impl FrameAllocator,
     ) -> Result<(), ErrorCode>;
 
-    fn domain_switch<'a>(
+    fn domain_restore<'a>(
         &mut self,
-        caller: usize,
-        domain: &mut Domain<Self>,
+        store: &Self::Store,
+        context: &Self::Context,
         vcpu: &mut Self::Vcpu<'a>,
-    ) -> HypercallResult;
+    ) -> Result<(), ErrorCode>;
 
-    fn domain_return<'a>(
+    fn domain_save<'a>(
         &mut self,
-        target: &Self::Store,
-        switch: &Switch<Self>,
+        context: &mut Self::Context,
         vcpu: &mut Self::Vcpu<'a>,
-    ) -> HypercallResult;
+    ) -> Result<(), ErrorCode>;
 
     fn add_region(
         &mut self,
@@ -183,17 +184,17 @@ pub struct RegionCapability {
     pub handle: RegionHandle,
 }
 
-/// A backend-specific saved context upon transition.
+/// A structure that represents the ability to transition into a domain.
 pub struct Switch<B>
 where
     B: Backend,
 {
     // The handle is correct.
     pub is_valid: bool,
-    // The domain that invoked the current one.
+    // The target domain.
     pub domain: usize,
     // The state that needs to be saved.
-    pub store: B::Store,
+    pub context: B::Context,
 }
 
 impl<B> Domain<B>
@@ -417,13 +418,12 @@ where
                 allocator,
             )
             .expect("Failed to add root region");
+        let fake_context = B::EMPTY_CONTEXT;
         backend
-            .domain_switch(0, root_domain, vcpu)
+            .domain_restore(&root_domain.store, &fake_context, vcpu)
             .expect("Failed to switch to root domain");
-
         root_domain.nb_initial_regions = 1;
         root_domain.initial_regions_capa[0] = root_region_capa;
-
         handle
     }
 
@@ -442,8 +442,7 @@ where
             vmcalls::DOMAIN_SHARE_REGION => {
                 self.domain_share_region(allocator, params.arg_1, params.arg_2)
             }
-            vmcalls::TRANSITION => self.domain_switch(params.arg_1, vcpu),
-            vmcalls::TRANS_RETURN => self.domain_return(params.arg_1, vcpu),
+            vmcalls::DOMAIN_SWITCH => self.domain_switch(params.arg_1, vcpu),
             vmcalls::REGION_SPLIT => self.region_split(params.arg_1, params.arg_2),
             vmcalls::REGION_GET_INFO => self.region_get_info(params.arg_1),
             vmcalls::CONFIG_NB_REGIONS => self.config_nb_regions(),
@@ -460,8 +459,8 @@ where
         params.vmcall == vmcalls::EXIT
     }
 
-    pub fn is_transition(&self, params: &Parameters) -> bool {
-        params.vmcall == vmcalls::TRANSITION
+    pub fn is_switch(&self, params: &Parameters) -> bool {
+        params.vmcall == vmcalls::DOMAIN_SWITCH
     }
 
     /// Returns the Domain ID of the current domain.
@@ -595,37 +594,53 @@ where
         })
     }
 
-    fn domain_switch<'a>(&mut self, domain: usize, vcpu: &mut B::Vcpu<'a>) -> HypercallResult {
-        let domain_handle = domain.try_into()?;
-        let mut domain = &mut self.domains_arena[domain_handle];
-        let caller = *self.current_domain;
-
-        // Check that domain is valid and sealed.
-        domain.is_valid()?;
-        domain.is_sealed()?;
-        // Switch the current domain.
-        *self.current_domain = domain_handle;
-        self.backend.domain_switch(caller.into(), &mut domain, vcpu)
-    }
-
-    fn domain_return<'a>(&mut self, handle: usize, vcpu: &mut B::Vcpu<'a>) -> HypercallResult {
-        let current = &self.domains_arena[*self.current_domain];
-        let switch_context = &current.switches[handle.try_into()?];
-        switch_context.is_valid()?;
-        let domain = switch_context.domain;
-        let target = &self.domains_arena[domain.try_into()?];
-        let res = self
-            .backend
-            .domain_return(&target.store, switch_context, vcpu);
-
-        // Now mutable borrows
-        let current = &mut self.domains_arena[*self.current_domain];
-        let switch_context = &mut current.switches[handle.try_into()?];
-        switch_context.reset();
-
-        // Switch back to the current new domain.
-        *self.current_domain = domain.try_into()?;
-        return res;
+    fn domain_switch<'a>(&mut self, handle: usize, vcpu: &mut B::Vcpu<'a>) -> HypercallResult {
+        // Identify the current domain.
+        let caller = {
+            let interm = *self.current_domain;
+            interm.into()
+        };
+        // Check the transition handle is valid.
+        let switch_domain = {
+            let current = &self.domains_arena[*self.current_domain];
+            let switch_context = &current.switches[handle.try_into()?];
+            switch_context.is_valid()?;
+            switch_context.domain
+        };
+        // Save the current context and create a return handle.
+        let ret_handle = {
+            let target = &mut self.domains_arena[switch_domain.try_into()?];
+            let ret_handle = target.switches.allocate()?;
+            let ret_switch = &mut target.switches[ret_handle.into()];
+            self.backend.domain_save(&mut ret_switch.context, vcpu)?;
+            ret_switch.is_valid = true;
+            ret_switch.domain = caller;
+            ret_handle.into()
+        };
+        // Restore the previous context.
+        {
+            let target = &self.domains_arena[switch_domain.try_into()?];
+            let current = &self.domains_arena[*self.current_domain];
+            let switch_context = &current.switches[handle.try_into()?].context;
+            target.is_valid()?;
+            target.is_sealed()?;
+            self.backend
+                .domain_restore(&target.store, &switch_context, vcpu)?;
+        }
+        // Reset
+        {
+            let current = &mut self.domains_arena[*self.current_domain];
+            let switch_context = &mut current.switches[handle.try_into()?];
+            switch_context.reset();
+        }
+        *self.current_domain = switch_domain.try_into()?;
+        return Ok(Registers {
+            value_1: ret_handle,
+            value_2: 0,
+            value_3: 0,
+            value_4: 0,
+            next_instr: false,
+        });
     }
 
     /// Split a region at the given address.
@@ -744,10 +759,9 @@ where
         // Check that domain can be sealed
         domain.is_valid()?;
         domain.is_unsealed()?;
-
-        self.backend
-            .domain_seal(&mut domain.store, reg_1, reg_2, reg_3)?;
         domain.is_sealed = true;
-        Ok(Default::default())
+        let domain = &mut self.domains_arena[*self.current_domain];
+        self.backend
+            .domain_seal(handle, domain, reg_1, reg_2, reg_3)
     }
 }

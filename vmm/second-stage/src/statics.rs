@@ -43,7 +43,7 @@ type Arch = crate::x86_64::Arch;
 const EMPTY_SWITCH: Switch<Arch> = Switch {
     is_valid: false,
     domain: 0,
-    store: <Arch as Backend>::EMPTY_STORE,
+    context: <Arch as Backend>::EMPTY_CONTEXT,
 };
 
 const EMPTY_DOMAIN: Domain<Arch> = Domain {

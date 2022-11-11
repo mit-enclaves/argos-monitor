@@ -21,11 +21,14 @@ pub struct Arch {
     iommu: Option<Iommu>,
 }
 
-pub struct Store {
-    ept: HostPhysAddr,
+pub struct Context {
     cr3: GuestPhysAddr,
     entry: GuestVirtAddr,
     stack: GuestVirtAddr,
+}
+
+pub struct Store {
+    ept: HostPhysAddr,
 }
 
 impl Arch {
@@ -44,8 +47,13 @@ impl Backend for Arch {
 
     type Store = Store;
 
+    type Context = Context;
+
     const EMPTY_STORE: Self::Store = Store {
         ept: HostPhysAddr::new(0),
+    };
+
+    const EMPTY_CONTEXT: Self::Context = Context {
         cr3: GuestPhysAddr::new(0),
         entry: GuestVirtAddr::new(0),
         stack: GuestVirtAddr::new(0),
@@ -121,64 +129,52 @@ impl Backend for Arch {
         Ok(())
     }
 
-    fn domain_switch<'a>(
+    fn domain_save<'a>(
         &mut self,
-        caller: usize,
-        domain: &mut Domain<Self>,
+        context: &mut Self::Context,
         vcpu: &mut Self::Vcpu<'a>,
-    ) -> HypercallResult {
-        // Capture the passed argument and forward it in the result.
-        let args = vcpu.get(Register::Rdx);
-        let switch_handle = domain.switches.allocate()?;
-        let switch = &mut domain.switches[switch_handle];
-        switch.domain = caller;
-        switch.store.ept = HostPhysAddr::new(0);
-        switch.store.cr3 = GuestPhysAddr::new(vcpu.get_cr(ControlRegister::Cr3));
-        switch.store.stack = GuestVirtAddr::new(vcpu.get(Register::Rsp) as usize);
-        switch.store.entry = GuestVirtAddr::new(vcpu.get(Register::Rip) as usize);
-        switch.is_valid = true;
-        vcpu.set_cr(ControlRegister::Cr3, domain.store.cr3.as_usize());
-        vcpu.set(Register::Rip, domain.store.entry.as_u64());
-        vcpu.set(Register::Rsp, domain.store.stack.as_u64());
-        vcpu.set_ept_ptr(HostPhysAddr::new(
-            domain.store.ept.as_usize() | EPT_ROOT_FLAGS,
-        ))
-        .map_err(|_| ErrorCode::DomainSwitchFailed)?;
-        Ok(Registers {
-            value_1: switch_handle.into(),
-            value_2: args as usize,
-            value_3: 0,
-            value_4: 0,
-            next_instr: false,
-        })
+    ) -> Result<(), ErrorCode> {
+        vcpu.next_instruction()
+            .expect("Failed to advance instruction");
+        context.cr3 = GuestPhysAddr::new(vcpu.get_cr(ControlRegister::Cr3));
+        context.entry = GuestVirtAddr::new(vcpu.get(Register::Rip) as usize);
+        context.stack = GuestVirtAddr::new(vcpu.get(Register::Rsp) as usize);
+        Ok(())
     }
 
-    fn domain_return<'a>(
+    fn domain_restore<'a>(
         &mut self,
         store: &Self::Store,
-        switch: &crate::hypercalls::Switch<Self>,
+        context: &Self::Context,
         vcpu: &mut Self::Vcpu<'a>,
-    ) -> HypercallResult {
+    ) -> Result<(), ErrorCode> {
         vcpu.set_ept_ptr(HostPhysAddr::new(store.ept.as_usize() | EPT_ROOT_FLAGS))
             .map_err(|_| ErrorCode::DomainSwitchFailed)?;
-        vcpu.set(Register::Rip, switch.store.entry.as_u64());
-        vcpu.set(Register::Rsp, switch.store.stack.as_u64());
-        vcpu.set_cr(ControlRegister::Cr3, switch.store.cr3.as_usize());
-        //TODO pass results in registers.
-        Ok(Default::default())
+        vcpu.set_cr(ControlRegister::Cr3, context.cr3.as_usize());
+        vcpu.set(Register::Rip, context.entry.as_u64());
+        vcpu.set(Register::Rsp, context.stack.as_u64());
+        Ok(())
     }
 
     fn domain_seal(
         &mut self,
-        store: &mut Self::Store,
+        target: usize,
+        current: &mut Domain<Self>,
         reg_1: usize,
         reg_2: usize,
         reg_3: usize,
-    ) -> Result<(), ErrorCode> {
-        store.cr3 = GuestPhysAddr::new(reg_1);
-        store.entry = GuestVirtAddr::new(reg_2);
-        store.stack = GuestVirtAddr::new(reg_3);
-        Ok(())
+    ) -> HypercallResult {
+        let switch_handle = current.switches.allocate()?;
+        let switch = &mut current.switches[switch_handle];
+        switch.domain = target;
+        switch.context.cr3 = GuestPhysAddr::new(reg_1);
+        switch.context.entry = GuestVirtAddr::new(reg_2);
+        switch.context.stack = GuestVirtAddr::new(reg_3);
+        switch.is_valid = true;
+        Ok(Registers {
+            value_1: switch_handle.into(),
+            ..Default::default()
+        })
     }
 }
 
