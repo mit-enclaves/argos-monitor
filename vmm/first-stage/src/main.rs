@@ -13,10 +13,10 @@ use first_stage::guests;
 use first_stage::guests::Guest;
 use first_stage::mmu::MemoryMap;
 use first_stage::println;
-use first_stage::qemu;
 use first_stage::second_stage;
 use first_stage::{HostPhysAddr, HostVirtAddr};
 use mmu::{FrameAllocator, PtMapper};
+use qemu;
 use vmx;
 use vtd;
 use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
@@ -153,6 +153,7 @@ fn launch_guest(
         );
     }
     qemu::exit(qemu::ExitCode::Failure);
+    first_stage::hlt_loop();
 }
 
 fn initialize_cpu() {
@@ -183,10 +184,12 @@ fn panic(info: &PanicInfo) -> ! {
     println!("{}", info);
 
     qemu::exit(qemu::ExitCode::Failure);
+    first_stage::hlt_loop();
 }
 
 #[cfg(test)]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     first_stage::test_panic_handler(info);
+    first_stage::hlt_loop();
 }

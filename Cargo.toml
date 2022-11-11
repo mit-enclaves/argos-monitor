@@ -9,10 +9,12 @@ resolver = "2"
 members = [
     "vmm/first-stage",
     "vmm/second-stage",
+    "vmm/fake-acm",
     "crates/stage_two_abi",
     "crates/vmx",
     "crates/vtd",
     "crates/mmu",
+    "crates/qemu",
     "crates/debug",
     "crates/utils",
     "crates/libtyche",

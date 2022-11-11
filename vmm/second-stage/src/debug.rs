@@ -7,26 +7,7 @@
 
 #[cfg(target_arch = "x86_64")]
 pub mod serial {
-    use core::fmt;
-    use core::fmt::Write;
-    use uart_16550::SerialPort;
-
-    /// Serial port used to log to stdout when running in Qemu.
-    //  TODO: wrap port in mutex
-    static mut SERIAL_PORT: SerialPort = unsafe { SerialPort::new(0x3F8) };
-
-    /// Internal function used to print to stdout when running in Qemu.
-    pub fn _print(args: fmt::Arguments) {
-        // SAFETY:
-        //
-        // For now we are running in single-threaded mode, and the interrupts are disabled within the
-        // VMM.
-        unsafe {
-            SERIAL_PORT
-                .write_fmt(args)
-                .expect("Printing to serial failed");
-        }
-    }
+    pub use qemu::_print;
 }
 
 #[cfg(target_arch = "riscv64")]
@@ -54,36 +35,20 @@ macro_rules! println {
 
 // —————————————————————————————————— Qemu —————————————————————————————————— //
 
-#[derive(Clone, Copy)]
-#[repr(u32)]
-pub enum ExitCode {
-    Success = 0x10,
-    Failure = 0x11,
-}
-
-impl ExitCode {
-    pub fn to_str(self) -> &'static str {
-        match self {
-            ExitCode::Success => "Success",
-            ExitCode::Failure => "Failure",
-        }
-    }
-}
-
 pub mod qemu {
-    #[cfg(target_arch = "x86_64")]
-    use crate::x86_64::{exit_qemu, hlt};
     #[cfg(target_arch = "riscv64")]
-    use crate::riscv::{exit_qemu, hlt};
+    use crate::riscv::hlt;
+    #[cfg(target_arch = "x86_64")]
+    use crate::x86_64::hlt;
 
-    pub use super::ExitCode;
+    pub use qemu::ExitCode;
 
     pub fn exit(exit_code: ExitCode) -> ! {
         println!("========= Exiting Second Stage =========");
         println!("{}", exit_code.to_str());
         println!("========================================");
 
-        exit_qemu(exit_code);
+        qemu::exit(exit_code);
         hlt();
     }
 }

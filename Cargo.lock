@@ -91,6 +91,10 @@ name = "debug"
 version = "0.1.0"
 
 [[package]]
+name = "fake-acm"
+version = "0.1.0"
+
+[[package]]
 name = "first-stage"
 version = "0.1.0"
 dependencies = [
@@ -101,9 +105,9 @@ dependencies = [
  "lazy_static",
  "mmu",
  "pic8259",
+ "qemu",
  "spin",
  "stage_two_abi",
- "uart_16550",
  "vmx",
  "volatile 0.2.7",
  "vtd",
@@ -247,6 +251,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "qemu"
+version = "0.1.0"
+dependencies = [
+ "uart_16550",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -277,8 +288,8 @@ version = "0.1.0"
 dependencies = [
  "debug",
  "mmu",
+ "qemu",
  "stage_two_abi",
- "uart_16550",
  "utils",
  "vmx",
  "vtd",

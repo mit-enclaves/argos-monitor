@@ -3,11 +3,11 @@
 mod arch;
 pub mod guest;
 
-use crate::debug::ExitCode;
-use crate::hypercalls::{access, Domain};
-use crate::hypercalls::{Backend, ErrorCode, HypercallResult, Region, Registers};
+use crate::debug::qemu::ExitCode;
+use crate::hypercalls::access;
+use crate::hypercalls::{Backend, Domain, ErrorCode, HypercallResult, Region, Registers};
 use crate::println;
-use crate::statics::{self};
+use crate::statics;
 use core::arch::asm;
 use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator};

@@ -10,6 +10,7 @@ cargo_args     := build_std + " " + build_features
 linker-script  := "RUSTFLAGS='-C link-arg=-Tsecond-stage-linker-script.x'"
 first-stage    := "--package first-stage --features=first-stage/second-stage"
 second-stage   := "--package second-stage"
+fake-acm       := "--package fake-acm"
 rawc           := "--features=first-stage/guest_rawc"
 linux          := "--features=first-stage/guest_linux"
 no-guest       := "--features=first-stage/no_guest"
@@ -32,6 +33,7 @@ build-riscv:
 check:
 	cargo check {{cargo_args}} {{x86_64}} {{first-stage}}
 	cargo check {{cargo_args}} {{x86_64}} {{second-stage}}
+	cargo check {{cargo_args}} {{x86_64}} {{fake-acm}}
 	cargo check {{cargo_args}} {{riscv}}  {{second-stage}}
 
 # Run rawc guest

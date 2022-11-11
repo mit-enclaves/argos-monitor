@@ -25,7 +25,6 @@ pub mod guests;
 pub mod interrupts;
 pub mod mmu;
 pub mod print;
-pub mod qemu;
 pub mod second_stage;
 pub mod segments;
 pub mod serial;
@@ -114,6 +113,7 @@ pub fn test_panic_handler(info: &PanicInfo) -> ! {
     println!("[failed]\n");
     println!("Error: {}\n", info);
     qemu::exit(qemu::ExitCode::Failure);
+    hlt_loop();
 }
 
 #[cfg(test)]
