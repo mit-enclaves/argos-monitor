@@ -50,6 +50,7 @@ pub enum ErrorCode {
     DomainSwitchFailed = 17,
     DomainSwitchOutOfBound = 18,
     InvalidSwitch = 19,
+    InvalidAccessRights = 20,
 }
 
 // ————————————————————————————————— Flags —————————————————————————————————— //
@@ -58,6 +59,28 @@ pub enum ErrorCode {
 pub mod region {
     pub const OWNED: usize  = 0b001;
     pub const SHARED: usize = 0b010;
+}
+
+pub mod access {
+    use super::ErrorCode;
+
+    pub const NONE: usize = 0b0000;
+    pub const READ: usize = 0b0001;
+    pub const WRITE: usize = 0b0010;
+    pub const EXEC: usize = 0b0100;
+    pub const REVOK: usize = 0b1000;
+    pub const DEFAULT: usize = READ | WRITE | EXEC;
+
+    pub fn is_less(big: usize, small: usize) -> Result<(), ErrorCode> {
+        // We should always have read access, revok should never be called.
+        if small & READ == 0 || big & READ == 0 || big & REVOK != 0 || small & REVOK != 0 {
+            return Err(ErrorCode::InvalidAccessRights);
+        }
+        if (small & WRITE != 0 && big & WRITE == 0) || (small & EXEC != 0 && big & EXEC == 0) {
+            return Err(ErrorCode::InvalidAccessRights);
+        }
+        Ok(())
+    }
 }
 
 // —————————————————————————————————— ABI ——————————————————————————————————— //
@@ -181,6 +204,7 @@ pub struct RegionCapability {
     pub is_owned: bool,
     pub is_shared: bool,
     pub is_valid: bool,
+    pub access: usize,
     pub handle: RegionHandle,
 }
 
@@ -261,6 +285,7 @@ impl RegionCapability {
             is_owned: false,
             is_shared: false,
             is_valid: false,
+            access: access::NONE,
             handle: Handle::new_unchecked(0),
         };
     }
@@ -405,6 +430,7 @@ where
             is_owned: true,
             is_shared: false,
             is_valid: true,
+            access: access::DEFAULT,
             handle: root_region,
         };
         // TODO: initialize properly
@@ -437,10 +463,10 @@ where
             vmcalls::DOMAIN_GET_OWN_ID => self.domain_get_own_id(),
             vmcalls::DOMAIN_CREATE => self.domain_create(allocator),
             vmcalls::DOMAIN_GRANT_REGION => {
-                self.domain_grant_region(allocator, params.arg_1, params.arg_2)
+                self.domain_grant_region(allocator, params.arg_1, params.arg_2, params.arg_3)
             }
             vmcalls::DOMAIN_SHARE_REGION => {
-                self.domain_share_region(allocator, params.arg_1, params.arg_2)
+                self.domain_share_region(allocator, params.arg_1, params.arg_2, params.arg_3)
             }
             vmcalls::DOMAIN_SWITCH => self.domain_switch(params.arg_1, vcpu),
             vmcalls::REGION_SPLIT => self.region_split(params.arg_1, params.arg_2),
@@ -493,6 +519,7 @@ where
         allocator: &impl FrameAllocator,
         domain: usize,
         region: usize,
+        rights: usize,
     ) -> HypercallResult {
         let region_handle: RegionCapaHandle = region.try_into()?;
         let current_domain = &mut self.domains_arena[*self.current_domain];
@@ -503,6 +530,9 @@ where
         region_capa.is_valid()?;
         region_capa.is_owned()?;
         region_capa.is_exclusive()?;
+
+        // Access rights must be smaller or equal than current ones.
+        access::is_less(region_capa.access, rights)?;
 
         let domain_handle = domain.try_into()?;
         let domain = &mut self.domains_arena[domain_handle];
@@ -517,6 +547,7 @@ where
             is_owned: true,
             is_shared: false,
             is_valid: true,
+            access: rights,
             handle,
         };
 
@@ -551,6 +582,7 @@ where
         allocator: &impl FrameAllocator,
         domain: usize,
         region: usize,
+        rights: usize,
     ) -> HypercallResult {
         let region_handle: RegionCapaHandle = region.try_into()?;
         let current_domain = &mut self.domains_arena[*self.current_domain];
@@ -559,6 +591,9 @@ where
 
         // Region must be valid, no need to be owned
         region_capa.is_valid()?;
+
+        // Access rights should be smaller or equal.
+        access::is_less(region_capa.access, rights)?;
 
         let domain_handle = domain.try_into()?;
         let domain = &mut self.domains_arena[domain_handle];
@@ -573,6 +608,7 @@ where
             is_owned: false,
             is_shared: true,
             is_valid: true,
+            access: rights,
             handle,
         };
 
@@ -649,6 +685,7 @@ where
         let domain = &mut self.domains_arena[*self.current_domain];
         let old_region_capa = &mut domain.regions[old_region_handle];
         let old_region_handle = old_region_capa.handle;
+        let access_rights = old_region_capa.access;
 
         // Region must be valid, exclusive, and contain the address.
         old_region_capa.is_valid()?;
@@ -674,6 +711,7 @@ where
             is_owned: true,
             is_shared: false,
             is_valid: true,
+            access: access_rights,
             handle: new_region,
         };
 
@@ -703,7 +741,7 @@ where
             value_1: region.start,
             value_2: region.end,
             value_3: flags,
-            value_4: 0,
+            value_4: region_capa.access,
             next_instr: true,
         })
     }
