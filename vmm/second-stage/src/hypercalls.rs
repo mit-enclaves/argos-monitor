@@ -280,7 +280,7 @@ impl RegionCapability {
     }
 
     /// Reset this capability, marking it as invalid.
-    fn reset(&mut self) {
+    fn _reset(&mut self) {
         *self = RegionCapability {
             is_owned: false,
             is_shared: false,
@@ -288,6 +288,26 @@ impl RegionCapability {
             access: access::NONE,
             handle: Handle::new_unchecked(0),
         };
+    }
+
+    fn is_not_revok(&self) -> Result<(), ErrorCode> {
+        match self.access & access::REVOK == 0 {
+            true => Ok(()),
+            false => Err(ErrorCode::InvalidAccessRights),
+        }
+    }
+
+    fn _is_revok(&self) -> Result<(), ErrorCode> {
+        match self.access & access::REVOK != 0 {
+            true => Ok(()),
+            false => Err(ErrorCode::InvalidAccessRights),
+        }
+    }
+
+    fn into_revok(&mut self) -> Result<(), ErrorCode> {
+        self.is_not_revok()?;
+        self.access |= access::REVOK;
+        Ok(())
     }
 }
 
@@ -530,6 +550,7 @@ where
         region_capa.is_valid()?;
         region_capa.is_owned()?;
         region_capa.is_exclusive()?;
+        region_capa.is_not_revok()?;
 
         // Access rights must be smaller or equal than current ones.
         access::is_less(region_capa.access, rights)?;
@@ -555,8 +576,8 @@ where
         domain.initial_regions_capa[domain.nb_initial_regions] = new_region_capa;
         domain.nb_initial_regions += 1;
 
-        // Reset old capacity
-        self.domains_arena[*self.current_domain].regions[region_handle].reset();
+        // Turn old capability into a revocation one (keep rights encoded).
+        self.domains_arena[*self.current_domain].regions[region_handle].into_revok()?;
 
         // Call the backend to effect the changes.
         let region = &self.regions_arena[handle];
@@ -571,8 +592,9 @@ where
             allocator,
         )?;
 
+        // Return the revocation handle.
         Ok(Registers {
-            value_1: new_region_capa.into(),
+            value_1: region_handle.into(),
             ..Default::default()
         })
     }
@@ -591,9 +613,23 @@ where
 
         // Region must be valid, no need to be owned
         region_capa.is_valid()?;
+        region_capa.is_not_revok()?;
 
         // Access rights should be smaller or equal.
         access::is_less(region_capa.access, rights)?;
+
+        // Allocate a revocation handle.
+        let revok_handle: usize = {
+            let revok = current_domain.regions.allocate()?;
+            current_domain.regions[revok] = RegionCapability {
+                is_owned: false,
+                is_shared: true,
+                is_valid: true,
+                access: access::REVOK,
+                handle,
+            };
+            revok.into()
+        };
 
         let domain_handle = domain.try_into()?;
         let domain = &mut self.domains_arena[domain_handle];
@@ -623,9 +659,9 @@ where
         let region = &self.regions_arena[handle];
         let store = &mut self.domains_arena[domain_handle].store;
         self.backend.add_region(store, region, allocator)?;
-
+        // Return the revocation handle.
         Ok(Registers {
-            value_1: new_region_capa.into(),
+            value_1: revok_handle,
             ..Default::default()
         })
     }
@@ -689,6 +725,7 @@ where
 
         // Region must be valid, exclusive, and contain the address.
         old_region_capa.is_valid()?;
+        old_region_capa.is_not_revok()?;
         old_region_capa.is_owned()?;
         old_region_capa.is_exclusive()?;
         self.regions_arena[old_region_capa.handle].do_contain(addr)?;
@@ -714,9 +751,8 @@ where
             access: access_rights,
             handle: new_region,
         };
-
         Ok(Registers {
-            value_1: new_region.into(),
+            value_1: new_region_capa.into(),
             ..Default::default()
         })
     }
