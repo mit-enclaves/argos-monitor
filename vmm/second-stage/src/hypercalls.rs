@@ -158,6 +158,7 @@ pub trait Backend: Sized + 'static {
         &mut self,
         store: &mut Self::Store,
         region: &Region,
+        access: usize,
         allocator: &impl FrameAllocator,
     ) -> Result<(), ErrorCode>;
 
@@ -461,6 +462,7 @@ where
             .add_region(
                 &mut root_domain.store,
                 &regions_arena[root_region],
+                access::DEFAULT,
                 allocator,
             )
             .expect("Failed to add root region");
@@ -589,6 +591,7 @@ where
         self.backend.add_region(
             &mut self.domains_arena[domain_handle].store,
             region,
+            rights,
             allocator,
         )?;
 
@@ -658,7 +661,7 @@ where
         // Call the backend to effect the changes.
         let region = &self.regions_arena[handle];
         let store = &mut self.domains_arena[domain_handle].store;
-        self.backend.add_region(store, region, allocator)?;
+        self.backend.add_region(store, region, rights, allocator)?;
         // Return the revocation handle.
         Ok(Registers {
             value_1: revok_handle,

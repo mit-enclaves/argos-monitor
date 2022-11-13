@@ -4,12 +4,12 @@ mod arch;
 pub mod guest;
 
 use crate::debug::ExitCode;
-use crate::hypercalls::Domain;
+use crate::hypercalls::{access, Domain};
 use crate::hypercalls::{Backend, ErrorCode, HypercallResult, Region, Registers};
 use crate::println;
 use crate::statics::{self};
 use core::arch::asm;
-use mmu::eptmapper::{EPT_PRESENT, EPT_ROOT_FLAGS};
+use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator};
 use stage_two_abi::Manifest;
 use utils::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
@@ -39,6 +39,20 @@ impl Arch {
             None
         };
         Self { iommu }
+    }
+
+    pub fn convert_to_ept(&self, rights: usize) -> EptEntryFlags {
+        let mut def = EptEntryFlags::READ;
+        if (rights & access::WRITE) != 0 {
+            def |= EptEntryFlags::WRITE;
+        }
+        if (rights & access::EXEC) != 0 {
+            def |= EptEntryFlags::USER_EXECUTE | EptEntryFlags::SUPERVISOR_EXECUTE;
+        }
+        if (rights & access::WRITE) != 0 {
+            def |= EptEntryFlags::WRITE;
+        }
+        def
     }
 }
 
@@ -84,15 +98,18 @@ impl Backend for Arch {
         &mut self,
         store: &mut Store,
         region: &Region,
+        rights: usize,
         allocator: &impl FrameAllocator,
     ) -> Result<(), ErrorCode> {
         let mut mapper = EptMapper::new(allocator.get_physical_offset().as_usize(), store.ept);
+        let flags: EptEntryFlags = self.convert_to_ept(rights);
         mapper.map_range(
             allocator,
             GuestPhysAddr::new(region.start),
             HostPhysAddr::new(region.start),
             region.end - region.start,
-            EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::USER_EXECUTE | EPT_PRESENT,
+            flags,
+            //EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::USER_EXECUTE | EPT_PRESENT,
         );
         Ok(())
     }
