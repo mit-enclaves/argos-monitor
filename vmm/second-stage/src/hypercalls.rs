@@ -200,12 +200,21 @@ pub struct Region {
     pub end: usize,
 }
 
+/// Revocation information for a RegionCapability.
+/// This either encodes the ability to revoke a region or references the handle
+/// and domain that has the capability of revoking this one.
+pub struct RevokInfo {
+    pub domain: usize,
+    pub handle: usize,
+}
+
 /// Each region has a single owner and can be marked either as owned or exclusive.
 pub struct RegionCapability {
     pub is_owned: bool,
     pub is_shared: bool,
     pub is_valid: bool,
     pub access: usize,
+    pub revok: RevokInfo,
     pub handle: RegionHandle,
 }
 
@@ -287,6 +296,10 @@ impl RegionCapability {
             is_shared: false,
             is_valid: false,
             access: access::NONE,
+            revok: RevokInfo {
+                domain: 0,
+                handle: 0,
+            },
             handle: Handle::new_unchecked(0),
         };
     }
@@ -305,9 +318,11 @@ impl RegionCapability {
         }
     }
 
-    fn into_revok(&mut self) -> Result<(), ErrorCode> {
+    fn into_revok(&mut self, domain: usize, handle: usize) -> Result<(), ErrorCode> {
         self.is_not_revok()?;
         self.access |= access::REVOK;
+        self.revok.domain = domain;
+        self.revok.handle = handle;
         Ok(())
     }
 }
@@ -452,6 +467,10 @@ where
             is_shared: false,
             is_valid: true,
             access: access::DEFAULT,
+            revok: RevokInfo {
+                domain: 0,
+                handle: 0,
+            },
             handle: root_region,
         };
         // TODO: initialize properly
@@ -544,6 +563,7 @@ where
         rights: usize,
     ) -> HypercallResult {
         let region_handle: RegionCapaHandle = region.try_into()?;
+        let current_id: usize = (*self.current_domain).into();
         let current_domain = &mut self.domains_arena[*self.current_domain];
         let region_capa = &mut current_domain.regions[region_handle];
         let handle = region_capa.handle;
@@ -571,6 +591,10 @@ where
             is_shared: false,
             is_valid: true,
             access: rights,
+            revok: RevokInfo {
+                domain: current_id,
+                handle: region,
+            },
             handle,
         };
 
@@ -579,7 +603,8 @@ where
         domain.nb_initial_regions += 1;
 
         // Turn old capability into a revocation one (keep rights encoded).
-        self.domains_arena[*self.current_domain].regions[region_handle].into_revok()?;
+        self.domains_arena[*self.current_domain].regions[region_handle]
+            .into_revok(domain_handle.into(), new_region_capa.into())?;
 
         // Call the backend to effect the changes.
         let region = &self.regions_arena[handle];
@@ -629,6 +654,10 @@ where
                 is_shared: true,
                 is_valid: true,
                 access: access::REVOK,
+                revok: RevokInfo {
+                    domain: domain,
+                    handle: 0, /*This is set after the allocation*/
+                },
                 handle,
             };
             revok.into()
@@ -648,6 +677,10 @@ where
             is_shared: true,
             is_valid: true,
             access: rights,
+            revok: RevokInfo {
+                domain: (*self.current_domain).into(),
+                handle: revok_handle,
+            },
             handle,
         };
 
@@ -657,6 +690,10 @@ where
 
         // Mark old capacity as shared
         self.domains_arena[*self.current_domain].regions[region_handle].is_shared = true;
+        // Register the revocation handle
+        self.domains_arena[*self.current_domain].regions[revok_handle.try_into()?]
+            .revok
+            .handle = new_region_capa.into();
 
         // Call the backend to effect the changes.
         let region = &self.regions_arena[handle];
@@ -752,6 +789,10 @@ where
             is_shared: false,
             is_valid: true,
             access: access_rights,
+            revok: RevokInfo {
+                domain: 0, //TODO should propagate?
+                handle: 0,
+            },
             handle: new_region,
         };
         Ok(Registers {

@@ -14,7 +14,7 @@
 
 use crate::allocator::{Page, PAGE_SIZE};
 use crate::arena::{Handle, TypedArena};
-use crate::hypercalls::{access, Backend, Domain, Region, RegionCapability, Switch};
+use crate::hypercalls::{access, Backend, Domain, Region, RegionCapability, RevokInfo, Switch};
 use stage_two_abi::make_static;
 
 // ————————————————————— Static Resources Configuration ————————————————————— //
@@ -36,6 +36,10 @@ const EMPTY_REGION_CAPABILITY: RegionCapability = RegionCapability {
     is_shared: false,
     is_valid: false,
     access: access::NONE,
+    revok: RevokInfo {
+        domain: 0,
+        handle: 0,
+    },
     handle: Handle::new_unchecked(0),
 };
 
