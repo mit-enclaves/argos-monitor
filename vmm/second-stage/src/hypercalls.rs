@@ -16,6 +16,7 @@ pub mod vmcalls {
     pub const DOMAIN_SEAL: usize         = 0x102;
     pub const DOMAIN_GRANT_REGION: usize = 0x103;
     pub const DOMAIN_SHARE_REGION: usize = 0x104;
+    pub const DOMAIN_REVOK_REGION: usize = 0x105;
     pub const REGION_SPLIT: usize        = 0x200;
     pub const REGION_GET_INFO: usize     = 0x201;
     pub const CONFIG_NB_REGIONS: usize   = 0x400;
@@ -290,7 +291,7 @@ impl RegionCapability {
     }
 
     /// Reset this capability, marking it as invalid.
-    fn _reset(&mut self) {
+    fn reset(&mut self) {
         *self = RegionCapability {
             is_owned: false,
             is_shared: false,
@@ -311,7 +312,7 @@ impl RegionCapability {
         }
     }
 
-    fn _is_revok(&self) -> Result<(), ErrorCode> {
+    fn is_revok(&self) -> Result<(), ErrorCode> {
         match self.access & access::REVOK != 0 {
             true => Ok(()),
             false => Err(ErrorCode::InvalidAccessRights),
@@ -323,6 +324,14 @@ impl RegionCapability {
         self.access |= access::REVOK;
         self.revok.domain = domain;
         self.revok.handle = handle;
+        Ok(())
+    }
+    fn from_revok(&mut self) -> Result<(), ErrorCode> {
+        self.is_revok()?;
+        self.access ^= access::REVOK;
+        self.revok.domain = 0;
+        self.revok.handle = 0;
+        self.is_not_revok()?;
         Ok(())
     }
 }
@@ -509,6 +518,7 @@ where
             vmcalls::DOMAIN_SHARE_REGION => {
                 self.domain_share_region(allocator, params.arg_1, params.arg_2, params.arg_3)
             }
+            vmcalls::DOMAIN_REVOK_REGION => self.domain_revok_region(allocator, params.arg_1, vcpu),
             vmcalls::DOMAIN_SWITCH => self.domain_switch(params.arg_1, vcpu),
             vmcalls::REGION_SPLIT => self.region_split(params.arg_1, params.arg_2),
             vmcalls::REGION_GET_INFO => self.region_get_info(params.arg_1),
@@ -702,6 +712,50 @@ where
         // Return the revocation handle.
         Ok(Registers {
             value_1: revok_handle,
+            ..Default::default()
+        })
+    }
+
+    fn domain_revok_region<'a>(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        handle: usize,
+        _vcpu: &mut B::Vcpu<'a>,
+    ) -> HypercallResult {
+        let (tgt_domain_handle, tgt_region_handle) = {
+            let revok_handle: RegionCapaHandle = handle.try_into()?;
+            let current_domain = &mut self.domains_arena[*self.current_domain];
+            let region_capa = &mut current_domain.regions[revok_handle];
+            region_capa.is_revok()?;
+            (region_capa.revok.domain, region_capa.revok.handle)
+        };
+
+        let shared = {
+            let tgt_domain = &mut self.domains_arena[tgt_domain_handle.try_into()?];
+            let tgt_region = &mut tgt_domain.regions[tgt_region_handle.try_into()?];
+            let region = &self.regions_arena[tgt_region.handle];
+            tgt_region.reset();
+            self.backend
+                .remove_region(&mut tgt_domain.store, region, allocator)?;
+            tgt_region.is_shared
+        };
+
+        let current_domain = &mut self.domains_arena[*self.current_domain];
+        let region_capa = &mut current_domain.regions[handle.try_into()?];
+        if shared {
+            region_capa.reset();
+        } else {
+            region_capa.from_revok()?;
+            let reg = &mut self.regions_arena[region_capa.handle];
+            self.backend.add_region(
+                &mut current_domain.store,
+                reg,
+                region_capa.access,
+                allocator,
+            )?;
+        }
+
+        Ok(Registers {
             ..Default::default()
         })
     }
