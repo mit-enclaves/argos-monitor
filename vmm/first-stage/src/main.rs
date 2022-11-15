@@ -43,8 +43,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         use core::arch::asm;
         asm! {
             "push rbx",
-            "mov rax, 1",
-            "mov rbx, 2",
+            "mov rax, 0",
+            "mov rbx, 0",
             "mov rcx, 3",
             "mov rdx, 4",
             "getsec",
