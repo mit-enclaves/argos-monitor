@@ -135,10 +135,12 @@ impl<'vcpu, const N: usize> Guest for VmxGuest<'vcpu, 'vcpu, N> {
                             vcpu.set(Register::Rcx, values.value_1 as u64);
                             vcpu.set(Register::Rdx, values.value_2 as u64);
                             vcpu.set(Register::Rsi, values.value_3 as u64);
+                            vcpu.set(Register::R9, values.value_4 as u64);
                             values.next_instr
                         }
                         Err(err) => {
                             dump(vcpu);
+                            println!("The error: {:?}", err);
                             vcpu.set(Register::Rax, err as u64);
                             true
                         }
@@ -206,6 +208,7 @@ impl<'vcpu, const N: usize> Guest for VmxGuest<'vcpu, 'vcpu, N> {
                         .as_u64(),
                     addr.as_u64()
                 );
+                println!("The vcpu {:x?}", vcpu);
                 Ok(HandlerResult::Crash)
             }
             VmxExitReason::Xsetbv => {

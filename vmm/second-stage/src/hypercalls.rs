@@ -19,6 +19,7 @@ pub mod vmcalls {
     pub const DOMAIN_REVOK_REGION: usize = 0x105;
     pub const REGION_SPLIT: usize        = 0x200;
     pub const REGION_GET_INFO: usize     = 0x201;
+    pub const REGION_MERGE: usize        = 0x202;
     pub const CONFIG_NB_REGIONS: usize   = 0x400;
     pub const CONFIG_READ_REGION: usize  = 0x401;
     pub const EXIT: usize                = 0x500;
@@ -52,6 +53,8 @@ pub enum ErrorCode {
     DomainSwitchOutOfBound = 18,
     InvalidSwitch = 19,
     InvalidAccessRights = 20,
+    InvalidMerge = 21,
+    InvalidRefCount = 22,
 }
 
 // ————————————————————————————————— Flags —————————————————————————————————— //
@@ -204,9 +207,12 @@ pub struct Region {
 /// Revocation information for a RegionCapability.
 /// This either encodes the ability to revoke a region or references the handle
 /// and domain that has the capability of revoking this one.
+/// The local handle is used to reference the domain's handle to access the region.
+/// It is necessary to unshare a region.
 pub struct RevokInfo {
     pub domain: usize,
     pub handle: usize,
+    pub local_handle: usize,
 }
 
 /// Each region has a single owner and can be marked either as owned or exclusive.
@@ -300,6 +306,7 @@ impl RegionCapability {
             revok: RevokInfo {
                 domain: 0,
                 handle: 0,
+                local_handle: 0,
             },
             handle: Handle::new_unchecked(0),
         };
@@ -319,11 +326,17 @@ impl RegionCapability {
         }
     }
 
-    fn into_revok(&mut self, domain: usize, handle: usize) -> Result<(), ErrorCode> {
+    fn into_revok(
+        &mut self,
+        domain: usize,
+        handle: usize,
+        local_handle: usize,
+    ) -> Result<(), ErrorCode> {
         self.is_not_revok()?;
         self.access |= access::REVOK;
         self.revok.domain = domain;
         self.revok.handle = handle;
+        self.revok.local_handle = local_handle;
         Ok(())
     }
     fn from_revok(&mut self) -> Result<(), ErrorCode> {
@@ -479,6 +492,7 @@ where
             revok: RevokInfo {
                 domain: 0,
                 handle: 0,
+                local_handle: root_region_capa.into(),
             },
             handle: root_region,
         };
@@ -518,10 +532,11 @@ where
             vmcalls::DOMAIN_SHARE_REGION => {
                 self.domain_share_region(allocator, params.arg_1, params.arg_2, params.arg_3)
             }
-            vmcalls::DOMAIN_REVOK_REGION => self.domain_revok_region(allocator, params.arg_1, vcpu),
+            vmcalls::DOMAIN_REVOK_REGION => self.domain_revok_region(allocator, params.arg_1),
             vmcalls::DOMAIN_SWITCH => self.domain_switch(params.arg_1, vcpu),
             vmcalls::REGION_SPLIT => self.region_split(params.arg_1, params.arg_2),
             vmcalls::REGION_GET_INFO => self.region_get_info(params.arg_1),
+            vmcalls::REGION_MERGE => self.region_merge(params.arg_1, params.arg_2),
             vmcalls::CONFIG_NB_REGIONS => self.config_nb_regions(),
             vmcalls::CONFIG_READ_REGION => self.config_read_region(params.arg_1, params.arg_2),
             vmcalls::DEBUG_IOMMU => self.backend.debug_iommu(),
@@ -604,6 +619,7 @@ where
             revok: RevokInfo {
                 domain: current_id,
                 handle: region,
+                local_handle: new_region_capa.into(),
             },
             handle,
         };
@@ -613,8 +629,11 @@ where
         domain.nb_initial_regions += 1;
 
         // Turn old capability into a revocation one (keep rights encoded).
-        self.domains_arena[*self.current_domain].regions[region_handle]
-            .into_revok(domain_handle.into(), new_region_capa.into())?;
+        self.domains_arena[*self.current_domain].regions[region_handle].into_revok(
+            domain_handle.into(),
+            new_region_capa.into(),
+            region_handle.into(),
+        )?;
 
         // Call the backend to effect the changes.
         let region = &self.regions_arena[handle];
@@ -637,6 +656,7 @@ where
         })
     }
 
+    //TODO handle ref count.
     fn domain_share_region(
         &mut self,
         allocator: &impl FrameAllocator,
@@ -667,6 +687,7 @@ where
                 revok: RevokInfo {
                     domain: domain,
                     handle: 0, /*This is set after the allocation*/
+                    local_handle: region,
                 },
                 handle,
             };
@@ -690,6 +711,7 @@ where
             revok: RevokInfo {
                 domain: (*self.current_domain).into(),
                 handle: revok_handle,
+                local_handle: new_region_capa.into(),
             },
             handle,
         };
@@ -704,6 +726,8 @@ where
         self.domains_arena[*self.current_domain].regions[revok_handle.try_into()?]
             .revok
             .handle = new_region_capa.into();
+        // Increase the ref count to the region.
+        self.regions_arena[handle].ref_count += 1;
 
         // Call the backend to effect the changes.
         let region = &self.regions_arena[handle];
@@ -720,30 +744,47 @@ where
         &mut self,
         allocator: &impl FrameAllocator,
         handle: usize,
-        _vcpu: &mut B::Vcpu<'a>,
     ) -> HypercallResult {
-        let (tgt_domain_handle, tgt_region_handle) = {
+        let (tgt_domain_handle, tgt_region_handle, local_handle) = {
             let revok_handle: RegionCapaHandle = handle.try_into()?;
             let current_domain = &mut self.domains_arena[*self.current_domain];
             let region_capa = &mut current_domain.regions[revok_handle];
             region_capa.is_revok()?;
-            (region_capa.revok.domain, region_capa.revok.handle)
+            (
+                region_capa.revok.domain,
+                region_capa.revok.handle,
+                region_capa.revok.local_handle,
+            )
         };
 
         let shared = {
             let tgt_domain = &mut self.domains_arena[tgt_domain_handle.try_into()?];
             let tgt_region = &mut tgt_domain.regions[tgt_region_handle.try_into()?];
             let region = &self.regions_arena[tgt_region.handle];
-            tgt_region.reset();
             self.backend
                 .remove_region(&mut tgt_domain.store, region, allocator)?;
-            tgt_region.is_shared
+            let is_shared = tgt_region.is_shared;
+            tgt_region.reset();
+            is_shared
         };
 
         let current_domain = &mut self.domains_arena[*self.current_domain];
         let region_capa = &mut current_domain.regions[handle.try_into()?];
         if shared {
+            let handle = region_capa.handle;
             region_capa.reset();
+            let region = &mut self.regions_arena[handle];
+            if region.ref_count <= 1 {
+                return Err(ErrorCode::InvalidRefCount);
+            }
+            region.ref_count -= 1;
+            // The domain is now owned.
+            if region.ref_count == 1 {
+                let region = &mut self.domains_arena[*self.current_domain].regions
+                    [local_handle.try_into()?];
+                region.is_owned = true;
+                region.is_shared = false;
+            }
         } else {
             region_capa.from_revok()?;
             let reg = &mut self.regions_arena[region_capa.handle];
@@ -846,6 +887,7 @@ where
             revok: RevokInfo {
                 domain: 0, //TODO should propagate?
                 handle: 0,
+                local_handle: new_region_capa.into(),
             },
             handle: new_region,
         };
@@ -877,6 +919,55 @@ where
             value_3: flags,
             value_4: region_capa.access,
             next_instr: true,
+        })
+    }
+
+    fn region_merge(&mut self, r1: usize, r2: usize) -> HypercallResult {
+        let domain = &mut self.domains_arena[*self.current_domain];
+        let handle1 = r1.try_into()?;
+        let region1_capa = &domain.regions[handle1];
+        let handle2 = r2.try_into()?;
+        let region2_capa = &domain.regions[handle2];
+        let region1 = &self.regions_arena[region1_capa.handle];
+        let region2 = &self.regions_arena[region2_capa.handle];
+
+        // Checks for well-formness.
+        region1_capa.is_valid()?;
+        region1_capa.is_not_revok()?;
+        region1_capa.is_owned()?;
+        region1_capa.is_exclusive()?;
+
+        region2_capa.is_valid()?;
+        region2_capa.is_not_revok()?;
+        region2_capa.is_owned()?;
+        region2_capa.is_exclusive()?;
+
+        if region1_capa.access != region2_capa.access {
+            return Err(ErrorCode::InvalidAccessRights);
+        }
+        if region1.start >= region2.start {
+            return Err(ErrorCode::InvalidMerge);
+        }
+        if region1.end != region2.start {
+            return Err(ErrorCode::InvalidMerge);
+        }
+        if region2.ref_count != 1 {
+            return Err(ErrorCode::InvalidMerge);
+        }
+
+        // Let's merge.
+        let new_end = region2.end;
+        {
+            let region1 = &mut self.regions_arena[region1_capa.handle];
+            region1.end = new_end;
+        }
+        {
+            let region2_capa = &mut domain.regions[handle2];
+            region2_capa.reset();
+        }
+
+        Ok(Registers {
+            ..Default::default()
         })
     }
 

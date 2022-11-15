@@ -39,6 +39,7 @@ const EMPTY_REGION_CAPABILITY: RegionCapability = RegionCapability {
     revok: RevokInfo {
         domain: 0,
         handle: 0,
+        local_handle: 0,
     },
     handle: Handle::new_unchecked(0),
 };
