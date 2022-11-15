@@ -7,7 +7,11 @@
 //! IMPORTANT: When relying on GETSEC emulation, the SMXE bit in CR4 must _not_ be set, otherwhise
 //! GETSEC causes a VM exit and KVM will kill the VM.
 
+use core::arch::asm;
+
 const GETSEC_OPCODE: u16 = 0x370F;
+
+// ————————————————————————— Invalid Opcode Handler ————————————————————————— //
 
 /// The interrupt stack frame
 #[derive(Debug)]
@@ -28,33 +32,10 @@ pub struct GetsecRegisters {
     pub rcx: u64,
 }
 
-/// The Rust function for handling invalid opcodes, responsible for emulating GETSEC.
-#[inline]
-extern "C" fn invalid_opcode_inner(registers: &mut GetsecRegisters, stack_frame: &mut StackFrame) {
-    // Read next 2 bytes after the faulty RIP
-    let next_instr = unsafe {
-        let rip = stack_frame.rip as *const u16;
-        *rip
-    };
-    if next_instr == GETSEC_OPCODE {
-        // TODO: emulate GETSEC
-        registers.rax *= 2;
-        registers.rbx *= 2;
-        registers.rcx *= 2;
-
-        // Skip GETSEC instruction before resuming execution
-        stack_frame.rip += 2;
-    } else {
-        panic!("EXCEPTION: INVALID OPCODE\n{:#x?}", stack_frame);
-    }
-}
-
 /// The invalid opcode exception handler. Handles the x86 exception handlers calling convention and
 /// forward the relevant registers to the inner function.
 #[naked]
 pub unsafe extern "C" fn invalid_opcode() {
-    use core::arch::asm;
-
     asm! {
         // Caller-saved registers
         "push rdx",
@@ -89,4 +70,27 @@ pub unsafe extern "C" fn invalid_opcode() {
         inner = sym invalid_opcode_inner,
         options(noreturn)
     };
+}
+
+// ———————————————————————————— GETSEC Emulation ———————————————————————————— //
+
+/// The Rust function for handling invalid opcodes, responsible for emulating GETSEC.
+#[inline]
+extern "C" fn invalid_opcode_inner(registers: &mut GetsecRegisters, stack_frame: &mut StackFrame) {
+    // Read next 2 bytes after the faulty RIP
+    let next_instr = unsafe {
+        let rip = stack_frame.rip as *const u16;
+        *rip
+    };
+    if next_instr == GETSEC_OPCODE {
+        // TODO: emulate GETSEC
+        registers.rax *= 2;
+        registers.rbx *= 2;
+        registers.rcx *= 2;
+
+        // Skip GETSEC instruction before resuming execution
+        stack_frame.rip += 2;
+    } else {
+        panic!("EXCEPTION: INVALID OPCODE\n{:#x?}", stack_frame);
+    }
 }

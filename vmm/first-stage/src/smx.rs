@@ -25,3 +25,11 @@ pub fn smx_is_available() -> bool {
     // If bit 6 is set, there is SMX support.
     (ecx & (1 << 6)) != 0
 }
+
+/// Executes GETSEC[SENTER].
+pub unsafe fn senter() {
+    asm!(
+        "mov rax, 4", // To execute SENTER we need to set EAX to 4
+        "getsec",
+    );
+}
