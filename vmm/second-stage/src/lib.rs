@@ -5,6 +5,7 @@ use stage_two_abi::Manifest;
 
 pub mod allocator;
 mod arena;
+mod free_list;
 pub mod debug;
 pub mod guest;
 pub mod hypercalls;
