@@ -765,15 +765,17 @@ where
                 .remove_region(&mut tgt_domain.store, region, allocator)?;
             let is_shared = tgt_region.is_shared;
             tgt_region.reset();
+            tgt_domain.regions.free(tgt_region_handle.try_into()?);
             is_shared
         };
 
         let current_domain = &mut self.domains_arena[*self.current_domain];
         let region_capa = &mut current_domain.regions[handle.try_into()?];
         if shared {
-            let handle = region_capa.handle;
+            let rhandle = region_capa.handle;
             region_capa.reset();
-            let region = &mut self.regions_arena[handle];
+            current_domain.regions.free(handle.try_into()?);
+            let region = &mut self.regions_arena[rhandle];
             if region.ref_count <= 1 {
                 return Err(ErrorCode::InvalidRefCount);
             }
@@ -839,6 +841,7 @@ where
             let current = &mut self.domains_arena[*self.current_domain];
             let switch_context = &mut current.switches[handle.try_into()?];
             switch_context.reset();
+            current.switches.free(handle.try_into()?);
         }
         *self.current_domain = switch_domain.try_into()?;
         return Ok(Registers {
@@ -962,8 +965,12 @@ where
             region1.end = new_end;
         }
         {
+            let region2 = &mut self.regions_arena[region2_capa.handle];
+            region2.ref_count = 0;
+            self.regions_arena.free(region2_capa.handle);
             let region2_capa = &mut domain.regions[handle2];
             region2_capa.reset();
+            domain.regions.free(handle2);
         }
 
         Ok(Registers {
