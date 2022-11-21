@@ -30,6 +30,7 @@ pub struct GetsecRegisters {
     pub rax: u64,
     pub rbx: u64,
     pub rcx: u64,
+    pub rdx: u64,
 }
 
 /// The invalid opcode exception handler. Handles the x86 exception handlers calling convention and
@@ -38,7 +39,6 @@ pub struct GetsecRegisters {
 pub unsafe extern "C" fn invalid_opcode() {
     asm! {
         // Caller-saved registers
-        "push rdx",
         "push rdi",
         "push rsi",
         "push r8",
@@ -46,6 +46,7 @@ pub unsafe extern "C" fn invalid_opcode() {
         "push r10",
         "push r11",
         // GETSEC return values
+        "push rdx",
         "push rcx",
         "push rbx",
         "push rax",
@@ -57,6 +58,7 @@ pub unsafe extern "C" fn invalid_opcode() {
         "pop rax",
         "pop rbx",
         "pop rcx",
+        "pop rdx",
         // Restore caller-saved registers
         "pop r11",
         "pop r10",
@@ -64,7 +66,6 @@ pub unsafe extern "C" fn invalid_opcode() {
         "pop r8",
         "pop rsi",
         "pop rdi",
-        "pop rdx",
         // Return from interrupt
         "iretq",
         inner = sym invalid_opcode_inner,
@@ -87,6 +88,7 @@ extern "C" fn invalid_opcode_inner(registers: &mut GetsecRegisters, stack_frame:
         registers.rax *= 2;
         registers.rbx *= 2;
         registers.rcx *= 2;
+        registers.rdx *= 2;
 
         // Skip GETSEC instruction before resuming execution
         stack_frame.rip += 2;

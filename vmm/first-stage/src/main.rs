@@ -39,23 +39,26 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         let rax: u64;
         let rbx: u64;
         let rcx: u64;
+        let rdx: u64;
         use core::arch::asm;
         asm! {
             "push rbx",
             "mov rax, 1",
             "mov rbx, 2",
             "mov rcx, 3",
+            "mov rdx, 4",
             "getsec",
-            "mov rdx, rbx",
+            "mov r10, rbx",
             "pop rbx",
             out("rax") rax,
-            out("rdx") rbx,
+            out("r10") rbx,
             out("rcx") rcx,
+            out("rdx") rdx,
         };
 
         println!(
-            "GETSEC  rax: 0x{:x} - rbx: 0x{:x} - rcx: 0x{:x}",
-            rax, rbx, rcx
+            "GETSEC  rax: 0x{:x} - rbx: 0x{:x} - rcx: 0x{:x} - rdx: 0x{:x}",
+            rax, rbx, rcx, rdx
         );
     }
 
