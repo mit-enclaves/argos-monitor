@@ -13,7 +13,7 @@ use crate::vmx;
 use crate::{HostPhysAddr, HostVirtAddr};
 use mmu::frame_allocator::PhysRange;
 use mmu::ptmapper::PtMapper;
-use mmu::FrameAllocator;
+use mmu::{FrameAllocator, RangeAllocator};
 
 const PAGE_SIZE: usize = 0x1000;
 
@@ -43,8 +43,8 @@ pub unsafe fn init(
     regions: &'static mut [MemoryRegion],
 ) -> Result<
     (
-        impl FrameAllocator,
-        impl FrameAllocator,
+        impl RangeAllocator,
+        impl RangeAllocator,
         MemoryMap,
         PtMapper<HostPhysAddr, HostVirtAddr>,
     ),
@@ -209,11 +209,6 @@ unsafe impl FrameAllocator for SharedFrameAllocator {
         })
     }
 
-    fn allocate_range(&self, size: usize) -> Option<PhysRange> {
-        let mut inner = self.alloc.lock();
-        inner.allocate_range(size)
-    }
-
     fn get_boundaries(&self) -> (usize, usize) {
         let mut inner = self.alloc.lock();
         let inner = inner.deref_mut();
@@ -223,6 +218,13 @@ unsafe impl FrameAllocator for SharedFrameAllocator {
 
     fn get_physical_offset(&self) -> HostVirtAddr {
         self.physical_memory_offset
+    }
+}
+
+unsafe impl RangeAllocator for SharedFrameAllocator {
+    fn allocate_range(&self, size: usize) -> Option<PhysRange> {
+        let mut inner = self.alloc.lock();
+        inner.allocate_range(size)
     }
 }
 
@@ -266,6 +268,19 @@ unsafe impl FrameAllocator for RangeFrameAllocator {
         }
     }
 
+    fn get_boundaries(&self) -> (usize, usize) {
+        (
+            self.range_start.as_u64() as usize,
+            self.range_end.as_u64() as usize,
+        )
+    }
+
+    fn get_physical_offset(&self) -> HostVirtAddr {
+        self.physical_memory_offset
+    }
+}
+
+unsafe impl RangeAllocator for RangeFrameAllocator {
     fn allocate_range(&self, size: usize) -> Option<PhysRange> {
         let cursor = self.cursor.get();
         if cursor + size < self.range_end {
@@ -278,17 +293,6 @@ unsafe impl FrameAllocator for RangeFrameAllocator {
         } else {
             None
         }
-    }
-
-    fn get_boundaries(&self) -> (usize, usize) {
-        (
-            self.range_start.as_u64() as usize,
-            self.range_end.as_u64() as usize,
-        )
-    }
-
-    fn get_physical_offset(&self) -> HostVirtAddr {
-        self.physical_memory_offset
     }
 }
 

@@ -13,7 +13,7 @@ use crate::println;
 use crate::vmx;
 use crate::vmx::Register;
 use crate::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
-use mmu::{FrameAllocator, IoPtMapper};
+use mmu::{IoPtMapper, RangeAllocator};
 use vtd::Iommu;
 
 #[cfg(feature = "guest_rawc")]
@@ -43,8 +43,8 @@ impl Guest for RawcBytes {
     unsafe fn instantiate(
         &self,
         acpi: &AcpiInfo,
-        host_allocator: &impl FrameAllocator,
-        guest_allocator: &impl FrameAllocator,
+        host_allocator: &impl RangeAllocator,
+        guest_allocator: &impl RangeAllocator,
         memory_map: MemoryMap,
     ) -> ManifestInfo {
         let mut manifest = ManifestInfo::default();

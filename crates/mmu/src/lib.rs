@@ -6,7 +6,7 @@ pub mod frame_allocator;
 pub mod ioptmapper;
 pub mod walker;
 
-pub use frame_allocator::FrameAllocator;
+pub use frame_allocator::{FrameAllocator, RangeAllocator};
 pub use ioptmapper::{IoPtFlag, IoPtMapper};
 pub use ptmapper::{PtFlag, PtMapper};
 

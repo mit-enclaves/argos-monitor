@@ -3,7 +3,7 @@
 
 use core::cell::RefCell;
 
-use mmu::{frame_allocator::PhysRange, FrameAllocator};
+use mmu::FrameAllocator;
 use utils::{Frame, HostPhysAddr, HostVirtAddr};
 
 use crate::free_list::FreeList;
@@ -97,11 +97,6 @@ unsafe impl<const N: usize> FrameAllocator for Allocator<N> {
         // SAFETY: We enforce that the inner allocator is properly initialized during construction
         // of the outer struct.
         unsafe { inner.allocate_frame() }
-    }
-
-    fn allocate_range(&self, _size: usize) -> Option<PhysRange> {
-        // Unimplemented
-        None
     }
 
     fn get_boundaries(&self) -> (usize, usize) {

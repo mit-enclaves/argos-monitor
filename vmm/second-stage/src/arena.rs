@@ -50,7 +50,6 @@ where
         }
     }
 
-    #[allow(unused)]
     pub fn free(&mut self, object: Handle<T, N>) {
         self.free_list.free(object.idx())
     }

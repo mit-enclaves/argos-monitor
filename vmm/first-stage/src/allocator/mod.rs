@@ -3,7 +3,7 @@
 use crate::{HostPhysAddr, HostVirtAddr};
 use alloc::alloc::GlobalAlloc;
 use core::sync::atomic::{AtomicBool, Ordering};
-use mmu::FrameAllocator;
+use mmu::RangeAllocator;
 use mmu::{PtFlag, PtMapper};
 use x86_64::instructions::tlb;
 
@@ -21,7 +21,7 @@ static IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// Initializes the kernel heap.
 pub fn init_heap(
     mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
-    frame_allocator: &impl FrameAllocator,
+    frame_allocator: &impl RangeAllocator,
 ) -> Result<(), ()> {
     if IS_INITIALIZED.swap(true, Ordering::SeqCst) {
         // Already initialized

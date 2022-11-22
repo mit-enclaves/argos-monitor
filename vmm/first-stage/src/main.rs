@@ -15,7 +15,7 @@ use first_stage::mmu::MemoryMap;
 use first_stage::println;
 use first_stage::second_stage;
 use first_stage::{HostPhysAddr, HostVirtAddr};
-use mmu::{FrameAllocator, PtMapper};
+use mmu::{PtMapper, RangeAllocator};
 use qemu;
 use vmx;
 use vtd;
@@ -136,8 +136,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 fn launch_guest(
     guest: &impl Guest,
     acpi: &AcpiInfo,
-    stage1_allocator: &impl FrameAllocator,
-    guest_allocator: &impl FrameAllocator,
+    stage1_allocator: &impl RangeAllocator,
+    guest_allocator: &impl RangeAllocator,
     memory_map: MemoryMap,
     mut pt_mapper: PtMapper<HostPhysAddr, HostVirtAddr>,
 ) -> ! {

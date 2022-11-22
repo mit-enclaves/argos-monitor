@@ -2,16 +2,15 @@
 
 use utils::{Frame, HostPhysAddr, HostVirtAddr};
 
+/// A frame allocator.
 pub unsafe trait FrameAllocator {
     /// Allocates a frame.
     fn allocate_frame(&self) -> Option<Frame>;
 
-    /// Allocates a range of physical memory.
-    fn allocate_range(&self, size: usize) -> Option<PhysRange>;
-
     /// Frees a frame.
-    fn free_frame(&self) -> Result<(), ()> {
+    fn free_frame(&self, frame: HostPhysAddr) -> Result<(), ()> {
         // Default implementation: leak all the pages
+        let _ = frame;
         Ok(())
     }
 
@@ -20,6 +19,12 @@ pub unsafe trait FrameAllocator {
 
     /// Returns the offset between physical and virtual addresses.
     fn get_physical_offset(&self) -> HostVirtAddr;
+}
+
+/// A frame allocator that can allocate contiguous ranges.
+pub unsafe trait RangeAllocator: FrameAllocator {
+    /// Allocates a range of physical memory.
+    fn allocate_range(&self, size: usize) -> Option<PhysRange>;
 }
 
 #[derive(Debug, Clone, Copy)]

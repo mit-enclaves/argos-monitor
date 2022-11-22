@@ -11,7 +11,7 @@ pub use ffi::{
     FromBytes,
 };
 use mmu::walker::Address;
-use mmu::{FrameAllocator, PtFlag, PtMapper};
+use mmu::{PtFlag, PtMapper, RangeAllocator};
 
 const PAGE_SIZE: usize = 0x1000;
 
@@ -111,7 +111,7 @@ impl ElfProgram {
     /// CR3).
     pub fn load<PhysAddr, VirtAddr>(
         &self,
-        guest_allocator: &impl FrameAllocator,
+        guest_allocator: &impl RangeAllocator,
         host_physical_offset: HostVirtAddr,
     ) -> Result<LoadedElf<PhysAddr, VirtAddr>, ()>
     where
@@ -240,7 +240,7 @@ impl ElfProgram {
         &self,
         segment: &Elf64Phdr,
         mapper: &mut PtMapper<PhysAddr, VirtAddr>,
-        guest_allocator: &impl FrameAllocator,
+        guest_allocator: &impl RangeAllocator,
     ) where
         PhysAddr: Address,
         VirtAddr: Address,
@@ -295,7 +295,7 @@ where
     pub fn add_payload(
         &mut self,
         data: &[u8],
-        guest_allocator: &impl FrameAllocator,
+        guest_allocator: &impl RangeAllocator,
     ) -> GuestPhysAddr {
         let range = guest_allocator
             .allocate_range(data.len())
@@ -318,7 +318,7 @@ where
         &mut self,
         stack_virt_addr: VirtAddr,
         size: usize,
-        guest_allocator: &impl FrameAllocator,
+        guest_allocator: &impl RangeAllocator,
     ) -> (VirtAddr, PhysAddr) {
         assert!(
             size % PAGE_SIZE == 0,

@@ -15,11 +15,10 @@ use crate::println;
 use crate::vmx;
 use crate::vmx::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 use bootloader::boot_info::MemoryRegionKind;
+use mmu::{IoPtFlag, IoPtMapper, RangeAllocator};
 use stage_two_abi::GuestInfo;
 use vmx::HostPhysAddr;
 use vtd::Iommu;
-
-use mmu::{FrameAllocator, IoPtFlag, IoPtMapper};
 
 #[cfg(feature = "guest_linux")]
 const LINUXBYTES: &'static [u8] = include_bytes!("../../../../linux-image/images/vmlinux");
@@ -34,7 +33,8 @@ const LINUX_MASK: u64 = 0xffffffff82000000;
 const SETUP_HDR: u64 = 0x1f1;
 
 // WARNING: Don't forget that the command line must be null terminated ('\0')!
-static COMMAND_LINE: &'static [u8] = b"root=/dev/sdb2 apic=debug earlyprintk=serial,ttyS0 console=ttyS0\0";
+static COMMAND_LINE: &'static [u8] =
+    b"root=/dev/sdb2 apic=debug earlyprintk=serial,ttyS0 console=ttyS0\0";
 
 pub struct Linux {}
 
@@ -44,8 +44,8 @@ impl Guest for Linux {
     unsafe fn instantiate(
         &self,
         acpi: &AcpiInfo,
-        host_allocator: &impl FrameAllocator,
-        guest_allocator: &impl FrameAllocator,
+        host_allocator: &impl RangeAllocator,
+        guest_allocator: &impl RangeAllocator,
         memory_map: MemoryMap,
     ) -> ManifestInfo {
         let mut manifest = ManifestInfo::default();

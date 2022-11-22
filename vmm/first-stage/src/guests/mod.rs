@@ -6,7 +6,7 @@ use crate::println;
 use crate::vmx::bitmaps::exit_qualification;
 use crate::vmx::bitmaps::ExceptionBitmap;
 use crate::vmx::{ActiveVmcs, ControlRegister, Register, VmxError, VmxExitReason};
-use mmu::FrameAllocator;
+use mmu::RangeAllocator;
 
 use stage_two_abi::GuestInfo;
 
@@ -39,8 +39,8 @@ pub trait Guest {
     unsafe fn instantiate(
         &self,
         acpi: &AcpiInfo,
-        host_allocator: &impl FrameAllocator,
-        guest_allocator: &impl FrameAllocator,
+        host_allocator: &impl RangeAllocator,
+        guest_allocator: &impl RangeAllocator,
         memory_map: MemoryMap,
     ) -> ManifestInfo;
 

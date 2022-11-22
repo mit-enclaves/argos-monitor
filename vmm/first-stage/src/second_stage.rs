@@ -5,7 +5,7 @@ use crate::guests::ManifestInfo;
 use crate::mmu::frames::RangeFrameAllocator;
 use crate::{HostPhysAddr, HostVirtAddr};
 use core::arch::asm;
-use mmu::{frame_allocator::PhysRange, FrameAllocator, PtFlag, PtMapper};
+use mmu::{frame_allocator::PhysRange, RangeAllocator, PtFlag, PtMapper};
 use stage_two_abi::{EntryPoint, Manifest, RawStatics};
 
 #[cfg(feature = "second-stage")]
@@ -22,7 +22,7 @@ const LOAD_VIRT_ADDR: HostVirtAddr = HostVirtAddr::new(0x80000000000);
 const STACK_VIRT_ADDR: HostVirtAddr = HostVirtAddr::new(0x90000000000);
 const STACK_SIZE: usize = 0x1000 * 2;
 
-pub fn second_stage_allocator(stage1_allocator: &impl FrameAllocator) -> RangeFrameAllocator {
+pub fn second_stage_allocator(stage1_allocator: &impl RangeAllocator) -> RangeFrameAllocator {
     let second_stage_range = stage1_allocator
         .allocate_range(SECOND_STAGE_SIZE)
         .expect("Failed to allocate second stage range");
@@ -37,8 +37,8 @@ pub fn second_stage_allocator(stage1_allocator: &impl FrameAllocator) -> RangeFr
 
 pub fn load(
     info: &ManifestInfo,
-    stage1_allocator: &impl FrameAllocator,
-    stage2_allocator: &impl FrameAllocator,
+    stage1_allocator: &impl RangeAllocator,
+    stage2_allocator: &impl RangeAllocator,
     pt_mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
 ) {
     // Read elf and allocate second stage memory
@@ -124,7 +124,7 @@ pub fn load(
 /// memory.
 ///
 /// Returns the host physical range where the second stage will be loaded.
-fn relocate_elf(elf: &mut ElfProgram, allocator: &impl FrameAllocator) -> PhysRange {
+fn relocate_elf(elf: &mut ElfProgram, allocator: &impl RangeAllocator) -> PhysRange {
     let mut start = u64::MAX;
     let mut end = 0;
     for segment in &elf.segments {
