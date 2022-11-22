@@ -86,7 +86,7 @@ macro_rules! find_statics {
     };
 }
 
-find_statics!(pages, current_domain, domains_arena, regions_arena);
+find_statics!(allocator, current_domain, domains_arena, regions_arena);
 
 /// Crate static symbols using a familiar static declaration statement.
 /// A `Statics` struct and a manifest are created and are expected to be populated by stage 1.

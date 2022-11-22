@@ -12,7 +12,7 @@
 //!    symbols). The linker script is called `second-stage-linker-script.x` and is located at the
 //!    root of the repository.
 
-use crate::allocator::{Page, PAGE_SIZE};
+use crate::allocator::{FreeListAllocator, Page, PAGE_SIZE};
 use crate::arena::{Handle, TypedArena};
 use crate::hypercalls::{access, Backend, Domain, Region, RegionCapability, RevokInfo, Switch};
 use stage_two_abi::make_static;
@@ -68,7 +68,8 @@ const EMPTY_REGION: Region = Region {
 };
 
 make_static! {
-    static mut pages: [Page; NB_PAGES] = [EMPTY_PAGE; NB_PAGES];
+    static mut allocator: FreeListAllocator<NB_PAGES> =
+        FreeListAllocator::new([EMPTY_PAGE; NB_PAGES]);
     static mut current_domain: Handle<Domain<Arch>, NB_DOMAINS> =
         Handle::new_unchecked(0);
     static mut domains_arena: TypedArena<Domain<Arch>, NB_DOMAINS> =

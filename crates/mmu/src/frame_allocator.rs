@@ -9,6 +9,12 @@ pub unsafe trait FrameAllocator {
     /// Allocates a range of physical memory.
     fn allocate_range(&self, size: usize) -> Option<PhysRange>;
 
+    /// Frees a frame.
+    fn free_frame(&self) -> Result<(), ()> {
+        // Default implementation: leak all the pages
+        Ok(())
+    }
+
     /// Returns the boundaries of usable physical memory.
     fn get_boundaries(&self) -> (usize, usize);
 

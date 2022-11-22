@@ -4,7 +4,7 @@
 EXTERN(
     __manifest
     __statics
-    __pages
+    __allocator
     __current_domain
     __domains_arena
     __regions_arena

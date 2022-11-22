@@ -1,7 +1,7 @@
 //! VMX guest backend
 
 use super::Arch;
-use crate::allocator::BumpAllocator;
+use crate::allocator::Allocator;
 use crate::debug::qemu;
 use crate::guest::{Guest, HandlerResult};
 use crate::hypercalls::{ErrorCode, Hypercalls, Parameters};
@@ -31,10 +31,9 @@ pub fn launch_guest(manifest: &'static mut Manifest<Statics<Arch>>) {
         .statics
         .take()
         .expect("Missing statics in manifest");
-    let mut allocator = BumpAllocator::new(
-        manifest.poffset,
-        manifest.voffset,
-        statics.pages.take().expect("No pages in statics"),
+    let mut allocator = Allocator::new(
+        statics.allocator.take().expect("No pages in statics"),
+        (manifest.voffset - manifest.poffset) as usize,
     );
     let frame = allocator
         .allocate_frame()
@@ -71,17 +70,17 @@ pub fn launch_guest(manifest: &'static mut Manifest<Statics<Arch>>) {
     qemu::exit(qemu::ExitCode::Success);
 }
 
-pub struct VmxGuest<'active, 'vmx> {
+pub struct VmxGuest<'active, 'vmx, const N: usize> {
     vcpu: &'active mut vmx::ActiveVmcs<'active, 'vmx>,
     hypercalls: Hypercalls<Arch>,
-    allocator: &'vmx BumpAllocator,
+    allocator: &'vmx Allocator<N>,
 }
 
-impl<'active, 'vmx> VmxGuest<'active, 'vmx> {
+impl<'active, 'vmx, const N: usize> VmxGuest<'active, 'vmx, N> {
     pub fn new(
         vcpu: &'active mut ActiveVmcs<'active, 'vmx>,
         hypercalls: Hypercalls<Arch>,
-        allocator: &'vmx BumpAllocator,
+        allocator: &'vmx Allocator<N>,
     ) -> Self {
         Self {
             vcpu,
@@ -91,7 +90,7 @@ impl<'active, 'vmx> VmxGuest<'active, 'vmx> {
     }
 }
 
-impl<'vcpu> Guest for VmxGuest<'vcpu, 'vcpu> {
+impl<'vcpu, const N: usize> Guest for VmxGuest<'vcpu, 'vcpu, N> {
     type ExitReason = vmx::VmxExitReason;
 
     type Error = vmx::VmxError;
