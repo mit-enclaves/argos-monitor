@@ -6,10 +6,12 @@
 
 extern crate alloc;
 
+use acpi::AcpiTables;
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
 use first_stage::acpi::AcpiInfo;
 use first_stage::getsec::configure_getsec;
+use first_stage::acpi_handler::TycheACPIHandler;
 use first_stage::guests;
 use first_stage::guests::Guest;
 use first_stage::mmu::MemoryMap;
@@ -90,6 +92,13 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         .rsdp_addr
         .into_option()
         .expect("Missing RSDP address");
+
+    let acpi_tables = match unsafe { AcpiTables::from_rsdp(TycheACPIHandler, rsdp as usize) } {
+        Ok(acpi_tables) => acpi_tables,
+        Err(_) => panic!("Failed to parse the ACPI table!"),
+    };
+    let acpi_platform_info = acpi_tables.platform_info().unwrap();
+
     let acpi_info = unsafe { first_stage::acpi::AcpiInfo::from_rsdp(rsdp, physical_memory_offset) };
 
     // Check I/O MMU support
