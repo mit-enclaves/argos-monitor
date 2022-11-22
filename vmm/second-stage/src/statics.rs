@@ -43,7 +43,7 @@ const EMPTY_REGION_CAPABILITY: RegionCapability = RegionCapability {
     handle: Handle::new_unchecked(0),
 };
 
-type Arch = crate::x86_64::Arch;
+type Arch = crate::arch::Arch;
 
 const EMPTY_SWITCH: Switch<Arch> = Switch {
     is_valid: false,

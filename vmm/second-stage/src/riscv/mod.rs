@@ -2,8 +2,8 @@
 
 pub mod guest;
 
-use crate::debug::ExitCode;
-use crate::hypercalls::{Backend, DomainArena, DomainHandle, HypercallResult};
+use crate::debug::qemu::ExitCode;
+use crate::hypercalls::{Backend, Domain, ErrorCode, HypercallResult, Region};
 use crate::statics;
 use core::arch::asm;
 use mmu::FrameAllocator;
@@ -17,33 +17,75 @@ impl Arch {
     }
 }
 
+pub struct Vcpu {}
+pub struct Store {}
+pub struct Context {}
+
 impl Backend for Arch {
+    type Vcpu<'a> = Vcpu;
+    type Store = Store;
+    type Context = Context;
+
+    const EMPTY_STORE: Self::Store = Store {};
+    const EMPTY_CONTEXT: Self::Context = Context {};
+
     fn debug_iommu(&mut self) -> HypercallResult {
         // No I/O MMU with Risc-V backend
         Ok(Default::default())
     }
 
-    fn identity_add(
+    fn domain_seal(
         &mut self,
-        allocator: &impl FrameAllocator,
-        ept: usize,
-        start: usize,
-        end: usize,
-    ) -> Result<(), vmx::VmxError> {
+        _target: usize,
+        _current: &mut Domain<Self>,
+        _reg_1: usize,
+        _reg_2: usize,
+        _reg_3: usize,
+    ) -> HypercallResult {
         todo!();
     }
 
-    fn identity_remove(
+    fn domain_create(
         &mut self,
-        allocator: &impl FrameAllocator,
-        ept: usize,
-        start: usize,
-        end: usize,
-    ) -> Result<(), vmx::VmxError> {
+        _store: &mut Self::Store,
+        _allocator: &impl FrameAllocator,
+    ) -> Result<(), ErrorCode> {
         todo!();
     }
 
-    fn transition(&self, handle: DomainHandle, domains: &DomainArena) -> HypercallResult {
+    fn domain_restore<'a>(
+        &mut self,
+        _store: &Self::Store,
+        _context: &Self::Context,
+        _vcpu: &mut Self::Vcpu<'a>,
+    ) -> Result<(), ErrorCode> {
+        todo!();
+    }
+
+    fn domain_save<'a>(
+        &mut self,
+        _context: &mut Self::Context,
+        _vcpu: &mut Self::Vcpu<'a>,
+    ) -> Result<(), ErrorCode> {
+        todo!();
+    }
+
+    fn add_region(
+        &mut self,
+        _store: &mut Self::Store,
+        _region: &Region,
+        _access: usize,
+        _allocator: &impl FrameAllocator,
+    ) -> Result<(), ErrorCode> {
+        todo!();
+    }
+
+    fn remove_region(
+        &mut self,
+        _store: &mut Self::Store,
+        _region: &Region,
+        _allocator: &impl FrameAllocator,
+    ) -> Result<(), ErrorCode> {
         todo!();
     }
 }
@@ -74,6 +116,6 @@ pub fn exit_qemu(exit_code: ExitCode) {
 }
 
 /// Architecture specific initialization.
-pub fn init(_manifest: &Manifest<statics::Statics>) {
+pub fn init(_manifest: &Manifest<statics::Statics<Arch>>) {
     // TODO
 }

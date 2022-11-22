@@ -1,13 +1,9 @@
 //! Risc-V guest
 
-use crate::hypercalls::{Backend, Hypercalls};
-use mmu::FrameAllocator;
-use stage_two_abi::GuestInfo;
+use super::Arch;
+use crate::statics::Statics;
+use stage_two_abi::Manifest;
 
-pub fn launch_guest(
-    _allocator: &impl FrameAllocator,
-    _infos: &GuestInfo,
-    _hypercalls: Hypercalls<impl Backend>,
-) {
+pub fn launch_guest(_manifest: &'static mut Manifest<Statics<Arch>>) {
     // TODO
 }
