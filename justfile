@@ -31,6 +31,10 @@ build-riscv:
 
 # Typecheck
 check:
+	@# Create an empty file if no second-stage has been compiled yet
+	@mkdir -p target/x86_64-unknown-kernel/release
+	@touch target/x86_64-unknown-kernel/release/second-stage
+
 	cargo check {{cargo_args}} {{x86_64}} {{first-stage}}
 	cargo check {{cargo_args}} {{x86_64}} {{second-stage}}
 	cargo check {{cargo_args}} {{x86_64}} {{fake-acm}}

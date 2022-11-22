@@ -1,0 +1,27 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: --deny warnings
+
+jobs:
+  Test:
+
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v3
+    - uses: extractions/setup-just@v1 # Install `just`
+    - name: Setup
+      run: just setup && sudo apt-get -y install swtpm
+    - name: Check
+      run: just check
+        # TODO: KVM is not supported on Github-provided VMs
+        # - name: No-Guest
+        #   run: just no-guest && just no-guest | grep Success
