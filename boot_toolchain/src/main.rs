@@ -73,12 +73,18 @@ fn main() {
 
     let image = create_disk_images(&kernel_binary_path, uefi);
 
+    let smp = 1;
+
     if no_boot {
         println!("Created disk image at `{}`", image.display());
         return;
     }
 
     let mut run_cmd = Command::new("qemu-system-x86_64");
+    run_cmd
+        .arg("-smp")
+        .arg(format!("{}", smp));
+
     run_cmd
         .arg("-drive")
         .arg(format!("format=raw,file={}", image.display()));
