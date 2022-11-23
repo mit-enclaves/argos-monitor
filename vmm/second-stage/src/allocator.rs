@@ -62,6 +62,10 @@ impl<const N: usize> FreeListAllocator<N> {
         })
     }
 
+    /// Frees a frame.
+    ///
+    /// The caller must give ownership of the physical frame: it must no longer be read or written
+    /// by any of the code that got access to the frame.
     unsafe fn free_frame(&mut self, frame: HostPhysAddr) {
         let phys_addr = frame.as_usize() & PAGE_SIZE as usize; // Align address
         let virt_addr = phys_addr + self.virt_offset;
@@ -97,6 +101,13 @@ unsafe impl<const N: usize> FrameAllocator for Allocator<N> {
         // SAFETY: We enforce that the inner allocator is properly initialized during construction
         // of the outer struct.
         unsafe { inner.allocate_frame() }
+    }
+
+    unsafe fn free_frame(&self, frame: HostPhysAddr) -> Result<(), ()> {
+        let mut inner = self.inner.borrow_mut();
+
+        unsafe { inner.free_frame(frame) };
+        Ok(())
     }
 
     fn get_boundaries(&self) -> (usize, usize) {

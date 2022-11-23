@@ -27,7 +27,7 @@ pub enum Level {
 impl Level {
     /// Returns the next level (i.e. the level of pages pointed by the entries of the current
     /// level)
-    fn next(self) -> Option<Self> {
+    pub fn next(self) -> Option<Self> {
         match self {
             Level::L4 => Some(Level::L3),
             Level::L3 => Some(Level::L2),
@@ -37,7 +37,7 @@ impl Level {
     }
 
     /// Returns the size of the memory region controlled by each entry of this level.
-    fn area_size(self) -> u64 {
+    pub fn area_size(self) -> u64 {
         match self {
             Level::L4 => PAGE_SIZE << 27,
             Level::L3 => PAGE_SIZE << 18,
@@ -208,7 +208,26 @@ pub unsafe trait Walker {
     {
         let (phys_addr, level) = self.root();
         let page = as_page(self, self.translate(phys_addr));
-        walk_range_rec(self, page, level, start, end, callback)
+        walk_range_rec(self, page, level, start, end, callback, &mut |_| {})
+    }
+
+    /// Walk the page tables entries spanning the range between `start` and `end`. Call the cleanup
+    /// function on all page whose covered range is included between `start` and `end`, except the
+    /// root.
+    unsafe fn cleanup_range<F, C>(
+        &mut self,
+        start: Self::VirtAddr,
+        end: Self::VirtAddr,
+        callback: &mut F,
+        cleanup: &mut C,
+    ) -> Result<(), ()>
+    where
+        F: FnMut(Self::VirtAddr, &mut u64, Level) -> WalkNext,
+        C: FnMut(HostVirtAddr),
+    {
+        let (phys_addr, level) = self.root();
+        let page = as_page(self, self.translate(phys_addr));
+        walk_range_rec(self, page, level, start, end, callback, cleanup)
     }
 
     unsafe fn as_page(&mut self, addr: HostVirtAddr) -> &mut [u64] {
@@ -217,19 +236,21 @@ pub unsafe trait Walker {
     }
 }
 
-unsafe fn walk_range_rec<VirtAddr, PhysAddr, W, F>(
+unsafe fn walk_range_rec<VirtAddr, PhysAddr, W, F, C>(
     walker: &mut W,
     page: &mut [u64],
     level: Level,
     start: VirtAddr,
     end: VirtAddr,
     callback: &mut F,
+    cleanup: &mut C,
 ) -> Result<(), ()>
 where
     VirtAddr: Address,
     PhysAddr: Address,
     W: Walker<VirtAddr = VirtAddr, PhysAddr = PhysAddr> + ?Sized,
     F: FnMut(VirtAddr, &mut u64, Level) -> WalkNext,
+    C: FnMut(HostVirtAddr),
 {
     let mut idx = start.index(level);
     let mut addr = start;
@@ -245,8 +266,17 @@ where
                 // Recursively process next level entries, if any
                 if let Some(next) = next_level {
                     let phys_addr = PhysAddr::from_u64(*entry & ADDRESS_MASK);
-                    let page = as_page(walker, walker.translate(phys_addr));
-                    walk_range_rec(walker, page, next, addr, end, callback)?;
+                    let host_virt_addr = walker.translate(phys_addr);
+                    let page = as_page(walker, host_virt_addr);
+                    walk_range_rec(walker, page, next, addr, end, callback, cleanup)?;
+
+                    // If the whole page is used, call the cleanup function after the page has been
+                    // walked.
+                    let use_index_zero = addr.index(next) == 0;
+                    let use_whole_area = end.as_u64() - start.as_u64() >= next.area_size();
+                    if use_index_zero && use_whole_area {
+                        cleanup(host_virt_addr);
+                    }
                 }
             }
             WalkNext::Leaf => (), // Proceed to the next entry at the same level

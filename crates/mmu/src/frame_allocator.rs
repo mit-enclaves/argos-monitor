@@ -8,7 +8,10 @@ pub unsafe trait FrameAllocator {
     fn allocate_frame(&self) -> Option<Frame>;
 
     /// Frees a frame.
-    fn free_frame(&self, frame: HostPhysAddr) -> Result<(), ()> {
+    ///
+    /// The caller must give ownership of the physical frame: it must no longer be read or written
+    /// by any of the code that got access to the frame.
+    unsafe fn free_frame(&self, frame: HostPhysAddr) -> Result<(), ()> {
         // Default implementation: leak all the pages
         let _ = frame;
         Ok(())
