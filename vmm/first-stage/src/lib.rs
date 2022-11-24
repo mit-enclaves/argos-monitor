@@ -18,6 +18,7 @@ use stage_two_abi::VgaInfo;
 use vmx;
 
 pub mod acpi;
+pub mod acpi_handler;
 pub mod allocator;
 pub mod elf;
 pub mod gdt;
