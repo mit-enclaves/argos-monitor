@@ -47,6 +47,7 @@ pub trait Guest {
         host_allocator: &impl RangeAllocator,
         guest_allocator: &impl RangeAllocator,
         memory_map: MemoryMap,
+        rsdp: u64,
     ) -> ManifestInfo;
 
     unsafe fn vmcall_handler(&self, vcpu: &mut ActiveVmcs) -> Result<HandlerResult, VmxError>;

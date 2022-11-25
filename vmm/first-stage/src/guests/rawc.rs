@@ -46,6 +46,7 @@ impl Guest for RawcBytes {
         host_allocator: &impl RangeAllocator,
         guest_allocator: &impl RangeAllocator,
         memory_map: MemoryMap,
+        _rsdp: u64,
     ) -> ManifestInfo {
         let mut manifest = ManifestInfo::default();
         let rawc_prog = ElfProgram::new(RAWCBYTES);

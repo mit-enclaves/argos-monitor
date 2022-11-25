@@ -51,6 +51,7 @@ impl Guest for Linux {
         host_allocator: &impl RangeAllocator,
         guest_allocator: &impl RangeAllocator,
         memory_map: MemoryMap,
+        rsdp: u64,
     ) -> ManifestInfo {
         let mut manifest = ManifestInfo::default();
         let mut linux_prog = ElfProgram::new(LINUXBYTES);
@@ -102,6 +103,7 @@ impl Guest for Linux {
         boot_params.ext_cmd_line_ptr = command_line_addr_high;
         boot_params.hdr.cmd_line_ptr = command_line_addr_low;
         boot_params.hdr.cmdline_size = COMMAND_LINE.len() as u32;
+        boot_params.acpi_rsdp_addr = rsdp;
         let boot_params = loaded_linux.add_payload(boot_params.as_bytes(), guest_allocator);
         let entry_point = linux_prog.phys_entry;
         let mut info = GuestInfo::default();
