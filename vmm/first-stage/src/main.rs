@@ -123,6 +123,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             vga_info,
             memory_map,
             pt_mapper,
+            rsdp as u64,
         )
     } else if cfg!(feature = "guest_rawc") {
         launch_guest(
@@ -133,6 +134,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             vga_info,
             memory_map,
             pt_mapper,
+            rsdp as u64,
         )
     } else if cfg!(feature = "no_guest") {
         launch_guest(
@@ -143,6 +145,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             vga_info,
             memory_map,
             pt_mapper,
+            rsdp as u64,
         )
     } else {
         panic!("Unrecognized guest");
@@ -157,6 +160,7 @@ fn launch_guest(
     vga_info: VgaInfo,
     memory_map: MemoryMap,
     mut pt_mapper: PtMapper<HostPhysAddr, HostVirtAddr>,
+    rsdp: u64,
 ) -> ! {
     initialize_cpu();
     print_vmx_info();
@@ -164,7 +168,13 @@ fn launch_guest(
     let mut stage2_allocator = second_stage::second_stage_allocator(stage1_allocator);
     unsafe {
         println!("Loading guest");
-        let mut info = guest.instantiate(acpi, &mut stage2_allocator, guest_allocator, memory_map);
+        let mut info = guest.instantiate(
+            acpi,
+            &mut stage2_allocator,
+            guest_allocator,
+            memory_map,
+            rsdp,
+        );
         info.vga_info = vga_info;
         println!("Saving host state");
         guests::vmx::save_host_info(&mut info.guest_info);
