@@ -36,6 +36,19 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     }
     println!("============= First Stage =============");
 
+    // Initialize memory management
+    let physical_memory_offset = HostVirtAddr::new(
+        boot_info
+            .physical_memory_offset
+            .into_option()
+            .expect("The bootloader must be configured with 'map-physical-memory'")
+            as usize,
+    );
+    let (host_allocator, guest_allocator, memory_map, pt_mapper) = unsafe {
+        first_stage::init_memory(physical_memory_offset, &mut boot_info.memory_regions)
+            .expect("Failed to initialize memory")
+    };
+
     // Initialize kernel structures
     first_stage::init();
 
@@ -72,20 +85,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     if cfg!(test) {
         run_tests();
     }
-
-    // Initialize memory management
-    let physical_memory_offset = HostVirtAddr::new(
-        boot_info
-            .physical_memory_offset
-            .into_option()
-            .expect("The bootloader must be configured with 'map-physical-memory'")
-            as usize,
-    );
-
-    let (host_allocator, guest_allocator, memory_map, pt_mapper) = unsafe {
-        first_stage::init_memory(physical_memory_offset, &mut boot_info.memory_regions)
-            .expect("Failed to initialize memory")
-    };
 
     // Parse RSDP tables
     let rsdp = boot_info

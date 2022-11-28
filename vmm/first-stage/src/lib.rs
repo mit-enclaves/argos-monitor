@@ -52,7 +52,11 @@ pub fn init() {
     interrupts::init_idt();
 
     // Initialize hardware interrupt
-    // unsafe { interrupts::PICS.lock().initialize() };
+    // NOTE: initializing the LAPIC confuses Linux
+    // unsafe {
+    //     interrupts::LOCALAPIC.lock().enable();
+    //     println!("local apic id = {}", interrupts::LOCALAPIC.lock().id());
+    // };
     // x86_64::instructions::interrupts::enable();
 }
 

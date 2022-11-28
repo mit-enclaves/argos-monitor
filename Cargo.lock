@@ -127,7 +127,6 @@ dependencies = [
  "debug",
  "lazy_static",
  "mmu",
- "pic8259",
  "qemu",
  "spin",
  "stage_two_abi",
@@ -175,7 +174,6 @@ dependencies = [
  "bootloader",
  "font8x8",
  "lazy_static",
- "pic8259",
  "spin",
  "uart_16550",
  "volatile 0.2.7",
@@ -249,15 +247,6 @@ name = "paste"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1de2e551fb905ac83f73f7aedf2f0cb4a0da7e35efa24a202a936269f1f18e1"
-
-[[package]]
-name = "pic8259"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24ec21f514e2e16e94649f1d041ca4a7069b512c037ac156360652a775e6229d"
-dependencies = [
- "x86_64",
-]
 
 [[package]]
 name = "proc-macro-error"
