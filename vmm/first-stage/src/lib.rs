@@ -30,6 +30,7 @@ pub mod print;
 pub mod second_stage;
 pub mod segments;
 pub mod serial;
+pub mod smp;
 pub mod smx;
 
 pub use crate::mmu::init as init_memory;
