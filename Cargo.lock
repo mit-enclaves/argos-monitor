@@ -135,6 +135,7 @@ dependencies = [
  "volatile 0.2.7",
  "vtd",
  "x2apic",
+ "x86",
  "x86_64",
 ]
 
@@ -178,6 +179,7 @@ dependencies = [
  "uart_16550",
  "volatile 0.2.7",
  "x2apic",
+ "x86",
  "x86_64",
 ]
 
@@ -517,6 +519,17 @@ dependencies = [
  "paste",
  "raw-cpuid",
  "x86_64",
+]
+
+[[package]]
+name = "x86"
+version = "0.52.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2781db97787217ad2a2845c396a5efe286f87467a5810836db6d74926e94a385"
+dependencies = [
+ "bit_field",
+ "bitflags",
+ "raw-cpuid",
 ]
 
 [[package]]
