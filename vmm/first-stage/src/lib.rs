@@ -30,6 +30,7 @@ pub mod print;
 pub mod second_stage;
 pub mod segments;
 pub mod serial;
+pub mod smp;
 pub mod smx;
 
 pub use crate::mmu::init as init_memory;
@@ -52,10 +53,6 @@ pub fn init() {
     interrupts::init_idt();
 
     // Initialize hardware interrupt
-    unsafe {
-        interrupts::LOCALAPIC.lock().enable();
-        println!("local apic id = {}", interrupts::LOCALAPIC.lock().id());
-    };
     x86_64::instructions::interrupts::enable();
 }
 

@@ -17,6 +17,7 @@ use first_stage::guests::Guest;
 use first_stage::mmu::MemoryMap;
 use first_stage::println;
 use first_stage::second_stage;
+use first_stage::smp;
 use first_stage::smx::senter;
 use first_stage::{HostPhysAddr, HostVirtAddr};
 use mmu::{PtMapper, RangeAllocator};
@@ -97,7 +98,11 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         Ok(acpi_tables) => acpi_tables,
         Err(_) => panic!("Failed to parse the ACPI table!"),
     };
-    let acpi_platform_info = acpi_tables.platform_info().unwrap();
+
+    let acpi_platform_info = match acpi_tables.platform_info() {
+        Ok(platform_info) => platform_info,
+        Err(_) => panic!("Unable to get platform info from the ACPI table!"),
+    };
 
     let acpi_info = unsafe { first_stage::acpi::AcpiInfo::from_rsdp(rsdp, physical_memory_offset) };
 
@@ -111,6 +116,11 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         println!("        extended {:?}", iommu.get_extended_capability());
     } else {
         println!("IO MMU: None");
+    }
+
+    // Initiates the SMP boot process
+    unsafe {
+        smp::boot(acpi_platform_info);
     }
 
     // Select appropriate guest depending on selected features
