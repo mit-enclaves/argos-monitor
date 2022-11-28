@@ -52,8 +52,11 @@ pub fn init() {
     interrupts::init_idt();
 
     // Initialize hardware interrupt
-    // unsafe { interrupts::PICS.lock().initialize() };
-    // x86_64::instructions::interrupts::enable();
+    unsafe {
+        interrupts::LOCALAPIC.lock().enable();
+        println!("local apic id = {}", interrupts::LOCALAPIC.lock().id());
+    };
+    x86_64::instructions::interrupts::enable();
 }
 
 /// Initialize display device.
