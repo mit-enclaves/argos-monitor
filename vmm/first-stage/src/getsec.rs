@@ -179,4 +179,3 @@ fn getsec_parameters(registers: &mut GetsecRegisters) {
         }
     }
 }
-

@@ -6,7 +6,7 @@ use crate::debug::qemu;
 use crate::guest::{Guest, HandlerResult};
 use crate::hypercalls::{ErrorCode, Hypercalls, Parameters};
 use crate::println;
-use crate::statics::Statics;
+use crate::statics::{allocator as get_allocator,domains_arena as get_domains_arena, regions_arena as get_regions_arena};
 use core::arch;
 use core::arch::asm;
 use debug;
@@ -21,18 +21,14 @@ use vmx::fields::traits::*;
 use vmx::secondary_controls_capabilities;
 use vmx::{ActiveVmcs, ControlRegister, Register, VmxError, VmxExitReason};
 
-pub fn launch_guest(manifest: &'static mut Manifest<Statics<Arch>>) {
+pub fn launch_guest(manifest: &'static mut Manifest) {
     if !manifest.info.loaded {
         println!("No guest found, exiting");
         return;
     }
 
-    let mut statics = manifest
-        .statics
-        .take()
-        .expect("Missing statics in manifest");
     let mut allocator = Allocator::new(
-        statics.allocator.take().expect("No pages in statics"),
+        get_allocator(),
         (manifest.voffset - manifest.poffset) as usize,
     );
     let frame = allocator
@@ -56,7 +52,16 @@ pub fn launch_guest(manifest: &'static mut Manifest<Statics<Arch>>) {
         println!("Done with the guest init");
         let mut vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");
         let arch = Arch::new(manifest.iommu);
-        let hypercalls = Hypercalls::new(&mut statics, &manifest, arch, &mut vcpu, &mut allocator);
+        let domains_arena = get_domains_arena();
+        let regions_arena = get_regions_arena();
+        let hypercalls = Hypercalls::new(
+            &manifest,
+            arch,
+            &mut vcpu,
+            &mut allocator,
+            domains_arena,
+            regions_arena,
+        );
         init_vcpu(&mut vcpu, &manifest.info, &mut allocator);
 
         // Hook for debugging.

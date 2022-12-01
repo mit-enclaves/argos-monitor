@@ -148,15 +148,14 @@ fn launch_guest(
     unsafe {
         let mut info = guest.instantiate(acpi, &mut stage2_allocator, guest_allocator, memory_map);
         guests::vmx::save_host_info(&mut info.guest_info);
-        second_stage::load(
+        let stage2 = second_stage::load(
             &info,
             stage1_allocator,
             &mut stage2_allocator,
             &mut pt_mapper,
         );
+        stage2.jump_into();
     }
-    qemu::exit(qemu::ExitCode::Failure);
-    first_stage::hlt_loop();
 }
 
 fn initialize_cpu() {

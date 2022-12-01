@@ -4,17 +4,17 @@
 use core::panic::PanicInfo;
 use second_stage;
 use second_stage::arch::guest::launch_guest;
-use second_stage::arch::Arch;
 use second_stage::debug::qemu;
 use second_stage::println;
-use second_stage::statics::Statics;
-use stage_two_abi::{entry_point, Manifest};
+use second_stage::statics::get_manifest;
+use stage_two_abi::entry_point;
 
-entry_point!(second_stage_entry_point, Statics<Arch>);
+entry_point!(second_stage_entry_point);
 
-pub extern "C" fn second_stage_entry_point(manifest: &'static mut Manifest<Statics<Arch>>) -> ! {
+fn second_stage_entry_point() -> ! {
     println!("============= Second Stage =============");
     println!("Hello from second stage!");
+    let manifest = get_manifest();
     second_stage::init(manifest);
     println!("Initialization: done");
 

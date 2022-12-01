@@ -1,14 +1,5 @@
 /* Force the linker to look for some symbols.                              */
-/* In our case those symbols all start with '__', and are copied in their */
-/* respective sections with `KEEP(*(__*))`*/
-EXTERN(
-    __manifest
-    __statics
-    __allocator
-    __current_domain
-    __domains_arena
-    __regions_arena
-)
+EXTERN(__manifest)
 
 SECTIONS
 {
@@ -31,7 +22,7 @@ SECTIONS
   /* Finally, all data                                         */
   /* NOTE: no need to page-align bss, both bss and data are RW */
   .data : ALIGN(0x1000) {
-    KEEP(*(__*))
+    KEEP(*(__manifest))
     *(.data)
     *(.data.*)
   }

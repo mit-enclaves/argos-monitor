@@ -5,8 +5,8 @@ use crate::guests::ManifestInfo;
 use crate::mmu::frames::RangeFrameAllocator;
 use crate::{HostPhysAddr, HostVirtAddr};
 use core::arch::asm;
-use mmu::{frame_allocator::PhysRange, RangeAllocator, PtFlag, PtMapper};
-use stage_two_abi::{EntryPoint, Manifest, RawStatics};
+use mmu::{frame_allocator::PhysRange, PtFlag, PtMapper, RangeAllocator};
+use stage_two_abi::{EntryPoint, Manifest};
 
 #[cfg(feature = "second-stage")]
 const SECOND_STAGE: &'static [u8] =
@@ -21,6 +21,26 @@ const LOAD_VIRT_ADDR: HostVirtAddr = HostVirtAddr::new(0x80000000000);
 //  Stack definitions
 const STACK_VIRT_ADDR: HostVirtAddr = HostVirtAddr::new(0x90000000000);
 const STACK_SIZE: usize = 0x1000 * 2;
+
+pub struct Stage2 {
+    entry_point: EntryPoint,
+    stack_addr: u64,
+}
+
+impl Stage2 {
+    /// Hands over control to stage 2.
+    pub fn jump_into(self) -> ! {
+        unsafe {
+            asm! {
+                "mov rsp, {rsp}",      // Setupt stack pointer
+                "call {entry_point}",  // Enter stage 2
+                rsp = in(reg) self.stack_addr,
+                entry_point = in(reg) self.entry_point,
+            }
+        }
+        panic!("Failed entry or unexpected return from second stage");
+    }
+}
 
 pub fn second_stage_allocator(stage1_allocator: &impl RangeAllocator) -> RangeFrameAllocator {
     let second_stage_range = stage1_allocator
@@ -40,7 +60,7 @@ pub fn load(
     stage1_allocator: &impl RangeAllocator,
     stage2_allocator: &impl RangeAllocator,
     pt_mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
-) {
+) -> Stage2 {
     // Read elf and allocate second stage memory
     let mut second_stage = ElfProgram::new(SECOND_STAGE);
 
@@ -112,9 +132,13 @@ pub fn load(
     unsafe {
         // We need to manually ensure that the type correspond to the second stage entry point
         // function.
-        let entry_point: EntryPoint<RawStatics> =
+        let entry_point: EntryPoint =
             core::mem::transmute(second_stage.entry.as_usize());
-        call_second_stage(entry_point, manifest, rsp.as_u64());
+
+        Stage2 {
+            entry_point,
+            stack_addr: rsp.as_u64(),
+        }
     }
 }
 
@@ -161,19 +185,4 @@ fn relocate_elf(elf: &mut ElfProgram, allocator: &impl RangeAllocator) -> PhysRa
     }
 
     range
-}
-
-unsafe fn call_second_stage(
-    entry_point: EntryPoint<RawStatics>,
-    manifest: &'static Manifest<RawStatics>,
-    stack_addr: u64,
-) -> ! {
-    asm! {
-        "mov rsp, {rsp}",      // Setupt stack pointer
-        "call {entry_point}",  // Enter stage 2
-        rsp = in(reg) stack_addr,
-        entry_point = in(reg) entry_point,
-        in("rdi") manifest,
-    }
-    panic!("Failed entry or unexpected return from second stage");
 }

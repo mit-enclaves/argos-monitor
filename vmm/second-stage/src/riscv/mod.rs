@@ -2,9 +2,13 @@
 
 pub mod guest;
 
+use crate::allocator::Allocator;
 use crate::debug::qemu::ExitCode;
-use crate::hypercalls::{Backend, Domain, ErrorCode, HypercallResult, Region};
-use crate::statics;
+use crate::hypercalls::{Backend, Domain, ErrorCode, HypercallResult, Hypercalls, Region};
+use crate::statics::{
+    allocator as get_allocator, domains_arena as get_domains_arena,
+    regions_arena as get_regions_arena,
+};
 use core::arch::asm;
 use mmu::FrameAllocator;
 use stage_two_abi::Manifest;
@@ -12,7 +16,7 @@ use stage_two_abi::Manifest;
 pub struct Arch {}
 
 impl Arch {
-    pub fn new(_iommu_addr: u64) -> Self {
+    pub fn new() -> Self {
         Self {}
     }
 }
@@ -116,6 +120,20 @@ pub fn exit_qemu(exit_code: ExitCode) {
 }
 
 /// Architecture specific initialization.
-pub fn init(_manifest: &Manifest<statics::Statics<Arch>>) {
+pub fn init(manifest: &Manifest) {
+    let mut allocator = Allocator::new(
+        get_allocator(),
+        (manifest.voffset - manifest.poffset) as usize,
+    );
+    let domains_arena = get_domains_arena();
+    let regions_arena = get_regions_arena();
+    let _hypercalls = Hypercalls::new(
+        &manifest,
+        Arch::new(),
+        &mut Vcpu {},
+        &mut allocator,
+        domains_arena,
+        regions_arena,
+    );
     // TODO
 }

@@ -7,7 +7,6 @@ use crate::debug::qemu::ExitCode;
 use crate::hypercalls::access;
 use crate::hypercalls::{Backend, Domain, ErrorCode, HypercallResult, Region, Registers};
 use crate::println;
-use crate::statics;
 use core::arch::asm;
 use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator};
@@ -196,7 +195,7 @@ impl Backend for Arch {
 }
 
 /// Architecture specific initialization.
-pub fn init(manifest: &Manifest<statics::Statics<Arch>>) {
+pub fn init(manifest: &Manifest) {
     unsafe {
         asm!(
             "mov cr3, {}",

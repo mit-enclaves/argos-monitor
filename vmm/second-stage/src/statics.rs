@@ -1,21 +1,16 @@
 //! # Statically allocated structures
 //!
-//! We use a `make_static` macro to define the static structures of stage 2. This macros ensures
-//! that symbols are properly exposed and can be picked up by stage 1. Stage 2 get access to the
-//! statics trough the manifest, which will contain a single mutable reference to those static,
-//! therefore creating a safe wrapper around mutable statics.
-//!
-//! Important: To add a new statics, there are three steps:
-//! 1. Add a new static in this file within the `make_static` macro.
-//! 2. Add the name of the static in the `find_statics` macro withing the second stage ABI crate.
-//! 3. Add the name of the symbol preceeded by `__` at the top of the linker script (next to other
-//!    symbols). The linker script is called `second-stage-linker-script.x` and is located at the
-//!    root of the repository.
+//! We use a `make_manifest` macro to define the manifest used by stage 2. This macros ensures
+//! that manifest symbols is properly exposed and can be picked up by stage 1.
+//! Mutable statics are also defined here, and made accessible through safe helper functions using
+//! the `make_static!` macro. The helper function owns an atomic boolean that is set the first time
+//! the function is called, and panic on following calls. This ensures we don"t emit more than one
+//! mutable reference with static lifetime.
 
 use crate::allocator::{FreeListAllocator, Page, PAGE_SIZE};
 use crate::arena::{Handle, TypedArena};
 use crate::hypercalls::{access, Backend, Domain, Region, RegionCapability, RevokInfo, Switch};
-use stage_two_abi::make_static;
+use stage_two_abi::make_manifest;
 
 // ————————————————————— Static Resources Configuration ————————————————————— //
 
@@ -68,13 +63,40 @@ const EMPTY_REGION: Region = Region {
     end: 0,
 };
 
+macro_rules! make_static {
+    ($(static mut $name:ident : $type:ty = $init:expr;)*) => {
+        // Create accessor functions
+        $(
+            /// Returns a mutable static reference to a global static.
+            ///
+            /// This function will panic if called twide, ensuring the mutable reference is unique.
+            pub(crate) fn $name() -> &'static mut $type {
+                use core::sync::atomic::{AtomicBool, Ordering};
+
+                #[allow(non_upper_case_globals)]
+                static mut $name: $type = $init;
+                static mut TAKEN: AtomicBool = AtomicBool::new(false);
+
+                // SAFETY: We return a static mutable to the static only once. This is ensured by
+                // using an atomic boolean that we set to true the first time the reference is
+                // taken.
+                unsafe {
+                    TAKEN.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                        .expect("Statics can be accesses only once");
+                    &mut $name
+                }
+            }
+        )*
+    };
+}
+
 make_static! {
     static mut allocator: FreeListAllocator<NB_PAGES> =
         FreeListAllocator::new([EMPTY_PAGE; NB_PAGES]);
-    static mut current_domain: Handle<Domain<Arch>, NB_DOMAINS> =
-        Handle::new_unchecked(0);
     static mut domains_arena: TypedArena<Domain<Arch>, NB_DOMAINS> =
         TypedArena::new([EMPTY_DOMAIN; NB_DOMAINS]);
     static mut regions_arena: TypedArena<Region, NB_REGIONS> =
         TypedArena::new([EMPTY_REGION; NB_REGIONS]);
 }
+
+make_manifest!();
