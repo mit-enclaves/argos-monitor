@@ -9,11 +9,13 @@ extern crate alloc;
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
 use first_stage::acpi::AcpiInfo;
+use first_stage::getsec::configure_getsec;
 use first_stage::guests;
 use first_stage::guests::Guest;
 use first_stage::mmu::MemoryMap;
 use first_stage::println;
 use first_stage::second_stage;
+use first_stage::smx::senter;
 use first_stage::{HostPhysAddr, HostVirtAddr};
 use mmu::{PtMapper, RangeAllocator};
 use qemu;
@@ -154,8 +156,13 @@ fn launch_guest(
             &mut stage2_allocator,
             &mut pt_mapper,
         );
-        stage2.jump_into();
+        configure_getsec(stage2);
+        senter();
     }
+
+    println!("Failed to jump into stage 2");
+    qemu::exit(qemu::ExitCode::Failure);
+    first_stage::hlt_loop();
 }
 
 fn initialize_cpu() {

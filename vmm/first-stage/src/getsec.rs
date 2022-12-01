@@ -8,6 +8,7 @@
 //! GETSEC causes a VM exit and KVM will kill the VM.
 
 use crate::println;
+use crate::second_stage::Stage2;
 use core::arch::asm;
 
 const GETSEC_OPCODE: u16 = 0x370F;
@@ -154,6 +155,13 @@ fn getsec_senter(registers: &mut GetsecRegisters) {
     // ILP DO SOME STUFFS NEED TO DEFINE WHAT NEEDS TO BE EMULATED OR NOT
 
     // TODO JUMP TO ACM
+    // For now, we just jump into stage 2
+    unsafe {
+        let stage2 = STAGE_2
+            .take()
+            .expect("GETSEC[SENTER] executed before proper initialization");
+        stage2.jump_into();
+    }
 }
 
 fn getsec_parameters(registers: &mut GetsecRegisters) {
@@ -177,5 +185,20 @@ fn getsec_parameters(registers: &mut GetsecRegisters) {
         _ => {
             todo!("NOT DEFINED RBX VALUE FOR GETSEC[PARAMETERS]");
         }
+    }
+}
+
+// ————————————————————————————— Initialization ————————————————————————————— //
+
+static mut STAGE_2: Option<Stage2> = None;
+
+/// Configures the appropriate data structures so that GETSEC will properly measure and launch
+/// stage 2.
+pub fn configure_getsec(stage2: Stage2) {
+    // For now just save stage 2.
+    //
+    // We will properly setup the various headers here in the future.
+    unsafe {
+        STAGE_2 = Some(stage2);
     }
 }

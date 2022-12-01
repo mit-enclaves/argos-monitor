@@ -30,6 +30,9 @@ pub fn smx_is_available() -> bool {
 pub unsafe fn senter() {
     asm!(
         "mov rax, 4", // To execute SENTER we need to set EAX to 4
+        "mov rdx, 0", // RDX must be 0
+        "mov rbx, 0", // TODO: set to SINIT_BASE
+        "mov rcx, 0", // TODO: set to SINIT_SIZE
         "getsec",
     );
 }
