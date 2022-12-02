@@ -45,7 +45,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             .expect("The bootloader must be configured with 'map-physical-memory'")
             as usize,
     );
-    let (host_allocator, guest_allocator, memory_map, pt_mapper) = unsafe {
+    let (host_allocator, guest_allocator, memory_map, mut pt_mapper) = unsafe {
         first_stage::init_memory(physical_memory_offset, &mut boot_info.memory_regions)
             .expect("Failed to initialize memory")
     };
@@ -119,7 +119,11 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     // Initiates the SMP boot process
     unsafe {
-        smp::boot(acpi_platform_info);
+        smp::boot(
+            acpi_platform_info,
+            &host_allocator,
+            &mut pt_mapper,
+        );
     }
 
     // Select appropriate guest depending on selected features

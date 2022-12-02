@@ -114,6 +114,7 @@ where
                 &mut |addr, entry, level| {
                     // TODO(aghosn) handle rewrite of access rights.
                     if (*entry & PtFlag::PRESENT.bits()) != 0 {
+                        *entry = *entry | prot.bits();
                         return WalkNext::Continue;
                     }
                     let end = virt_addr.as_usize() + size;

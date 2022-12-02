@@ -5,14 +5,36 @@ use acpi::platform::interrupt::InterruptModel;
 use acpi::platform::PlatformInfo;
 use acpi::platform::Processor;
 
+use core::arch::global_asm;
 use core::arch::x86_64::_rdtsc;
 use x86::apic::{xapic::XAPIC, ApicControl, ApicId};
 
-fn to_virt(addr: u64) -> u64 {
-    addr + 0x18000000000
+use crate::mmu::get_physical_memory_offset;
+use crate::vmx::{HostPhysAddr, HostVirtAddr};
+use mmu::{PtFlag, PtMapper, RangeAllocator};
+
+use core::sync::atomic::*;
+
+global_asm!(include_str!("trampoline.S"));
+
+const START_PAGE: u8 = 7;
+const ENTRY_PTR_OFFSET: u64 = 0x0ff0;
+const CR3_PTR_OFFSET: u64 = 0x0ff8;
+const RSP_PTR_OFFSET: u64 = 0x0fe8;
+
+const CODE_PADDR: u64 = (START_PAGE as usize * 0x1000) as u64;
+const ENTRY_PTR_PADDR: u64 = CODE_PADDR + ENTRY_PTR_OFFSET;
+const CR3_PTR_PADDR: u64 = CODE_PADDR + CR3_PTR_OFFSET;
+const RSP_PTR_PADDR: u64 = CODE_PADDR + RSP_PTR_OFFSET;
+
+const FALSE: AtomicBool = AtomicBool::new(false);
+static CPU_STATUS: [AtomicBool; 256] = [FALSE; 256];
+
+extern "C" {
+    fn ap_trampoline_start();
+    fn ap_trampoline_end();
 }
 
-// TODO: relax() instead of busy spinning
 fn spin(us: u64) {
     const FREQ: u64 = 2_000_000_000u64; // TODO: get cpu frequency
     let end = unsafe { _rdtsc() + FREQ / 1_000_000 * us };
@@ -21,7 +43,94 @@ fn spin(us: u64) {
     }
 }
 
-pub unsafe fn boot(platform_info: PlatformInfo) {
+unsafe fn ap_entry() {
+    // map the lapic 4K MMIO region into virtual memory
+    // Initialize local apic
+    let apic_region = core::slice::from_raw_parts_mut(
+        (0xfee00000 as u64 + get_physical_memory_offset().as_u64()) as _,
+        0x1000,
+    );
+    let mut lapic = XAPIC::new(apic_region);
+    lapic.attach();
+
+    // Initialize GDT
+    // Initialize IDT
+    // Signal the AP is ready
+    let cpuid = unsafe { core::arch::x86_64::__cpuid(0x01) };
+    let apic_id = ((cpuid.ebx & 0xffffffff) >> 24) as usize;
+    CPU_STATUS[apic_id].store(true, Ordering::SeqCst);
+    println!("Hello World from cpu {}", apic_id);
+
+    loop {}
+}
+
+// FIXME: the two allocation functions here uses the same address for physical and virtual address
+// for debugging purposes. We should switch to virtual address once we're done
+unsafe fn allocate_code_section(
+    allocator: &impl RangeAllocator,
+    mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
+) -> vmx::Frame {
+    // As we **must** have the frame on code_paddr for the AP to boot up,
+    // I bypass the memory allocator to directly allocate the memory here
+    let frame = vmx::Frame {
+        phys_addr: HostPhysAddr::new(CODE_PADDR as usize),
+        virt_addr: CODE_PADDR as *mut u8,
+    };
+
+    mapper.map_range(
+        allocator,
+        HostVirtAddr::new(frame.phys_addr.as_usize()),
+        frame.phys_addr,
+        0x1000,
+        PtFlag::WRITE | PtFlag::PRESENT | PtFlag::USER,
+    );
+
+    // Copy the cr3 register to cr3_ptr and share with AP
+    (CR3_PTR_PADDR as *mut usize).write(x86::controlregs::cr3() as usize);
+    // Copy the entry function pointer and share with AP
+    (ENTRY_PTR_PADDR as *mut usize).write(ap_entry as usize);
+
+    // Copy the ap trampoline code to start page
+    core::ptr::copy_nonoverlapping(
+        ap_trampoline_start as *const u8,
+        CODE_PADDR as _,
+        ap_trampoline_end as usize - ap_trampoline_start as usize,
+    );
+
+    frame
+}
+
+unsafe fn allocate_stack_section(
+    _cpuid: u8, // seems not important as the allocation is random...
+    stack_allocator: &impl RangeAllocator,
+    mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
+) -> vmx::Frame {
+    let stack_frame = stack_allocator
+        .allocate_frame()
+        .expect("AP stack frame")
+        .zeroed();
+
+    mapper.map_range(
+        stack_allocator,
+        HostVirtAddr::new(stack_frame.phys_addr.as_usize()),
+        stack_frame.phys_addr,
+        0x1000,
+        PtFlag::WRITE | PtFlag::PRESENT | PtFlag::USER,
+    );
+
+    // obviously rsp moves in the opposite direction as I expected x_x...
+    (RSP_PTR_PADDR as *mut usize).write(stack_frame.phys_addr.as_usize() + 0x1000);
+
+    stack_frame
+}
+
+pub unsafe fn boot(
+    platform_info: PlatformInfo,
+    stage1_allocator: &impl RangeAllocator,
+    pt_mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
+) {
+    let virtoffset = stage1_allocator.get_physical_offset();
+
     let apic_info = match platform_info.interrupt_model {
         InterruptModel::Apic(apic) => apic,
         _ => panic!("unable to retrieve apic informaiton"),
@@ -30,40 +139,60 @@ pub unsafe fn boot(platform_info: PlatformInfo) {
     let bsp: Processor = processor_info.boot_processor;
     let ap: &Vec<Processor> = processor_info.application_processors.as_ref();
 
-    let start_page: u8 = 42;
+    // TODO: disable PIC (mask all interrupts)
 
-    // Initialize APIC
-    let apic_region =
-        core::slice::from_raw_parts_mut(to_virt(apic_info.local_apic_address) as _, 0x1000 / 4);
-    let mut lapic = XAPIC::new(apic_region);
+    // Map the LAPIC's 4k MMIO region to virtual memory
+    let lapic_frame = vmx::Frame::new(
+        HostPhysAddr::new((apic_info.local_apic_address + virtoffset.as_u64()) as usize),
+        HostVirtAddr::new((apic_info.local_apic_address + virtoffset.as_u64()) as usize),
+    );
+    pt_mapper.map_range(
+        stage1_allocator,
+        HostVirtAddr::new(lapic_frame.phys_addr.as_usize()),
+        lapic_frame.phys_addr,
+        0x1000,
+        PtFlag::WRITE | PtFlag::PRESENT | PtFlag::USER,
+    );
+
+    // Initialize and enable LAPIC
+    let mut lapic = XAPIC::new(core::slice::from_raw_parts_mut(
+        lapic_frame.phys_addr.as_u64() as _,
+        0x1000,
+    ));
+    lapic.attach();
 
     // Check if I am the BSP or not
     assert!(!bsp.is_ap);
     assert!(lapic.id() == bsp.local_apic_id);
 
+    allocate_code_section(stage1_allocator, pt_mapper);
+
     // Intel MP Spec B.4: Universal Start-up Algorithm
-    // TODO: check APIC version and make sure it's not 82489DX
-    for id in 1..ap.len() as u8 {
+    for id in 1..(ap.len() + 1) as u8 {
+        let _stack_frame = allocate_stack_section(id, stage1_allocator, pt_mapper);
         let apic_id = ApicId::XApic(id);
+
+        assert!(CPU_STATUS[id as usize].load(Ordering::SeqCst) == false);
+
         // BSP sends AP an INIT IPI (Level Interrupt)
         lapic.ipi_init(apic_id);
         spin(200);
         lapic.ipi_init_deassert();
-        println!("sent init");
         // BSP delays (10ms)
         spin(10_000);
-        // BSP sends AP a STARTUP IPI (1st try)
-        // AP should start executing at 000VV000h
-        lapic.ipi_startup(apic_id, start_page);
-        println!("sent first ipi");
+        // BSP sends AP a STARTUP IPI (1st try), AP should start executing at 000VV000h
+        lapic.ipi_startup(apic_id, START_PAGE);
         // BSP delays (200us)
         spin(200);
         // BSP sends AP a STARTUP IPI (2nd try)
-        lapic.ipi_startup(apic_id, start_page);
-        println!("sent second ipi");
+        lapic.ipi_startup(apic_id, START_PAGE);
         // BSP delays (200us)
         spin(200);
+        // Wait for AP to startup
+        spin(20000);
+        // BSP verifies synchronization with executing AP
+        while !CPU_STATUS[id as usize].load(Ordering::SeqCst) {
+            core::hint::spin_loop();
+        }
     }
-
-    // TODO: BSP verifies synchronization with executing AP
 }
