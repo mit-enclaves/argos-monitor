@@ -29,6 +29,8 @@ const RSP_PTR_PADDR: u64 = CODE_PADDR + RSP_PTR_OFFSET;
 const FALSE: AtomicBool = AtomicBool::new(false);
 static CPU_STATUS: [AtomicBool; 256] = [FALSE; 256];
 
+const STACK_SIZE: usize = 20 * 0x1000;
+
 extern "C" {
     fn ap_trampoline_start();
     fn ap_trampoline_end();
@@ -101,24 +103,21 @@ unsafe fn allocate_stack_section(
     _cpuid: u8, // seems not important as the allocation is random...
     stack_allocator: &impl RangeAllocator,
     mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
-) -> vmx::Frame {
-    let stack_frame = stack_allocator
-        .allocate_frame()
-        .expect("AP stack frame")
-        .zeroed();
+) {
+    let stack_range = stack_allocator
+        .allocate_range(STACK_SIZE)
+        .expect("AP stack frame");
 
     mapper.map_range(
         stack_allocator,
-        HostVirtAddr::new(stack_frame.phys_addr.as_usize()),
-        stack_frame.phys_addr,
-        0x1000,
+        HostVirtAddr::new(stack_range.start.as_usize()),
+        stack_range.start,
+        stack_range.end.as_usize() - stack_range.start.as_usize(),
         PtFlag::WRITE | PtFlag::PRESENT | PtFlag::USER,
     );
 
     // obviously rsp moves in the opposite direction as I expected x_x...
-    (RSP_PTR_PADDR as *mut usize).write(stack_frame.phys_addr.as_usize() + 0x1000);
-
-    stack_frame
+    (RSP_PTR_PADDR as *mut usize).write(stack_range.end.as_usize());
 }
 
 pub unsafe fn boot(
@@ -166,7 +165,7 @@ pub unsafe fn boot(
 
     // Intel MP Spec B.4: Universal Start-up Algorithm
     for id in 1..(ap.len() + 1) as u8 {
-        let _stack_frame = allocate_stack_section(id, stage1_allocator, pt_mapper);
+        allocate_stack_section(id, stage1_allocator, pt_mapper);
         let apic_id = ApicId::XApic(id);
 
         assert!(CPU_STATUS[id as usize].load(Ordering::SeqCst) == false);
