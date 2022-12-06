@@ -48,12 +48,9 @@ pub extern "C" fn _start() -> ! {
 
 /// Initialize the kernel environment.
 pub fn init() {
-    // Initialize description tables
+    // Install GDT and IDT on the BSP
     gdt::init();
     interrupts::init_idt();
-
-    // Initialize hardware interrupt
-    x86_64::instructions::interrupts::enable();
 }
 
 /// Initialize display device.
