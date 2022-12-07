@@ -7,10 +7,10 @@ use acpi::platform::Processor;
 
 use core::arch::global_asm;
 use core::arch::x86_64::_rdtsc;
-use x86::apic::{xapic::XAPIC, ApicControl, ApicId};
+use x86::apic::{ApicControl, ApicId};
 use x86_64::instructions::tlb;
 
-use crate::mmu::{get_physical_memory_offset, PAGE_SIZE};
+use crate::mmu::PAGE_SIZE;
 use crate::vmx::{HostPhysAddr, HostVirtAddr};
 use mmu::{PtFlag, PtMapper, RangeAllocator};
 
@@ -48,15 +48,6 @@ fn spin(us: u64) {
 }
 
 unsafe fn ap_entry() {
-    // map the lapic 4K MMIO region into virtual memory
-    // Initialize local apic
-    let apic_region = core::slice::from_raw_parts_mut(
-        (0xfee00000 as u64 + get_physical_memory_offset().as_u64()) as _,
-        0x1000,
-    );
-    let mut lapic = XAPIC::new(apic_region);
-    lapic.attach();
-
     // Setup GDT on the core
     gdt::init();
     // Setup IDT on the core
@@ -160,8 +151,6 @@ pub unsafe fn boot(
     let bsp: Processor = processor_info.boot_processor;
     let ap: &Vec<Processor> = processor_info.application_processors.as_ref();
 
-    // TODO: disable PIC (mask all interrupts)
-
     // Map the LAPIC's 4k MMIO region to virtual memory
     let lapic_frame = vmx::Frame::new(
         HostPhysAddr::new((apic_info.local_apic_address + virtoffset.as_u64()) as usize),
@@ -175,12 +164,9 @@ pub unsafe fn boot(
         PtFlag::WRITE | PtFlag::PRESENT | PtFlag::USER,
     );
 
-    // Initialize and enable LAPIC
-    let mut lapic = XAPIC::new(core::slice::from_raw_parts_mut(
-        lapic_frame.phys_addr.as_u64() as _,
-        0x1000,
-    ));
-    lapic.attach();
+    // TODO: disable PIC (mask all interrupts)
+
+    let lapic = &mut gdt::current().as_mut().unwrap().lapic;
 
     // Check if I am the BSP or not
     assert!(!bsp.is_ap);
