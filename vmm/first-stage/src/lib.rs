@@ -25,7 +25,6 @@ pub mod gdt;
 pub mod getsec;
 pub mod guests;
 pub mod idt;
-pub mod interrupts;
 pub mod mmu;
 pub mod print;
 pub mod second_stage;
