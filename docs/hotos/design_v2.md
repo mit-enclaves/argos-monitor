@@ -16,9 +16,9 @@ Finally, we propose an extension to the Popek & Goldberg theorem to extend it to
 Any operating system class introduces the notion of separation of mechanisms and policies.
 In its original form, it states that no mechanism should dictate or overly restrict the policies that pertain to which operations should be authorized and which resources should be allocated.
 
-Taken slightly differently, this design principles decouples policies from the mechanism in charge of enforcing them.
+Taken slightly differently, this design principle decouples policies from the mechanism in charge of enforcing them.
 
-In this paper, we call management the operation that consists in defining policies.
+In this paper, we call management the operation that defines policies.
 For lack of a better term, we call access control the mechanism leveraged to enforce the policies.
 From these simple definitions, a manager is an entity that decides which policies should be enforced.
 We call **client** an entity whose access to resources is subjugated to a separate entity's policies.
@@ -29,7 +29,7 @@ Traditionally, the manager is also directly in charge of enforcing its own polic
 This is more easily shown in a simplified model such as the one introduced by Popek & Goldberg.
 
 The requirements for virtualization distinguish between two modes of operation for a virtualizable architecture: user and supervisor.
-The paper states that a VMM must be in complete control of the virtualized resources, which is expressed in the theorem as the requirement for sensitive instructions (that can change the resource configuration in the system) to be a subset of the privilege instructions, only available in supervisor mode, where the VMM executes.
+The paper states that a VMM must be in complete control of the virtualized resources, which is expressed in the theorem as the requirement for sensitive instructions (that can change the resource configuration in the system) to be a subset of the privileged instructions, only available in supervisor mode, where the VMM executes.
 
 Going back to management and access controls, Popek & Goldberg's theorem implies that the access control mechanism must be available only in supervisor mode.
 
@@ -141,7 +141,7 @@ The reference count of the object is incremented to mirror the number of non-emp
 A split further generates a revocation capability for the created pair.
 
 A revocation capability references a pair of capabilities, note that we do not specify whether these are resource of revocation ones and explain why later on.
-The only operation permitted is a merge, i.e., consume, the capability and the pair in order to reform the same capability that was split in order to create them.
+The only operation permitted is a merge, i.e., it consumes the capability and the pair in order to reform the same capability that was split to create them.
 In other words, a revocation capability allows to undo a split.
 Revocation capabilities cannot be split.
 
@@ -161,11 +161,14 @@ In the process, A looses the reference to X and thus the associated authority wh
 To satisfy the visible resource allocation, the monitor requires B to acknowledge X before it can start using it.
 If B rejects X, X is transferred back to A.
 
+Note that a given domain can own multiple capabilities referencing the same resource.
+The authority of the domain over the resource is therefore the union of the authority of all its relevant capabilities.
+
 Ownership of capability is different than ownership of a resource.
 A resource R is owned by a domain A if the root capability in the tree that oversees R is owned by A. 
 This definition implies that A can own R despite not having access to it.
-This property is essential in order to implement confidential memory while preserving the Popek & Goldberg requirement that a VMM must be in full control of the virtualized resources.
-Note that the second part of the statement is relaxed to only include the set of resources owned by the VMM.
+This property is essential in order to implement confidential memory while preserving the Popek & Goldberg requirement that a hypervisor must be in full control of the virtualized resources.
+Note that the second part of the statement is relaxed to only include the set of resources owned by the hypervisor.
 
 While capabilities can only be referenced by one domain at a time, resources can have multiple references pointing to them.
 To ensure exclusive access to a resource, a domain needs to consult the reference count associated with the object referenced by the capability.
@@ -173,18 +176,18 @@ To ensure exclusive access to a resource, a domain needs to consult the referenc
 ## Trusting the Monitor
 
 The monitor is trusted by all domains to correctly implement the capability model described above, which in turn preserves the guarantees listed in sectionX.
-But how can trust be derived? What elements are necessary to derive trust in the monitor?
+But how can trust be derived? What elements are necessary to trust the monitor?
 
 From a domain's perspective, there is a need to obtain the guarantee that the current hardware is configured such that only a correct implementation of the monitor is allowed to execute in supervisor mode.
 This requirement can be splitted into two part: 1) measuring and attesting the software running in supervisor mode, 2) ensuring it is a correct monitor.
 
 For the first part of the requirement, a hardware root of trust (e.g., a TPM) able to measure the boot process of a machine and measure the code running in supervisor mode is necessary.
-This measurement must further be hashed, signed, and should be verifiable by a third party to gain.
+This measurement must further be hashed, signed, and should be verifiable by a third party.
 This is the generic platform integrity use case of a TPM and is becoming a standard, even on edge devices.
 TODO SAY MORE.
 
 The second part of the statement requires a correct reference monitor implementation.
-Correctness is a relative notion highly dependent on the domain trust model.
+Correctness is a relative notion highly dependent on the domain's trust model.
 It can range from simply open-sourcing the monitor implementation to providing formal proofs that the implementation preserves the desired invariants throughout the lifetime of the system.
 As the monitor has a limited role, its implementation should be small, which makes it more amenable to formal verification techniques.
 The plan for our Rust implementation, described later, is to adopt the second approach.
@@ -222,4 +225,4 @@ It is, for example, possible to implement sandboxing mechanisms on top of this m
 By design, the description of the model mentionned resources, without specifying which ones.
 This is to allow the system to manage various types of resources, both physical or abstract.
 While memory is the main focus of our implementation in the next section, we believe the model can include PCI devices, interrupt handling, the ability to create new domains, establishing communications between domains, and potentially even CPU resources.
-Our intuition, that will be explored in more depth in future, is that the Popek & Goldberg theorem can be generalized to include any resource for which there is an access control mechanism that is solely available in supervisor mode.
+Our intuition, that future work will explore, is that the Popek & Goldberg theorem can be generalized to include any resource for which there is an access control mechanism that is solely available in supervisor mode.
