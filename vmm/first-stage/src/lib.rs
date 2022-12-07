@@ -24,6 +24,7 @@ pub mod elf;
 pub mod gdt;
 pub mod getsec;
 pub mod guests;
+pub mod idt;
 pub mod interrupts;
 pub mod mmu;
 pub mod print;
@@ -50,7 +51,7 @@ pub extern "C" fn _start() -> ! {
 pub fn init() {
     // Install GDT and IDT on the BSP
     gdt::init();
-    interrupts::init_idt();
+    idt::init();
 }
 
 /// Initialize display device.
