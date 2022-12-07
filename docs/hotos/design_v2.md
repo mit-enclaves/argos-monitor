@@ -80,7 +80,7 @@ We extend it with the notion that resource availability should include allowed o
 A valid solution that supports confidential computing must therefore satisfy both the manager and the client's requirements.
 The implementation of the solution must execute within supervisor mode.
 
-Before moving on to the next section that presents our design, we need to clarify one part of our argument.
+Before moving on to the next section, we need to clarify one part of our argument.
 One might think that we led the reader through a contradiction.
 We can summarize our discussion with two predicates:
 
@@ -95,21 +95,90 @@ In this section we argued in favor of the second approach by showing that manage
 # Design 
 
 ## Monitor 
+
 Let us call the domain that executes within supervisor mode a monitor.
 The monitor is the sole domain with the ability to modify access control to resources.
 It arbitrates interactions between a manager and a client, while preserving the guarantees described in the previous section for each of them.
 From the book *principles of system design: an introduction*, the monitor is a **trusted intermediary** that mediates interactions between mutually distrustful domains.
 
 The monitor does not create policies for resource allocations, it simply enforces them.
-Per our list of requirements, the manager is in charge of selecting which resource to allocate and which operation to allow in a client domain.
+Per our list of requirements, the manager is in charge of selecting which resource to allocate and which operation to allow in its client domain.
 
 However, in order to preserve the client's guarantees, the monitor must be able, for any domain, to enumerate its available resources and allowed operations, which includes distinguishing between shared and exclusive resources, provide the client with visibility into any modification applied to them, and prevent leakage through revocation.
-For this purpose, we propose to introduce an ownership model over resources, maintained within the monitor.
+
+## Generalisation
+
+So far, the discussion has showned only the monitor can execute in supervisor mode and needs to be trusted by all domains.
+Nothing said so far requires to have a single manager.
+Nothing requires a client to have a single manager.
+
+Before going any further, we generalize the notions of manager and clients to better reflect the reality of the world.
+Consider the very common case where a hypervisor manages resources for a guest operating that itself manages them for a set of applications.
+Now that the notion of a manager is no longer tied down to executing in supervisor mode, we can consider both the hypervisor and the guest operating system to be managers, while both the operating system and the applications are clients. 
+This simply requires each of these elements to be considered as separate domains.
+
+This generalization comes at a cost: it requires to introduce a general model to describe resources and allow policies to translate into access control configurations.
+This is the role of the next section.
+
+## A Model to Express Resource Management
+
+This section describes a capability system (mechanism) managed by the monitor and used by domains.
+This is not a requirement for a valid monitor implementation but rather a convenience to more easily describe the semantics of the design.
+
+A capability is defined as a communicable, unforgeable token of authority that references an object (a resource) associated with access rights (operations).
+Operations on capabilities allow managers to implement their policies and the monitor to translate them into valid access configurations.
+
+### Capabilities 
+
+We propose a capability system with mainly two types of capabilities: resource and revocation.
+
+A resource capability represents the ability to perform the specified operations on the associated object.
+In our capability system, every resource object has a reference count that tracks how many capabilities apply to it and it is always sufficent to hold a capability to an object to consult its reference count.
+Resource capabilities can be split, i.e., consumed, to yield a new pair of capabilities with either the same set of operations as the original one, or any subset of them.
+It further generates a revocation capability for the created pair.
+
+A revocation capability references a pair of capabilities, note that we do not specify whether these are resource of revocation ones and explain why later on.
+The only operation permitted is a merge, i.e., consume, the capability and the pair in order to reform the same capability that was split in order to create them.
+In other words, a revocation capability allows to undo a split.
+Revocation capabilities cannot be split.
+
+If it helps the reader, a sequence of split applied to resource capability creates a tree whose nodes are revocation capabilities and leaves are resource ones.
+A merge on a revocation node deletes its subtree and replaces the node with the original capability whose split created it. 
+
+### Ownership
+
+Capabilities are communicable tokens, i.e., they can be passed between domains.
+A domain owns a capability if it holds a reference to the capability.
+By design, at any given point, at most one domain can hold a reference to a given capability.
+
+Capabilities can be transfered between domains.
+Any domain A that owns a capability X can transfer it to a domain C.
+In the process, A looses the reference to X and thus the associated authority while C acquires it.
+
+
+
+# BELOW ARE NOTES 
+
+
+A domain's resources can be managed by several other domains.
+This is technically the case for the virtualized application whose resources are managed by both the OS and the hypervisor.
+
+Both of these extensions describe a model that is far more general than the small example we used.
+For example, according to these, an application is allowed to act as a manager for another application.
+This is by design, but requires a careful definition of the semantics and allowed policies supported in the system.
+
+TODO show that these respects popek due to ownership.
 
 ## Ownership: Grant, Share, Revoke
-
 Assume all resources can be accounted for in non-divisible units controlled independently via the access control mechanism.
 For example, with page tables as the access control mechanism, the physical memory can be exposed at the granularity of pages (usually 4KB).
+
+
+
+This section defines the notion of ownership over a resource, the ability to grant, share, and revoke between domain.
+First, an intuitive but incomplete definition is given.
+Then, we introduce a stronger model to represent access to a resource. 
+
 
 A domain has access to a unit of resource if the access control configuration for this domain permits some operations from the domain on this resource.
 
@@ -119,20 +188,21 @@ A resource is exclusive to a domain if it only appears in the resource configura
 A resource is shared if it appears in the resource configuration of more than one domain.
 
 A domain A grants a resource R to another domain B when it gives up access to R and offers a form of access to B for R.
-It however retains the ability to revoke B from R.
+It however retains the ability to revoke the attributed access B from R.
 
 A domain A shares a resource R with B if it offers a form of access to B for R.
 It retains both access and revocation ability over R for B.
 
 Domains cannot grant or share resources they do not have access to.
+Domain A can only grant or share resource R with domain B with a subset (or equal) of the operations A is allowed to performed on R. 
+This prevents escalation of privileges via granting or sharing.
 
-A domain that owns a resource R can grant itself access to it if and only if the resource was not granted to another domain.
+A domain that owns a resource R can allocate itself access to it if and only if the resource was not granted to another domain.
 
 From an implementation point of view, the monitor needs to track how many times a unit of resource is mapped in a configuration, and the grant and share operations performed by the system in order to allow revocations.
-
-These definitions of grant, share, and revocation are more general than what has been described so far as they allow the same domain to act as both a client and a manager for the same unit of resource.
-Given a chain of grant and share operations, any domain that wants to claim back a resource or access a granted one needs to trigger a chain of revocations for the remainder of the chain. 
-
+Furthermore, these requirements a domain to act as both a manager and a client, and any domain to have several managers overseeing potentially overlapping sets of resources.
+This should be carefully considered and have well-defined semantics 
+ 
 
 ## Establishing Trust
 
