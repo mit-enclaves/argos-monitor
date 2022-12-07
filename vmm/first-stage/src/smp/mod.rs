@@ -14,7 +14,7 @@ use crate::mmu::{get_physical_memory_offset, PAGE_SIZE};
 use crate::vmx::{HostPhysAddr, HostVirtAddr};
 use mmu::{PtFlag, PtMapper, RangeAllocator};
 
-use crate::gdt;
+use crate::{gdt, idt};
 use core::sync::atomic::*;
 
 global_asm!(include_str!("trampoline.S"));
@@ -59,7 +59,8 @@ unsafe fn ap_entry() {
 
     // Setup GDT on the core
     gdt::init();
-    // Initialize IDT
+    // Setup IDT on the core
+    idt::init();
     // Signal the AP is ready
     let cpuid = unsafe { core::arch::x86_64::__cpuid(0x01) };
     let apic_id = ((cpuid.ebx & 0xffffffff) >> 24) as usize;
