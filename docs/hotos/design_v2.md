@@ -134,8 +134,11 @@ We propose a capability system with mainly two types of capabilities: resource a
 
 A resource capability represents the ability to perform the specified operations on the associated object.
 In our capability system, every resource object has a reference count that tracks how many capabilities apply to it and it is always sufficent to hold a capability to an object to consult its reference count.
+We assume an initial state, for any system, where there is only one capability per unit of resource with full access to it. 
 Resource capabilities can be split, i.e., consumed, to yield a new pair of capabilities with either the same set of operations as the original one, or any subset of them.
-It further generates a revocation capability for the created pair.
+The subset includes the empty set, i.e., a resource capability with no access to the resource.
+The reference count of the object is incremented to mirror the number of non-empty resource capabilities. 
+A split further generates a revocation capability for the created pair.
 
 A revocation capability references a pair of capabilities, note that we do not specify whether these are resource of revocation ones and explain why later on.
 The only operation permitted is a merge, i.e., consume, the capability and the pair in order to reform the same capability that was split in order to create them.
@@ -143,6 +146,7 @@ In other words, a revocation capability allows to undo a split.
 Revocation capabilities cannot be split.
 
 If it helps the reader, a sequence of split applied to resource capability creates a tree whose nodes are revocation capabilities and leaves are resource ones.
+A split replaces a leaf with a revocation node whose children are two new resource capabilities.
 A merge on a revocation node deletes its subtree and replaces the node with the original capability whose split created it. 
 
 ### Ownership
@@ -152,60 +156,70 @@ A domain owns a capability if it holds a reference to the capability.
 By design, at any given point, at most one domain can hold a reference to a given capability.
 
 Capabilities can be transfered between domains.
-Any domain A that owns a capability X can transfer it to a domain C.
-In the process, A looses the reference to X and thus the associated authority while C acquires it.
+Any domain A that owns a capability X can transfer it to a domain B.
+In the process, A looses the reference to X and thus the associated authority while B acquires it.
+To satisfy the visible resource allocation, the monitor requires B to acknowledge X before it can start using it.
+If B rejects X, X is transferred back to A.
 
+Ownership of capability is different than ownership of a resource.
+A resource R is owned by a domain A if the root capability in the tree that oversees R is owned by A. 
+This definition implies that A can own R despite not having access to it.
+This property is essential in order to implement confidential memory while preserving the Popek & Goldberg requirement that a VMM must be in full control of the virtualized resources.
+Note that the second part of the statement is relaxed to only include the set of resources owned by the VMM.
 
+While capabilities can only be referenced by one domain at a time, resources can have multiple references pointing to them.
+To ensure exclusive access to a resource, a domain needs to consult the reference count associated with the object referenced by the capability.
 
-# BELOW ARE NOTES 
+## Trusting the Monitor
 
+The monitor is trusted by all domains to correctly implement the capability model described above, which in turn preserves the guarantees listed in sectionX.
+But how can trust be derived? What elements are necessary to derive trust in the monitor?
 
-A domain's resources can be managed by several other domains.
-This is technically the case for the virtualized application whose resources are managed by both the OS and the hypervisor.
+From a domain's perspective, there is a need to obtain the guarantee that the current hardware is configured such that only a correct implementation of the monitor is allowed to execute in supervisor mode.
+This requirement can be splitted into two part: 1) measuring and attesting the software running in supervisor mode, 2) ensuring it is a correct monitor.
 
-Both of these extensions describe a model that is far more general than the small example we used.
-For example, according to these, an application is allowed to act as a manager for another application.
-This is by design, but requires a careful definition of the semantics and allowed policies supported in the system.
+For the first part of the requirement, a hardware root of trust (e.g., a TPM) able to measure the boot process of a machine and measure the code running in supervisor mode is necessary.
+This measurement must further be hashed, signed, and should be verifiable by a third party to gain.
+This is the generic platform integrity use case of a TPM and is becoming a standard, even on edge devices.
+TODO SAY MORE.
 
-TODO show that these respects popek due to ownership.
+The second part of the statement requires a correct reference monitor implementation.
+Correctness is a relative notion highly dependent on the domain trust model.
+It can range from simply open-sourcing the monitor implementation to providing formal proofs that the implementation preserves the desired invariants throughout the lifetime of the system.
+As the monitor has a limited role, its implementation should be small, which makes it more amenable to formal verification techniques.
+The plan for our Rust implementation, described later, is to adopt the second approach.
 
-## Ownership: Grant, Share, Revoke
-Assume all resources can be accounted for in non-divisible units controlled independently via the access control mechanism.
-For example, with page tables as the access control mechanism, the physical memory can be exposed at the granularity of pages (usually 4KB).
-
-
-
-This section defines the notion of ownership over a resource, the ability to grant, share, and revoke between domain.
-First, an intuitive but incomplete definition is given.
-Then, we introduce a stronger model to represent access to a resource. 
-
-
-A domain has access to a unit of resource if the access control configuration for this domain permits some operations from the domain on this resource.
-
-A domain has ownership over a unit of resource if it is able to revoke it from any other domain, and no domain has the ability to revoke this resource from it.
-
-A resource is exclusive to a domain if it only appears in the resource configuration of this domain.
-A resource is shared if it appears in the resource configuration of more than one domain.
-
-A domain A grants a resource R to another domain B when it gives up access to R and offers a form of access to B for R.
-It however retains the ability to revoke the attributed access B from R.
-
-A domain A shares a resource R with B if it offers a form of access to B for R.
-It retains both access and revocation ability over R for B.
-
-Domains cannot grant or share resources they do not have access to.
-Domain A can only grant or share resource R with domain B with a subset (or equal) of the operations A is allowed to performed on R. 
-This prevents escalation of privileges via granting or sharing.
-
-A domain that owns a resource R can allocate itself access to it if and only if the resource was not granted to another domain.
-
-From an implementation point of view, the monitor needs to track how many times a unit of resource is mapped in a configuration, and the grant and share operations performed by the system in order to allow revocations.
-Furthermore, these requirements a domain to act as both a manager and a client, and any domain to have several managers overseeing potentially overlapping sets of resources.
-This should be carefully considered and have well-defined semantics 
- 
-
-## Establishing Trust
+Once the monitor itself is trusted, a chain of trust can be constructed to build attestations that encompasses one (or several) domain configuration(s).
 
 ## Extending Popek & Goldberg
 
+The Popek & Goldberg theorem can be extended with requirements to support confidential computing. 
+The previous section shows the necessity to have a root of trust capable of guaranteeing a platform's integrity, i.e., attest the boot process of the machine.
+We define attestation as the protocol that supplies a non-forgeable signed measurement of the boot process to a third party that has the ability to validate the signature without any ambiguity. (TODO FIGURE OUT A GOOD DEFINITION).
+We specify the following theorem as an extension to the requirements for virtualization:
+
+**Theorem**: A computer that is virtualizable in the sense of the Popek & Goldberg theorem can provide confidential computing if the boot process and the software running in supervisor mode can be measured and attested.
+
+Note that as trust is a relative notion, it is not included in the extension of the theorem.
+
+This extension is almost enough but makes a small implicit assumption.
+For any domain to request an attestation, there should be a way for it to directly communicate with the monitor.
+Popek & Goldberg define privileged instructions as the ones that trap, from user mode, directly to supervisor mode.
+The implicit assumption is therefore that the set of privileged instructions is non empty.
+This assumption is however also made in Popek & Goldberg, as sensitive instructions are a subset of privileged instructions and if the latter is empty, there is no distinction between user mode and supervisor mode.
+There is thus no need to make it explicit in the extension.
+
 ## Going beyond Confidential Computing
+
+The system described in this section is far more general than the limited case of confidential memory.
+As demonstrated, it reduces confidential computing to the decoupling of management from access control.
+When it comes to particular resources, it allows fine-grained control over resource sharing.
+It further decouples exclusive access to a resource from its ownership.
+By allowing all domains to act as both clients and managers, while preserving the managerial chain, the monitor decouples management prerogative from hardware privileged modes.
+All of these are strong results that allow any form of compartimentalization and nesting of domains. 
+It is, for example, possible to implement sandboxing mechanisms on top of this model and combine them with confidential computing guarantees.
+
+By design, the description of the model mentionned resources, without specifying which ones.
+This is to allow the system to manage various types of resources, both physical or abstract.
+While memory is the main focus of our implementation in the next section, we believe the model can include PCI devices, interrupt handling, the ability to create new domains, establishing communications between domains, and potentially even CPU resources.
+Our intuition, that will be explored in more depth in future, is that the Popek & Goldberg theorem can be generalized to include any resource for which there is an access control mechanism that is solely available in supervisor mode.
