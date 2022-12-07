@@ -14,6 +14,7 @@ members = [
     "crates/vmx",
     "crates/vtd",
     "crates/mmu",
+    "crates/vga",
     "crates/qemu",
     "crates/debug",
     "crates/utils",

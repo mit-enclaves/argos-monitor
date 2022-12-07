@@ -7,7 +7,7 @@
 macro_rules! print {
     ($($arg:tt)*) => {
         #[cfg(feature = "vga")]
-        $crate::vga::_print(core::format_args!($($arg)*));
+        vga::_print(core::format_args!($($arg)*));
         #[cfg(not(feature = "vga"))]
         $crate::serial::_print(core::format_args!($($arg)*));
     };

@@ -30,9 +30,6 @@ pub mod segments;
 pub mod serial;
 pub mod smx;
 
-#[cfg(feature = "vga")]
-pub mod vga;
-
 pub use crate::mmu::init as init_memory;
 pub use vmx::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
 
@@ -60,7 +57,15 @@ pub fn init() {
 /// Initialize display device.
 pub fn init_display(_buffer: &'static mut FrameBuffer) {
     #[cfg(feature = "vga")]
-    return vga::init(_buffer);
+    {
+        let info = _buffer.info();
+        let h_rez = info.horizontal_resolution;
+        let v_rez = info.vertical_resolution;
+        let stride = info.stride;
+        let bytes_per_pixel = info.bytes_per_pixel;
+        let writter = vga::Writer::new(_buffer.buffer_mut(), h_rez, v_rez, stride, bytes_per_pixel);
+        vga::init_print(writter);
+    }
 }
 
 /// An infinite loop that causes the CPU to halt between interrupts.

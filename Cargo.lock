@@ -101,13 +101,13 @@ dependencies = [
  "bitflags",
  "bootloader",
  "debug",
- "font8x8",
  "lazy_static",
  "mmu",
  "pic8259",
  "qemu",
  "spin",
  "stage_two_abi",
+ "vga",
  "vmx",
  "volatile 0.2.7",
  "vtd",
@@ -377,6 +377,15 @@ name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
+
+[[package]]
+name = "vga"
+version = "0.1.0"
+dependencies = [
+ "font8x8",
+ "spin",
+ "x86_64",
+]
 
 [[package]]
 name = "vmx"

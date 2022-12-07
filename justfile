@@ -82,7 +82,12 @@ linux-dbg SOCKET:
 	@just common {{linux}} {{SOCKET}}
 
 # Build the VMM for bare metal platform
-build-metal:
+build-metal-no-guest:
+	@just build
+	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{no-guest}} {{vga}} -- --uefi --no-run
+
+# Build the VMM for bare metal platform
+build-metal-linux:
 	@just build
 	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{linux}} {{vga}} -- --uefi --no-run
 

@@ -1,7 +1,7 @@
-use bootloader::boot_info::{FrameBuffer, FrameBufferInfo, PixelFormat};
-use core::fmt;
+#![no_std]
+
 use core::fmt::Write;
-use core::ptr;
+use core::{fmt, ptr};
 use font8x8::UnicodeFonts;
 use spin::Mutex;
 use x86_64::instructions::interrupts::without_interrupts;
@@ -14,30 +14,56 @@ const ZOOM_FACTOR: usize = 1;
 /// The global writer, must be initialized with a frame buffer, otherwise writes are ignored.
 pub static WRITER: Mutex<Option<Writer>> = Mutex::new(None);
 
-/// Initializes the VGA writer.
-pub fn init(boot_info: &'static mut FrameBuffer) {
-    let mut writer = WRITER.lock();
-    let mut new_writer = Writer::new(boot_info);
-    new_writer.clear();
-    writer.replace(new_writer);
+/// Initializes the global VGA writer.
+pub fn init_print(mut writer: Writer) {
+    let mut static_writer = WRITER.lock();
+    writer.clear();
+    static_writer.replace(writer);
+}
+
+pub enum PixelFormat {
+    /// Red Green Blue
+    RGB,
+    /// Blue Green Red
+    BGR,
+    /// Grayscale
+    U8,
 }
 
 pub struct Writer {
     framebuffer: &'static mut [u8],
-    info: FrameBufferInfo,
     x_pos: usize,
     y_pos: usize,
+
+    /// Horizontal resolution.
+    h_rez: usize,
+    /// Vertical resolution.
+    v_rez: usize,
+    /// Number of pixels between the start of a line and the start of the next.
+    stride: usize,
+    /// Number of bytes per pixels.
+    bytes_per_pixel: usize,
+    /// Pixel color format.
+    pixel_format: PixelFormat,
 }
 
 impl Writer {
-    pub fn new(buffer: &'static mut FrameBuffer) -> Self {
-        let info = buffer.info();
-        let framebuffer = buffer.buffer_mut();
+    pub fn new(
+        framebuffer: &'static mut [u8],
+        h_rez: usize,
+        v_rez: usize,
+        stride: usize,
+        bytes_per_pixel: usize,
+    ) -> Self {
         Writer {
             framebuffer,
-            info,
             x_pos: LINE_SPACING,
             y_pos: LINE_SPACING,
+            h_rez,
+            v_rez,
+            stride,
+            bytes_per_pixel,
+            pixel_format: PixelFormat::RGB,
         }
     }
 
@@ -58,19 +84,11 @@ impl Writer {
         // TODO: can we use an optimized method?
         // self.framebuffer.fill(0);
 
-        for y in 0..self.info.vertical_resolution {
-            for x in 0..self.info.horizontal_resolution {
+        for y in 0..self.v_rez {
+            for x in 0..self.h_rez {
                 self.write_pixel(x, y, 0);
             }
         }
-    }
-
-    fn width(&self) -> usize {
-        self.info.horizontal_resolution
-    }
-
-    fn height(&self) -> usize {
-        self.info.vertical_resolution
     }
 
     fn write_char(&mut self, c: char) {
@@ -78,10 +96,10 @@ impl Writer {
             '\n' => self.newline(),
             '\r' => self.carriage_return(),
             c => {
-                if self.x_pos >= self.width() {
+                if self.x_pos >= self.h_rez {
                     self.newline();
                 }
-                if self.y_pos >= (self.height() - 8 * ZOOM_FACTOR) {
+                if self.y_pos >= (self.v_rez - 8 * ZOOM_FACTOR) {
                     self.clear();
                 }
                 let rendered = font8x8::BASIC_FONTS
@@ -111,9 +129,9 @@ impl Writer {
     }
 
     fn write_pixel(&mut self, x: usize, y: usize, intensity: u8) {
-        let pixel_offset = y * self.info.stride + x;
+        let pixel_offset = y * self.stride + x;
         let color = self.get_color(intensity);
-        let bytes_per_pixel = self.info.bytes_per_pixel;
+        let bytes_per_pixel = self.bytes_per_pixel;
         let byte_offset = pixel_offset * bytes_per_pixel;
         self.framebuffer[byte_offset..(byte_offset + bytes_per_pixel)]
             .copy_from_slice(&color[..bytes_per_pixel]);
@@ -124,11 +142,10 @@ impl Writer {
         if intensity > 200 {
             [255, 255, 255, 0]
         } else {
-            match self.info.pixel_format {
+            match self.pixel_format {
                 PixelFormat::RGB => [171, 0, 171, 0],
                 PixelFormat::BGR => [171, 0, 171, 0],
                 PixelFormat::U8 => [255, 0, 0, 0],
-                _ => [171, 0, 171, 0],
             }
         }
     }

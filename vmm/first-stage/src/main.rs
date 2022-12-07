@@ -148,14 +148,18 @@ fn launch_guest(
 
     let mut stage2_allocator = second_stage::second_stage_allocator(stage1_allocator);
     unsafe {
+        println!("Loading guest");
         let mut info = guest.instantiate(acpi, &mut stage2_allocator, guest_allocator, memory_map);
+        println!("Saving host state");
         guests::vmx::save_host_info(&mut info.guest_info);
+        println!("Loading stage 2");
         let stage2 = second_stage::load(
             &info,
             stage1_allocator,
             &mut stage2_allocator,
             &mut pt_mapper,
         );
+        println!("Jumping into stage 2");
         configure_getsec(stage2);
         senter();
     }

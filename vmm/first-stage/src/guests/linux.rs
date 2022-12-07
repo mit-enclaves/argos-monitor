@@ -34,7 +34,8 @@ const SETUP_HDR: u64 = 0x1f1;
 
 // WARNING: Don't forget that the command line must be null terminated ('\0')!
 static COMMAND_LINE: &'static [u8] =
-    b"root=/dev/sdb2 apic=debug earlyprintk=serial,ttyS0 console=ttyS0\0";
+    // b"root=/dev/sdb2 apic=debug earlyprintk=serial,ttyS0 console=ttyS0\0";
+    b"root=/dev/sdb2 apic=debug\0";
 
 pub struct Linux {}
 
@@ -74,17 +75,20 @@ impl Guest for Linux {
 
         // Setup I/O MMU
         if let Some(iommus) = &acpi.iommu {
-            let iommu_addr = HostVirtAddr::new(
-                iommus[0].base_address.as_usize() + host_allocator.get_physical_offset().as_usize(),
-            );
-            let mut iommu = Iommu::new(iommu_addr);
-            let root_addr = setup_iommu_context(iopt_mapper.get_root(), host_allocator);
-            iommu.set_root_table_addr(root_addr.as_u64() | (0b00 << 10)); // Set legacy mode
-            iommu.update_root_table_addr();
-            iommu.enable_translation();
-            manifest.iommu = iommus[0].base_address.as_u64();
-            println!("I/O MMU: {:?}", iommu.get_global_status());
-            println!("I/O MMU Fault: {:?}", iommu.get_fault_status());
+            if cfg!(not(feature = "vga")) {
+                let iommu_addr = HostVirtAddr::new(
+                    iommus[0].base_address.as_usize()
+                        + host_allocator.get_physical_offset().as_usize(),
+                );
+                let mut iommu = Iommu::new(iommu_addr);
+                let root_addr = setup_iommu_context(iopt_mapper.get_root(), host_allocator);
+                iommu.set_root_table_addr(root_addr.as_u64() | (0b00 << 10)); // Set legacy mode
+                iommu.update_root_table_addr();
+                iommu.enable_translation();
+                manifest.iommu = iommus[0].base_address.as_u64();
+                println!("I/O MMU: {:?}", iommu.get_global_status());
+                println!("I/O MMU Fault: {:?}", iommu.get_fault_status());
+            }
         }
 
         // Build the boot params
