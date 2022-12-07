@@ -77,6 +77,12 @@ This is however still not enough, any modification to its configuration needs to
 The exokernel[cite] describes this property as visible resource availability, revocation, and allocation.
 We extend it with the notion that resource availability should include allowed operations on the resources and whether or not they are shared with another domain.
 
+Confidentiality and integrity as usually defined by confidential computing solutions are protected by the above client guarantees.
+Confidentiality is guaranteed by resource availability and visible revocation.
+For memory, for example, a client can guarantee that a given page is not shared with another domain.
+Whenever the manager revokes access to the page, the client has the opportunity to, e.g., zero out the page or encrypt and hash its content before it is returned to the manager.
+Integrity is derived from resource availability as well, as exclusive access guarantees no other domain can modify the resource transparently.
+
 A valid solution that supports confidential computing must therefore satisfy both the manager and the client's requirements.
 The implementation of the solution must execute within supervisor mode.
 
@@ -90,7 +96,6 @@ We can summarize our discussion with two predicates:
 There are two ways to satisfy both predicates at once: 1) either derive a way to trust the manager, or 2) boot the manager out of supervisor mode. 
 
 In this section we argued in favor of the second approach by showing that management and access control can be decoupled, while preserving the prerogatives of the manager. 
-
 
 # Design 
 
@@ -125,7 +130,7 @@ This is the role of the next section.
 This section describes a capability system (mechanism) managed by the monitor and used by domains.
 This is not a requirement for a valid monitor implementation but rather a convenience to more easily describe the semantics of the design.
 
-A capability is defined as a communicable, unforgeable token of authority that references an object (a resource) associated with access rights (operations).
+A capability is defined as a communicable, unforgeable token of authority that references an object (a resource) associated with access rights (operations). (TODO THIS IS WIKIPEDIA COPY-PASTE, SHOULD IMPROVE)
 Operations on capabilities allow managers to implement their policies and the monitor to translate them into valid access configurations.
 
 ### Capabilities 
