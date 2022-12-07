@@ -67,7 +67,7 @@ pub fn save_host_state<'active, 'vmx>(
 
         // Save TR base
         let tr_offset = (tr >> 3) as usize;
-        let gdt = gdt::gdt().as_raw_slice();
+        let gdt = gdt::current().as_mut().unwrap().gdt().as_raw_slice();
         let low = gdt[tr_offset];
         let high = gdt[tr_offset + 1];
         let tr_base = get_tr_base(high, low);

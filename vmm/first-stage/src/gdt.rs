@@ -1,4 +1,3 @@
-use lazy_static::lazy_static;
 use x86_64::instructions::segmentation::{Segment, CS};
 use x86_64::instructions::tables::load_tss;
 use x86_64::registers::segmentation::{SegmentSelector, SS};
@@ -7,16 +6,28 @@ use x86_64::structures::tss::TaskStateSegment;
 use x86_64::VirtAddr;
 
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
+pub const MAX_CPU_NUM: usize = 256;
+const INITCPU: Option<Cpu> = None;
+static mut CPUS: [Option<Cpu>; MAX_CPU_NUM] = [INITCPU; MAX_CPU_NUM];
 
-struct Selectors {
-    code_selector: SegmentSelector,
-    tss_selector: SegmentSelector,
+pub struct Cpu {
+    id: usize,
+    pub gdt: GlobalDescriptorTable,
+    tss: TaskStateSegment,
 }
 
-lazy_static! {
-    static ref TSS: TaskStateSegment = {
-        let mut tss = TaskStateSegment::new();
-        tss.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] = {
+impl Cpu {
+    pub fn new(lapic_id: usize) -> Self {
+        Self {
+            id: lapic_id,
+            gdt: GlobalDescriptorTable::new(),
+            tss: TaskStateSegment::new(),
+        }
+    }
+
+    pub fn setup(&'static mut self) {
+        // Setup stack for double fault
+        self.tss.interrupt_stack_table[DOUBLE_FAULT_IST_INDEX as usize] = {
             const STACK_SIZE: usize = 4096 * 5;
             static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
 
@@ -24,38 +35,51 @@ lazy_static! {
             let stack_end = stack_start + STACK_SIZE;
             stack_end
         };
-        tss
-    };
-}
 
-lazy_static! {
-    static ref GDT: (GlobalDescriptorTable, Selectors) = {
-        let mut gdt = GlobalDescriptorTable::new();
-        let code_selector = gdt.add_entry(Descriptor::kernel_code_segment());
-        let tss_selector = gdt.add_entry(Descriptor::tss_segment(&TSS));
-        (
-            gdt,
-            Selectors {
-                code_selector,
-                tss_selector,
-            },
-        )
-    };
-}
+        let code_selector = self.gdt.add_entry(Descriptor::kernel_code_segment());
+        let tss_selector = self.gdt.add_entry(Descriptor::tss_segment(&self.tss));
 
-pub fn init() {
-    GDT.0.load();
-    unsafe {
-        CS::set_reg(GDT.1.code_selector);
-        load_tss(GDT.1.tss_selector);
+        self.gdt.load();
 
-        // Reload SS to ensure it is either 0 or points to a valid segment.
-        // Failure to initialize it properly cause `iret` to fail.
-        // See: https://github.com/rust-osdev/bootloader/issues/190
-        SS::set_reg(SegmentSelector(0));
+        // Reload Code Segment Register and TSS
+        unsafe {
+            CS::set_reg(code_selector);
+            load_tss(tss_selector);
+
+            // Reload SS to ensure it is either 0 or points to a valid segment.
+            // Failure to initialize it properly cause `iret` to fail.
+            // See: https://github.com/rust-osdev/bootloader/issues/190
+            SS::set_reg(SegmentSelector(0));
+        }
+    }
+
+    pub fn gdt(&self) -> &GlobalDescriptorTable {
+        &self.gdt
     }
 }
 
-pub fn gdt() -> &'static GlobalDescriptorTable {
-    &GDT.0
+pub unsafe fn current() -> &'static mut Option<Cpu> {
+    let lapic_id = raw_cpuid::CpuId::new()
+        .get_feature_info()
+        .unwrap()
+        .initial_local_apic_id() as usize;
+
+    return &mut CPUS[lapic_id];
+}
+
+pub fn init() {
+    let lapic_id = raw_cpuid::CpuId::new()
+        .get_feature_info()
+        .unwrap()
+        .initial_local_apic_id() as usize;
+
+    unsafe {
+        match current() {
+            Some(_) => panic!("CPU {} already initialized", lapic_id),
+            None => {
+                CPUS[lapic_id] = Some(Cpu::new(lapic_id));
+                CPUS[lapic_id].as_mut().unwrap().setup();
+            }
+        }
+    }
 }
