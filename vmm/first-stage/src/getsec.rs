@@ -7,8 +7,9 @@
 //! IMPORTANT: When relying on GETSEC emulation, the SMXE bit in CR4 must _not_ be set, otherwhise
 //! GETSEC causes a VM exit and KVM will kill the VM.
 
-use crate::println;
 use crate::second_stage::Stage2;
+use crate::{cpu, println};
+use alloc::vec::Vec;
 use core::arch::asm;
 
 const GETSEC_OPCODE: u16 = 0x370F;
@@ -157,7 +158,7 @@ fn getsec_senter(registers: &mut GetsecRegisters) {
     // TODO JUMP TO ACM
     // For now, we just jump into stage 2
     unsafe {
-        let stage2 = STAGE_2
+        let stage2 = STAGE_2[cpu::id()]
             .take()
             .expect("GETSEC[SENTER] executed before proper initialization");
         stage2.jump_into();
@@ -190,15 +191,15 @@ fn getsec_parameters(registers: &mut GetsecRegisters) {
 
 // ————————————————————————————— Initialization ————————————————————————————— //
 
-static mut STAGE_2: Option<Stage2> = None;
+static mut STAGE_2: Vec<Option<Stage2>> = Vec::new();
 
 /// Configures the appropriate data structures so that GETSEC will properly measure and launch
 /// stage 2.
-pub fn configure_getsec(stage2: Stage2) {
+pub fn configure_getsec(stage2: &[Stage2]) {
     // For now just save stage 2.
     //
     // We will properly setup the various headers here in the future.
     unsafe {
-        STAGE_2 = Some(stage2);
+        STAGE_2 = stage2.iter().map(|&s2| Some(s2)).collect();
     }
 }

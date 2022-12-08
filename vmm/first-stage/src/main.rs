@@ -198,7 +198,7 @@ fn launch_guest(
             &mut pt_mapper,
         );
         println!("Jumping into stage 2");
-        configure_getsec(stage2);
+        configure_getsec(stage2.as_slice());
         senter();
     }
 

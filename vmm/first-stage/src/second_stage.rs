@@ -1,9 +1,11 @@
 //! Second-Stage
 
+use crate::cpu;
 use crate::elf::{Elf64PhdrType, ElfProgram};
 use crate::guests::ManifestInfo;
 use crate::mmu::frames::RangeFrameAllocator;
 use crate::{println, HostPhysAddr, HostVirtAddr};
+use alloc::vec::Vec;
 use core::arch::asm;
 use mmu::{frame_allocator::PhysRange, PtFlag, PtMapper, RangeAllocator};
 use stage_two_abi::{EntryPoint, Manifest};
@@ -22,6 +24,7 @@ const LOAD_VIRT_ADDR: HostVirtAddr = HostVirtAddr::new(0x80000000000);
 const STACK_VIRT_ADDR: HostVirtAddr = HostVirtAddr::new(0x90000000000);
 const STACK_SIZE: usize = 0x1000 * 2;
 
+#[derive(Clone, Copy)]
 pub struct Stage2 {
     entry_point: EntryPoint,
     stack_addr: u64,
@@ -60,7 +63,7 @@ pub fn load(
     stage1_allocator: &impl RangeAllocator,
     stage2_allocator: &impl RangeAllocator,
     pt_mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
-) -> Stage2 {
+) -> Vec<Stage2> {
     // Read elf and allocate second stage memory
     let mut second_stage = ElfProgram::new(SECOND_STAGE);
 
@@ -71,7 +74,16 @@ pub fn load(
             stage1_allocator.get_physical_offset(),
         )
         .expect("Failed to load second stage");
-    let (rsp, stack_phys) = loaded_elf.add_stack(STACK_VIRT_ADDR, STACK_SIZE, stage2_allocator);
+
+    let smp_cores = cpu::cores();
+    let smp_stacks: Vec<(HostVirtAddr, HostVirtAddr, HostPhysAddr)> = (0..smp_cores)
+        .map(|cpuid| {
+            let stack_virt_addr = STACK_VIRT_ADDR + STACK_SIZE * cpuid;
+            let (rsp, stack_phys_addr) =
+                loaded_elf.add_stack(stack_virt_addr, STACK_SIZE, stage2_allocator);
+            (stack_virt_addr, rsp, stack_phys_addr)
+        })
+        .collect();
 
     // If we setup I/O MMU support
     if info.iommu != 0 {
@@ -118,13 +130,19 @@ pub fn load(
         elf_range.size(),
         PtFlag::PRESENT | PtFlag::WRITE,
     );
-    pt_mapper.map_range(
-        stage1_allocator,
-        STACK_VIRT_ADDR,
-        stack_phys,
-        STACK_SIZE,
-        PtFlag::PRESENT | PtFlag::WRITE,
-    );
+
+    smp_stacks
+        .iter()
+        .for_each(|&(stack_virt_addr, _, stack_phys_addr)| {
+            pt_mapper.map_range(
+                stage1_allocator,
+                stack_virt_addr,
+                stack_phys_addr,
+                STACK_SIZE,
+                PtFlag::PRESENT | PtFlag::WRITE,
+            );
+        });
+
     unsafe {
         // Flush TLB
         asm!(
@@ -158,10 +176,12 @@ pub fn load(
         // function.
         let entry_point: EntryPoint = core::mem::transmute(second_stage.entry.as_usize());
 
-        Stage2 {
-            entry_point,
-            stack_addr: rsp.as_u64(),
-        }
+        smp_stacks.iter().map(|&(_, rsp, _)| {
+            Stage2 {
+                entry_point,
+                stack_addr: rsp.as_u64(),
+            }
+        }).collect()
     }
 }
 
