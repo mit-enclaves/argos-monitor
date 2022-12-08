@@ -204,6 +204,21 @@ pub fn init(manifest: &Manifest) {
         );
         arch::init();
     }
+
+    // In case we use VGA, setup the VGA driver
+    #[cfg(feature = "vga")]
+    if manifest.vga.is_valid {
+        let framebuffer =
+            unsafe { core::slice::from_raw_parts_mut(manifest.vga.framebuffer, manifest.vga.len) };
+        let writer = vga::Writer::new(
+            framebuffer,
+            manifest.vga.h_rez,
+            manifest.vga.v_rez,
+            manifest.vga.stride,
+            manifest.vga.bytes_per_pixel,
+        );
+        vga::init_print(writer);
+    }
 }
 
 /// Halt the CPU in a spinloop;

@@ -36,7 +36,10 @@ pub struct Manifest {
     pub poffset: u64,
     /// Virtual offset of stage 2.
     pub voffset: u64,
+    /// Guest state, needed to launch the VM.
     pub info: GuestInfo,
+    /// VGA infor, in case VGA screen is available.
+    pub vga: VgaInfo,
     /// Optionnal address of the I/O MMU. Absent if set to 0.
     pub iommu: u64,
 }
@@ -79,9 +82,10 @@ macro_rules! make_manifest {
                 poffset: 0,
                 voffset: 0,
                 info: $crate::GuestInfo::default_config(),
+                vga: $crate::VgaInfo::no_vga(),
                 iommu: 0,
             };
-            static mut TAKEN: AtomicBool = AtomicBool::new(false);
+            static TAKEN: AtomicBool = AtomicBool::new(false);
 
             /// SAFETY: We return the manifest only once. This is ensured using an atomic boolean
             /// that we set to true the first time the reference is taken.
@@ -99,7 +103,7 @@ macro_rules! make_manifest {
 
 /// GuestInfo passed from stage 1 to stage 2.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct GuestInfo {
     // Guest information.
     pub cr3: usize,
@@ -133,6 +137,35 @@ impl GuestInfo {
             ss: 0,
             efer: 0,
             loaded: false,
+        }
+    }
+}
+
+// ———————————————————————————————— VGA Info ———————————————————————————————— //
+
+/// VGA info passed from stage 1 to stage 2
+#[repr(C)]
+#[derive(Clone, Debug)]
+pub struct VgaInfo {
+    pub is_valid: bool,
+    pub framebuffer: *mut u8,
+    pub len: usize,
+    pub h_rez: usize,
+    pub v_rez: usize,
+    pub stride: usize,
+    pub bytes_per_pixel: usize,
+}
+
+impl VgaInfo {
+    pub const fn no_vga() -> Self {
+        Self {
+            is_valid: false,
+            framebuffer: 0 as *mut u8,
+            len: 0,
+            h_rez: 0,
+            v_rez: 0,
+            stride: 0,
+            bytes_per_pixel: 0,
         }
     }
 }

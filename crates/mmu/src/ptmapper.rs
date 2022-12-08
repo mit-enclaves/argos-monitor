@@ -35,6 +35,8 @@ bitflags! {
     }
 }
 
+/// Mask to remove the top 12 bits, containing PKU keys and Exec disable bits.
+pub const HIGH_BITS_MASK: u64 = !(0b111111111111 << 52);
 pub const DEFAULT_PROTS: PtFlag = PtFlag::PRESENT.union(PtFlag::WRITE).union(PtFlag::USER);
 
 unsafe impl<PhysAddr, VirtAddr> Walker for PtMapper<PhysAddr, VirtAddr>
@@ -66,6 +68,32 @@ where
             root,
             _virt: PhantomData,
         }
+    }
+
+    pub fn translate(&mut self, virt_addr: VirtAddr) -> Option<PhysAddr> {
+        // Align the address
+        let virt_addr = VirtAddr::from_usize(virt_addr.as_usize() & PAGE_MASK);
+        let mut phys_addr = None;
+        unsafe {
+            self.walk(virt_addr, &mut |entry, level| {
+                if *entry & PtFlag::PRESENT.bits() == 0 {
+                    // Terminate the walk, no mapping exists
+                    return WalkNext::Leaf;
+                }
+                if level == Level::L1 || *entry & PtFlag::PSIZE.bits() != 0 {
+                    let raw_addr = *entry & level.mask() & HIGH_BITS_MASK;
+                    let raw_addr_with_offset = raw_addr + (virt_addr.as_u64() & !level.mask());
+                    phys_addr = Some(PhysAddr::from_u64(raw_addr_with_offset));
+                    // We found an address, terminate the walk.
+                    return WalkNext::Leaf;
+                }
+                // Continue to walk if not yet on a leaf
+                return WalkNext::Continue;
+            })
+            .ok()?;
+        }
+
+        phys_addr
     }
 
     pub fn map_range(

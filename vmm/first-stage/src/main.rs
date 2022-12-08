@@ -19,6 +19,7 @@ use first_stage::smx::senter;
 use first_stage::{HostPhysAddr, HostVirtAddr};
 use mmu::{PtMapper, RangeAllocator};
 use qemu;
+use stage_two_abi::VgaInfo;
 use vmx;
 use vtd;
 use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
@@ -27,8 +28,9 @@ entry_point!(kernel_main);
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // Initialize display, if any
+    let mut vga_info = VgaInfo::no_vga();
     if let Some(buffer) = boot_info.framebuffer.as_mut().take() {
-        first_stage::init_display(buffer);
+        vga_info = first_stage::init_display(buffer);
     }
     println!("============= First Stage =============");
 
@@ -109,6 +111,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             &acpi_info,
             &host_allocator,
             &guest_allocator,
+            vga_info,
             memory_map,
             pt_mapper,
         )
@@ -118,6 +121,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             &acpi_info,
             &host_allocator,
             &guest_allocator,
+            vga_info,
             memory_map,
             pt_mapper,
         )
@@ -127,6 +131,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             &acpi_info,
             &host_allocator,
             &guest_allocator,
+            vga_info,
             memory_map,
             pt_mapper,
         )
@@ -140,6 +145,7 @@ fn launch_guest(
     acpi: &AcpiInfo,
     stage1_allocator: &impl RangeAllocator,
     guest_allocator: &impl RangeAllocator,
+    vga_info: VgaInfo,
     memory_map: MemoryMap,
     mut pt_mapper: PtMapper<HostPhysAddr, HostVirtAddr>,
 ) -> ! {
@@ -150,6 +156,7 @@ fn launch_guest(
     unsafe {
         println!("Loading guest");
         let mut info = guest.instantiate(acpi, &mut stage2_allocator, guest_allocator, memory_map);
+        info.vga_info = vga_info;
         println!("Saving host state");
         guests::vmx::save_host_info(&mut info.guest_info);
         println!("Loading stage 2");

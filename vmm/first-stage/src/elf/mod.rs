@@ -283,6 +283,15 @@ impl ElfProgram {
         let start = segment.p_offset as usize;
         let end = (segment.p_offset + segment.p_filesz) as usize;
         dest.copy_from_slice(&self.bytes[start..end]);
+
+        // In case the segment is longer than the file size, zero out the rest.
+        if segment.p_filesz < segment.p_memsz {
+            let zeroed = core::slice::from_raw_parts_mut(
+                (segment.p_paddr + segment.p_filesz + host_physical_offset.as_u64()) as *mut u8,
+                (segment.p_memsz - segment.p_filesz) as usize,
+            );
+            zeroed.fill(0);
+        }
     }
 }
 

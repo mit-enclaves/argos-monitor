@@ -75,7 +75,7 @@ macro_rules! make_static {
 
                 #[allow(non_upper_case_globals)]
                 static mut $name: $type = $init;
-                static mut TAKEN: AtomicBool = AtomicBool::new(false);
+                static TAKEN: AtomicBool = AtomicBool::new(false);
 
                 // SAFETY: We return a static mutable to the static only once. This is ensured by
                 // using an atomic boolean that we set to true the first time the reference is

@@ -12,11 +12,11 @@ use stage_two_abi::entry_point;
 entry_point!(second_stage_entry_point);
 
 fn second_stage_entry_point() -> ! {
-    println!("============= Second Stage =============");
-    println!("Hello from second stage!");
     let manifest = get_manifest();
     second_stage::init(manifest);
-    println!("Initialization: done");
+
+    println!("============= Second Stage =============");
+    println!("Hello from second stage!");
 
     // Launch guest and exit
     launch_guest(manifest);

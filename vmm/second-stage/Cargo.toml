@@ -3,11 +3,16 @@ name = "second-stage"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+# Print to VGA text mode
+vga = ["dep:vga"]
+
 [dependencies]
 utils = { path = "../../crates/utils/" }
 debug = { version = "0.1.0", path = "../../crates/debug" }
 mmu = { version = "0.1.0", path = "../../crates/mmu" }
 stage_two_abi = { path = "../../crates/stage_two_abi" }
+vga = { path = "../../crates/vga/", optional = true }
 
 # TODO: move the untrusted dependencies behing a feature flag
 qemu = { path = "../../crates/qemu/" }

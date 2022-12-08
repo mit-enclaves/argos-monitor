@@ -8,14 +8,14 @@ use crate::vmx::bitmaps::ExceptionBitmap;
 use crate::vmx::{ActiveVmcs, ControlRegister, Register, VmxError, VmxExitReason};
 use mmu::RangeAllocator;
 
-use stage_two_abi::GuestInfo;
+use stage_two_abi::{GuestInfo, VgaInfo};
 
 pub mod boot_params;
 pub mod common;
 pub mod linux;
 pub mod rawc;
-pub mod void;
 pub mod vmx;
+pub mod void;
 
 #[derive(PartialEq, Debug)]
 pub enum HandlerResult {
@@ -26,12 +26,17 @@ pub enum HandlerResult {
 
 pub struct ManifestInfo {
     pub guest_info: GuestInfo,
+    pub vga_info: VgaInfo,
     pub iommu: u64,
 }
 
 impl Default for ManifestInfo {
     fn default() -> Self {
-        Self { guest_info: Default::default(), iommu: Default::default() }
+        Self {
+            guest_info: Default::default(),
+            vga_info: VgaInfo::no_vga(),
+            iommu: Default::default(),
+        }
     }
 }
 

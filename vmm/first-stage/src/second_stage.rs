@@ -3,7 +3,7 @@
 use crate::elf::{Elf64PhdrType, ElfProgram};
 use crate::guests::ManifestInfo;
 use crate::mmu::frames::RangeFrameAllocator;
-use crate::{HostPhysAddr, HostVirtAddr};
+use crate::{println, HostPhysAddr, HostVirtAddr};
 use core::arch::asm;
 use mmu::{frame_allocator::PhysRange, PtFlag, PtMapper, RangeAllocator};
 use stage_two_abi::{EntryPoint, Manifest};
@@ -72,9 +72,12 @@ pub fn load(
         )
         .expect("Failed to load second stage");
     let (rsp, stack_phys) = loaded_elf.add_stack(STACK_VIRT_ADDR, STACK_SIZE, stage2_allocator);
+
+    // If we setup I/O MMU support
     if info.iommu != 0 {
         // Map I/O MMU page, using one to one mapping
         // TODO: unmap from guest EPT
+        println!("Setup I/O MMU");
         let virt_addr = HostVirtAddr::new(info.iommu as usize);
         let phys_addr = HostPhysAddr::new(info.iommu as usize);
         let size = 0x1000;
@@ -83,6 +86,26 @@ pub fn load(
             virt_addr,
             phys_addr,
             size,
+            PtFlag::PRESENT | PtFlag::WRITE,
+        );
+    }
+
+    // If we setup VGA support
+    if info.vga_info.is_valid {
+        let vga_virt = HostVirtAddr::new(info.vga_info.framebuffer as usize);
+        let vga_phys = pt_mapper
+            .translate(vga_virt)
+            .expect("Failed to translate VGA virt addr");
+        println!(
+            "VGA virt: 0x{:x} - phys: 0x{:x}",
+            vga_virt.as_usize(),
+            vga_phys.as_usize()
+        );
+        loaded_elf.pt_mapper.map_range(
+            stage2_allocator,
+            vga_virt,
+            vga_phys,
+            info.vga_info.len,
             PtFlag::PRESENT | PtFlag::WRITE,
         );
     }
@@ -120,20 +143,20 @@ pub fn load(
     let manifest =
         unsafe { Manifest::from_symbol_finder(find_symbol).expect("Missing symbol in stage 2") };
     manifest.cr3 = loaded_elf.pt_root.as_u64();
-    manifest.info = info.guest_info;
+    manifest.info = info.guest_info.clone();
     manifest.iommu = info.iommu;
     manifest.poffset = elf_range.start.as_u64();
     manifest.voffset = LOAD_VIRT_ADDR.as_u64();
+    manifest.vga = info.vga_info.clone();
 
     debug::hook_stage2_offsets(manifest.poffset, manifest.voffset);
     debug::tyche_hook_stage1(1);
 
     // jump into second stage
     unsafe {
-        // We need to manually ensure that the type correspond to the second stage entry point
+        // We need to manually ensure that the type corresponds to the second stage entry point
         // function.
-        let entry_point: EntryPoint =
-            core::mem::transmute(second_stage.entry.as_usize());
+        let entry_point: EntryPoint = core::mem::transmute(second_stage.entry.as_usize());
 
         Stage2 {
             entry_point,

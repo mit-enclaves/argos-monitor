@@ -14,7 +14,8 @@ fake-acm       := "--package fake-acm"
 rawc           := "--features=first-stage/guest_rawc"
 linux          := "--features=first-stage/guest_linux"
 no-guest       := "--features=first-stage/no_guest"
-vga            := "--features=first-stage/vga"
+vga-s1         := "--features=first-stage/vga"
+vga-s2         := "--features=second-stage/vga"
 default_dbg    := "gdb0"
 
 # Print list of commands
@@ -83,13 +84,13 @@ linux-dbg SOCKET:
 
 # Build the VMM for bare metal platform
 build-metal-no-guest:
-	@just build
-	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{no-guest}} {{vga}} -- --uefi --no-run
+	{{linker-script}} cargo build {{cargo_args}} {{x86_64}} {{second-stage}} {{vga-s2}} --release
+	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{no-guest}} {{vga-s1}} -- --uefi --no-run
 
 # Build the VMM for bare metal platform
 build-metal-linux:
-	@just build
-	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{linux}} {{vga}} -- --uefi --no-run
+	{{linker-script}} cargo build {{cargo_args}} {{x86_64}} {{second-stage}} {{vga-s2}} --release
+	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{linux}} {{vga-s1}} -- --uefi --no-run
 
 # Start the software TPM emulator, if not already running
 tpm:

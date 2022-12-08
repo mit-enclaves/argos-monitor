@@ -291,6 +291,7 @@ dependencies = [
  "qemu",
  "stage_two_abi",
  "utils",
+ "vga",
  "vmx",
  "vtd",
 ]

@@ -14,6 +14,7 @@ extern crate alloc;
 use core::panic::PanicInfo;
 
 use bootloader::boot_info::FrameBuffer;
+use stage_two_abi::VgaInfo;
 use vmx;
 
 pub mod acpi;
@@ -55,7 +56,9 @@ pub fn init() {
 }
 
 /// Initialize display device.
-pub fn init_display(_buffer: &'static mut FrameBuffer) {
+pub fn init_display(_buffer: &'static mut FrameBuffer) -> VgaInfo {
+    let mut vga_info = VgaInfo::no_vga();
+    vga_info.is_valid = false;
     #[cfg(feature = "vga")]
     {
         let info = _buffer.info();
@@ -63,9 +66,21 @@ pub fn init_display(_buffer: &'static mut FrameBuffer) {
         let v_rez = info.vertical_resolution;
         let stride = info.stride;
         let bytes_per_pixel = info.bytes_per_pixel;
+        let framebuffer = _buffer.buffer_mut().as_mut_ptr();
+        let len = _buffer.buffer_mut().len();
         let writter = vga::Writer::new(_buffer.buffer_mut(), h_rez, v_rez, stride, bytes_per_pixel);
         vga::init_print(writter);
+        vga_info = VgaInfo {
+            is_valid: true,
+            framebuffer,
+            len,
+            h_rez,
+            v_rez,
+            stride,
+            bytes_per_pixel,
+        }
     }
+    vga_info
 }
 
 /// An infinite loop that causes the CPU to halt between interrupts.
