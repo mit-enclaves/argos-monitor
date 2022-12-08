@@ -56,14 +56,9 @@ In fact, as traditional systems put the manager in supervisor mode, nothing prev
 As a result, confidential computing requires to either introduce a new access control mechanism that cannot be transparently leveraged by the manager, or to restrict its access to the default mechanism. 
 The notion of transparency in the change of access control configuration means that the change is not observed by the client. 
 
-One might think that confidential computing contradicts the Popek & Goldberg theorem; rest assure, this is not the case.
-The theorem states that the VMM should execute in supervisor mode and have complete control of virtualized resources.
-The theorem identifies the VMM as being the entity that can configure the access control mechanism, but not necessarilly the one in charge of policies.
-Satisfying confidential computing requirements can be achieved by physically decoupling management from access control, while preserving certain guarantees that we enumerate next.
-
 ### Requirements for a solution
 
-From the Popek & Goldberg theorem, it follows that whatever domain executes within supervisor mode must be trusted as it has the unsupervised ability to modify access control configurations.
+From the Popek & Goldberg theorem, it follows that whatever domain executes within supervisor mode has the unsupervised ability to modify access control configurations.
 
 By definition of the confidential computing problem, the client does not trust its manager with unrestricted access to its resources.
 As a result, the manager, e.g., the operating system or hypervisor, cannot execute in supervisor mode.
@@ -86,16 +81,48 @@ Integrity is derived from resource availability as well, as exclusive access gua
 A valid solution that supports confidential computing must therefore satisfy both the manager and the client's requirements.
 The implementation of the solution must execute within supervisor mode.
 
-Before moving on to the next section, we need to clarify one part of our argument.
-One might think that we led the reader through a contradiction.
-We can summarize our discussion with two predicates:
+We define trust as the strong belief, for a domain, that the supervisor mode code guarantees the requirements listed in this section for all domains.
 
-1) The hypervisor or OS, that traditionally executes within supervisor mode, cannot be trusted.
-2) The domain which executes within supervisor mode must be trusted.
+Trust is a relative notion that is hard to define and exists on a spectrum rather than as a binary value.
+It is thus hard to come up with a single technique to derive trust. 
+For example, one would be inclined to trust some code if it supplied by a trusted source, or if it is open for inspection.
+Others might require it to be verified by formal techniques.
+However, there is common requirement in all three approaches: the ability to identify what code is running.
+This can be be done via an attestation mechanism, i.e., a protocol that supplies an unforgeable measurement of the software deployed. 
 
-There are two ways to satisfy both predicates at once: 1) either derive a way to trust the manager, or 2) boot the manager out of supervisor mode. 
+A harware root of trust (e.g., a TPM) is one way to measure and attest the software running in supervisor mode.
+The measurement must be unforgeable, signed, and should be verifiable by a third party.
+This is the generic platform integrity use case of a TPM and is becoming a standard, even on edge devices.
 
-In this section we argued in favor of the second approach by showing that management and access control can be decoupled, while preserving the prerogatives of the manager. 
+## Popek & Goldberg Extension
+
+### Compatibility with Decoupling
+
+One might think that confidential computing contradicts the Popek & Goldberg theorem; rest assure, it is actually quite the contrary.
+In Popek & Goldberg's theorem, the VMM is a hypervisor that executes in supervisor mode and has complete control of virtualized resources.
+The authors, however, partition the VMM into three modules: 1) the dispatcher, 2) the allocator, 3) the interpreter(s).
+
+Upon a trap, the dispatcher calls specific functionalities provided by either of the other two modules.
+The allocator is a manager that selects resources to allocate to each VM.
+The interpreters are VMM routines that execute privileged instructions, which include access control configuration ones.
+
+By definition, a trap yields control to supervisor mode and thus it needs to be implemented in supervisor mode.
+The same observation applies to interpreters that require access to privileged instructions.
+The allocator, however, does not need to execute within supervisor mode therefore does not have to be trusted.
+There is a natural split of a VMM that boots out of the allocator, i.e., the manager, from supervisor mode, just as required in section X. 
+
+Figure Y shows the two approaches next to each other.
+
+### Extended requirement for Confidential Computing
+
+The Popek & Goldberg theorem can be extended with requirements to support confidential computing. 
+The previous section shows the necessity to have a root of trust capable of guaranteeing a platform's integrity.
+We define attestation as the protocol that supplies a non-forgeable signed measurement of the boot process to a third party that has the ability to validate the signature without any ambiguity.
+We specify the following theorem as an extension to the requirements for virtualization:
+
+**Theorem**: A computer that is virtualizable in the sense of the Popek & Goldberg theorem can provide confidential computing if the boot process and the software running in supervisor mode can be measured and attested.
+
+Note that as trust is a relative notion, it is not included in the extension of the theorem.
 
 # Design 
 
@@ -150,7 +177,7 @@ The only operation permitted is a merge, i.e., it consumes the capability and th
 In other words, a revocation capability allows to undo a split.
 Revocation capabilities cannot be split.
 
-If it helps the reader, a sequence of split applied to resource capability creates a tree whose nodes are revocation capabilities and leaves are resource ones.
+If it helps the reader, a sequence of splits applied to resource capability creates a tree whose nodes are revocation capabilities and leaves are resource ones.
 A split replaces a leaf with a revocation node whose children are two new resource capabilities.
 A merge on a revocation node deletes its subtree and replaces the node with the original capability whose split created it. 
 
@@ -162,7 +189,7 @@ By design, at any given point, at most one domain can hold a reference to a give
 
 Capabilities can be transfered between domains.
 Any domain A that owns a capability X can transfer it to a domain B.
-In the process, A looses the reference to X and thus the associated authority while B acquires it.
+In the process, A loses the reference to X and thus the associated authority while B acquires it.
 To satisfy the visible resource allocation, the monitor requires B to acknowledge X before it can start using it.
 If B rejects X, X is transferred back to A.
 
@@ -176,46 +203,19 @@ This property is essential in order to implement confidential memory while prese
 Note that the second part of the statement is relaxed to only include the set of resources owned by the hypervisor.
 
 While capabilities can only be referenced by one domain at a time, resources can have multiple references pointing to them.
-To ensure exclusive access to a resource, a domain needs to consult the reference count associated with the object referenced by the capability.
+To ensure exclusive access to a resource, a domain needs to consult the reference count associated with the capability's object.
 
 ## Trusting the Monitor
 
-The monitor is trusted by all domains to correctly implement the capability model described above, which in turn preserves the guarantees listed in sectionX.
-But how can trust be derived? What elements are necessary to trust the monitor?
+Deriving trust in the monitor can be done in two steps: 1) prove that the proposed model preserves the list of requirements, and 2) provide an implementation that correctly implements this model.
+For a particular notion of trust, the correctness of the implementation can either rely on extensive code inspection or require formal proofs. 
 
-From a domain's perspective, there is a need to obtain the guarantee that the current hardware is configured such that only a correct implementation of the monitor is allowed to execute in supervisor mode.
-This requirement can be splitted into two part: 1) measuring and attesting the software running in supervisor mode, 2) ensuring it is a correct monitor.
+In this section we focus on the first step: Is our model enough to guarantee section X requirements?
 
-For the first part of the requirement, a hardware root of trust (e.g., a TPM) able to measure the boot process of a machine and measure the code running in supervisor mode is necessary.
-This measurement must further be hashed, signed, and should be verifiable by a third party.
-This is the generic platform integrity use case of a TPM and is becoming a standard, even on edge devices.
-TODO SAY MORE.
+### From the Manager's point of view
 
-The second part of the statement requires a correct reference monitor implementation.
-Correctness is a relative notion highly dependent on the domain's trust model.
-It can range from simply open-sourcing the monitor implementation to providing formal proofs that the implementation preserves the desired invariants throughout the lifetime of the system.
-As the monitor has a limited role, its implementation should be small, which makes it more amenable to formal verification techniques.
-The plan for our Rust implementation, described later, is to adopt the second approach.
+### From a Client's point of view
 
-Once the monitor itself is trusted, a chain of trust can be constructed to build attestations that encompasses one (or several) domain configuration(s).
-
-## Extending Popek & Goldberg
-
-The Popek & Goldberg theorem can be extended with requirements to support confidential computing. 
-The previous section shows the necessity to have a root of trust capable of guaranteeing a platform's integrity, i.e., attest the boot process of the machine.
-We define attestation as the protocol that supplies a non-forgeable signed measurement of the boot process to a third party that has the ability to validate the signature without any ambiguity. (TODO FIGURE OUT A GOOD DEFINITION).
-We specify the following theorem as an extension to the requirements for virtualization:
-
-**Theorem**: A computer that is virtualizable in the sense of the Popek & Goldberg theorem can provide confidential computing if the boot process and the software running in supervisor mode can be measured and attested.
-
-Note that as trust is a relative notion, it is not included in the extension of the theorem.
-
-This extension is almost enough but makes a small implicit assumption.
-For any domain to request an attestation, there should be a way for it to directly communicate with the monitor.
-Popek & Goldberg define privileged instructions as the ones that trap, from user mode, directly to supervisor mode.
-The implicit assumption is therefore that the set of privileged instructions is non empty.
-This assumption is however also made in Popek & Goldberg, as sensitive instructions are a subset of privileged instructions and if the latter is empty, there is no distinction between user mode and supervisor mode.
-There is thus no need to make it explicit in the extension.
 
 ## Going beyond Confidential Computing
 
