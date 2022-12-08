@@ -2,7 +2,7 @@
 
 use core::arch::asm;
 
-use crate::gdt;
+use crate::cpu;
 use stage_two_abi::GuestInfo;
 use vmx::fields;
 use vmx::fields::traits::*;
@@ -67,7 +67,7 @@ pub fn save_host_state<'active, 'vmx>(
 
         // Save TR base
         let tr_offset = (tr >> 3) as usize;
-        let gdt = gdt::current().as_mut().unwrap().gdt().as_raw_slice();
+        let gdt = cpu::current().as_mut().unwrap().gdt().gdt.as_raw_slice();
         let low = gdt[tr_offset];
         let high = gdt[tr_offset + 1];
         let tr_base = get_tr_base(high, low);
