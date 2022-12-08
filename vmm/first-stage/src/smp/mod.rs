@@ -185,7 +185,7 @@ pub unsafe fn boot(
         // BSP delays (200us)
         spin(200);
         // BSP sends AP a STARTUP IPI (2nd try)
-        lapic.ipi_startup(apic_id, START_PAGE);
+        // lapic.ipi_startup(apic_id, START_PAGE);
         // BSP delays (200us)
         spin(200);
         // Wait for AP to startup
