@@ -20,6 +20,7 @@ use vmx;
 pub mod acpi;
 pub mod acpi_handler;
 pub mod allocator;
+pub mod apic;
 pub mod elf;
 pub mod gdt;
 pub mod getsec;

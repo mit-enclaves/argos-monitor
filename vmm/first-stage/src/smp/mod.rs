@@ -14,7 +14,7 @@ use crate::mmu::PAGE_SIZE;
 use crate::vmx::{HostPhysAddr, HostVirtAddr};
 use mmu::{PtFlag, PtMapper, RangeAllocator};
 
-use crate::{gdt, idt};
+use crate::{apic, gdt, idt};
 use core::sync::atomic::*;
 
 global_asm!(include_str!("trampoline.S"));
@@ -152,16 +152,10 @@ pub unsafe fn boot(
     let ap: &Vec<Processor> = processor_info.application_processors.as_ref();
 
     // Map the LAPIC's 4k MMIO region to virtual memory
-    let lapic_frame = vmx::Frame::new(
-        HostPhysAddr::new((apic_info.local_apic_address + virtoffset.as_u64()) as usize),
-        HostVirtAddr::new((apic_info.local_apic_address + virtoffset.as_u64()) as usize),
-    );
-    pt_mapper.map_range(
+    apic::allocate(
+        apic_info.local_apic_address as usize + virtoffset.as_usize(),
         stage1_allocator,
-        HostVirtAddr::new(lapic_frame.phys_addr.as_usize()),
-        lapic_frame.phys_addr,
-        0x1000,
-        PtFlag::WRITE | PtFlag::PRESENT | PtFlag::USER,
+        pt_mapper,
     );
 
     // TODO: disable PIC (mask all interrupts)
