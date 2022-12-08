@@ -5,16 +5,13 @@ use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable};
 use x86_64::structures::tss::TaskStateSegment;
 use x86_64::VirtAddr;
 
+use crate::apic;
 use x86::apic::xapic;
 
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 pub const MAX_CPU_NUM: usize = 256;
 const INITCPU: Option<Cpu> = None;
 static mut CPUS: [Option<Cpu>; MAX_CPU_NUM] = [INITCPU; MAX_CPU_NUM];
-// FIXME: LAPIC address should be parsed from ACPI, but parsing the table occurs after we
-//        initialize the BSP...
-const LAPIC_PHYS_ADDRESS: usize = 0xfee00000;
-const LAPIC_VIRT_ADDRESS: usize = LAPIC_PHYS_ADDRESS + 0x18000000000;
 
 pub struct Cpu {
     id: usize,
@@ -31,12 +28,7 @@ impl Cpu {
             tss: TaskStateSegment::new(),
             // FIXME: it's amazing that this doesn't crash before the memory allocator is
             //        initialized on CPU0...
-            lapic: unsafe {
-                xapic::XAPIC::new(core::slice::from_raw_parts_mut(
-                    LAPIC_VIRT_ADDRESS as _,
-                    0x1000,
-                ))
-            },
+            lapic: apic::lapic_new(apic::LAPIC_VIRT_ADDRESS),
         }
     }
 
@@ -67,7 +59,7 @@ impl Cpu {
             SS::set_reg(SegmentSelector(0));
         }
 
-        self.lapic.attach();
+        apic::lapic_setup(&mut self.lapic);
     }
 
     pub fn gdt(&self) -> &GlobalDescriptorTable {
