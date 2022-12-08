@@ -21,6 +21,7 @@ pub mod acpi;
 pub mod acpi_handler;
 pub mod allocator;
 pub mod apic;
+pub mod cpu;
 pub mod elf;
 pub mod gdt;
 pub mod getsec;
@@ -50,7 +51,7 @@ pub extern "C" fn _start() -> ! {
 /// Initialize the kernel environment.
 pub fn init() {
     // Install GDT and IDT on the BSP
-    gdt::init();
+    cpu::init();
     idt::init();
 }
 

@@ -5,30 +5,18 @@ use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable};
 use x86_64::structures::tss::TaskStateSegment;
 use x86_64::VirtAddr;
 
-use crate::apic;
-use x86::apic::xapic;
-
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
-pub const MAX_CPU_NUM: usize = 256;
-const INITCPU: Option<Cpu> = None;
-static mut CPUS: [Option<Cpu>; MAX_CPU_NUM] = [INITCPU; MAX_CPU_NUM];
 
-pub struct Cpu {
-    id: usize,
+pub struct Gdt {
     pub gdt: GlobalDescriptorTable,
     tss: TaskStateSegment,
-    pub lapic: xapic::XAPIC,
 }
 
-impl Cpu {
-    pub fn new(lapic_id: usize) -> Self {
+impl Gdt {
+    pub fn new() -> Self {
         Self {
-            id: lapic_id,
             gdt: GlobalDescriptorTable::new(),
             tss: TaskStateSegment::new(),
-            // FIXME: it's amazing that this doesn't crash before the memory allocator is
-            //        initialized on CPU0...
-            lapic: apic::lapic_new(apic::get_lapic_virt_address()),
         }
     }
 
@@ -57,38 +45,6 @@ impl Cpu {
             // Failure to initialize it properly cause `iret` to fail.
             // See: https://github.com/rust-osdev/bootloader/issues/190
             SS::set_reg(SegmentSelector(0));
-        }
-
-        apic::lapic_setup(&mut self.lapic);
-    }
-
-    pub fn gdt(&self) -> &GlobalDescriptorTable {
-        &self.gdt
-    }
-}
-
-pub unsafe fn current() -> &'static mut Option<Cpu> {
-    let lapic_id = raw_cpuid::CpuId::new()
-        .get_feature_info()
-        .unwrap()
-        .initial_local_apic_id() as usize;
-
-    return &mut CPUS[lapic_id];
-}
-
-pub fn init() {
-    let lapic_id = raw_cpuid::CpuId::new()
-        .get_feature_info()
-        .unwrap()
-        .initial_local_apic_id() as usize;
-
-    unsafe {
-        match current() {
-            Some(_) => panic!("CPU {} already initialized", lapic_id),
-            None => {
-                CPUS[lapic_id] = Some(Cpu::new(lapic_id));
-                CPUS[lapic_id].as_mut().unwrap().setup();
-            }
         }
     }
 }

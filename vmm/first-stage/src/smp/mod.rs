@@ -14,7 +14,7 @@ use crate::mmu::PAGE_SIZE;
 use crate::vmx::{HostPhysAddr, HostVirtAddr};
 use mmu::{PtFlag, PtMapper, RangeAllocator};
 
-use crate::{apic, gdt, idt};
+use crate::{apic, cpu, idt};
 use core::sync::atomic::*;
 
 global_asm!(include_str!("trampoline.S"));
@@ -49,14 +49,12 @@ fn spin(us: u64) {
 
 unsafe fn ap_entry() {
     // Setup GDT on the core
-    gdt::init();
+    cpu::init();
     // Setup IDT on the core
     idt::init();
     // Signal the AP is ready
-    let cpuid = unsafe { core::arch::x86_64::__cpuid(0x01) };
-    let apic_id = ((cpuid.ebx & 0xffffffff) >> 24) as usize;
-    CPU_STATUS[apic_id].store(true, Ordering::SeqCst);
-    println!("Hello World from cpu {}", apic_id);
+    CPU_STATUS[cpu::id()].store(true, Ordering::SeqCst);
+    println!("Hello World from cpu {}", cpu::id());
 
     loop {}
 }
@@ -160,7 +158,7 @@ pub unsafe fn boot(
 
     // TODO: disable PIC (mask all interrupts)
 
-    let lapic = &mut gdt::current().as_mut().unwrap().lapic;
+    let lapic = &mut cpu::current().as_mut().unwrap().lapic;
 
     // Check if I am the BSP or not
     assert!(!bsp.is_ap);
