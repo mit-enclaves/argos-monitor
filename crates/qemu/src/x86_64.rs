@@ -4,6 +4,7 @@ use core::arch::asm;
 use core::fmt;
 use core::fmt::Write;
 
+use spin::Mutex;
 use uart_16550::SerialPort;
 
 use crate::ExitCode;
@@ -12,7 +13,7 @@ use crate::ExitCode;
 pub fn _print(args: fmt::Arguments) {
     /// Serial port used to log to stdout when running in Qemu.
     //  TODO: wrap port in mutex
-    static mut SERIAL_PORT: SerialPort = unsafe { SerialPort::new(0x3F8) };
+    static mut SERIAL_PORT: Mutex<SerialPort> = unsafe { Mutex::new(SerialPort::new(0x3F8)) };
 
     // SAFETY:
     //
@@ -20,6 +21,7 @@ pub fn _print(args: fmt::Arguments) {
     // VMM.
     unsafe {
         SERIAL_PORT
+            .lock()
             .write_fmt(args)
             .expect("Printing to serial failed");
     }

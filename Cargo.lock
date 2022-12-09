@@ -287,6 +287,7 @@ dependencies = [
 name = "qemu"
 version = "0.1.0"
 dependencies = [
+ "spin",
  "uart_16550",
 ]
 
