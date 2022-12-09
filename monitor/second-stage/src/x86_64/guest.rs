@@ -27,7 +27,7 @@ use crate::statics::{
     regions_arena as get_regions_arena,
 };
 
-pub fn launch_guest(manifest: &'static mut Manifest) {
+pub fn launch_guest(manifest: &'static Manifest) {
     if !manifest.info.loaded {
         println!("No guest found, exiting");
         return;

@@ -12,6 +12,7 @@ use x86_64::instructions::tlb;
 use crate::mmu::PAGE_SIZE;
 use crate::vmx::{HostPhysAddr, HostVirtAddr};
 use crate::{apic, cpu, idt, println};
+use crate::smx;
 
 global_asm!(include_str!("trampoline.S"));
 
@@ -27,6 +28,7 @@ const RSP_PTR_PADDR: u64 = CODE_PADDR + RSP_PTR_OFFSET;
 
 const FALSE: AtomicBool = AtomicBool::new(false);
 static CPU_STATUS: [AtomicBool; 256] = [FALSE; 256];
+pub static BSP_READY: AtomicBool = FALSE;
 
 const STACK_SIZE: usize = 20 * 0x1000;
 
@@ -51,8 +53,12 @@ unsafe fn ap_entry() {
     // Signal the AP is ready
     CPU_STATUS[cpu::id()].store(true, Ordering::SeqCst);
     println!("Hello World from cpu {}", cpu::id());
-
-    loop {}
+    // Wait until all cores has been initialized
+    while !BSP_READY.load(Ordering::SeqCst) {
+        core::hint::spin_loop();
+    }
+    // APs enter the 2nd stage and spins until BSP gets the manifest
+    smx::senter();
 }
 
 /// Write the AP trampoline code to one of the 256 first frame.
@@ -194,4 +200,5 @@ pub unsafe fn boot(
 
     restore_code_section(backup_frame);
     println!("Booted {} AP.", ap.len());
+    BSP_READY.store(true, Ordering::SeqCst);
 }
