@@ -16,6 +16,13 @@ use vmx::bitmaps::EptEntryFlags;
 use vmx::{ActiveVmcs, ControlRegister, Register};
 use vtd::Iommu;
 
+// ————————————————————————————— Configuration —————————————————————————————— //
+
+/// Maximum number of CPU supported.
+const MAX_NB_CPU: usize = 8;
+
+// —————————————————————————————— x86_64 Arch ——————————————————————————————— //
+
 pub struct Arch {
     iommu: Option<Iommu>,
 }

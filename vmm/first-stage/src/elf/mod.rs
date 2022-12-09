@@ -372,7 +372,7 @@ where
             stack_prot,
         );
 
-        // Start at the top of the stack. Note that the stack must be 16 bytes alignes with SysV
+        // Start at the top of the stack. Note that the stack must be 16 bytes aligned with SysV
         // conventions.
         let rsp = VirtAddr::from_usize(stack_virt_addr.as_usize() + size - 16);
         (rsp, stack_phys_addr)

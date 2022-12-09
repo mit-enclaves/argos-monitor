@@ -472,8 +472,8 @@ pub fn save_host_state<'active, 'vmx>(
     // NOTE: See section 24.5 of volume 3C.
 
     let tr: u16;
-    let gdt = super::arch::sgdt();
-    let idt = super::arch::sidt();
+    let gdt = super::arch::get_gdt_descriptor();
+    let idt = super::arch::get_idt_descriptor();
 
     unsafe {
         // There is no nice wrapper to read `tr` in the x86_64 crate.
