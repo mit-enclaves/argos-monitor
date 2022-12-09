@@ -2,25 +2,42 @@
 #![no_main]
 
 use core::panic::PanicInfo;
+use core::sync::atomic::*;
 use second_stage;
+use second_stage::arch;
 use second_stage::arch::guest::launch_guest;
 use second_stage::debug::qemu;
 use second_stage::println;
 use second_stage::statics::get_manifest;
-use stage_two_abi::entry_point;
+use stage_two_abi::{entry_point, Manifest};
 
 entry_point!(second_stage_entry_point);
 
+static BSP_READY: AtomicBool = AtomicBool::new(false);
+static mut MANIFEST: Option<&'static mut Manifest> = None;
+
 fn second_stage_entry_point() -> ! {
-    let manifest = get_manifest();
-    second_stage::init(manifest);
+    unsafe {
+        // The BSP is responsible for retrieving the manifest
+        if arch::cpuid() == 0 {
+            MANIFEST = Some(get_manifest());
+            second_stage::init(MANIFEST.as_ref().unwrap());
+            BSP_READY.store(true, Ordering::SeqCst);
+        }
+        // The APs spin until the manifest is fetched, and then initialize the second stage
+        else {
+            while !BSP_READY.load(Ordering::SeqCst) {
+                core::hint::spin_loop();
+            }
+            assert!(!MANIFEST.is_none());
+            second_stage::init(MANIFEST.as_ref().unwrap());
+        }
+        println!("CPU{}: Hello from second stage!", arch::cpuid());
 
-    println!("============= Second Stage =============");
-    println!("Hello from second stage!");
-
-    // Launch guest and exit
-    launch_guest(manifest);
-    qemu::exit(qemu::ExitCode::Success);
+        // Launch guest and exit
+        launch_guest(MANIFEST.as_mut().unwrap());
+        qemu::exit(qemu::ExitCode::Success);
+    }
 }
 
 #[panic_handler]

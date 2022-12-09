@@ -137,3 +137,7 @@ pub fn init(manifest: &Manifest) {
     );
     // TODO
 }
+
+pub fn cpuid() -> usize {
+    todo!();
+}

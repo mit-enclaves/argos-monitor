@@ -221,6 +221,11 @@ pub fn init(manifest: &Manifest) {
     }
 }
 
+pub fn cpuid() -> usize {
+    let cpuid = unsafe { core::arch::x86_64::__cpuid(0x01) };
+    ((cpuid.ebx & 0xffffffff) >> 24) as usize
+}
+
 /// Halt the CPU in a spinloop;
 pub fn hlt() -> ! {
     loop {
