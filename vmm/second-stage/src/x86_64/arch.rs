@@ -1,43 +1,27 @@
 //! Architecture specific structures
 
+use crate::x86_64::MAX_NB_CPU;
 use core::arch::asm;
 use core::mem::size_of;
+use core::sync::atomic::{AtomicBool, Ordering};
 
-// —————————————————— Architecture-related Initializations —————————————————— //
+// ———————————————————— Interrupt-related Initialization ———————————————————— //
 
-pub unsafe fn init() {
-    let gdt_desc = DescriptorTablePointer {
-        limit: GDT.len() as u16,
-        base: GDT.as_ptr() as u64,
-    };
-    let idt_desc = DescriptorTablePointer {
-        limit: IDT.len() as u16,
-        base: IDT.as_ptr() as u64,
-    };
-    asm! {
-        "lgdt [{gdt}]",
-        "lidt [{idt}]",
-        gdt = in(reg) &gdt_desc,
-        idt = in(reg) &idt_desc,
-        options(readonly, nostack, preserves_flags),
-    };
-}
+pub fn init() {
+    initialize_idt();
+    initialize_gdt();
+    let gdt_desc = get_gdt_descriptor();
+    let idt_desc = get_idt_descriptor();
 
-/// Get the address of the current GDT.
-#[inline]
-pub fn sgdt() -> DescriptorTablePointer {
-    DescriptorTablePointer {
-        limit: GDT.len() as u16,
-        base: GDT.as_ptr() as u64,
-    }
-}
-
-/// Get the address of the current IDT.
-#[inline]
-pub fn sidt() -> DescriptorTablePointer {
-    DescriptorTablePointer {
-        limit: IDT.len() as u16,
-        base: IDT.as_ptr() as u64,
+    // SAFETY: we ensure that the IDT and GDT are properly initialized prior to loading them.
+    unsafe {
+        asm! {
+            "lgdt [{gdt}]",
+            "lidt [{idt}]",
+            gdt = in(reg) &gdt_desc,
+            idt = in(reg) &idt_desc,
+            options(readonly, nostack, preserves_flags),
+        };
     }
 }
 
@@ -50,26 +34,76 @@ pub struct DescriptorTablePointer {
 // —————————————————————————————————— GDT ——————————————————————————————————— //
 
 /// The Global Descriptor Table.
-#[used]
-#[export_name = "__GDT"]
-pub static GDT: [u64; 2] = [0, CODE_SEGMENT];
+static mut GDT: [u64; GDT_SIZE] = [0; GDT_SIZE];
 
+/// The size of the GDT
+///
+/// The first entry is always unused, then we choosed the following layout:
+/// - Second entry is the code segment.
+/// - The next 2 * MAX_NB_CPU are the per-cpu TSS (2 entries are needed per TSS).
+const GDT_SIZE: usize = 2 + 2 * MAX_NB_CPU;
+
+/// A valid code segment for 64 bits mode.
 const CODE_SEGMENT: u64 = 0xaf9b000000ffff;
 
-// —————————————————————————————————— TSS ——————————————————————————————————— //
+/// Guard used to ensure that GDT is properly initialized before being installed.
+static GDT_IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
+/// Guard used to ensure a single thread tries to initialize the GDT.
+static GDT_IS_LOCKED: AtomicBool = AtomicBool::new(false);
 
-/// The unique TSS for the second-stage.
-#[used]
-#[export_name = "__TSS"]
-pub static TSS: TaskStateSegment = TaskStateSegment {
-    rsp: [0; 3],
-    ist: [0; 7],
-    io_map: size_of::<TaskStateSegment>() as u16,
-    reserved_1: 0,
-    reserved_2: 0,
-    reservec_3: 0,
-    reserved_4: 0,
-};
+/// Initializes the IDT.
+///
+/// This function must be called prior to accessing the IDT.
+pub fn initialize_gdt() {
+    GDT_IS_LOCKED
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .expect("GDT is already locked!");
+
+    // SAFETY: we hold the unique lock, so there can't be race conditions on the GDT or TSS.
+    unsafe {
+        GDT[1] = CODE_SEGMENT;
+        for cpu_id in 0..MAX_NB_CPU {
+            // Configure TSS
+            let tss = EMPTY_TSS;
+            // TODO: set tss.ist
+            // TODO: set tss.rsp
+            TSS_ARRAY[cpu_id] = tss;
+
+            // Update the GDT with TSS entry
+            let (tss_desc_low, tss_desc_high) = get_tss_descriptor(&TSS_ARRAY[cpu_id]);
+            GDT[2 + cpu_id] = tss_desc_low;
+            GDT[2 + cpu_id + 1] = tss_desc_high;
+        }
+    }
+
+    GDT_IS_INITIALIZED.store(true, Ordering::SeqCst);
+}
+
+/// Returns a static reference to the GDT.
+///
+/// NOTE: the GDT must have been initialized before. This is enforced by a check which will cause a
+/// panic in case initialization is not completed yet.
+pub fn get_gdt() -> &'static [u64; GDT_SIZE] {
+    if !GDT_IS_INITIALIZED.load(Ordering::SeqCst) {
+        panic!("GDT is not yet initialized!")
+    }
+
+    // SAFETY: we ensure that the GDT was properly initialized, hence that no one will ever modify
+    // it again.
+    unsafe { &GDT }
+}
+
+/// Get the descriptor of the core's GDT.
+#[inline]
+pub fn get_gdt_descriptor() -> DescriptorTablePointer {
+    let gdt = get_gdt();
+    DescriptorTablePointer {
+        limit: gdt.len() as u16,
+        base: gdt.as_ptr() as u64,
+    }
+}
+
+// —————————————————————————————————— TSS ——————————————————————————————————— //
 
 /// TSS layout.
 #[repr(C, packed(4))]
@@ -85,10 +119,67 @@ pub struct TaskStateSegment {
     io_map: u16,
 }
 
+/// An empty TSS, with default values for all fields.
+const EMPTY_TSS: TaskStateSegment = TaskStateSegment {
+    rsp: [0; 3],
+    ist: [0; 7],
+    io_map: size_of::<TaskStateSegment>() as u16,
+    reserved_1: 0,
+    reserved_2: 0,
+    reservec_3: 0,
+    reserved_4: 0,
+};
+
+/// The array of TSS, each one is supposed to be used by a different CPU.
+static mut TSS_ARRAY: [TaskStateSegment; MAX_NB_CPU] = [EMPTY_TSS; MAX_NB_CPU];
+
+/// Returns the TSS selector for a given CPU.
+///
+/// The TSS is a system segment, so it's descriptor is 16 bytes wide in long mode. This function
+/// retuens them as a `(low, high)` pair that can be loaded into the GDT.
+//
+//  NOTE: see Intel manual volume 3 section 7.2.3.
+fn get_tss_descriptor(tss: &TaskStateSegment) -> (u64, u64) {
+    // Cast TSS pointer into integer
+    let tss = tss as *const _ as u64;
+
+    // The low and high part of the descriptor.
+    let mut low = 0;
+    let mut high = 0;
+
+    // Store TSS address
+    low |= get_bits(tss, 0, 23) << 16;
+    low |= get_bits(tss, 24, 31) << 56;
+    high |= get_bits(tss, 32, 63) << 0;
+
+    // Store TSS size
+    low |= (core::mem::size_of::<TaskStateSegment>() - 1) as u64;
+
+    // Store TSS type
+    low |= 0b1001 << 40;
+
+    (low, high)
+}
+
+/// Return the bits between bottom and top (included), starting at bit 0.
+fn get_bits(bits: u64, bottom: u64, top: u64) -> u64 {
+    assert!(bottom < top);
+
+    // Clear top bits
+    let bits = bits << (63 - top);
+    // Clear bottom bits
+    bits >> (bottom + (63 - top))
+}
+
 // —————————————————————————————————— IDT ——————————————————————————————————— //
 
 /// The unique IDT for the second stage.
-pub static IDT: [IdtEntry; 256] = [IdtEntry::empty(); 256];
+static mut IDT: [IdtEntry; 256] = [IdtEntry::empty(); 256];
+
+/// Guard used to ensure that IDT is properly initialized before being installed.
+static IDT_IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
+/// Guard used to ensure a single thread tries to initialize the IDT.
+static IDT_IS_LOCKED: AtomicBool = AtomicBool::new(false);
 
 /// An IDT entry.
 #[derive(Clone, Copy)]
@@ -112,5 +203,42 @@ impl IdtEntry {
             ptr_high: 0,
             reserved: 0,
         }
+    }
+}
+
+/// Initializes the IDT.
+///
+/// This function must be called prior to accessing the IDT.
+pub fn initialize_idt() {
+    IDT_IS_LOCKED
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .expect("IDT is already locked!");
+
+    // TODO: fill IDT entries there
+
+    IDT_IS_INITIALIZED.store(true, Ordering::SeqCst);
+}
+
+/// Returns a static reference to the IDT.
+///
+/// NOTE: the IDT must have been initialized before. This is enforced by a check which will cause a
+/// panic in case initialization is not completed yet.
+pub fn get_idt() -> &'static [IdtEntry; 256] {
+    if !IDT_IS_INITIALIZED.load(Ordering::SeqCst) {
+        panic!("IDT is not yet initialized!")
+    }
+
+    // SAFETY: we ensure that the IDT was properly initialized, hence that no one will ever modify
+    // it again.
+    unsafe { &IDT }
+}
+
+/// Get the descriptor of the global IDT.
+#[inline]
+pub fn get_idt_descriptor() -> DescriptorTablePointer {
+    let idt = get_idt();
+    DescriptorTablePointer {
+        limit: idt.len() as u16,
+        base: idt.as_ptr() as u64,
     }
 }
