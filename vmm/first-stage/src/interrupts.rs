@@ -80,9 +80,12 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 
 extern "x86-interrupt" fn general_protection_fault_handler(
     stack_frame: InterruptStackFrame,
-    _error_code: u64,
+    error_code: u64,
 ) {
-    panic!("EXCEPTION: GENERAL PROTECTION FAULT\n{:#?}", stack_frame);
+    panic!(
+        "Error code: 0x{:x}\nEXCEPTION: GENERAL PROTECTION FAULT\n{:#?}",
+        error_code, stack_frame
+    );
 }
 
 extern "x86-interrupt" fn debug_handler(stack_frame: InterruptStackFrame) {
@@ -101,15 +104,18 @@ extern "x86-interrupt" fn device_not_available_handler(stack_frame: InterruptSta
     panic!("EXCEPTION: DEVICE NOT AVAILABLE\n{:#?}", stack_frame);
 }
 
-extern "x86-interrupt" fn invalid_tss_handler(stack_frame: InterruptStackFrame, _error_code: u64) {
-    panic!("EXCEPTION: INVALID TSS\n{:#?}", stack_frame);
-}
-
 extern "x86-interrupt" fn stack_segment_fault_handler(
     stack_frame: InterruptStackFrame,
     _error_code: u64,
 ) {
     panic!("EXCEPTION: STACK SEGMENT FAULT\n{:#?}", stack_frame);
+}
+
+extern "x86-interrupt" fn invalid_tss_handler(stack_frame: InterruptStackFrame, error_code: u64) {
+    panic!(
+        "EXCEPTION: INVALID TSS\n{:#?}\n Error Code: 0x{:x}",
+        stack_frame, error_code
+    );
 }
 
 extern "x86-interrupt" fn segment_not_present_handler(

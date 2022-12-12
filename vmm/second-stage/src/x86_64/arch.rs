@@ -12,14 +12,18 @@ pub fn init() {
     initialize_gdt();
     let gdt_desc = get_gdt_descriptor();
     let idt_desc = get_idt_descriptor();
+    let tss_selector = get_tss_selector(0); // TODO: for now we assume this is executed by the BSP.
+                                            // Each core will have to load its own TSS.
 
     // SAFETY: we ensure that the IDT and GDT are properly initialized prior to loading them.
     unsafe {
         asm! {
             "lgdt [{gdt}]",
             "lidt [{idt}]",
+            "ltr  {tss:x}",
             gdt = in(reg) &gdt_desc,
             idt = in(reg) &idt_desc,
+            tss = in(reg) tss_selector,
             options(readonly, nostack, preserves_flags),
         };
     }
@@ -71,8 +75,8 @@ pub fn initialize_gdt() {
 
             // Update the GDT with TSS entry
             let (tss_desc_low, tss_desc_high) = get_tss_descriptor(&TSS_ARRAY[cpu_id]);
-            GDT[2 + cpu_id] = tss_desc_low;
-            GDT[2 + cpu_id + 1] = tss_desc_high;
+            GDT[2 + 2 * cpu_id] = tss_desc_low;
+            GDT[2 + 2 * cpu_id + 1] = tss_desc_high;
         }
     }
 
@@ -97,8 +101,9 @@ pub fn get_gdt() -> &'static [u64; GDT_SIZE] {
 #[inline]
 pub fn get_gdt_descriptor() -> DescriptorTablePointer {
     let gdt = get_gdt();
+    let limit = gdt.len() * size_of::<u64>() - 1;
     DescriptorTablePointer {
-        limit: gdt.len() as u16,
+        limit: limit as u16,
         base: gdt.as_ptr() as u64,
     }
 }
@@ -158,7 +163,18 @@ fn get_tss_descriptor(tss: &TaskStateSegment) -> (u64, u64) {
     // Store TSS type
     low |= 0b1001 << 40;
 
+    // Mark as present
+    low |= 1 << 47;
+
     (low, high)
+}
+
+/// Returns the TSS segment selector for the given core.
+pub fn get_tss_selector(cpu_id: usize) -> u16 {
+    assert!(cpu_id < MAX_NB_CPU, "Invalid CPU id");
+    // NOTE: the two first entries are used (null + code descriptor)
+    //       then each tss selector is 2 * 8 bytes.
+    (2 + 2 * cpu_id as u16) << 3
 }
 
 /// Return the bits between bottom and top (included), starting at bit 0.
