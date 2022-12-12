@@ -10,6 +10,7 @@ use core::panic::PanicInfo;
 
 use acpi::AcpiTables;
 use bootloader::{entry_point, BootInfo};
+use core::sync::atomic::Ordering;
 use first_stage::acpi::AcpiInfo;
 use first_stage::acpi_handler::TycheACPIHandler;
 use first_stage::getsec::configure_getsec;
@@ -194,6 +195,7 @@ fn launch_guest(
         );
         println!("Jumping into stage 2");
         configure_getsec(stage2.as_slice());
+        smp::BSP_READY.store(true, Ordering::SeqCst);
         senter();
     }
 

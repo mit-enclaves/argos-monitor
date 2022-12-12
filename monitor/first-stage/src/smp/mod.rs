@@ -200,5 +200,4 @@ pub unsafe fn boot(
 
     restore_code_section(backup_frame);
     println!("Booted {} AP.", ap.len());
-    BSP_READY.store(true, Ordering::SeqCst);
 }
