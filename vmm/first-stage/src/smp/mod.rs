@@ -181,6 +181,4 @@ pub unsafe fn boot(
             core::hint::spin_loop();
         }
     }
-
-    BSP_READY.store(true, Ordering::SeqCst);
 }
