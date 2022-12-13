@@ -166,6 +166,7 @@ pub fn load(
     manifest.poffset = elf_range.start.as_u64();
     manifest.voffset = LOAD_VIRT_ADDR.as_u64();
     manifest.vga = info.vga_info.clone();
+    manifest.smp = smp_cores;
 
     debug::hook_stage2_offsets(manifest.poffset, manifest.voffset);
     debug::tyche_hook_stage1(1);

@@ -42,6 +42,8 @@ pub struct Manifest {
     pub vga: VgaInfo,
     /// Optionnal address of the I/O MMU. Absent if set to 0.
     pub iommu: u64,
+    /// SMP info: number of available cores
+    pub smp: usize,
 }
 
 impl Manifest {
@@ -84,6 +86,7 @@ macro_rules! make_manifest {
                 info: $crate::GuestInfo::default_config(),
                 vga: $crate::VgaInfo::no_vga(),
                 iommu: 0,
+                smp: 0,
             };
             static TAKEN: AtomicBool = AtomicBool::new(false);
 
