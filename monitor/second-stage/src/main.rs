@@ -13,7 +13,9 @@ use stage_two_abi::{entry_point, Manifest};
 
 entry_point!(second_stage_entry_point);
 
-static BSP_READY: AtomicBool = AtomicBool::new(false);
+const FALSE: AtomicBool = AtomicBool::new(false);
+static BSP_READY: AtomicBool = FALSE;
+static CPU_STATUS: [AtomicBool; 256] = [FALSE; 256];
 static mut MANIFEST: Option<&'static Manifest> = None;
 
 fn second_stage_entry_point() -> ! {
@@ -31,12 +33,27 @@ fn second_stage_entry_point() -> ! {
             core::hint::spin_loop();
         }
         // SAFETY: we only perform read accesses and we ensure the BSP initialized the manifest.
-        unsafe {
+        let manifest = unsafe {
             assert!(!MANIFEST.is_none());
-            second_stage::init(MANIFEST.as_ref().unwrap());
+            MANIFEST.as_ref().unwrap()
+        };
+        second_stage::init(manifest);
+
+        println!("CPU{}: Hello from second stage!", arch::cpuid());
+
+        CPU_STATUS[arch::cpuid()].store(true, Ordering::SeqCst);
+
+        // Sync barrier to make sure all cores enter 2nd stage
+        for i in 0..(manifest.smp - 1) {
+            while !CPU_STATUS[i].load(Ordering::SeqCst) {
+                core::hint::spin_loop();
+            }
         }
+
+        // Launch guest and exit
+        launch_guest(manifest);
+        qemu::exit(qemu::ExitCode::Success);
     }
-    println!("CPU{}: Hello from second stage!", arch::cpuid());
 
     // Launch guest and exit
     unsafe {
