@@ -52,6 +52,8 @@ fn second_stage_entry_point() -> ! {
 }
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
+    println!("CPU {}: Panicked", arch::cpuid());
+    println!("{:?}", info);
     qemu::exit(qemu::ExitCode::Failure);
 }
