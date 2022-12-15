@@ -69,13 +69,15 @@ unsafe fn ap_entry() {
 unsafe fn allocate_code_section(
     _allocator: &impl RangeAllocator,
     mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
-) -> vmx::Frame {
+) -> [u8; 0x1000] {
     // As we **must** have the frame on code_paddr for the AP to boot up,
     // I bypass the memory allocator to directly allocate the memory here
     let frame = vmx::Frame {
         phys_addr: HostPhysAddr::new(CODE_PADDR as usize),
         virt_addr: CODE_PADDR as *mut u8,
     };
+
+    let mut content: [u8; 0x1000] = [0; 0x1000];
 
     mapper.map_range(
         _allocator,
@@ -84,6 +86,9 @@ unsafe fn allocate_code_section(
         0x1000,
         PtFlag::WRITE | PtFlag::PRESENT | PtFlag::USER,
     );
+
+    let trampoline = core::slice::from_raw_parts(CODE_PADDR as *mut u8, 0x1000);
+    content.clone_from_slice(trampoline);
 
     // Copy the cr3 register to cr3_ptr and share with AP
     (CR3_PTR_PADDR as *mut usize).write(x86::controlregs::cr3() as usize);
@@ -97,7 +102,7 @@ unsafe fn allocate_code_section(
         ap_trampoline_end as usize - ap_trampoline_start as usize,
     );
 
-    frame
+    content
 }
 
 unsafe fn allocate_stack_section(
@@ -151,7 +156,7 @@ pub unsafe fn boot(
     assert!(!bsp.is_ap);
     assert!(lapic.id() == bsp.local_apic_id);
 
-    allocate_code_section(stage1_allocator, pt_mapper);
+    let content = allocate_code_section(stage1_allocator, pt_mapper);
 
     // Intel MP Spec B.4: Universal Start-up Algorithm
     for id in 1..(ap.len() + 1) as u8 {
@@ -181,4 +186,11 @@ pub unsafe fn boot(
             core::hint::spin_loop();
         }
     }
+
+    // Restore the original trampoline content after all APs have booted up
+    core::ptr::copy_nonoverlapping(
+        &content as *const u8,
+        CODE_PADDR as _,
+        0x1000,
+    );
 }
