@@ -7,13 +7,17 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 // ———————————————————— Interrupt-related Initialization ———————————————————— //
 
+// BSP calls init to initialize IDT and GDT
 pub fn init() {
     initialize_idt();
     initialize_gdt();
+}
+
+// APs should directly call setup to load IDT and GDT
+pub fn setup(cpu_id: usize) {
     let gdt_desc = get_gdt_descriptor();
     let idt_desc = get_idt_descriptor();
-    let tss_selector = get_tss_selector(0); // TODO: for now we assume this is executed by the BSP.
-                                            // Each core will have to load its own TSS.
+    let tss_selector = get_tss_selector(cpu_id);
 
     // SAFETY: we ensure that the IDT and GDT are properly initialized prior to loading them.
     unsafe {

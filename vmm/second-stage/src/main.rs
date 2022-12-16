@@ -23,7 +23,7 @@ fn second_stage_entry_point() -> ! {
         // The BSP is responsible for retrieving the manifest
         if arch::cpuid() == 0 {
             MANIFEST = Some(get_manifest());
-            second_stage::init(MANIFEST.as_ref().unwrap());
+            second_stage::init(MANIFEST.as_ref().unwrap(), 0);
             BSP_READY.store(true, Ordering::SeqCst);
         }
         // The APs spin until the manifest is fetched, and then initialize the second stage
@@ -32,7 +32,7 @@ fn second_stage_entry_point() -> ! {
                 core::hint::spin_loop();
             }
             assert!(!MANIFEST.is_none());
-            second_stage::init(MANIFEST.as_ref().unwrap());
+            second_stage::init(MANIFEST.as_ref().unwrap(), arch::cpuid());
         }
         println!("CPU{}: Hello from second stage!", arch::cpuid());
 
