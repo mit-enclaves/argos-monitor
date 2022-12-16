@@ -8,6 +8,8 @@ use utils::{Frame, HostPhysAddr, HostVirtAddr};
 
 use crate::free_list::FreeList;
 
+use spin::Mutex;
+
 pub const PAGE_SIZE: u64 = 0x1000;
 pub const PAGE_MASK: u64 = !(PAGE_SIZE - 1);
 
@@ -75,28 +77,29 @@ impl<const N: usize> FreeListAllocator<N> {
         self.free_list.free(page_idx);
     }
 }
-
 pub struct Allocator<const N: usize> {
-    inner: RefCell<&'static mut FreeListAllocator<N>>,
+    inner: Mutex<RefCell<&'static mut FreeListAllocator<N>>>,
 }
 
 impl<const N: usize> Allocator<N> {
     pub fn new(allocator: &'static mut FreeListAllocator<N>, virt_offset: usize) -> Self {
         allocator.initialize(virt_offset);
         Self {
-            inner: RefCell::new(allocator),
+            inner: Mutex::new(RefCell::new(allocator)),
         }
     }
 
     pub unsafe fn free(&self, frame: HostPhysAddr) {
-        let mut inner = self.inner.borrow_mut();
+        let binding = self.inner.lock();
+        let mut inner = binding.borrow_mut();
         inner.free_frame(frame)
     }
 }
 
 unsafe impl<const N: usize> FrameAllocator for Allocator<N> {
     fn allocate_frame(&self) -> Option<Frame> {
-        let mut inner = self.inner.borrow_mut();
+        let binding = self.inner.lock();
+        let mut inner = binding.borrow_mut();
 
         // SAFETY: We enforce that the inner allocator is properly initialized during construction
         // of the outer struct.
@@ -104,7 +107,8 @@ unsafe impl<const N: usize> FrameAllocator for Allocator<N> {
     }
 
     unsafe fn free_frame(&self, frame: HostPhysAddr) -> Result<(), ()> {
-        let mut inner = self.inner.borrow_mut();
+        let binding = self.inner.lock();
+        let mut inner = binding.borrow_mut();
 
         unsafe { inner.free_frame(frame) };
         Ok(())
@@ -115,7 +119,8 @@ unsafe impl<const N: usize> FrameAllocator for Allocator<N> {
     }
 
     fn get_physical_offset(&self) -> HostVirtAddr {
-        let inner = self.inner.borrow();
+        let binding = self.inner.lock();
+        let inner = binding.borrow();
         HostVirtAddr::new(inner.virt_offset)
     }
 }

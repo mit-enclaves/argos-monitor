@@ -211,6 +211,7 @@ pub fn init(manifest: &Manifest, cpuid: usize) {
         );
         if cpuid == 0 {
             arch::init();
+            crate::arch::guest::init_allocator(&manifest);
         }
         arch::setup(cpuid);
     }

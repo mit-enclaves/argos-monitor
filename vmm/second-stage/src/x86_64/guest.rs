@@ -21,16 +21,41 @@ use vmx::fields::traits::*;
 use vmx::secondary_controls_capabilities;
 use vmx::{ActiveVmcs, ControlRegister, Register, VmxError, VmxExitReason};
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
+static mut ALLOCATOR: Option<Allocator<NB_PAGES>> = None;
+static ALLOCATOR_IS_LOCKED: AtomicBool = AtomicBool::new(false);
+static ALLOCATOR_IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+pub fn init_allocator(manifest: &Manifest) {
+    if ALLOCATOR_IS_LOCKED.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        == Ok(false)
+    {
+        unsafe {
+            ALLOCATOR = Some(Allocator::new(
+                get_allocator(),
+                (manifest.voffset - manifest.poffset) as usize,
+            ));
+        }
+
+        ALLOCATOR_IS_INITIALIZED.store(true, Ordering::SeqCst);
+    }
+}
+
+fn get_allocator_static() -> &'static Option<Allocator<NB_PAGES>> {
+    while ALLOCATOR_IS_INITIALIZED.load(Ordering::SeqCst) == false {}
+
+    unsafe { &ALLOCATOR }
+}
+
 pub fn launch_guest(manifest: &'static mut Manifest) {
     if !manifest.info.loaded {
         println!("No guest found, exiting");
         return;
     }
 
-    let mut allocator = Allocator::new(
-        get_allocator(),
-        (manifest.voffset - manifest.poffset) as usize,
-    );
+    let mut allocator = get_allocator_static().as_ref().unwrap();
+
     let frame = allocator
         .allocate_frame()
         .expect("Failed to allocate VMXON")
@@ -48,7 +73,7 @@ pub fn launch_guest(manifest: &'static mut Manifest) {
             }
         };
 
-        let mut vmcs = init_vm(&vmxon, &mut allocator);
+        let mut vmcs = init_vm(&vmxon, allocator);
         println!("Done with the guest init");
         let mut vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");
         let arch = Arch::new(manifest.iommu);
@@ -58,11 +83,11 @@ pub fn launch_guest(manifest: &'static mut Manifest) {
             &manifest,
             arch,
             &mut vcpu,
-            &mut allocator,
+            allocator,
             domains_arena,
             regions_arena,
         );
-        init_vcpu(&mut vcpu, &manifest.info, &mut allocator);
+        init_vcpu(&mut vcpu, &manifest.info, allocator);
 
         // Hook for debugging.
         debug::tyche_hook_stage2(1);
