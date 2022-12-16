@@ -26,6 +26,6 @@ pub mod arch {
     pub use crate::riscv::*;
 }
 
-pub fn init(manifest: &Manifest) {
-    arch::init(manifest);
+pub fn init(manifest: &Manifest, cpuid: usize) {
+    arch::init(manifest, cpuid);
 }

@@ -122,7 +122,7 @@ pub fn exit_qemu(exit_code: ExitCode) {
 }
 
 /// Architecture specific initialization.
-pub fn init(manifest: &Manifest) {
+pub fn init(manifest: &Manifest, _cpuid: usize) {
     let mut allocator = Allocator::new(
         get_allocator(),
         (manifest.voffset - manifest.poffset) as usize,

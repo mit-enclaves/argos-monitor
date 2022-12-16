@@ -23,7 +23,7 @@ fn second_stage_entry_point() -> ! {
         // Safety: The BSP is responsible for retrieving the manifest
         unsafe {
             MANIFEST = Some(get_manifest());
-            second_stage::init(MANIFEST.as_ref().unwrap());
+            second_stage::init(MANIFEST.as_ref().unwrap(), 0);
             BSP_READY.store(true, Ordering::SeqCst);
         }
     }
@@ -37,7 +37,7 @@ fn second_stage_entry_point() -> ! {
             assert!(!MANIFEST.is_none());
             MANIFEST.as_ref().unwrap()
         };
-        second_stage::init(manifest);
+        second_stage::init(manifest, arch::cpuid());
 
         println!("CPU{}: Hello from second stage!", arch::cpuid());
 

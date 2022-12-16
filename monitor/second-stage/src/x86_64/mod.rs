@@ -203,14 +203,17 @@ impl Backend for Arch {
 }
 
 /// Architecture specific initialization.
-pub fn init(manifest: &Manifest) {
+pub fn init(manifest: &Manifest, cpuid: usize) {
     unsafe {
         asm!(
             "mov cr3, {}",
             in(reg) manifest.cr3,
             options(nomem, nostack, preserves_flags)
         );
-        arch::init();
+        if cpuid == 0 {
+            arch::init();
+        }
+        arch::setup(cpuid);
     }
 
     // In case we use VGA, setup the VGA driver
