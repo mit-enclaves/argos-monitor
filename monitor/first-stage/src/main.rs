@@ -18,8 +18,8 @@ use first_stage::mmu::MemoryMap;
 use first_stage::{guests, println, second_stage, smp, HostPhysAddr, HostVirtAddr};
 use mmu::{PtMapper, RangeAllocator};
 use stage_two_abi::VgaInfo;
-use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
-use {qemu, vmx, vtd};
+use x86_64::registers::control::Cr4;
+use {qemu, vtd};
 
 entry_point!(kernel_main);
 
@@ -168,9 +168,6 @@ fn launch_guest(
     mut pt_mapper: PtMapper<HostPhysAddr, HostVirtAddr>,
     rsdp: u64,
 ) -> ! {
-    initialize_cpu();
-    print_vmx_info();
-
     let mut stage2_allocator = second_stage::second_stage_allocator(stage1_allocator);
     unsafe {
         println!("Loading guest");
@@ -198,22 +195,6 @@ fn launch_guest(
     println!("Failed to jump into stage 2");
     qemu::exit(qemu::ExitCode::Failure);
     first_stage::hlt_loop();
-}
-
-fn initialize_cpu() {
-    // Set CPU in a valid state for VMX operations.
-    let cr0 = Cr0::read();
-    let cr4 = Cr4::read();
-    unsafe {
-        Cr0::write(cr0 | Cr0Flags::NUMERIC_ERROR);
-        Cr4::write(cr4 | Cr4Flags::OSXSAVE);
-    };
-}
-
-fn print_vmx_info() {
-    println!("VMX:    {:?}", vmx::vmx_available());
-    println!("EPT:    {:?}", vmx::ept_capabilities());
-    println!("VMFunc: {:?}", vmx::available_vmfuncs());
 }
 
 fn run_tests() {
