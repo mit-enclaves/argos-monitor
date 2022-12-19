@@ -2,11 +2,15 @@
 
 use super::Arch;
 use crate::allocator::Allocator;
+use crate::arena::TypedArena;
 use crate::debug::qemu;
 use crate::guest::{Guest, HandlerResult};
-use crate::hypercalls::{ErrorCode, Hypercalls, Parameters};
+use crate::hypercalls::{Domain, ErrorCode, Hypercalls, Parameters, Region};
 use crate::println;
-use crate::statics::{allocator as get_allocator,domains_arena as get_domains_arena, regions_arena as get_regions_arena};
+use crate::statics::{
+    allocator as get_allocator, domains_arena as get_domains_arena,
+    regions_arena as get_regions_arena, NB_DOMAINS, NB_PAGES, NB_REGIONS,
+};
 use core::arch;
 use core::arch::asm;
 use debug;
@@ -27,6 +31,14 @@ static mut ALLOCATOR: Option<Allocator<NB_PAGES>> = None;
 static ALLOCATOR_IS_LOCKED: AtomicBool = AtomicBool::new(false);
 static ALLOCATOR_IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
+static mut DOMAINS_ARENA: Option<&'static mut TypedArena<Domain<Arch>, NB_DOMAINS>> = None;
+static DOMAINS_ARENA_IS_LOCKED: AtomicBool = AtomicBool::new(false);
+static DOMAINS_ARENA_IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+static mut REGIONS_ARENA: Option<&'static mut TypedArena<Region, NB_REGIONS>> = None;
+static REGIONS_ARENA_IS_LOCKED: AtomicBool = AtomicBool::new(false);
+static REGIONS_ARENA_IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
+
 pub fn init_allocator(manifest: &Manifest) {
     if ALLOCATOR_IS_LOCKED.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         == Ok(false)
@@ -46,6 +58,41 @@ fn get_allocator_static() -> &'static Option<Allocator<NB_PAGES>> {
     while ALLOCATOR_IS_INITIALIZED.load(Ordering::SeqCst) == false {}
 
     unsafe { &ALLOCATOR }
+}
+
+pub fn init_domains_arena() {
+    if DOMAINS_ARENA_IS_LOCKED.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        == Ok(false)
+    {
+        unsafe {
+            DOMAINS_ARENA = Some(get_domains_arena());
+        }
+        DOMAINS_ARENA_IS_INITIALIZED.store(true, Ordering::SeqCst);
+    }
+}
+
+fn get_domains_arena_static(
+) -> &'static mut Option<&'static mut TypedArena<Domain<Arch>, NB_DOMAINS>> {
+    while DOMAINS_ARENA_IS_INITIALIZED.load(Ordering::SeqCst) == false {}
+
+    unsafe { &mut DOMAINS_ARENA }
+}
+
+pub fn init_regions_arena() {
+    if REGIONS_ARENA_IS_LOCKED.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        == Ok(false)
+    {
+        unsafe {
+            REGIONS_ARENA = Some(get_regions_arena());
+        }
+    }
+    REGIONS_ARENA_IS_INITIALIZED.store(true, Ordering::SeqCst);
+}
+
+fn get_regions_arena_static() -> &'static mut Option<&'static mut TypedArena<Region, NB_REGIONS>> {
+    while REGIONS_ARENA_IS_INITIALIZED.load(Ordering::SeqCst) == false {}
+
+    unsafe { &mut REGIONS_ARENA }
 }
 
 pub fn launch_guest(manifest: &'static mut Manifest) {
@@ -77,8 +124,8 @@ pub fn launch_guest(manifest: &'static mut Manifest) {
         println!("Done with the guest init");
         let mut vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");
         let arch = Arch::new(manifest.iommu);
-        let domains_arena = get_domains_arena();
-        let regions_arena = get_regions_arena();
+        let domains_arena = get_domains_arena_static().as_mut().unwrap();
+        let regions_arena = get_regions_arena_static().as_mut().unwrap();
         let hypercalls = Hypercalls::new(
             &manifest,
             arch,
