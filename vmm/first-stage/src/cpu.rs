@@ -1,6 +1,8 @@
+use crate::println;
 use crate::{apic, gdt::Gdt};
 use core::sync::atomic::*;
 use x86::apic::xapic;
+use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
 
 pub const MAX_CPU_NUM: usize = 256;
 const FALSE: AtomicBool = AtomicBool::new(false);
@@ -28,11 +30,30 @@ impl Cpu {
     pub fn setup(&'static mut self) {
         self.gdt.setup();
         apic::lapic_setup(&mut self.lapic);
+
+        initialize_cpu();
+        print_vmx_info();
     }
 
     pub fn gdt(&self) -> &Gdt {
         &self.gdt
     }
+}
+
+fn initialize_cpu() {
+    // Set CPU in a valid state for VMX operations.
+    let cr0 = Cr0::read();
+    let cr4 = Cr4::read();
+    unsafe {
+        Cr0::write(cr0 | Cr0Flags::NUMERIC_ERROR);
+        Cr4::write(cr4 | Cr4Flags::OSXSAVE);
+    };
+}
+
+fn print_vmx_info() {
+    println!("CPU{}: VMX:    {:?}", id(), vmx::vmx_available());
+    println!("CPU{}: EPT:    {:?}", id(), vmx::ept_capabilities());
+    println!("CPU{}: VMFunc: {:?}", id(), vmx::available_vmfuncs());
 }
 
 pub unsafe fn current() -> &'static mut Option<Cpu> {
