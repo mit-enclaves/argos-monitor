@@ -27,7 +27,12 @@ jobs:
         #   run: just no-guest && just no-guest | grep Success
     - name: Update Doc
       run: |
-           echo $SSH_KEY > ~/.ssh/id_ed25519
+           echo $SSH_KEY > `pwd`/id_ed25519
+           chmod 400 `pwd`/id_ed25519
+           eval "$(ssh-agent -s)"
+           ssh-add `pwd`/id_ed25519
+           git config --global user.email "charly.castes@epfl.ch"
+           git config --global user.name  "CharlyCst"
            cargo doc --workspace --no-deps --document-private-items --target-dir rustdoc
            cd rustdoc/doc
            git init
@@ -35,4 +40,4 @@ jobs:
            git commit -m "Update doc"
            git branch -M main
            git remote add origin git@github.com:CharlyCst/tyche-doc.git
-           git push -f -u origin main
+           GIT_SSH_COMMAND='ssh -i `pwd`/../../id_ed25519' git push -f -u origin main
