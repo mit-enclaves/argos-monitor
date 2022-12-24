@@ -8,3 +8,6 @@ OVMF-pure-efi.fd
 
 # Disk images
 *.qcow2
+
+# Doc
+rustdoc
