@@ -16,6 +16,7 @@ vga = { path = "../../crates/vga/", optional = true }
 
 # TODO: move the untrusted dependencies behing a feature flag
 qemu = { path = "../../crates/qemu/" }
+spin = "0.9.4"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 vtd = { path = "../../crates/vtd" }
