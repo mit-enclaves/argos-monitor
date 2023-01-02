@@ -73,7 +73,7 @@ fn main() {
 
     let image = create_disk_images(&kernel_binary_path, uefi);
 
-    let smp = 1;
+    let smp = 8;
 
     if no_boot {
         println!("Created disk image at `{}`", image.display());
