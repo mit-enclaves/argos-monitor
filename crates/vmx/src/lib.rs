@@ -667,8 +667,6 @@ impl<'active, 'vmx> core::fmt::Debug for ActiveVmcs<'active, 'vmx> {
         writeln!(f, "    registers {{")?;
         writeln!(f, "        rax: {:x}", self.get(Register::Rax))?;
         writeln!(f, "        rbx: {:x}", self.get(Register::Rbx))?;
-        writeln!(f, "        rax: {:x}", self.get(Register::Rax))?;
-        writeln!(f, "        rbx: {:x}", self.get(Register::Rbx))?;
         writeln!(f, "        rcx: {:x}", self.get(Register::Rcx))?;
         writeln!(f, "        rdx: {:x}", self.get(Register::Rdx))?;
         writeln!(f, "        rip: {:x}", self.get(Register::Rip))?;
