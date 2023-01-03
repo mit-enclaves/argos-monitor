@@ -130,7 +130,7 @@ pub fn init(manifest: &Manifest, _cpuid: usize) {
     let _hypercalls = Hypercalls::new(
         &manifest,
         Arch::new(),
-        &mut Vcpu {},
+        &mut [Some(Vcpu {})],
         &mut allocator,
         domains_arena,
         regions_arena,

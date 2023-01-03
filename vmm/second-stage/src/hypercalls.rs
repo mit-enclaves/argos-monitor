@@ -413,18 +413,19 @@ where
     pub fn new<'a>(
         manifest: &Manifest,
         mut backend: B,
-        vcpu: &mut B::Vcpu<'a>,
+        vcpus: &mut [Option<B::Vcpu<'a>>],
         allocator: &impl FrameAllocator,
         domains_arena: &'static mut DomainArena<B>,
         regions_arena: &'static mut RegionArena,
     ) -> Self {
         let root_region = Self::create_root_region(manifest, regions_arena);
         let root_domain = Self::create_root_domain(
+            manifest,
             root_region,
             domains_arena,
             regions_arena,
             &mut backend,
-            vcpu,
+            vcpus,
             allocator,
         );
 
@@ -449,11 +450,12 @@ where
     }
 
     fn create_root_domain<'a>(
+        _manifest: &Manifest,
         root_region: RegionHandle,
         domains_arena: &mut DomainArena<B>,
         regions_arena: &RegionArena,
         backend: &mut B,
-        vcpu: &mut B::Vcpu<'a>,
+        vcpus: &mut [Option<B::Vcpu<'a>>],
         allocator: &impl FrameAllocator,
     ) -> DomainHandle<B> {
         let handle = domains_arena
@@ -492,11 +494,23 @@ where
             .expect("Failed to add root region");
         let fake_context = B::EMPTY_CONTEXT;
         backend
-            .domain_restore(&root_domain.store, &fake_context, vcpu)
+            .domain_restore(
+                &root_domain.store,
+                &fake_context,
+                vcpus[0].as_mut().unwrap(),
+            )
             .expect("Failed to switch to root domain");
         root_domain.nb_initial_regions = 1;
         root_domain.initial_regions_capa[0] = root_region_capa;
         handle
+    }
+
+    pub fn init<'a>(&self, backend: &mut B, vcpu: &mut B::Vcpu<'a>) {
+        let root_domain = &self.domains_arena[self.current_domain];
+        let fake_context = B::EMPTY_CONTEXT;
+        backend
+            .domain_restore(&root_domain.store, &fake_context, vcpu)
+            .expect("Failed to switch to root domain");
     }
 
     pub fn dispatch<'a>(

@@ -1,6 +1,7 @@
 //! x86_64 backend for stage 2
 
 mod arch;
+mod vcpu;
 pub mod guest;
 
 use crate::debug::qemu::ExitCode;
@@ -13,13 +14,13 @@ use mmu::{EptMapper, FrameAllocator};
 use stage_two_abi::Manifest;
 use utils::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
 use vmx::bitmaps::EptEntryFlags;
-use vmx::{ActiveVmcs, ControlRegister, Register};
+use vmx::{ControlRegister, Register};
 use vtd::Iommu;
 
 // ————————————————————————————— Configuration —————————————————————————————— //
 
 /// Maximum number of CPU supported.
-const MAX_NB_CPU: usize = 8;
+const MAX_NB_CPU: usize = 16;
 
 // —————————————————————————————— x86_64 Arch ——————————————————————————————— //
 
@@ -63,7 +64,7 @@ impl Arch {
 }
 
 impl Backend for Arch {
-    type Vcpu<'a> = ActiveVmcs<'a, 'a>;
+    type Vcpu<'a> = vcpu::X86Vcpu<'a, 'a>;
 
     type Store = Store;
 
@@ -157,11 +158,13 @@ impl Backend for Arch {
         context: &mut Self::Context,
         vcpu: &mut Self::Vcpu<'a>,
     ) -> Result<(), ErrorCode> {
-        vcpu.next_instruction()
+        let active_vmcs = vcpu.active_vmcs.as_mut().unwrap();
+
+        active_vmcs.next_instruction()
             .expect("Failed to advance instruction");
-        context.cr3 = GuestPhysAddr::new(vcpu.get_cr(ControlRegister::Cr3));
-        context.entry = GuestVirtAddr::new(vcpu.get(Register::Rip) as usize);
-        context.stack = GuestVirtAddr::new(vcpu.get(Register::Rsp) as usize);
+        context.cr3 = GuestPhysAddr::new(active_vmcs.get_cr(ControlRegister::Cr3));
+        context.entry = GuestVirtAddr::new(active_vmcs.get(Register::Rip) as usize);
+        context.stack = GuestVirtAddr::new(active_vmcs.get(Register::Rsp) as usize);
         Ok(())
     }
 
@@ -171,11 +174,13 @@ impl Backend for Arch {
         context: &Self::Context,
         vcpu: &mut Self::Vcpu<'a>,
     ) -> Result<(), ErrorCode> {
-        vcpu.set_ept_ptr(HostPhysAddr::new(store.ept.as_usize() | EPT_ROOT_FLAGS))
+        let active_vmcs = vcpu.active_vmcs.as_mut().unwrap();
+
+        active_vmcs.set_ept_ptr(HostPhysAddr::new(store.ept.as_usize() | EPT_ROOT_FLAGS))
             .map_err(|_| ErrorCode::DomainSwitchFailed)?;
-        vcpu.set_cr(ControlRegister::Cr3, context.cr3.as_usize());
-        vcpu.set(Register::Rip, context.entry.as_u64());
-        vcpu.set(Register::Rsp, context.stack.as_u64());
+        active_vmcs.set_cr(ControlRegister::Cr3, context.cr3.as_usize());
+        active_vmcs.set(Register::Rip, context.entry.as_u64());
+        active_vmcs.set(Register::Rsp, context.stack.as_u64());
         Ok(())
     }
 
@@ -211,9 +216,6 @@ pub fn init(manifest: &Manifest, cpuid: usize) {
         );
         if cpuid == 0 {
             arch::init();
-            crate::arch::guest::init_allocator(&manifest);
-            crate::arch::guest::init_domains_arena();
-            crate::arch::guest::init_regions_arena();
         }
         arch::setup(cpuid);
     }

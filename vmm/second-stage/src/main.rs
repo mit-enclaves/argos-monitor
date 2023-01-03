@@ -5,7 +5,7 @@ use core::panic::PanicInfo;
 use core::sync::atomic::*;
 use second_stage;
 use second_stage::arch;
-use second_stage::arch::guest::launch_guest;
+use second_stage::arch::guest;
 use second_stage::debug::qemu;
 use second_stage::println;
 use second_stage::statics::get_manifest;
@@ -46,7 +46,7 @@ fn second_stage_entry_point() -> ! {
         }
 
         // Launch guest and exit
-        launch_guest(MANIFEST.as_mut().unwrap());
+        guest::launch(MANIFEST.as_mut().unwrap(), arch::cpuid());
         qemu::exit(qemu::ExitCode::Success);
     }
 }
