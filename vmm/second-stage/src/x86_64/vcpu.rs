@@ -424,6 +424,7 @@ impl<'active, 'vmx> X86Vcpu<'active, 'vmx> {
             secondary_ctrls |= SecondaryControls::ENABLE_XSAVES_XRSTORS;
         }
 
+        secondary_ctrls |= unrestricted_guest_secondary_controls();
         secondary_ctrls |= cpuid_secondary_controls();
         println!("2'Ctrl: {:?}", self.set_secondary_ctrls(secondary_ctrls));
     }
@@ -768,6 +769,15 @@ fn configure_msr() -> Result<(), VmxError> {
     }
 
     Ok(())
+}
+
+fn unrestricted_guest_secondary_controls() -> SecondaryControls {
+    let mut controls = SecondaryControls::empty();
+    let vmx_misc = unsafe { msr::VMX_MISC.read() };
+    if vmx_misc & (1 << 5) != 0 {
+        controls |= SecondaryControls::UNRESTRICTED_GUEST;
+    }
+    controls
 }
 
 /// Returns optional secondary controls depending on the host cpuid.
