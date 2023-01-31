@@ -171,7 +171,11 @@ where
 
                         self.next_instruction()?;
                     }
-                    _ => todo!("Emulation not yet implemented for {:?}", qualification),
+                    _ => todo!(
+                        "vCPU{}: Emulation not yet implemented for {:?}",
+                        self.vcpu_id,
+                        qualification
+                    ),
                 };
                 Ok(HandlerResult::Resume)
             }
@@ -241,8 +245,8 @@ where
             }
             _ => {
                 println!(
-                    "Emulation is not yet implemented for exit reason: {:?}",
-                    reason
+                    "vCPU{}: Emulation is not yet implemented for exit reason: {:?}",
+                    self.vcpu_id, reason
                 );
                 println!("{:?}", self.active_vmcs);
                 Ok(HandlerResult::Crash)
@@ -259,7 +263,8 @@ where
                     .handle_exit(exit_reason)
                     .expect("Failed to handle VM exit"),
                 Err(err) => {
-                    println!("Guest crash: {:?}", err);
+                    println!("vCPU{} crashed: {:?}", self.vcpu_id, err);
+                    println!("{:?}", self.active_vmcs);
                     HandlerResult::Crash
                 }
             };
