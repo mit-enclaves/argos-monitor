@@ -16,7 +16,9 @@ linux          := "--features=first-stage/guest_linux"
 no-guest       := "--features=first-stage/no_guest"
 vga-s1         := "--features=first-stage/vga"
 vga-s2         := "--features=second-stage/vga"
-default_dbg    := "gdb0"
+tpm_path       := "/tmp/tpm-dev-" + env_var('USER')
+default_dbg    := "/tmp/dbg-" + env_var('USER')
+default_smp    := "1"
 
 # Print list of commands
 help:
@@ -42,26 +44,27 @@ check:
 	cargo check {{cargo_args}} {{riscv}}  {{second-stage}}
 
 # Run rawc guest
-rawc:
-	@just build
-	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{rawc}} --
-
-common TARGET DBG:
+rawc SMP=default_smp:
 	@just build
 	@just tpm
-	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{TARGET}} -- --uefi "--dbg_path={{DBG}}"
+	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{rawc}} -- --smp={{SMP}}
+
+common TARGET DBG SMP:
+	@just build
+	@just tpm
+	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{TARGET}} -- --uefi --dbg_path={{DBG}} --smp={{SMP}}
 
 # Run the VMM without any guest
-no-guest:
-	@just common {{no-guest}} {{default_dbg}}
+no-guest SMP=default_smp:
+	@just common {{no-guest}} {{default_dbg}} {{SMP}}
 
 # Run rawc guest with UEFI
-rawc-uefi:
-	@just common {{rawc}} {{default_dbg}}
+rawc-uefi SMP=default_smp:
+	@just common {{rawc}} {{default_dbg}} {{SMP}}
 
 # Run rawc guest, specify debug socket name.
-rawc-uefi-dbg SOCKET:
-	@just common {{rawc}} {{SOCKET}}
+rawc-uefi-dbg SOCKET SMP=default_smp:
+	@just common {{rawc}} {{SOCKET}} {{SMP}}
 
 # Build linux image.
 build-linux:
@@ -75,12 +78,12 @@ build-ramfs:
 	@just build-linux
 
 # Run linux guest with UEFI
-linux:
-	@just common {{linux}} {{default_dbg}}
+linux SMP=default_smp:
+	@just common {{linux}} {{default_dbg}} {{SMP}}
 
 # Run linux guest, specify debug socket name.
-linux-dbg SOCKET:
-	@just common {{linux}} {{SOCKET}}
+linux-dbg SOCKET SMP=default_smp:
+	@just common {{linux}} {{SOCKET}} {{SMP}}
 
 # Build the VMM for bare metal platform
 build-metal-no-guest:
@@ -100,8 +103,8 @@ tpm:
 		echo "TPM is running"
 	else
 		echo "Starting TPM"
-		mkdir -p /tmp/tpm-dev/
-		swtpm socket --tpm2 --tpmstate dir=/tmp/tpm-dev --ctrl type=unixio,path=/tmp/tpm-dev/sock &
+		mkdir -p {{tpm_path}}/
+		swtpm socket --tpm2 --tpmstate dir={{tpm_path}} --ctrl type=unixio,path={{tpm_path}}/sock &
 	fi
 
 # Install the required dependencies
