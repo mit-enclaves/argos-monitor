@@ -4,20 +4,18 @@ use std::{
     time::Duration,
 };
 
+// ————————————————————————————— QEMU Arguments ————————————————————————————— //
+
 #[rustfmt::skip]
 const RUN_ARGS: &[&str] = &[
     "--no-reboot",
     "-nographic",
     "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
     "-device", "intel-iommu,intremap=on,aw-bits=48",
-    "-device", "tpm-tis,tpmdev=tpm0",
-    "-tpmdev", "emulator,id=tpm0,chardev=tpm-chardev",
     "-cpu", "host,+kvm",
     "-machine", "q35",
     "-accel", "kvm,kernel-irqchip=split",
     "-m", "6G",
-    "-chardev", "socket,id=tpm-chardev,path=/tmp/tpm-dev/sock",
-    "-chardev",
 ];
 const TEST_ARGS: &[&str] = &[
     "--no-reboot",
@@ -34,66 +32,103 @@ const TEST_ARGS: &[&str] = &[
 const TEST_TIMEOUT_SECS: u64 = 10;
 const QCOW2_CANDIDATES: &[&'static str] = &["ubuntu.qcow2"];
 
+// —————————————————————————————— CLI Parsing ——————————————————————————————— //
+
+struct Args {
+    no_boot: bool,
+    uefi: bool,
+    smp: usize,
+    dbg: Option<String>,
+    tpm: Option<String>,
+    kernel_binary_path: PathBuf,
+}
+
+fn parse_args(args: &mut Vec<String>) -> Args {
+    // Default values
+    let mut no_boot = false;
+    let mut uefi = false;
+    let mut smp = 1;
+    let mut tpm = None;
+    let mut dbg = None;
+
+    // Parse arguments
+    let kernel_binary_path = PathBuf::from(args.remove(0)).canonicalize().unwrap();
+    if let Some(idx) = args.iter().position(|arg| arg == "--no-run") {
+        args.remove(idx);
+        no_boot = true;
+    };
+    if let Some(idx) = args.iter().position(|arg| arg == "--uefi") {
+        args.remove(idx);
+        uefi = true;
+    };
+    if let Some(idx) = args.iter().position(|arg| arg.starts_with("--smp=")) {
+        let value = args[idx]
+            .strip_prefix("--smp=")
+            .expect("Error parsing 'smp'")
+            .parse::<usize>()
+            .unwrap();
+        args.remove(idx);
+        smp = value;
+    };
+    if let Some(idx) = args.iter().position(|arg| arg.starts_with("--tpm=")) {
+        let value = args[idx]
+            .strip_prefix("--tpm=")
+            .expect("Error parsing 'tpm'")
+            .to_string();
+        args.remove(idx);
+        tpm = Some(value);
+    };
+    if let Some(idx) = args.iter().position(|arg| arg.starts_with("--dbg_path=")) {
+        let mut value: String = args[idx]
+            .strip_prefix("--dbg_path=")
+            .expect("Error parsing 'dbg_path'")
+            .to_string();
+        args.remove(idx);
+        if value.len() == 0 {
+            value = String::from("/tmp/dbg0");
+        }
+        dbg = Some(value);
+    };
+
+    Args {
+        no_boot,
+        uefi,
+        smp,
+        dbg,
+        tpm,
+        kernel_binary_path,
+    }
+}
+
+// —————————————————————————————— Entry Point ——————————————————————————————— //
+
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect(); // skip executable name
+    let config = parse_args(&mut args);
 
-    let kernel_binary_path = {
-        let path = PathBuf::from(args.remove(0));
-        path.canonicalize().unwrap()
-    };
-    let no_boot = match args.iter().position(|arg| arg == "--no-run") {
-        Some(idx) => {
-            args.remove(idx);
-            true
-        }
-        None => false,
-    };
-    let uefi = match args.iter().position(|arg| arg == "--uefi") {
-        Some(idx) => {
-            args.remove(idx);
-            true
-        }
-        None => false,
-    };
+    let image = create_disk_images(&config.kernel_binary_path, config.uefi);
 
-    let dbg = match args.iter().position(|arg| arg.starts_with("--dbg_path=")) {
-        Some(idx) => {
-            let mut value: String = args[idx]
-                .strip_prefix("--dbg_path=")
-                .expect("Error parsing")
-                .to_string();
-            args.remove(idx);
-            if value.len() == 0 {
-                value = String::from("gdb0");
-            }
-            value
-        }
-        None => String::from("gdb0"),
-    };
-
-    let image = create_disk_images(&kernel_binary_path, uefi);
-
-    let smp = 8;
-
-    if no_boot {
+    if config.no_boot {
         println!("Created disk image at `{}`", image.display());
         return;
     }
 
     let mut run_cmd = Command::new("qemu-system-x86_64");
+    run_cmd.arg("-smp").arg(format!("{}", config.smp));
+
     run_cmd
         .arg("-smp")
-        .arg(format!("{}", smp));
+        .arg(format!("{}", config.smp));
 
     run_cmd
         .arg("-drive")
         .arg(format!("format=raw,file={}", image.display()));
 
-    if uefi {
+    if config.uefi {
         run_cmd.arg("-bios").arg("OVMF-pure-efi.fd");
     }
 
-    let binary_kind = runner_utils::binary_kind(&kernel_binary_path);
+    let binary_kind = runner_utils::binary_kind(&config.kernel_binary_path);
     if binary_kind.is_test() {
         run_cmd.args(TEST_ARGS);
 
@@ -105,13 +140,29 @@ fn main() {
     } else {
         run_cmd.args(RUN_ARGS);
         run_cmd.args(&args);
-        run_cmd
-            .arg(format!(
-                "socket,path=/tmp/{},server=on,wait=off,id={}",
-                dbg, dbg
-            ))
-            .arg("-gdb")
-            .arg(format!("chardev:{}", dbg));
+
+        // GDB path
+        if let Some(dbg) = config.dbg {
+            run_cmd
+                .arg("-chardev")
+                .arg(format!("socket,path={},server=on,wait=off,id=dbg0", dbg))
+                .arg("-gdb")
+                .arg("chardev:dbg0");
+        }
+
+        // TPM device
+        if let Some(tpm) = config.tpm {
+            run_cmd.args([
+                "-device",
+                "tpm-tis,tpmdev=tpm0",
+                "-tpmdev",
+                "emulator,id=tpm0,chardev=tpm-chardev",
+                "-chardev",
+            ]);
+            run_cmd.arg(&format!("socket,id=tpm-chardev,path={}", tpm));
+        }
+
+        // Disk image
         if let Some(qcow2) = find_qcow2() {
             run_cmd
                 .arg("-drive")
