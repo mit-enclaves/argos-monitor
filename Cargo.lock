@@ -14,6 +14,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "arena"
+version = "0.1.0"
+
+[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -70,6 +74,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aaaa9db3339d32c2622f2e5d0731eb82a468d3439797c9d4fe426744fe2bd551"
 dependencies = [
  "json",
+]
+
+[[package]]
+name = "capabilities"
+version = "0.1.0"
+dependencies = [
+ "arena",
+ "bitflags",
+ "utils",
 ]
 
 [[package]]
@@ -249,6 +262,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "monitor"
+version = "0.1.0"
+dependencies = [
+ "arena",
+ "capabilities",
+ "utils",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -360,8 +382,11 @@ checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 name = "second-stage"
 version = "0.1.0"
 dependencies = [
+ "arena",
+ "capabilities",
  "debug",
  "mmu",
+ "monitor",
  "qemu",
  "spin 0.9.4",
  "stage_two_abi",

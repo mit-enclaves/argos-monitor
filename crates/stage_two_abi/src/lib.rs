@@ -106,7 +106,7 @@ macro_rules! make_manifest {
 
 /// GuestInfo passed from stage 1 to stage 2.
 #[repr(C)]
-#[derive(Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct GuestInfo {
     // Guest information.
     pub cr3: usize,

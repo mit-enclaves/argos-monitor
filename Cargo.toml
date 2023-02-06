@@ -19,6 +19,9 @@ members = [
     "crates/debug",
     "crates/utils",
     "crates/libtyche",
+    "crates/arena",
+    "crates/capabilities",
+    "crates/monitor",
     "boot_toolchain",
 ]
 

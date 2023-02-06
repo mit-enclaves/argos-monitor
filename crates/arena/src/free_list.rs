@@ -10,7 +10,7 @@ enum NextFree {
     NotFree,
 }
 
-/// A typed arena, from which objects can be dynamicalle allocated and freed.
+/// A typed arena, from which objects can be dynamically allocated and freed.
 pub struct FreeList<const N: usize> {
     /// The free list, where free_list[n] returns the index of the next free object.
     free_list: [NextFree; N],
@@ -52,5 +52,9 @@ impl<const N: usize> FreeList<N> {
         // Insert back into free list
         self.free_list[idx] = NextFree::Free(self.head);
         self.head = idx as u32;
+    }
+
+    pub fn is_free(&self, idx: usize) -> bool {
+        self.free_list[idx] != NextFree::NotFree
     }
 }

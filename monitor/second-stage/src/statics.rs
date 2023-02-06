@@ -7,11 +7,16 @@
 //! the function is called, and panic on following calls. This ensures we don"t emit more than one
 //! mutable reference with static lifetime.
 
+use arena::TypedArena;
+#[cfg(target_arch = "riscv64")]
+use capabilities::backend;
+use capabilities::memory::{EMPTY_MEMORY_REGION, EMPTY_MEMORY_REGION_CAPA};
+use capabilities::{OPool, CAPA_POOL_SIZE, CPU_POOL_SIZE, DOMAIN_POOL_SIZE, MEMORY_POOL_SIZE};
 use stage_two_abi::make_manifest;
 
 use crate::allocator::{FreeListAllocator, Page, PAGE_SIZE};
-use crate::arena::{Handle, TypedArena};
-use crate::hypercalls::{access, Backend, Domain, Region, RegionCapability, RevokInfo, Switch};
+#[cfg(target_arch = "x86_64")]
+use crate::x86_64::backend;
 
 // ————————————————————— Static Resources Configuration ————————————————————— //
 
@@ -27,42 +32,7 @@ const EMPTY_PAGE: Page = Page {
     data: [0; PAGE_SIZE as usize],
 };
 
-const EMPTY_REGION_CAPABILITY: RegionCapability = RegionCapability {
-    is_owned: false,
-    is_shared: false,
-    is_valid: false,
-    access: access::NONE,
-    revok: RevokInfo {
-        domain: 0,
-        handle: 0,
-        local_handle: 0,
-    },
-    handle: Handle::new_unchecked(0),
-};
-
-type Arch = crate::arch::Arch;
-
-const EMPTY_SWITCH: Switch<Arch> = Switch {
-    is_valid: false,
-    domain: 0,
-    context: <Arch as Backend>::EMPTY_CONTEXT,
-};
-
-const EMPTY_DOMAIN: Domain<Arch> = Domain {
-    is_sealed: false,
-    is_valid: false,
-    regions: TypedArena::new([EMPTY_REGION_CAPABILITY; NB_REGIONS_PER_DOMAIN]),
-    nb_initial_regions: 0,
-    initial_regions_capa: [Handle::new_unchecked(0); NB_REGIONS_PER_DOMAIN],
-    store: <Arch as Backend>::EMPTY_STORE,
-    switches: TypedArena::new([EMPTY_SWITCH; NB_SWITCH_PER_DOMAIN]),
-};
-
-const EMPTY_REGION: Region = Region {
-    ref_count: 0,
-    start: 0,
-    end: 0,
-};
+//type Arch = crate::arch::Arch;
 
 macro_rules! make_static {
     ($(static mut $name:ident : $type:ty = $init:expr;)*) => {
@@ -94,10 +64,30 @@ macro_rules! make_static {
 make_static! {
     static mut allocator: FreeListAllocator<NB_PAGES> =
         FreeListAllocator::new([EMPTY_PAGE; NB_PAGES]);
-    static mut domains_arena: TypedArena<Domain<Arch>, NB_DOMAINS> =
-        TypedArena::new([EMPTY_DOMAIN; NB_DOMAINS]);
-    static mut regions_arena: TypedArena<Region, NB_REGIONS> =
-        TypedArena::new([EMPTY_REGION; NB_REGIONS]);
+}
+
+#[cfg(target_arch = "x86_64")]
+make_static! {
+    static mut pool: OPool<backend::BackendX86> = OPool {
+        domains: TypedArena::new([backend::EMPTY_DOMAIN; DOMAIN_POOL_SIZE]),
+        domain_capas: TypedArena::new([backend::EMPTY_DOMAIN_CAPA; CAPA_POOL_SIZE]),
+        regions: TypedArena::new([EMPTY_MEMORY_REGION; MEMORY_POOL_SIZE]),
+        region_capas: TypedArena::new([EMPTY_MEMORY_REGION_CAPA; CAPA_POOL_SIZE]),
+        cpus: TypedArena::new([backend::EMPTY_CPU; CPU_POOL_SIZE]),
+        cpu_capas: TypedArena::new([backend::EMPTY_CPU_CAPA; CAPA_POOL_SIZE]),
+    };
+}
+
+#[cfg(target_arch = "risc64")]
+make_static! {
+    static mut pool: OPool<NoBackend> = OPool {
+        domains: TypedArena::new([backend::EMPTY_DOMAIN; DOMAIN_POOL_SIZE]),
+        domain_capas: TypedArena::new([backend::EMPTY_DOMAIN_CAPA; CAPA_POOL_SIZE]),
+        regions: TypedArena::new([EMPTY_MEMORY_REGION; MEMORY_POOL_SIZE]),
+        region_capas: TypedArena::new([EMPTY_MEMORY_REGION_CAPA; CAPA_POOL_SIZE]),
+        cpus: TypedArena::new([backend::EMPTY_CPU_CAPA; CPU_POOL_SIZE]),
+        cpu_capas: TypedArena::new([backend::EMPTY_CPU_CAPA; CAPA_POOL_SIZE]),
+    };
 }
 
 make_manifest!();

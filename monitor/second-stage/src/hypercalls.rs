@@ -1,9 +1,9 @@
 //! Applicatioe Binary Interface
 
+use arena::{ArenaItem, Handle, TypedArena};
 use mmu::FrameAllocator;
 use stage_two_abi::Manifest;
 
-use crate::arena::{ArenaItem, Handle, TypedArena};
 use crate::statics::{NB_DOMAINS, NB_REGIONS, NB_REGIONS_PER_DOMAIN, NB_SWITCH_PER_DOMAIN};
 
 // ——————————————————————————————— Hypercalls ——————————————————————————————— //
@@ -179,10 +179,10 @@ pub trait Backend: Sized + 'static {
 
 pub type DomainArena<S> = TypedArena<Domain<S>, NB_DOMAINS>;
 pub type RegionArena = TypedArena<Region, NB_REGIONS>;
-pub type DomainHandle<S> = Handle<Domain<S>, NB_DOMAINS>;
-pub type RegionHandle = Handle<Region, NB_REGIONS>;
-pub type RegionCapaHandle = Handle<RegionCapability, NB_REGIONS_PER_DOMAIN>;
-pub type SwitchHandle<S> = Handle<Switch<S>, NB_SWITCH_PER_DOMAIN>;
+pub type DomainHandle<S> = Handle<Domain<S>>;
+pub type RegionHandle = Handle<Region>;
+pub type RegionCapaHandle = Handle<RegionCapability>;
+pub type SwitchHandle<S> = Handle<Switch<S>>;
 
 pub struct Domain<B>
 where
@@ -441,7 +441,7 @@ where
         let handle = regions_arena
             .allocate()
             .expect("Failed to allocate root region");
-        let root_region = &mut regions_arena[handle];
+        let root_region = &mut regions_arena.get_mut(handle);
         root_region.start = 0;
         root_region.end = manifest.poffset as usize;
         root_region.ref_count = 1;
@@ -460,14 +460,14 @@ where
         let handle = domains_arena
             .allocate()
             .expect("Failed to allocate root domain");
-        let root_domain = &mut domains_arena[handle];
+        let root_domain = &mut domains_arena.get_mut(handle);
         root_domain.is_sealed = true;
         root_domain.is_valid = true;
         let root_region_capa = root_domain
             .regions
             .allocate()
             .expect("Failed to allocate root region capability");
-        root_domain.regions[root_region_capa] = RegionCapability {
+        *root_domain.regions.get_mut(root_region_capa) = RegionCapability {
             is_owned: true,
             is_shared: false,
             is_valid: true,
@@ -486,7 +486,7 @@ where
         backend
             .add_region(
                 &mut root_domain.store,
-                &regions_arena[root_region],
+                &regions_arena.get(root_region),
                 access::DEFAULT,
                 allocator,
             )
@@ -550,7 +550,7 @@ where
     /// Creates a fresh domain.
     fn domain_create(&mut self, allocator: &impl FrameAllocator) -> HypercallResult {
         let handle = self.domains_arena.allocate()?;
-        let domain = &mut self.domains_arena[handle];
+        let domain = &mut self.domains_arena.get_mut(handle);
 
         // Initialize domain
         self.backend.domain_create(&mut domain.store, allocator)?;
@@ -570,10 +570,10 @@ where
         region: usize,
         rights: usize,
     ) -> HypercallResult {
-        let region_handle: RegionCapaHandle = region.try_into()?;
+        let region_handle: RegionCapaHandle = Handle::new_unchecked(region);
         let current_id: usize = (self.current_domain).into();
-        let current_domain = &mut self.domains_arena[self.current_domain];
-        let region_capa = &mut current_domain.regions[region_handle];
+        let current_domain = &mut self.domains_arena.get_mut(self.current_domain);
+        let region_capa = &mut current_domain.regions.get_mut(region_handle);
         let handle = region_capa.handle;
 
         // Region must be valid and exclusively owned
@@ -585,8 +585,8 @@ where
         // Access rights must be smaller or equal than current ones.
         access::is_less(region_capa.access, rights)?;
 
-        let domain_handle = domain.try_into()?;
-        let domain = &mut self.domains_arena[domain_handle];
+        let domain_handle = Handle::new_unchecked(domain);
+        let domain = &mut self.domains_arena.get_mut(domain_handle);
 
         // Domain must be valid and not sealed yet
         domain.is_valid()?;
@@ -594,7 +594,7 @@ where
 
         // Allocate new region for target domain
         let new_region_capa = domain.regions.allocate()?;
-        domain.regions[new_region_capa] = RegionCapability {
+        *domain.regions.get_mut(new_region_capa) = RegionCapability {
             is_owned: true,
             is_shared: false,
             is_valid: true,
@@ -608,25 +608,30 @@ where
         };
 
         // Maintain the list of initial capabilities
-        domain.initial_regions_capa[domain.nb_initial_regions] = new_region_capa;
+        let nb_initial_regs = domain.nb_initial_regions;
+        domain.initial_regions_capa[nb_initial_regs] = new_region_capa;
         domain.nb_initial_regions += 1;
 
         // Turn old capability into a revocation one (keep rights encoded).
-        self.domains_arena[self.current_domain].regions[region_handle].into_revok(
-            domain_handle.into(),
-            new_region_capa.into(),
-            region_handle.into(),
-        )?;
+        self.domains_arena
+            .get(self.current_domain)
+            .regions
+            .get_mut(region_handle)
+            .into_revok(
+                domain_handle.into(),
+                new_region_capa.into(),
+                region_handle.into(),
+            )?;
 
         // Call the backend to effect the changes.
-        let region = &self.regions_arena[handle];
+        let region = &self.regions_arena.get(handle);
         self.backend.remove_region(
-            &mut self.domains_arena[self.current_domain].store,
+            &mut self.domains_arena.get_mut(self.current_domain).store,
             region,
             allocator,
         )?;
         self.backend.add_region(
-            &mut self.domains_arena[domain_handle].store,
+            &mut self.domains_arena.get_mut(domain_handle).store,
             region,
             rights,
             allocator,
@@ -647,9 +652,9 @@ where
         region: usize,
         rights: usize,
     ) -> HypercallResult {
-        let region_handle: RegionCapaHandle = region.try_into()?;
-        let current_domain = &mut self.domains_arena[self.current_domain];
-        let region_capa = &mut current_domain.regions[region_handle];
+        let region_handle: RegionCapaHandle = Handle::new_unchecked(region);
+        let current_domain = &mut self.domains_arena.get_mut(self.current_domain);
+        let region_capa = &mut current_domain.regions.get_mut(region_handle);
         let handle = region_capa.handle;
 
         // Region must be valid, no need to be owned
@@ -662,7 +667,7 @@ where
         // Allocate a revocation handle.
         let revok_handle: usize = {
             let revok = current_domain.regions.allocate()?;
-            current_domain.regions[revok] = RegionCapability {
+            *current_domain.regions.get_mut(revok) = RegionCapability {
                 is_owned: false,
                 is_shared: true,
                 is_valid: true,
@@ -677,8 +682,8 @@ where
             revok.into()
         };
 
-        let domain_handle = domain.try_into()?;
-        let domain = &mut self.domains_arena[domain_handle];
+        let domain_handle = Handle::new_unchecked(domain);
+        let domain = &mut self.domains_arena.get_mut(domain_handle);
 
         // Domain must be valid and not sealed yet
         domain.is_valid()?;
@@ -686,7 +691,7 @@ where
 
         // Allocate new region for target domain
         let new_region_capa = domain.regions.allocate()?;
-        domain.regions[new_region_capa] = RegionCapability {
+        *domain.regions.get_mut(new_region_capa) = RegionCapability {
             is_owned: false,
             is_shared: true,
             is_valid: true,
@@ -700,22 +705,30 @@ where
         };
 
         // Maintain the list of initial capabilities
-        domain.initial_regions_capa[domain.nb_initial_regions] = new_region_capa;
+        let nb_initial_regs = domain.nb_initial_regions;
+        domain.initial_regions_capa[nb_initial_regs] = new_region_capa;
         domain.nb_initial_regions += 1;
 
         // Mark old capacity as shared
-        self.domains_arena[self.current_domain].regions[region_handle].is_shared = true;
+        self.domains_arena
+            .get(self.current_domain)
+            .regions
+            .get_mut(region_handle)
+            .is_shared = true;
         // Register the revocation handle
-        self.domains_arena[self.current_domain].regions[revok_handle.try_into()?]
+        self.domains_arena
+            .get(self.current_domain)
+            .regions
+            .get_mut(Handle::new_unchecked(revok_handle))
             .revok
             .handle = new_region_capa.into();
         // Increase the ref count to the region.
-        self.regions_arena[handle].ref_count += 1;
+        self.regions_arena.get_mut(handle).ref_count += 1;
 
         // Call the backend to effect the changes.
-        let region = &self.regions_arena[handle];
-        let store = &mut self.domains_arena[domain_handle].store;
-        self.backend.add_region(store, region, rights, allocator)?;
+        let region = self.regions_arena.get(handle);
+        let store = &mut self.domains_arena.get_mut(domain_handle).store;
+        self.backend.add_region(store, &region, rights, allocator)?;
         // Return the revocation handle.
         Ok(Registers {
             value_1: revok_handle,
@@ -729,9 +742,9 @@ where
         handle: usize,
     ) -> HypercallResult {
         let (tgt_domain_handle, tgt_region_handle, local_handle) = {
-            let revok_handle: RegionCapaHandle = handle.try_into()?;
-            let current_domain = &mut self.domains_arena[self.current_domain];
-            let region_capa = &mut current_domain.regions[revok_handle];
+            let revok_handle: RegionCapaHandle = Handle::new_unchecked(handle);
+            let current_domain = &mut self.domains_arena.get_mut(self.current_domain);
+            let region_capa = &mut current_domain.regions.get_mut(revok_handle);
             region_capa.is_revok()?;
             (
                 region_capa.revok.domain,
@@ -741,38 +754,51 @@ where
         };
 
         let shared = {
-            let tgt_domain = &mut self.domains_arena[tgt_domain_handle.try_into()?];
-            let tgt_region = &mut tgt_domain.regions[tgt_region_handle.try_into()?];
-            let region = &self.regions_arena[tgt_region.handle];
+            let mut tgt_domain = self
+                .domains_arena
+                .get_mut(Handle::new_unchecked(tgt_domain_handle));
+            let mut tgt_region = {
+                tgt_domain
+                    .regions
+                    .get_mut(Handle::new_unchecked(tgt_region_handle))
+            };
+            let is_shared = { tgt_region.is_shared };
+            let region = &self.regions_arena.get(tgt_region.handle);
             self.backend
                 .remove_region(&mut tgt_domain.store, region, allocator)?;
-            let is_shared = tgt_region.is_shared;
             tgt_region.reset();
-            tgt_domain.regions.free(tgt_region_handle.try_into()?);
+            tgt_domain
+                .regions
+                .free(Handle::new_unchecked(tgt_region_handle));
             is_shared
         };
 
-        let current_domain = &mut self.domains_arena[self.current_domain];
-        let region_capa = &mut current_domain.regions[handle.try_into()?];
+        let mut current_domain = self.domains_arena.get_mut(self.current_domain);
+        let mut region_capa = current_domain
+            .regions
+            .get_mut(Handle::new_unchecked(handle));
         if shared {
             let rhandle = region_capa.handle;
             region_capa.reset();
-            current_domain.regions.free(handle.try_into()?);
-            let region = &mut self.regions_arena[rhandle];
+            current_domain.regions.free(Handle::new_unchecked(handle));
+            let region = &mut self.regions_arena.get_mut(rhandle);
             if region.ref_count <= 1 {
                 return Err(ErrorCode::InvalidRefCount);
             }
             region.ref_count -= 1;
             // The domain is now owned.
             if region.ref_count == 1 {
-                let region = &mut self.domains_arena[self.current_domain].regions
-                    [local_handle.try_into()?];
+                let mut region = self
+                    .domains_arena
+                    .get_mut(self.current_domain)
+                    .regions
+                    .get_mut(Handle::new_unchecked(local_handle));
                 region.is_owned = true;
                 region.is_shared = false;
             }
         } else {
             region_capa.from_revok()?;
-            let reg = &mut self.regions_arena[region_capa.handle];
+            let reg = &mut self.regions_arena.get_mut(region_capa.handle);
             self.backend.add_region(
                 &mut current_domain.store,
                 reg,
@@ -794,16 +820,18 @@ where
         };
         // Check the transition handle is valid.
         let switch_domain = {
-            let current = &self.domains_arena[self.current_domain];
-            let switch_context = &current.switches[handle.try_into()?];
+            let current = &self.domains_arena.get(self.current_domain);
+            let switch_context = &current.switches.get(Handle::new_unchecked(handle));
             switch_context.is_valid()?;
             switch_context.domain
         };
         // Save the current context and create a return handle.
         let ret_handle = {
-            let target = &mut self.domains_arena[switch_domain.try_into()?];
+            let target = &mut self
+                .domains_arena
+                .get_mut(Handle::new_unchecked(switch_domain));
             let ret_handle = target.switches.allocate()?;
-            let ret_switch = &mut target.switches[ret_handle.into()];
+            let ret_switch = &mut target.switches.get_mut(ret_handle);
             self.backend.domain_save(&mut ret_switch.context, vcpu)?;
             ret_switch.is_valid = true;
             ret_switch.domain = caller;
@@ -811,9 +839,9 @@ where
         };
         // Restore the previous context.
         {
-            let target = &self.domains_arena[switch_domain.try_into()?];
-            let current = &self.domains_arena[self.current_domain];
-            let switch_context = &current.switches[handle.try_into()?].context;
+            let target = &self.domains_arena.get(Handle::new_unchecked(switch_domain));
+            let current = &self.domains_arena.get(self.current_domain);
+            let switch_context = &current.switches.get(Handle::new_unchecked(handle)).context;
             target.is_valid()?;
             target.is_sealed()?;
             self.backend
@@ -821,12 +849,12 @@ where
         }
         // Reset
         {
-            let current = &mut self.domains_arena[self.current_domain];
-            let switch_context = &mut current.switches[handle.try_into()?];
+            let current = self.domains_arena.get_mut(self.current_domain);
+            let switch_context = current.switches.get(Handle::new_unchecked(handle));
             switch_context.reset();
-            current.switches.free(handle.try_into()?);
+            current.switches.free(Handle::new_unchecked(handle));
         }
-        self.current_domain = switch_domain.try_into()?;
+        self.current_domain = Handle::new_unchecked(switch_domain);
         return Ok(Registers {
             value_1: ret_handle,
             value_2: 0,
@@ -838,9 +866,9 @@ where
 
     /// Split a region at the given address.
     fn region_split(&mut self, region: usize, addr: usize) -> HypercallResult {
-        let old_region_handle = region.try_into()?;
-        let domain = &mut self.domains_arena[self.current_domain];
-        let old_region_capa = &mut domain.regions[old_region_handle];
+        let old_region_handle = Handle::new_unchecked(region);
+        let domain = self.domains_arena.get_mut(self.current_domain);
+        let old_region_capa = domain.regions.get_mut(old_region_handle);
         let old_region_handle = old_region_capa.handle;
         let access_rights = old_region_capa.access;
 
@@ -849,23 +877,25 @@ where
         old_region_capa.is_not_revok()?;
         old_region_capa.is_owned()?;
         old_region_capa.is_exclusive()?;
-        self.regions_arena[old_region_capa.handle].do_contain(addr)?;
+        self.regions_arena
+            .get_mut(old_region_capa.handle)
+            .do_contain(addr)?;
 
         // Allocate a new capability
-        let domain = &mut self.domains_arena[self.current_domain];
+        let domain = self.domains_arena.get_mut(self.current_domain);
         let new_region_capa = domain.regions.allocate()?;
 
         // All the check passed, split the region
         let new_region = self.regions_arena.allocate()?; // TODO: free domain capa if alloc fail
-        let old_region = &mut self.regions_arena[old_region_handle];
+        let old_region = self.regions_arena.get_mut(old_region_handle);
         let end_addr = old_region.end;
         old_region.end = addr;
-        self.regions_arena[new_region] = Region {
+        *self.regions_arena.get_mut(new_region) = Region {
             ref_count: 1,
             start: addr,
             end: end_addr,
         };
-        domain.regions[new_region_capa] = RegionCapability {
+        *domain.regions.get_mut(new_region_capa) = RegionCapability {
             is_owned: true,
             is_shared: false,
             is_valid: true,
@@ -884,13 +914,13 @@ where
     }
 
     fn region_get_info(&mut self, region: usize) -> HypercallResult {
-        let domain = &mut self.domains_arena[self.current_domain];
-        let region_capa = region.try_into()?;
-        let region_capa = &domain.regions[region_capa];
+        let domain = self.domains_arena.get_mut(self.current_domain);
+        let region_capa = Handle::new_unchecked(region);
+        let region_capa = domain.regions.get(region_capa);
         region_capa.is_valid()?;
 
         // Region is valid
-        let region = &self.regions_arena[region_capa.handle];
+        let region = self.regions_arena.get(region_capa.handle);
         let mut flags = 0;
         if region_capa.is_owned {
             flags |= region::OWNED;
@@ -909,13 +939,13 @@ where
     }
 
     fn region_merge(&mut self, r1: usize, r2: usize) -> HypercallResult {
-        let domain = &mut self.domains_arena[self.current_domain];
-        let handle1 = r1.try_into()?;
-        let region1_capa = &domain.regions[handle1];
-        let handle2 = r2.try_into()?;
-        let region2_capa = &domain.regions[handle2];
-        let region1 = &self.regions_arena[region1_capa.handle];
-        let region2 = &self.regions_arena[region2_capa.handle];
+        let domain = self.domains_arena.get(self.current_domain);
+        let handle1 = Handle::new_unchecked(r1);
+        let region1_capa = domain.regions.get(handle1);
+        let handle2 = Handle::new_unchecked(r2);
+        let region2_capa = domain.regions.get(handle2);
+        let region1 = self.regions_arena.get(region1_capa.handle);
+        let region2 = self.regions_arena.get(region2_capa.handle);
 
         // Checks for well-formness.
         region1_capa.is_valid()?;
@@ -944,14 +974,14 @@ where
         // Let's merge.
         let new_end = region2.end;
         {
-            let region1 = &mut self.regions_arena[region1_capa.handle];
+            let region1 = self.regions_arena.get_mut(region1_capa.handle);
             region1.end = new_end;
         }
         {
-            let region2 = &mut self.regions_arena[region2_capa.handle];
+            let region2 = self.regions_arena.get_mut(region2_capa.handle);
             region2.ref_count = 0;
             self.regions_arena.free(region2_capa.handle);
-            let region2_capa = &mut domain.regions[handle2];
+            let region2_capa = domain.regions.get_mut(handle2);
             region2_capa.reset();
             domain.regions.free(handle2);
         }
@@ -962,7 +992,7 @@ where
     }
 
     fn config_nb_regions(&self) -> HypercallResult {
-        let domain = &self.domains_arena[self.current_domain];
+        let domain = self.domains_arena.get(self.current_domain);
         Ok(Registers {
             value_1: domain.nb_initial_regions,
             ..Default::default()
@@ -970,7 +1000,7 @@ where
     }
 
     fn config_read_region(&self, offset: usize, nb_items: usize) -> HypercallResult {
-        let domain = &self.domains_arena[self.current_domain];
+        let domain = self.domains_arena.get(self.current_domain);
         if offset + nb_items > domain.nb_initial_regions {
             return Err(ErrorCode::StoreAccesOutOfBound);
         }
@@ -1006,15 +1036,15 @@ where
         reg_2: usize,
         reg_3: usize,
     ) -> HypercallResult {
-        let domain_handle = handle.try_into()?;
-        let domain = &mut self.domains_arena[domain_handle];
+        let domain_handle = Handle::new_unchecked(handle);
+        let domain = self.domains_arena.get_mut(domain_handle);
 
         // Check that domain can be sealed
         domain.is_valid()?;
         domain.is_unsealed()?;
         domain.is_sealed = true;
-        let domain = &mut self.domains_arena[self.current_domain];
+        let domain = self.domains_arena.get_mut(self.current_domain);
         self.backend
-            .domain_seal(handle, domain, reg_1, reg_2, reg_3)
+            .domain_seal(handle, &mut domain, reg_1, reg_2, reg_3)
     }
 }

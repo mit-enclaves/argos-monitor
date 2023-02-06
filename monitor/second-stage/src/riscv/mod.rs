@@ -15,6 +15,9 @@ use crate::statics::{
     regions_arena as get_regions_arena,
 };
 
+// TODO: this represents the backend errors, for now it is empty.
+pub enum Error {}
+
 pub struct Arch {}
 
 impl Arch {

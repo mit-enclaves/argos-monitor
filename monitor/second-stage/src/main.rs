@@ -5,7 +5,7 @@ use core::panic::PanicInfo;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use second_stage;
-use second_stage::arch::guest::launch_guest;
+use second_stage::arch::launch_guest;
 use second_stage::debug::qemu;
 use second_stage::statics::get_manifest;
 use second_stage::{arch, println};

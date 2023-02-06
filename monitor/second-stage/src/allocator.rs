@@ -3,10 +3,9 @@
 
 use core::cell::RefCell;
 
+use arena::free_list::FreeList;
 use mmu::FrameAllocator;
 use utils::{Frame, HostPhysAddr, HostVirtAddr};
-
-use crate::free_list::FreeList;
 
 pub const PAGE_SIZE: u64 = 0x1000;
 pub const PAGE_MASK: u64 = !(PAGE_SIZE - 1);

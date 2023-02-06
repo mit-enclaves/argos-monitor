@@ -9,6 +9,8 @@ pub enum HandlerResult {
     Crash,
 }
 
+// ————————————————————————— Guest Trait Definition ————————————————————————— //
+
 pub trait Guest {
     type ExitReason;
     type Error: core::fmt::Debug;
@@ -19,7 +21,6 @@ pub trait Guest {
 
     fn main_loop(&mut self) {
         let mut result = self.launch();
-        //let mut counter = 0;
         loop {
             let exit_reason = match result {
                 Ok(exit_reason) => self
@@ -35,14 +36,6 @@ pub trait Guest {
                 println!("Exiting guest: {:?}", exit_reason);
                 break;
             }
-
-            // Shutdown after too many VM exits
-            /*counter += 1;
-            if counter >= 200000 {
-                println!("Too many iterations: stoping guest");
-                break;
-            }*/
-
             // Resume VM
             result = self.resume();
         }

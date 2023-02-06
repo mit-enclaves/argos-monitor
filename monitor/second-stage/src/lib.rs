@@ -4,11 +4,9 @@
 use stage_two_abi::Manifest;
 
 pub mod allocator;
-mod arena;
 pub mod debug;
-mod free_list;
+pub mod error;
 pub mod guest;
-pub mod hypercalls;
 pub mod statics;
 
 #[cfg(target_arch = "riscv64")]

@@ -1,43 +1,351 @@
 //! VMX guest backend
 
+use core::arch::asm;
+use core::cell::{Ref, RefMut};
+
+use arena::Handle;
+use capabilities::cpu::CPU;
+use capabilities::Capability;
+use monitor::tyche::Tyche;
+use monitor::{Monitor, MonitorState, Parameters};
+use vmx::bitmaps::exit_qualification;
+use vmx::{ActiveVmcs, ControlRegister, Register, VmxExitReason};
+
+use super::backend::BackendX86;
+use crate::error::TycheError;
+use crate::guest::{Guest, HandlerResult};
+use crate::println;
+
+pub struct GuestX86<'a> {
+    pub state: MonitorState<'a, BackendX86>,
+    pub monitor: Tyche,
+}
+
+impl<'active> GuestX86<'active> {
+    pub fn new(s: MonitorState<'active, BackendX86>) -> Self {
+        Self {
+            state: s,
+            monitor: Tyche {},
+        }
+    }
+
+    pub fn get_local_cpu(&self) -> Ref<CPU<BackendX86>> {
+        //TODO how do we identify the current core?
+        let current = self.state.locals[0];
+        // Find the CPU.
+        let cpu_capa =
+            self.state.resources.pools.cpu_capas.get(
+                Handle::<Capability<CPU<BackendX86>>>::new_unchecked(current.current_cpu),
+            );
+        //TOOD do some checks on the capa itself.
+        self.state.resources.pools.cpus.get(cpu_capa.handle)
+    }
+
+    pub fn get_local_cpu_mut(&self) -> RefMut<CPU<BackendX86>> {
+        //TODO how do we identify the current core?
+        let current = self.state.locals[0];
+        // Find the CPU.
+        let cpu_capa =
+            self.state.resources.pools.cpu_capas.get(
+                Handle::<Capability<CPU<BackendX86>>>::new_unchecked(current.current_cpu),
+            );
+        //TOOD do some checks on the capa itself.
+        self.state.resources.pools.cpus.get_mut(cpu_capa.handle)
+    }
+}
+
+impl<'active> Guest for GuestX86<'active> {
+    type Error = TycheError;
+    type ExitReason = vmx::VmxExitReason;
+
+    fn launch(&mut self) -> Result<Self::ExitReason, Self::Error> {
+        let mut cpu = self.get_local_cpu_mut();
+        let vcpu = cpu.core.get_active_mut()?;
+        unsafe {
+            let exit_reason = vcpu.launch()?;
+            Ok(exit_reason)
+        }
+    }
+
+    fn resume(&mut self) -> Result<Self::ExitReason, Self::Error> {
+        let mut cpu = self.get_local_cpu_mut();
+        let vcpu = cpu.core.get_active_mut()?;
+        unsafe {
+            let exit_reason = vcpu.resume()?;
+            Ok(exit_reason)
+        }
+    }
+
+    fn handle_exit(
+        &mut self,
+        reason: Self::ExitReason,
+    ) -> Result<crate::guest::HandlerResult, Self::Error> {
+        let dump = |vcpu: &mut ActiveVmcs| {
+            let rip = vcpu.get(Register::Rip);
+            let rax = vcpu.get(Register::Rax);
+            let rcx = vcpu.get(Register::Rcx);
+            let rbp = vcpu.get(Register::Rbp);
+            println!(
+                "VM Exit: {:?} - rip: 0x{:x} - rbp: 0x{:x} - rax: 0x{:x} - rcx: 0x{:x}",
+                reason, rip, rbp, rax, rcx
+            );
+        };
+
+        match reason {
+            VmxExitReason::Vmcall => {
+                let mut cpu = self.get_local_cpu_mut();
+                let vcpu = cpu.core.get_active_mut()?;
+                let params = Parameters {
+                    vmcall: vcpu.get(Register::Rax) as usize,
+                    arg_1: vcpu.get(Register::Rcx) as usize,
+                    arg_2: vcpu.get(Register::Rdx) as usize,
+                    arg_3: vcpu.get(Register::Rsi) as usize,
+                    arg_4: vcpu.get(Register::R9) as usize,
+                    arg_5: vcpu.get(Register::R8) as usize,
+                };
+                drop(vcpu);
+                drop(cpu);
+                if self.monitor.is_exit(&self.state, &params) {
+                    let mut cpu = self.get_local_cpu_mut();
+                    let mut vcpu = cpu.core.get_active_mut()?;
+                    dump(&mut vcpu);
+                    Ok(HandlerResult::Exit)
+                } else {
+                    let advance = match self.monitor.dispatch(&mut self.state, &params) {
+                        Ok(values) => {
+                            let mut cpu = self.get_local_cpu_mut();
+                            let vcpu = cpu.core.get_active_mut()?;
+                            vcpu.set(Register::Rax, 0);
+                            vcpu.set(Register::Rcx, values.value_1 as u64);
+                            vcpu.set(Register::Rdx, values.value_2 as u64);
+                            vcpu.set(Register::Rsi, values.value_3 as u64);
+                            vcpu.set(Register::R9, values.value_4 as u64);
+                            values.next_instr
+                        }
+                        Err(err) => {
+                            let mut cpu = self.get_local_cpu_mut();
+                            let mut vcpu = cpu.core.get_active_mut()?;
+                            dump(&mut vcpu);
+                            println!("The error: {:?}", err);
+                            match err {
+                                capabilities::error::Error::Capability(code) => {
+                                    vcpu.set(Register::Rax, code as u64);
+                                }
+                                capabilities::error::Error::Backend(_) => panic!("Backend error"),
+                            };
+                            true
+                        }
+                    };
+                    if advance {
+                        let mut cpu = self.get_local_cpu_mut();
+                        let vcpu = cpu.core.get_active_mut()?;
+                        vcpu.next_instruction()?;
+                    }
+                    Ok(HandlerResult::Resume)
+                }
+            }
+            VmxExitReason::Cpuid => {
+                let mut cpu = self.get_local_cpu_mut();
+                let vcpu = cpu.core.get_active_mut()?;
+                let input_eax = vcpu.get(Register::Rax);
+                let input_ecx = vcpu.get(Register::Rcx);
+                let eax: u64;
+                let ebx: u64;
+                let ecx: u64;
+                let edx: u64;
+
+                unsafe {
+                    // Note: LLVM reserves %rbx for its internal use, so we need to use a scratch
+                    // register for %rbx here.
+                    asm!(
+                        "mov rbx, {tmp}",
+                        "cpuid",
+                        "mov {tmp}, rbx",
+                        tmp = out(reg) ebx ,
+                        inout("rax") input_eax => eax,
+                        inout("rcx") input_ecx => ecx,
+                        out("rdx") edx,
+                    )
+                }
+                vcpu.set(Register::Rax, eax);
+                vcpu.set(Register::Rbx, ebx);
+                vcpu.set(Register::Rcx, ecx);
+                vcpu.set(Register::Rdx, edx);
+                vcpu.next_instruction()?;
+                Ok(HandlerResult::Resume)
+            }
+            VmxExitReason::ControlRegisterAccesses => {
+                let mut cpu = self.get_local_cpu_mut();
+                let vcpu = cpu.core.get_active_mut()?;
+                let qualification = vcpu.exit_qualification()?.control_register_accesses();
+                match qualification {
+                    exit_qualification::ControlRegisterAccesses::MovToCr(cr, reg) => {
+                        if cr != ControlRegister::Cr4 {
+                            todo!("Handle {:?}", cr);
+                        }
+                        let value = vcpu.get(reg) as usize;
+                        vcpu.set_cr4_shadow(value)?;
+                        let real_value = value | (1 << 13); // VMXE
+                        vcpu.set_cr(cr, real_value);
+
+                        vcpu.next_instruction()?;
+                    }
+                    _ => todo!("Emulation not yet implemented for {:?}", qualification),
+                };
+                Ok(HandlerResult::Resume)
+            }
+            VmxExitReason::EptViolation => {
+                let mut cpu = self.get_local_cpu_mut();
+                let vcpu = cpu.core.get_active_mut()?;
+                let addr = vcpu.guest_phys_addr()?;
+                println!(
+                    "EPT Violation! virt: 0x{:x}, phys: 0x{:x}",
+                    vcpu.guest_linear_addr()
+                        .expect("unable to get the virt addr")
+                        .as_u64(),
+                    addr.as_u64()
+                );
+                println!("The vcpu {:x?}", vcpu);
+                Ok(HandlerResult::Crash)
+            }
+            VmxExitReason::Xsetbv => {
+                let mut cpu = self.get_local_cpu_mut();
+                let vcpu = cpu.core.get_active_mut()?;
+                let ecx = vcpu.get(Register::Rcx);
+                let eax = vcpu.get(Register::Rax);
+                let edx = vcpu.get(Register::Rdx);
+
+                let xrc_id = ecx & 0xFFFFFFFF; // Ignore 32 high-order bits
+                if xrc_id != 0 {
+                    println!("Xsetbv: invalid rcx 0x{:x}", ecx);
+                    return Ok(HandlerResult::Crash);
+                }
+
+                unsafe {
+                    asm!(
+                        "xsetbv",
+                        in("ecx") ecx,
+                        in("eax") eax,
+                        in("edx") edx,
+                    );
+                }
+
+                vcpu.next_instruction()?;
+                Ok(HandlerResult::Resume)
+            }
+            VmxExitReason::Wrmsr => {
+                let mut cpu = self.get_local_cpu_mut();
+                let vcpu = cpu.core.get_active_mut()?;
+                let ecx = vcpu.get(Register::Rcx);
+                if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
+                    // Custom MSR range, used by KVM
+                    // See https://docs.kernel.org/virt/kvm/x86/msr.html
+                    // TODO: just ignore them for now, should add support in the future
+                    vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                } else {
+                    println!("Unknown MSR: 0x{:x}", ecx);
+                    Ok(HandlerResult::Crash)
+                }
+            }
+            VmxExitReason::Exception => {
+                let mut cpu = self.get_local_cpu_mut();
+                let vcpu = cpu.core.get_active_mut()?;
+                match vcpu.interrupt_info() {
+                    Ok(Some(exit)) => {
+                        println!("Exception: {:?}", vcpu.interrupt_info());
+                        // Inject the fault back into the guest.
+                        let injection = exit.as_injectable_u32();
+                        vcpu.set_vm_entry_interruption_information(injection)?;
+                        Ok(HandlerResult::Resume)
+                    }
+                    _ => {
+                        println!("VM received an exception");
+                        println!("{:?}", vcpu);
+                        Ok(HandlerResult::Crash)
+                    }
+                }
+            }
+            _ => {
+                println!(
+                    "Emulation is not yet implemented for exit reason: {:?}",
+                    reason
+                );
+                let cpu = self.get_local_cpu();
+                let vcpu = cpu.core.get_active()?;
+                println!("{:?}", vcpu);
+                Ok(HandlerResult::Crash)
+            }
+        }
+    }
+}
+
+/*
 use core::arch;
 use core::arch::asm;
 
-use debug;
+use capabilities::State;
 use mmu::FrameAllocator;
 use stage_two_abi::{GuestInfo, Manifest};
 use vmx::bitmaps::{
-    exit_qualification, EntryControls, ExceptionBitmap, ExitControls, PinbasedControls,
-    PrimaryControls, SecondaryControls,
+    EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
+    SecondaryControls,
 };
 use vmx::fields::traits::*;
-use vmx::{
-    fields, secondary_controls_capabilities, ActiveVmcs, ControlRegister, Register, VmxError,
-    VmxExitReason,
-};
+use vmx::{fields, secondary_controls_capabilities, ActiveVmcs, Register, VmxError};
 
-use super::Arch;
+//use super::Arch;
 use crate::allocator::Allocator;
+use crate::arch::backend::BackendX86;
 use crate::debug::qemu;
-use crate::guest::{Guest, HandlerResult};
-use crate::hypercalls::{ErrorCode, Hypercalls, Parameters};
+use crate::monitor_state::MonitorState;
+//use crate::guest::{Guest, HandlerResult};
 use crate::println;
-use crate::statics::{
-    allocator as get_allocator, domains_arena as get_domains_arena,
-    regions_arena as get_regions_arena,
-};
+use crate::statics::{allocator as get_allocator, pool as get_pool};
 
 pub fn launch_guest(manifest: &'static Manifest) {
     if !manifest.info.loaded {
         println!("No guest found, exiting");
         return;
     }
+    // Create the backend.
+    let mut backend = BackendX86 {
+        allocator: Allocator::new(
+            get_allocator(),
+            (manifest.voffset - manifest.poffset) as usize,
+        ),
+        manifest: &manifest,
+        iommu: None,
+        vmxon: None,
+    };
+    // Setup the iommu.
+    backend.set_iommu(manifest.iommu);
 
-    let mut allocator = Allocator::new(
-        get_allocator(),
-        (manifest.voffset - manifest.poffset) as usize,
-    );
-    let frame = allocator
+    // Initialize the backend, this creates the vmxon.
+    backend.init();
+
+    // Create the capability state.
+    let capas = State::<BackendX86> {
+        backend: &mut backend,
+        pools: get_pool(),
+    };
+
+    // Create the MonitorState.
+    // This call creates:
+    // 1) The default domain.
+    // 2) The default memory region.
+    // 3) The default vcpus.
+    // The state is then passed to the guest.
+    let tyche_state = match MonitorState::<BackendX86>::new(&manifest, &capas) {
+        Ok(ts) => ts,
+        Err(e) => {
+            println!("Unable to create MonitorState {:?}", e);
+            qemu::exit(qemu::ExitCode::Failure);
+        }
+    };
+
+    /*let frame = backend
+        .allocator
         .allocate_frame()
         .expect("Failed to allocate VMXON")
         .zeroed();
@@ -54,11 +362,13 @@ pub fn launch_guest(manifest: &'static Manifest) {
             }
         };
 
+        let mut vmcs = init_vm(&vmxon, &mut backend.allocator);
         let vmcs = init_vm(&vmxon, &mut allocator);
         println!("Done with the guest init");
-        let mut vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");
-        let arch = Arch::new(manifest.iommu);
-        let domains_arena = get_domains_arena();
+        let _vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");
+        //let _arch = Arch::new(manifest.iommu);
+
+        /*let domains_arena = get_domains_arena();
         let regions_arena = get_regions_arena();
         let hypercalls = Hypercalls::new(
             &manifest,
@@ -75,11 +385,14 @@ pub fn launch_guest(manifest: &'static Manifest) {
 
         println!("Launching");
         let mut guest = VmxGuest::new(&mut vcpu, hypercalls, &mut allocator);
-        guest.main_loop();
-    }
+        guest.main_loop();*/
+    }*/
 
     qemu::exit(qemu::ExitCode::Success);
 }
+*/
+
+/*
 
 pub struct VmxGuest<'vmx, const N: usize> {
     vcpu: &'vmx mut vmx::ActiveVmcs<'vmx>,
@@ -285,8 +598,9 @@ impl<'vcpu, const N: usize> Guest for VmxGuest<'vcpu, N> {
         }
     }
 }
+*/
 
-pub unsafe fn init_vm<'vmx>(
+/*pub unsafe fn init_vm<'vmx>(
     vmxon: &'vmx vmx::Vmxon,
     allocator: &impl FrameAllocator,
 ) -> vmx::VmcsRegion<'vmx> {
@@ -304,8 +618,9 @@ pub unsafe fn init_vm<'vmx>(
             vmcs
         }
     }
-}
+}*/
 
+/*
 pub unsafe fn init_vcpu<'vmx>(
     vcpu: &mut ActiveVmcs<'vmx>,
     info: &GuestInfo,
@@ -542,3 +857,4 @@ pub fn save_host_state<'vmx>(
         fields::HostStateNat::Cr4.vmwrite(cr4)
     }
 }
+*/
