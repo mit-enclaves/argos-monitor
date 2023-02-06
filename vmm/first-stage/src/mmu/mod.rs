@@ -2,4 +2,4 @@
 
 pub mod frames;
 
-pub use frames::{init, MemoryMap};
+pub use frames::{get_physical_memory_offset, init, MemoryMap};

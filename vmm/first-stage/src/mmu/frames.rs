@@ -1,6 +1,7 @@
 use alloc::sync::Arc;
 use core::cell::Cell;
 use core::ops::DerefMut;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 use bootloader::boot_info::{MemoryRegion, MemoryRegionKind};
 use spin::Mutex;
@@ -16,6 +17,41 @@ use mmu::ptmapper::PtMapper;
 use mmu::{FrameAllocator, RangeAllocator};
 
 const PAGE_SIZE: usize = 0x1000;
+
+// ————————————————————————— Physical Memory Offset ————————————————————————— //
+
+static PHYSICAL_MEMORY_OFFSET: AtomicUsize = AtomicUsize::new(PHYSICAL_OFFSET_GUARD);
+
+const PHYSICAL_OFFSET_GUARD: usize = usize::MAX;
+
+/// Set the global physical memory offset.
+///
+/// The offset corresponds to the offset of the virtual memory with respect to the physical memory.
+/// It is fixed by the bootloader and never updated afterward.
+fn set_physical_memory_offset(offset: HostVirtAddr) {
+    PHYSICAL_MEMORY_OFFSET
+        .compare_exchange(
+            PHYSICAL_OFFSET_GUARD,
+            offset.as_usize(),
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        )
+        .expect("Physical memory offset was initialized more than onece.");
+}
+
+/// Retrieves the global memory offset betwen virtual and physical memory.
+///
+/// This function should only be called after memory subsytem initialization.
+pub fn get_physical_memory_offset() -> HostVirtAddr {
+    let offset = PHYSICAL_MEMORY_OFFSET.load(Ordering::SeqCst);
+
+    // Check that the offset was properly initialized
+    if offset == PHYSICAL_OFFSET_GUARD {
+        panic!("Tried to read global physical memory offset prior to initialization");
+    }
+
+    HostVirtAddr::new(offset)
+}
 
 // ————————————————————————— Memory Initialization —————————————————————————— //
 
@@ -50,6 +86,9 @@ pub unsafe fn init(
     ),
     (),
 > {
+    // Initialize physical memory offset
+    set_physical_memory_offset(physical_memory_offset);
+
     // Partition physical memory between host and guest
     let host_region = select_host_region(regions);
     let host_range = PhysRange {
