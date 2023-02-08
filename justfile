@@ -19,6 +19,11 @@ vga-s2         := "--features=second-stage/vga"
 tpm_path       := "/tmp/tpm-dev-" + env_var('USER')
 default_dbg    := "/tmp/dbg-" + env_var('USER')
 default_smp    := "1"
+extra_arg      := ""
+
+# Start a GDB session
+gdb DBG=default_dbg:
+	rust-gdb -q -ex "file target/x86_64-unknown-kernel/debug/first-stage" -ex "target remote {{DBG}}" -ex "source scripts/tyche-gdb.gdb" 
 
 # Print list of commands
 help:
@@ -49,22 +54,31 @@ rawc SMP=default_smp:
 	@just tpm
 	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{rawc}} -- --smp={{SMP}}
 
-common TARGET DBG SMP:
+# Run rawc guest, stop to wait for GDB session
+rawc-dbg SMP=default_smp:
 	@just build
 	@just tpm
-	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{TARGET}} -- --uefi --dbg_path={{DBG}} --smp={{SMP}}
+	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{rawc}} -- --smp={{SMP}} --dbg_path={{default_dbg}} --stop
+
+common TARGET SMP ARG=extra_arg:
+	@just build
+	@just tpm
+	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{TARGET}} -- --uefi --dbg_path={{default_dbg}} --smp={{SMP}} {{ARG}}
 
 # Run the VMM without any guest
 no-guest SMP=default_smp:
-	@just common {{no-guest}} {{default_dbg}} {{SMP}}
+	@just common {{no-guest}} {{SMP}}
+
+no-guest-dbg SMP=default_smp:
+	@just common {{no-guest}} {{SMP}} --stop
 
 # Run rawc guest with UEFI
 rawc-uefi SMP=default_smp:
-	@just common {{rawc}} {{default_dbg}} {{SMP}}
+	@just common {{rawc}} {{SMP}}
 
-# Run rawc guest, specify debug socket name.
-rawc-uefi-dbg SOCKET SMP=default_smp:
-	@just common {{rawc}} {{SOCKET}} {{SMP}}
+# Run rawc guest, stop to wait for GDB session.
+rawc-uefi-dbg SMP=default_smp:
+	@just common {{rawc}} {{SMP}} --stop
 
 # Build linux image.
 build-linux:
@@ -79,11 +93,11 @@ build-ramfs:
 
 # Run linux guest with UEFI
 linux SMP=default_smp:
-	@just common {{linux}} {{default_dbg}} {{SMP}}
+	@just common {{linux}} {{SMP}}
 
-# Run linux guest, specify debug socket name.
-linux-dbg SOCKET SMP=default_smp:
-	@just common {{linux}} {{SOCKET}} {{SMP}}
+# Run linux guest, stop to wait for GDB session.
+linux-dbg SMP=default_smp:
+	@just common {{linux}} {{SMP}} --stop
 
 # Build the VMM for bare metal platform
 build-metal-no-guest:

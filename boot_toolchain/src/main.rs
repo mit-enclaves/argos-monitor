@@ -37,6 +37,7 @@ const QCOW2_CANDIDATES: &[&'static str] = &["ubuntu.qcow2"];
 struct Args {
     no_boot: bool,
     uefi: bool,
+    stop: bool,
     smp: usize,
     dbg: Option<String>,
     tpm: Option<String>,
@@ -47,20 +48,22 @@ fn parse_args(args: &mut Vec<String>) -> Args {
     // Default values
     let mut no_boot = false;
     let mut uefi = false;
+    let mut stop = false;
     let mut smp = 1;
     let mut tpm = None;
     let mut dbg = None;
 
     // Parse arguments
     let kernel_binary_path = PathBuf::from(args.remove(0)).canonicalize().unwrap();
-    if let Some(idx) = args.iter().position(|arg| arg == "--no-run") {
-        args.remove(idx);
+    if flax_exists("--no-run", args) {
         no_boot = true;
-    };
-    if let Some(idx) = args.iter().position(|arg| arg == "--uefi") {
-        args.remove(idx);
+    }
+    if flax_exists("--uefi", args) {
         uefi = true;
-    };
+    }
+    if flax_exists("--stop", args) {
+        stop = true;
+    }
     if let Some(idx) = args.iter().position(|arg| arg.starts_with("--smp=")) {
         let value = args[idx]
             .strip_prefix("--smp=")
@@ -93,10 +96,21 @@ fn parse_args(args: &mut Vec<String>) -> Args {
     Args {
         no_boot,
         uefi,
+        stop,
         smp,
         dbg,
         tpm,
         kernel_binary_path,
+    }
+}
+
+/// Returns true if the flag exists in the command line. The flag is then removed if present.
+fn flax_exists(flag: &str, args: &mut Vec<String>) -> bool {
+    if let Some(idx) = args.iter().position(|arg| arg == flag) {
+        args.remove(idx);
+        true
+    } else {
+        false
     }
 }
 
@@ -124,6 +138,10 @@ fn main() {
         run_cmd.arg("-bios").arg("OVMF-pure-efi.fd");
     }
 
+    if config.stop {
+        run_cmd.arg("-S");
+    }
+
     let binary_kind = runner_utils::binary_kind(&config.kernel_binary_path);
     if binary_kind.is_test() {
         run_cmd.args(TEST_ARGS);
@@ -140,6 +158,7 @@ fn main() {
         // GDB path
         if let Some(dbg) = config.dbg {
             run_cmd
+                .arg("-s")
                 .arg("-chardev")
                 .arg(format!("socket,path={},server=on,wait=off,id=dbg0", dbg))
                 .arg("-gdb")
