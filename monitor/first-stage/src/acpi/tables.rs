@@ -76,6 +76,18 @@ pub struct SdtHeader {
 }
 
 impl SdtHeader {
+    pub unsafe fn compute_checksum(&self) -> u64 {
+        let table = slice::from_raw_parts((self as *const _) as *const u8, self.length as usize);
+        let mut checksum: u64 = 0;
+        for byte in table {
+            checksum += *byte as u64;
+        }
+
+        let header = &*(self as *const SdtHeader);
+        checksum -= header.checksum as u64;
+
+        0x100 - (checksum & 0xFF)
+    }
     pub unsafe fn verify_checksum(&self) -> Result<(), ()> {
         // We trust that the table content is valid here, in particular that the length correspond
         // to the real length of the table and therefore entirely reside in accessible memory.
