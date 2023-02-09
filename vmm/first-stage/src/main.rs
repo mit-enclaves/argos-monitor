@@ -97,15 +97,16 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     let acpi_tables = match unsafe { AcpiTables::from_rsdp(TycheACPIHandler, rsdp as usize) } {
         Ok(acpi_tables) => acpi_tables,
-        Err(_) => panic!("Failed to parse the ACPI table!"),
+        Err(err) => panic!("Failed to parse the ACPI table: {:?}", err),
     };
 
     let acpi_platform_info = match acpi_tables.platform_info() {
         Ok(platform_info) => platform_info,
-        Err(_) => panic!("Unable to get platform info from the ACPI table!"),
+        Err(err) => panic!("Unable to get platform info from the ACPI table: {:?}", err),
     };
 
-    let acpi_info = unsafe { first_stage::acpi::AcpiInfo::from_rsdp(rsdp, physical_memory_offset) };
+    let mut acpi_info = unsafe { first_stage::acpi::AcpiInfo::from_rsdp(rsdp, physical_memory_offset) };
+    let mailbox = unsafe { acpi_info.add_mp_wakeup_entry(rsdp, physical_memory_offset, &host_allocator, &mut pt_mapper) };
 
     // Check I/O MMU support
     if let Some(iommus) = &acpi_info.iommu {
