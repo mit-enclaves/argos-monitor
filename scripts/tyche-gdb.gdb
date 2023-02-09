@@ -43,3 +43,5 @@ commands
 tyche_set_convenience_vars
 tyche_load_stage2
 end
+
+set print asm-demangle on

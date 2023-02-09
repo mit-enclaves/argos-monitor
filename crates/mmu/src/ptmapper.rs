@@ -157,8 +157,14 @@ where
         }
     }
 
-    /*/// Prints the permissions of page tables for the given range.
-    pub fn debug_range(&mut self, virt_addr: VirtAddr, size: usize) {
+    /// Prints the permissions of page tables for the given range.
+    pub fn debug_range(
+        &mut self,
+        virt_addr: VirtAddr,
+        size: usize,
+        dept: Level,
+        print: impl Fn(core::fmt::Arguments),
+    ) {
         unsafe {
             self.walk_range(
                 virt_addr,
@@ -166,21 +172,33 @@ where
                 &mut |addr, entry, level| {
                     let flags = PtFlag::from_bits_truncate(*entry);
                     let phys = *entry & ((1 << 63) - 1) & (PAGE_MASK as u64);
-                    let padding = match level {
-                        Level::L4 => "",
-                        Level::L3 => "  ",
-                        Level::L2 => "    ",
-                        Level::L1 => "      ",
+
+                    // Do not go too deep
+                    match (dept, level) {
+                        (Level::L4, Level::L3)
+                        | (Level::L4, Level::L2)
+                        | (Level::L4, Level::L1) => return WalkNext::Leaf,
+                        (Level::L3, Level::L2) | (Level::L3, Level::L1) => return WalkNext::Leaf,
+                        (Level::L2, Level::L1) => return WalkNext::Leaf,
+                        _ => (),
                     };
-                    crate::println!(
-                        "{}{:?} Virt: 0x{:x} - Phys: 0x{:x} - {:?}",
-                        padding,
-                        level,
-                        addr.as_usize(),
-                        phys,
-                        flags
-                    );
+
+                    // Print if present
                     if flags.contains(PtFlag::PRESENT) {
+                        let padding = match level {
+                            Level::L4 => "",
+                            Level::L3 => "  ",
+                            Level::L2 => "    ",
+                            Level::L1 => "      ",
+                        };
+                        print(core::format_args!(
+                            "{}{:?} Virt: 0x{:x} - Phys: 0x{:x} - {:?}\n",
+                            padding,
+                            level,
+                            addr.as_usize(),
+                            phys,
+                            flags
+                        ));
                         WalkNext::Continue
                     } else {
                         WalkNext::Leaf
@@ -189,5 +207,5 @@ where
             )
             .expect("Failed to print PTs");
         }
-    }*/
+    }
 }
