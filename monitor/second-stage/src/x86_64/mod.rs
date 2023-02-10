@@ -79,6 +79,34 @@ pub fn launch_guest(manifest: &'static Manifest) {
     let tyche_state = MonitorState::<BackendX86>::new(manifest.poffset as usize, capas)
         .expect("Unable to create monitor state");
     let mut guest = guest::GuestX86::new(tyche_state);
+    let cpuid = cpuid();
+
+    if cpuid != 0 {
+        unsafe {
+            let mp_mailbox = manifest.mp_mailbox as usize;
+            // Spin on the MP Wakeup Page command
+            loop {
+                let command = (mp_mailbox as *const u16).read_unaligned();
+                let apic_id = ((mp_mailbox + 4) as *const u32).read_unaligned();
+                if command == 1 && apic_id == (cpuid as u32) {
+                    break;
+                }
+            }
+
+            let wakeup_vector = ((mp_mailbox + 8) as *const u64).read();
+
+            println!(
+                "Launching CPU {} on wakeup_vector {:#?}",
+                cpuid, wakeup_vector
+            );
+            let mut cpu = guest.get_local_cpu();
+            let vcpu = cpu.core.get_active_mut().unwrap();
+            vcpu.set_nat(vmx::fields::GuestStateNat::Rip, wakeup_vector as usize)
+                .ok();
+
+            (mp_mailbox as *mut u16).write_unaligned(0);
+        }
+    }
 
     println!("Starting main loop");
     guest.main_loop();
