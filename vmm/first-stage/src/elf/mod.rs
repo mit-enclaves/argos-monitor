@@ -282,7 +282,8 @@ impl ElfProgram {
 
         let start = segment.p_offset as usize;
         let end = (segment.p_offset + segment.p_filesz) as usize;
-        dest.copy_from_slice(&self.bytes[start..end]);
+        let source = &self.bytes[start..end];
+        dest.copy_from_slice(source);
 
         // In case the segment is longer than the file size, zero out the rest.
         if segment.p_filesz < segment.p_memsz {

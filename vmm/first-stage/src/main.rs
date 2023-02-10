@@ -10,8 +10,8 @@ use acpi::AcpiTables;
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
 use first_stage::acpi::AcpiInfo;
-use first_stage::getsec::configure_getsec;
 use first_stage::acpi_handler::TycheACPIHandler;
+use first_stage::getsec::configure_getsec;
 use first_stage::guests;
 use first_stage::guests::Guest;
 use first_stage::mmu::MemoryMap;
@@ -119,11 +119,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     // Initiates the SMP boot process
     unsafe {
-        smp::boot(
-            acpi_platform_info,
-            &host_allocator,
-            &mut pt_mapper,
-        );
+        smp::boot(acpi_platform_info, &host_allocator, &mut pt_mapper);
     }
 
     // Enable interrupts

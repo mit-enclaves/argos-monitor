@@ -16,7 +16,7 @@ use mmu::frame_allocator::PhysRange;
 use mmu::ptmapper::PtMapper;
 use mmu::{FrameAllocator, RangeAllocator};
 
-const PAGE_SIZE: usize = 0x1000;
+pub const PAGE_SIZE: usize = 0x1000;
 
 // ————————————————————————— Physical Memory Offset ————————————————————————— //
 
