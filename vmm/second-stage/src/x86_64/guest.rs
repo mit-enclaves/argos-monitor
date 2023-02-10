@@ -55,6 +55,7 @@ pub fn launch(manifest: &'static mut Manifest, cpuid: usize) {
     init_allocator(&manifest);
     let mut allocator = get_allocator_static().as_ref().unwrap();
     let mut arch = Arch::new(manifest.iommu);
+    let mp_mailbox = manifest.mp_mailbox as usize;
 
     let mut cpus: [i32; MAX_NB_CPU] = [-1; MAX_NB_CPU];
     cpus[0] = cpuid as i32;
@@ -120,7 +121,22 @@ pub fn launch(manifest: &'static mut Manifest, cpuid: usize) {
                 &mut allocator,
             ));
 
-            println!("Launching CPU {}", cpuid);
+            // Spin on the MP Wakeup Page command
+            loop {
+                let command = (mp_mailbox as *const u16).read_unaligned();
+                let apic_id = ((mp_mailbox + 4) as *const u32).read_unaligned();
+                if command == 1 && apic_id == (cpuid as u32) {
+                    break;
+                }
+            }
+
+            let wakeup_vector = ((mp_mailbox + 8) as *const u64).read();
+
+            println!("Launching CPU {} on wakeup_vector {:#x}", cpuid, wakeup_vector);
+            vcpu::VCPUS[cpuid].as_mut().unwrap().set_nat(vmx::fields::GuestStateNat::Rip, wakeup_vector as usize).ok();
+
+            (mp_mailbox as *mut u16).write_unaligned(0);
+
             VMX_GUEST[cpuid].as_mut().unwrap().start();
         }
     }
