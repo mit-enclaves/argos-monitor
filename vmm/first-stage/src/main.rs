@@ -143,6 +143,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             memory_map,
             pt_mapper,
             rsdp as u64,
+            mailbox,
         )
     } else if cfg!(feature = "guest_rawc") {
         launch_guest(
@@ -154,6 +155,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             memory_map,
             pt_mapper,
             rsdp as u64,
+            mailbox,
         )
     } else if cfg!(feature = "no_guest") {
         launch_guest(
@@ -165,6 +167,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             memory_map,
             pt_mapper,
             rsdp as u64,
+            mailbox,
         )
     } else {
         panic!("Unrecognized guest");
@@ -180,6 +183,7 @@ fn launch_guest(
     memory_map: MemoryMap,
     mut pt_mapper: PtMapper<HostPhysAddr, HostVirtAddr>,
     rsdp: u64,
+    mailbox: u64,
 ) -> ! {
     let mut stage2_allocator = second_stage::second_stage_allocator(stage1_allocator);
     unsafe {
@@ -200,6 +204,7 @@ fn launch_guest(
             stage1_allocator,
             &mut stage2_allocator,
             &mut pt_mapper,
+            mailbox,
         );
         println!("Jumping into stage 2");
         configure_getsec(stage2.as_slice());

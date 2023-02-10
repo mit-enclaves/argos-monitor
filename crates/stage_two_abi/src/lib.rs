@@ -44,6 +44,8 @@ pub struct Manifest {
     pub iommu: u64,
     /// SMP info: number of available cores
     pub smp: usize,
+    /// ACPI MP Wakeup Mailbox Address
+    pub mp_mailbox: u64,
 }
 
 impl Manifest {
@@ -87,6 +89,7 @@ macro_rules! make_manifest {
                 vga: $crate::VgaInfo::no_vga(),
                 iommu: 0,
                 smp: 0,
+                mp_mailbox: 0,
             };
             static TAKEN: AtomicBool = AtomicBool::new(false);
 
