@@ -132,6 +132,15 @@ pub fn load(
         PtFlag::PRESENT | PtFlag::WRITE,
     );
 
+    // Map the MP wakeup mailbox page into stage 2
+    loaded_elf.pt_mapper.map_range(
+        stage2_allocator,
+        HostVirtAddr::new(mailbox_addr as usize),
+        HostPhysAddr::new(mailbox_addr as usize),
+        0x1000,
+        PtFlag::PRESENT | PtFlag::WRITE,
+    );
+
     smp_stacks
         .iter()
         .for_each(|&(stack_virt_addr, _, stack_phys_addr)| {
