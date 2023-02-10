@@ -113,6 +113,7 @@ pub fn load(
     stage1_allocator: &impl RangeAllocator,
     stage2_allocator: &impl RangeAllocator,
     pt_mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
+    mailbox_addr: u64,
 ) {
     // Read elf and allocate second stage memory
     let mut second_stage = ElfProgram::new(SECOND_STAGE);
@@ -221,6 +222,7 @@ pub fn load(
     manifest.voffset = LOAD_VIRT_ADDR.as_u64();
     manifest.vga = info.vga_info.clone();
     manifest.smp = smp_cores;
+    manifest.mp_mailbox = mailbox_addr;
 
     debug::hook_stage2_offsets(manifest.poffset, manifest.voffset);
     debug::tyche_hook_stage1(1);
