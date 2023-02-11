@@ -83,18 +83,17 @@ pub fn launch_guest(manifest: &'static Manifest) {
 
     if cpuid != 0 {
         unsafe {
-            let mp_mailbox = manifest.mp_mailbox as usize;
             // Spin on the MP Wakeup Page command
+            let mp_mailbox = manifest.mp_mailbox as usize;
+            let command = mp_mailbox as *const u16;
+            let apic_id = (mp_mailbox + 4) as *const u32;
             loop {
-                let command = (mp_mailbox as *const u16).read_unaligned();
-                let apic_id = ((mp_mailbox + 4) as *const u32).read_unaligned();
-                if command == 1 && apic_id == (cpuid as u32) {
+                if command.read_volatile() == 1 && apic_id.read_volatile() == (cpuid as u32) {
                     break;
                 }
             }
 
-            let wakeup_vector = ((mp_mailbox + 8) as *const u64).read();
-
+            let wakeup_vector = (mp_mailbox + 8) as *const u64;
             println!(
                 "Launching CPU {} on wakeup_vector {:#?}",
                 cpuid, wakeup_vector
@@ -104,7 +103,7 @@ pub fn launch_guest(manifest: &'static Manifest) {
             vcpu.set_nat(vmx::fields::GuestStateNat::Rip, wakeup_vector as usize)
                 .ok();
 
-            (mp_mailbox as *mut u16).write_unaligned(0);
+            (mp_mailbox as *mut u16).write_volatile(0);
         }
     }
 
