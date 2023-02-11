@@ -122,20 +122,20 @@ pub fn launch(manifest: &'static mut Manifest, cpuid: usize) {
             ));
 
             // Spin on the MP Wakeup Page command
+            let command = mp_mailbox as *const u16;
+            let apic_id = (mp_mailbox + 4) as *const u32;
+            let wakeup_vector = (mp_mailbox + 8) as *const u64;
             loop {
-                let command = (mp_mailbox as *const u16).read_unaligned();
-                let apic_id = ((mp_mailbox + 4) as *const u32).read_unaligned();
-                if command == 1 && apic_id == (cpuid as u32) {
+                if command.read_volatile() == 1 && apic_id.read_volatile() == (cpuid as u32) {
                     break;
                 }
             }
 
-            let wakeup_vector = ((mp_mailbox + 8) as *const u64).read();
-
+            let wakeup_vector = wakeup_vector.read_volatile();
             println!("Launching CPU {} on wakeup_vector {:#x}", cpuid, wakeup_vector);
             vcpu::VCPUS[cpuid].as_mut().unwrap().set_nat(vmx::fields::GuestStateNat::Rip, wakeup_vector as usize).ok();
 
-            (mp_mailbox as *mut u16).write_unaligned(0);
+            (mp_mailbox as *mut u16).write_volatile(0);
 
             VMX_GUEST[cpuid].as_mut().unwrap().start();
         }
