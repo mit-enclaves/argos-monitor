@@ -95,7 +95,7 @@ build-metal-linux:
 # Start the software TPM emulator, if not already running
 tpm:
 	#!/usr/bin/env sh
-	if pgrep swtpm;
+	if pgrep -u "$(whoami)" swtpm;
 	then
 		echo "TPM is running"
 	else
