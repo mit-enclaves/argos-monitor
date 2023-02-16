@@ -1,9 +1,9 @@
 //! Memory Management Unit
 
 #![no_std]
-pub mod ptmapper;
 pub mod frame_allocator;
 pub mod ioptmapper;
+pub mod ptmapper;
 pub mod walker;
 
 pub use frame_allocator::{FrameAllocator, RangeAllocator};

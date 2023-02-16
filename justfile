@@ -43,10 +43,17 @@ check:
 	@mkdir -p target/x86_64-unknown-kernel/release
 	@touch target/x86_64-unknown-kernel/release/second-stage
 
+	# Checking code...
 	cargo check {{cargo_args}} {{x86_64}} {{first-stage}}
 	cargo check {{cargo_args}} {{x86_64}} {{second-stage}}
 	cargo check {{cargo_args}} {{x86_64}} {{fake-acm}}
 	cargo check {{cargo_args}} {{riscv}}  {{second-stage}}
+
+	# Checking formatting...
+	cargo fmt --all -- --check
+
+format:
+	cargo fmt
 
 # Run rawc guest
 rawc SMP=default_smp:
