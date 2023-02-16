@@ -21,7 +21,7 @@ use vmx::HostPhysAddr;
 use vtd::Iommu;
 
 #[cfg(feature = "guest_linux")]
-const LINUXBYTES: &'static [u8] = include_bytes!("../../../../linux-image/images/vmlinux");
+const LINUXBYTES: &'static [u8] = include_bytes!("../../../../builds/linux-x86/vmlinux");
 #[cfg(not(feature = "guest_linux"))]
 const LINUXBYTES: &'static [u8] = &[0; 10];
 

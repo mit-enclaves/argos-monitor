@@ -9,18 +9,18 @@ without the build-system bits). To get started [install
 just](https://github.com/casey/just#packages), you can also build it from source
 if you have rust installed with `cargo install just`.
 
-To list available commands, run `just help`. For instance, the vmm can be built
-with `just build`.
+To list available commands, run `just help`. For instance, the monitor can be
+built with `just build`.
 
 ## Usage
 
 The VMM can easily be built and typechecked with:
 
 ```sh
-# Build the vmm
+# Build the monitor
 just build
 
-# Typecheck the vmm 
+# Typecheck the monitor
 just check
 ```
 

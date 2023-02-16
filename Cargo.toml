@@ -7,9 +7,9 @@ edition = "2021"
 [workspace]
 resolver = "2"
 members = [
-    "vmm/first-stage",
-    "vmm/second-stage",
-    "vmm/fake-acm",
+    "monitor/first-stage",
+    "monitor/second-stage",
+    "monitor/fake-acm",
     "crates/stage_two_abi",
     "crates/vmx",
     "crates/vtd",
