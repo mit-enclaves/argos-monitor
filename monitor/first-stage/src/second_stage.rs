@@ -176,12 +176,13 @@ pub fn load(
         // function.
         let entry_point: EntryPoint = core::mem::transmute(second_stage.entry.as_usize());
 
-        smp_stacks.iter().map(|&(_, rsp, _)| {
-            Stage2 {
+        smp_stacks
+            .iter()
+            .map(|&(_, rsp, _)| Stage2 {
                 entry_point,
                 stack_addr: rsp.as_u64(),
-            }
-        }).collect()
+            })
+            .collect()
     }
 }
 

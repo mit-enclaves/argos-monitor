@@ -1,5 +1,5 @@
-use crate::HostVirtAddr;
 use crate::mmu::get_physical_memory_offset;
+use crate::HostVirtAddr;
 use acpi::{AcpiHandler, PhysicalMapping};
 use core::ptr::NonNull;
 
@@ -12,7 +12,8 @@ impl AcpiHandler for TycheACPIHandler {
         physical_address: usize,
         size: usize,
     ) -> PhysicalMapping<Self, T> {
-        let virtual_address = HostVirtAddr::new(physical_address + get_physical_memory_offset().as_usize());
+        let virtual_address =
+            HostVirtAddr::new(physical_address + get_physical_memory_offset().as_usize());
 
         PhysicalMapping::new(
             usize::from(physical_address),

@@ -10,7 +10,7 @@ use x86::apic::{ioapic, xapic};
 pub const LAPIC_PHYS_ADDRESS: usize = 0xfee00000;
 
 pub fn get_lapic_virt_address() -> usize {
-    return LAPIC_PHYS_ADDRESS + get_physical_memory_offset().as_usize()
+    return LAPIC_PHYS_ADDRESS + get_physical_memory_offset().as_usize();
 }
 
 pub fn allocate(

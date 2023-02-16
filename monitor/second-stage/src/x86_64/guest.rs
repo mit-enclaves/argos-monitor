@@ -6,7 +6,10 @@ use crate::debug::qemu;
 use crate::guest::{Guest, HandlerResult};
 use crate::hypercalls::{ErrorCode, Hypercalls, Parameters};
 use crate::println;
-use crate::statics::{allocator as get_allocator,domains_arena as get_domains_arena, regions_arena as get_regions_arena};
+use crate::statics::{
+    allocator as get_allocator, domains_arena as get_domains_arena,
+    regions_arena as get_regions_arena,
+};
 use core::arch;
 use core::arch::asm;
 use debug;

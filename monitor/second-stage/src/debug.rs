@@ -7,10 +7,10 @@
 
 #[cfg(target_arch = "x86_64")]
 pub mod serial {
-    #[cfg(feature = "vga")]
-    pub use vga::_print;
     #[cfg(not(feature = "vga"))]
     pub use qemu::_print;
+    #[cfg(feature = "vga")]
+    pub use vga::_print;
 }
 
 #[cfg(target_arch = "riscv64")]
