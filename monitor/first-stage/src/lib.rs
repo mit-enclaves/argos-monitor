@@ -35,8 +35,9 @@ pub mod serial;
 pub mod smp;
 pub mod smx;
 
-pub use crate::mmu::init as init_memory;
 pub use vmx::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
+
+pub use crate::mmu::init as init_memory;
 
 // Entry point for `cargo test`
 #[cfg(test)]

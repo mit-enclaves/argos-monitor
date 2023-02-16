@@ -1,8 +1,7 @@
 use clap::Parser;
-use libtyche::ErrorCode;
 use libtyche::{
     config_nb_regions, config_read_region, debug_iommu, domain_create, domain_get_own_id,
-    domain_grant_region, domain_share_region, exit, region_get_info, region_split,
+    domain_grant_region, domain_share_region, exit, region_get_info, region_split, ErrorCode,
 };
 
 #[derive(clap::Parser)]

@@ -2,10 +2,11 @@
 //!
 //! Mostly copied from linux/arch/x86/include/uapi/asm/bootparam.h
 
-use crate::vmx::GuestPhysAddr;
 use core::mem;
 
 pub use ffi::{BootParams, SetupHeader};
+
+use crate::vmx::GuestPhysAddr;
 
 mod ffi {
     #![allow(non_camel_case_types)]

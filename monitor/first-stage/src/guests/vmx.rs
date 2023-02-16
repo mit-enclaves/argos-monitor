@@ -2,17 +2,15 @@
 
 use core::arch::asm;
 
-use crate::cpu;
 use stage_two_abi::GuestInfo;
-use vmx::fields;
 use vmx::fields::traits::*;
-use vmx::msr;
-use vmx::{ActiveVmcs, VmxError};
-
+use vmx::{fields, msr, ActiveVmcs, VmxError};
 use x86_64::instructions::tables::{sgdt, sidt};
 use x86_64::registers::model_specific::Efer;
 use x86_64::registers::segmentation;
 use x86_64::registers::segmentation::Segment;
+
+use crate::cpu;
 
 pub fn save_host_info(info: &mut GuestInfo) {
     info.cs = segmentation::CS::get_reg().0;

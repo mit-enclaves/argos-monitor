@@ -1,7 +1,12 @@
 //! Linux Guest
 
-use super::Guest;
-use super::HandlerResult;
+use bootloader::boot_info::MemoryRegionKind;
+use mmu::{IoPtFlag, IoPtMapper, RangeAllocator};
+use stage_two_abi::GuestInfo;
+use vmx::HostPhysAddr;
+use vtd::Iommu;
+
+use super::{Guest, HandlerResult};
 use crate::acpi::AcpiInfo;
 use crate::elf::{ElfMapping, ElfProgram};
 use crate::guests::boot_params::{
@@ -11,14 +16,8 @@ use crate::guests::boot_params::{
 use crate::guests::common::setup_iommu_context;
 use crate::guests::ManifestInfo;
 use crate::mmu::MemoryMap;
-use crate::println;
-use crate::vmx;
 use crate::vmx::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
-use bootloader::boot_info::MemoryRegionKind;
-use mmu::{IoPtFlag, IoPtMapper, RangeAllocator};
-use stage_two_abi::GuestInfo;
-use vmx::HostPhysAddr;
-use vtd::Iommu;
+use crate::{println, vmx};
 
 #[cfg(feature = "guest_linux")]
 const LINUXBYTES: &'static [u8] = include_bytes!("../../../../linux-image/images/vmlinux");

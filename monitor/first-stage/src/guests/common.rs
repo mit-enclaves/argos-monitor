@@ -1,8 +1,9 @@
 use core::slice;
 
-use crate::HostPhysAddr;
 use mmu::FrameAllocator;
 use vtd::{ContextEntry, RootEntry};
+
+use crate::HostPhysAddr;
 
 /// Setups the I/O MMU context, i.e. a root and context frame for which all entries points to the
 /// given I/O page tables.

@@ -2,9 +2,10 @@
 
 #![no_std]
 
-use bitflags::bitflags;
 use core::arch::x86_64;
 use core::ptr;
+
+use bitflags::bitflags;
 use vmx::HostVirtAddr;
 
 /// Command bits that have an effect when set to 1 (e.g. update internal I/O MMU state).

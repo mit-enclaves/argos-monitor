@@ -1,10 +1,12 @@
 //! x86_64 implementation
 
-use crate::ExitCode;
 use core::arch::asm;
 use core::fmt;
 use core::fmt::Write;
+
 use uart_16550::SerialPort;
+
+use crate::ExitCode;
 
 /// Internal function used to print to stdout when running in Qemu.
 pub fn _print(args: fmt::Arguments) {

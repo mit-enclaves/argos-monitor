@@ -1,21 +1,17 @@
-use crate::println;
 use alloc::vec::Vec;
-
-use acpi::platform::interrupt::InterruptModel;
-use acpi::platform::PlatformInfo;
-use acpi::platform::Processor;
-
 use core::arch::global_asm;
 use core::arch::x86_64::_rdtsc;
+use core::sync::atomic::*;
+
+use acpi::platform::interrupt::InterruptModel;
+use acpi::platform::{PlatformInfo, Processor};
+use mmu::{PtFlag, PtMapper, RangeAllocator};
 use x86::apic::{ApicControl, ApicId};
 use x86_64::instructions::tlb;
 
 use crate::mmu::PAGE_SIZE;
 use crate::vmx::{HostPhysAddr, HostVirtAddr};
-use mmu::{PtFlag, PtMapper, RangeAllocator};
-
-use crate::{apic, cpu, idt};
-use core::sync::atomic::*;
+use crate::{apic, cpu, idt, println};
 
 global_asm!(include_str!("trampoline.S"));
 

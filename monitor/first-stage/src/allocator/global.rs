@@ -6,9 +6,10 @@
 //! For now the block sizes & alignments are power of 2, but in the future the allocator could be
 //! tuned to accomodate the needs of the kernel.
 
-use crate::allocator::FallbackAllocator;
 use alloc::alloc::Layout;
 use core::mem;
+
+use crate::allocator::FallbackAllocator;
 
 /// The block sizes to use.
 ///

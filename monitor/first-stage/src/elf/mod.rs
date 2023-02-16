@@ -5,13 +5,14 @@ mod ffi;
 use alloc::vec::Vec;
 use core::str::from_utf8;
 
-use crate::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 pub use ffi::{
     Elf64Hdr, Elf64Phdr, Elf64PhdrFlags, Elf64PhdrType, Elf64Shdr, Elf64ShdrType, Elf64Sym,
     FromBytes,
 };
 use mmu::walker::Address;
 use mmu::{PtFlag, PtMapper, RangeAllocator};
+
+use crate::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 
 const PAGE_SIZE: usize = 0x1000;
 

@@ -2,6 +2,11 @@
 
 pub mod guest;
 
+use core::arch::asm;
+
+use mmu::FrameAllocator;
+use stage_two_abi::Manifest;
+
 use crate::allocator::Allocator;
 use crate::debug::qemu::ExitCode;
 use crate::hypercalls::{Backend, Domain, ErrorCode, HypercallResult, Hypercalls, Region};
@@ -9,9 +14,6 @@ use crate::statics::{
     allocator as get_allocator, domains_arena as get_domains_arena,
     regions_arena as get_regions_arena,
 };
-use core::arch::asm;
-use mmu::FrameAllocator;
-use stage_two_abi::Manifest;
 
 pub struct Arch {}
 

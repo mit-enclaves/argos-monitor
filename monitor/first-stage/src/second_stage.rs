@@ -1,14 +1,16 @@
 //! Second-Stage
 
-use crate::cpu;
+use alloc::vec::Vec;
+use core::arch::asm;
+
+use mmu::frame_allocator::PhysRange;
+use mmu::{PtFlag, PtMapper, RangeAllocator};
+use stage_two_abi::{EntryPoint, Manifest};
+
 use crate::elf::{Elf64PhdrType, ElfProgram};
 use crate::guests::ManifestInfo;
 use crate::mmu::frames::RangeFrameAllocator;
-use crate::{println, HostPhysAddr, HostVirtAddr};
-use alloc::vec::Vec;
-use core::arch::asm;
-use mmu::{frame_allocator::PhysRange, PtFlag, PtMapper, RangeAllocator};
-use stage_two_abi::{EntryPoint, Manifest};
+use crate::{cpu, println, HostPhysAddr, HostVirtAddr};
 
 #[cfg(feature = "second-stage")]
 const SECOND_STAGE: &'static [u8] =

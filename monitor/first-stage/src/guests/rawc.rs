@@ -1,20 +1,16 @@
-use mmu::IoPtFlag;
+use mmu::{IoPtFlag, IoPtMapper, RangeAllocator};
 use stage_two_abi::GuestInfo;
 use vmx::HostPhysAddr;
+use vtd::Iommu;
 
-use super::Guest;
-use super::HandlerResult;
+use super::{Guest, HandlerResult};
 use crate::acpi::AcpiInfo;
 use crate::elf::ElfProgram;
 use crate::guests::common::setup_iommu_context;
 use crate::guests::ManifestInfo;
 use crate::mmu::MemoryMap;
-use crate::println;
-use crate::vmx;
 use crate::vmx::Register;
-use crate::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
-use mmu::{IoPtMapper, RangeAllocator};
-use vtd::Iommu;
+use crate::{println, vmx, GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 
 #[cfg(feature = "guest_rawc")]
 const RAWCBYTES: &'static [u8] = include_bytes!("../../../../guest/rawc");

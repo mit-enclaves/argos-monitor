@@ -18,17 +18,16 @@ use core::arch::asm;
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 
-use bitmaps::exit_qualification;
 use bitmaps::{
-    EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
-    SecondaryControls,
+    exit_qualification, EntryControls, ExceptionBitmap, ExitControls, PinbasedControls,
+    PrimaryControls, SecondaryControls,
 };
 use fields::traits::*;
+pub use utils::{Frame, GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
 
 pub use crate::errors::{
     InterruptionType, VmExitInterrupt, VmxError, VmxExitReason, VmxFieldError,
 };
-pub use utils::{Frame, GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
 
 /// Mask for keeping only the 32 lower bits.
 const LOW_32_BITS_MASK: u64 = (1 << 32) - 1;

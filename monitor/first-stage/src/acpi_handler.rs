@@ -1,7 +1,9 @@
+use core::ptr::NonNull;
+
+use acpi::{AcpiHandler, PhysicalMapping};
+
 use crate::mmu::get_physical_memory_offset;
 use crate::HostVirtAddr;
-use acpi::{AcpiHandler, PhysicalMapping};
-use core::ptr::NonNull;
 
 #[derive(Clone)]
 pub struct TycheACPIHandler;

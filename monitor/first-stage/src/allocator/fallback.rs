@@ -16,10 +16,10 @@
 // TODO: Add some tests.
 // The tests should first setup a heap spanning a few frames, and then perform the allocations.
 
-use crate::allocator::utils::align_up;
 use alloc::alloc::Layout;
-use core::mem;
-use core::ptr;
+use core::{mem, ptr};
+
+use crate::allocator::utils::align_up;
 
 /// Nodes of the linked list.
 ///

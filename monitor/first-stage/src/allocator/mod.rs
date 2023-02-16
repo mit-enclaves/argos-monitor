@@ -1,11 +1,12 @@
 //! # Heap Allocator
 
-use crate::{HostPhysAddr, HostVirtAddr};
 use alloc::alloc::GlobalAlloc;
 use core::sync::atomic::{AtomicBool, Ordering};
-use mmu::RangeAllocator;
-use mmu::{PtFlag, PtMapper};
+
+use mmu::{PtFlag, PtMapper, RangeAllocator};
 use x86_64::instructions::tlb;
+
+use crate::{HostPhysAddr, HostVirtAddr};
 
 mod fallback;
 mod global;

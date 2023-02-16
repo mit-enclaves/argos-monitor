@@ -2,6 +2,7 @@
 #![no_main]
 
 use core::panic::PanicInfo;
+
 use second_stage;
 use second_stage::arch::guest::launch_guest;
 use second_stage::debug::qemu;

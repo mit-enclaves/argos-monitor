@@ -1,5 +1,7 @@
-use crate::{apic, gdt::Gdt};
 use x86::apic::xapic;
+
+use crate::apic;
+use crate::gdt::Gdt;
 
 pub const MAX_CPU_NUM: usize = 256;
 const INITCPU: Option<Cpu> = None;

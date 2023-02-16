@@ -1,9 +1,10 @@
 //! Applicatioe Binary Interface
 
-use crate::arena::{ArenaItem, Handle, TypedArena};
-use crate::statics::{NB_DOMAINS, NB_REGIONS, NB_REGIONS_PER_DOMAIN, NB_SWITCH_PER_DOMAIN};
 use mmu::FrameAllocator;
 use stage_two_abi::Manifest;
+
+use crate::arena::{ArenaItem, Handle, TypedArena};
+use crate::statics::{NB_DOMAINS, NB_REGIONS, NB_REGIONS_PER_DOMAIN, NB_SWITCH_PER_DOMAIN};
 
 // ——————————————————————————————— Hypercalls ——————————————————————————————— //
 

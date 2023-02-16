@@ -3,13 +3,12 @@
 mod tables;
 
 use alloc::vec::Vec;
-use core::mem;
-use core::ptr;
+use core::{mem, ptr};
+
+use tables::{dmar, McfgItem, Rsdp, SdtHeader};
 
 use crate::println;
 use crate::vmx::{HostPhysAddr, HostVirtAddr};
-use tables::dmar;
-use tables::{McfgItem, Rsdp, SdtHeader};
 
 /// Hardware configuration info collected from ACPI tables.
 #[derive(Default, Debug)]

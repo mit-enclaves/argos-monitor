@@ -1,9 +1,10 @@
 //! Architecture specific structures
 
-use crate::x86_64::MAX_NB_CPU;
 use core::arch::asm;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicBool, Ordering};
+
+use crate::x86_64::MAX_NB_CPU;
 
 // ———————————————————— Interrupt-related Initialization ———————————————————— //
 

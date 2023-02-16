@@ -3,11 +3,8 @@
 mod arch;
 pub mod guest;
 
-use crate::debug::qemu::ExitCode;
-use crate::hypercalls::access;
-use crate::hypercalls::{Backend, Domain, ErrorCode, HypercallResult, Region, Registers};
-use crate::println;
 use core::arch::asm;
+
 use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator};
 use stage_two_abi::Manifest;
@@ -15,6 +12,10 @@ use utils::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
 use vmx::bitmaps::EptEntryFlags;
 use vmx::{ActiveVmcs, ControlRegister, Register};
 use vtd::Iommu;
+
+use crate::debug::qemu::ExitCode;
+use crate::hypercalls::{access, Backend, Domain, ErrorCode, HypercallResult, Region, Registers};
+use crate::println;
 
 // ————————————————————————————— Configuration —————————————————————————————— //
 

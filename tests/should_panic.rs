@@ -5,8 +5,8 @@
 #![reexport_test_harness_main = "test_main"]
 
 use core::panic::PanicInfo;
-use kernel::qemu;
-use kernel::{print, println};
+
+use kernel::{print, println, qemu};
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {

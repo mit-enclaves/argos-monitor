@@ -1,8 +1,10 @@
+use core::marker::PhantomData;
+
+use bitflags::bitflags;
+use utils::HostVirtAddr;
+
 use super::frame_allocator::FrameAllocator;
 use super::walker::{Address, Level, WalkNext, Walker};
-use bitflags::bitflags;
-use core::marker::PhantomData;
-use utils::HostVirtAddr;
 
 static PAGE_MASK: usize = !(0x1000 - 1);
 

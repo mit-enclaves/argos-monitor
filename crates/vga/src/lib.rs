@@ -2,6 +2,7 @@
 
 use core::fmt::Write;
 use core::{fmt, ptr};
+
 use font8x8::UnicodeFonts;
 use spin::Mutex;
 use x86_64::instructions::interrupts::without_interrupts;

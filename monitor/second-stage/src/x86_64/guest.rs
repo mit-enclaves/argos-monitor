@@ -1,5 +1,21 @@
 //! VMX guest backend
 
+use core::arch;
+use core::arch::asm;
+
+use debug;
+use mmu::FrameAllocator;
+use stage_two_abi::{GuestInfo, Manifest};
+use vmx::bitmaps::{
+    exit_qualification, EntryControls, ExceptionBitmap, ExitControls, PinbasedControls,
+    PrimaryControls, SecondaryControls,
+};
+use vmx::fields::traits::*;
+use vmx::{
+    fields, secondary_controls_capabilities, ActiveVmcs, ControlRegister, Register, VmxError,
+    VmxExitReason,
+};
+
 use super::Arch;
 use crate::allocator::Allocator;
 use crate::debug::qemu;
@@ -10,19 +26,6 @@ use crate::statics::{
     allocator as get_allocator, domains_arena as get_domains_arena,
     regions_arena as get_regions_arena,
 };
-use core::arch;
-use core::arch::asm;
-use debug;
-use mmu::FrameAllocator;
-use stage_two_abi::{GuestInfo, Manifest};
-use vmx::bitmaps::{
-    exit_qualification, EntryControls, ExceptionBitmap, ExitControls, PinbasedControls,
-    PrimaryControls, SecondaryControls,
-};
-use vmx::fields;
-use vmx::fields::traits::*;
-use vmx::secondary_controls_capabilities;
-use vmx::{ActiveVmcs, ControlRegister, Register, VmxError, VmxExitReason};
 
 pub fn launch_guest(manifest: &'static mut Manifest) {
     if !manifest.info.loaded {

@@ -2,9 +2,7 @@ use lazy_static::lazy_static;
 use x86_64::registers::control::Cr2;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
-use crate::gdt;
-use crate::getsec;
-use crate::println;
+use crate::{gdt, getsec, println};
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {

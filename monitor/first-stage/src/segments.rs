@@ -1,7 +1,8 @@
 //! x86 Segments & Selectors
 
-use crate::vmx::GuestVirtAddr;
 use bitflags::bitflags;
+
+use crate::vmx::GuestVirtAddr;
 
 /// A segment selector.
 #[derive(Clone, Copy)]

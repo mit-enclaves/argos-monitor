@@ -1,9 +1,11 @@
-use crate::mmu::get_physical_memory_offset;
-use crate::vmx::{HostPhysAddr, HostVirtAddr};
-use acpi::platform::interrupt;
 use alloc::vec::Vec;
+
+use acpi::platform::interrupt;
 use mmu::{PtFlag, PtMapper, RangeAllocator};
 use x86::apic::{ioapic, xapic};
+
+use crate::mmu::get_physical_memory_offset;
+use crate::vmx::{HostPhysAddr, HostVirtAddr};
 
 // FIXME: LAPIC address should be parsed from ACPI, but parsing the table occurs after we
 //        initialize the BSP...

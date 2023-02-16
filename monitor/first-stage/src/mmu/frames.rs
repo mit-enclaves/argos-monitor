@@ -4,17 +4,15 @@ use core::ops::DerefMut;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use bootloader::boot_info::{MemoryRegion, MemoryRegionKind};
+use mmu::frame_allocator::PhysRange;
+use mmu::ptmapper::PtMapper;
+use mmu::{FrameAllocator, RangeAllocator};
 use spin::Mutex;
 use x86_64::registers::control::Cr3;
 use x86_64::structures::paging::frame::PhysFrame;
 use x86_64::PhysAddr;
 
-use crate::allocator;
-use crate::vmx;
-use crate::{HostPhysAddr, HostVirtAddr};
-use mmu::frame_allocator::PhysRange;
-use mmu::ptmapper::PtMapper;
-use mmu::{FrameAllocator, RangeAllocator};
+use crate::{allocator, vmx, HostPhysAddr, HostVirtAddr};
 
 pub const PAGE_SIZE: usize = 0x1000;
 

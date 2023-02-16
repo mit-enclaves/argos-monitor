@@ -7,9 +7,8 @@ use core::mem;
 
 use super::bitmaps::{EntryControls, ExitControls, PinbasedControls};
 use super::errors::{VmxError, VmxFieldError};
-use super::fields;
 use super::fields::traits::*;
-use super::msr;
+use super::{fields, msr};
 
 // ———————————————————————— Main Checking Functions ————————————————————————— //
 
