@@ -21,21 +21,9 @@ default_dbg    := "/tmp/dbg-" + env_var('USER')
 default_smp    := "1"
 extra_arg      := ""
 
-# Start a GDB session
-gdb DBG=default_dbg:
-	rust-gdb -q -ex "file target/x86_64-unknown-kernel/debug/first-stage" -ex "target remote {{DBG}}" -ex "source scripts/tyche-gdb.gdb" 
-
 # Print list of commands
 help:
 	@just --list --unsorted
-
-# Build the VMM
-build:
-	{{linker-script}} cargo build {{cargo_args}} {{x86_64}} {{second-stage}} --release
-	cargo build {{cargo_args}} {{x86_64}} {{first-stage}}
-
-build-riscv:
-	cargo build {{cargo_args}} {{riscv}} {{second-stage}} --release
 
 # Typecheck
 check:
@@ -52,81 +40,9 @@ check:
 	# Checking formatting...
 	cargo fmt --all -- --check
 
+# Format all rust code
 format:
 	cargo fmt
-
-# Run rawc guest
-rawc SMP=default_smp:
-	@just build
-	@just tpm
-	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{rawc}} -- --smp={{SMP}}
-
-# Run rawc guest, stop to wait for GDB session
-rawc-dbg SMP=default_smp:
-	@just build
-	@just tpm
-	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{rawc}} -- --smp={{SMP}} --dbg_path={{default_dbg}} --stop
-
-common TARGET SMP ARG=extra_arg:
-	@just build
-	@just tpm
-	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{TARGET}} -- --uefi --dbg_path={{default_dbg}} --smp={{SMP}} {{ARG}}
-
-# Run the VMM without any guest
-no-guest SMP=default_smp:
-	@just common {{no-guest}} {{SMP}}
-
-no-guest-dbg SMP=default_smp:
-	@just common {{no-guest}} {{SMP}} --stop
-
-# Run rawc guest with UEFI
-rawc-uefi SMP=default_smp:
-	@just common {{rawc}} {{SMP}}
-
-# Run rawc guest, stop to wait for GDB session.
-rawc-uefi-dbg SMP=default_smp:
-	@just common {{rawc}} {{SMP}} --stop
-
-# Build linux image.
-build-linux:
-	make -C linux-image/
-
-# Build the ramfs, packing all the userspace binaries
-build-ramfs:
-	cargo build --package libtyche --target=x86_64-unknown-linux-musl --release
-	cp target/x86_64-unknown-linux-musl/release/tyche linux-image/builds/initramfs/x86-busybox/bin/
-
-	@just build-linux
-
-# Run linux guest with UEFI
-linux SMP=default_smp:
-	@just common {{linux}} {{SMP}}
-
-# Run linux guest, stop to wait for GDB session.
-linux-dbg SMP=default_smp:
-	@just common {{linux}} {{SMP}} --stop
-
-# Build the VMM for bare metal platform
-build-metal-no-guest:
-	{{linker-script}} cargo build {{cargo_args}} {{x86_64}} {{second-stage}} {{vga-s2}} --release
-	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{no-guest}} {{vga-s1}} -- --uefi --no-run
-
-# Build the VMM for bare metal platform
-build-metal-linux:
-	{{linker-script}} cargo build {{cargo_args}} {{x86_64}} {{second-stage}} {{vga-s2}} --release
-	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{linux}} {{vga-s1}} -- --uefi --no-run
-
-# Start the software TPM emulator, if not already running
-tpm:
-	#!/usr/bin/env sh
-	if pgrep -u "$(whoami)" swtpm;
-	then
-		echo "TPM is running"
-	else
-		echo "Starting TPM"
-		mkdir -p {{tpm_path}}/
-		swtpm socket --tpm2 --tpmstate dir={{tpm_path}} --ctrl type=unixio,path={{tpm_path}}/sock &
-	fi
 
 # Install the required dependencies
 setup:
@@ -142,6 +58,81 @@ setup:
 	# -----------------------------------------------------------
 	# IMPORTANT: You might need to perform some additional steps:
 	# - Install `swtpm` (software TPM emulator)
+
+_common TARGET SMP ARG=extra_arg:
+	@just build
+	@just _tpm
+	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{TARGET}} -- --uefi --dbg_path={{default_dbg}} --smp={{SMP}} {{ARG}}
+
+# Run without any guest
+no-guest SMP=default_smp:
+	@just _common {{no-guest}} {{SMP}}
+
+# Run without guest, stop to wait for GDB session.
+no-guest-dbg SMP=default_smp:
+	@just _common {{no-guest}} {{SMP}} --stop
+
+# Run rawc guest
+rawc SMP=default_smp:
+	@just _common {{rawc}} {{SMP}}
+
+# Run rawc guest, stop to wait for GDB session.
+rawc-dbg SMP=default_smp:
+	@just _common {{rawc}} {{SMP}} --stop
+
+# Run linux guest with UEFI
+linux SMP=default_smp:
+	@just _common {{linux}} {{SMP}}
+
+# Run linux guest, stop to wait for GDB session.
+linux-dbg SMP=default_smp:
+	@just _common {{linux}} {{SMP}} --stop
+
+# Start a GDB session
+gdb DBG=default_dbg:
+	rust-gdb -q -ex "file target/x86_64-unknown-kernel/debug/first-stage" -ex "target remote {{DBG}}" -ex "source scripts/tyche-gdb.gdb" 
+
+# Build the monitor for x86_64
+build:
+	{{linker-script}} cargo build {{cargo_args}} {{x86_64}} {{second-stage}} --release
+	cargo build {{cargo_args}} {{x86_64}} {{first-stage}}
+
+# Build the monitor for RISC-V64
+build-riscv:
+	cargo build {{cargo_args}} {{riscv}} {{second-stage}} --release
+
+# Build linux image.
+build-linux:
+	make -C linux-image/
+
+# Build the ramfs, packing all the userspace binaries
+build-ramfs:
+	cargo build --package libtyche --target=x86_64-unknown-linux-musl --release
+	cp target/x86_64-unknown-linux-musl/release/tyche linux-image/builds/initramfs/x86-busybox/bin/
+
+	@just build-linux
+
+# Build the VMM for bare metal platform
+build-metal-no-guest:
+	{{linker-script}} cargo build {{cargo_args}} {{x86_64}} {{second-stage}} {{vga-s2}} --release
+	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{no-guest}} {{vga-s1}} -- --uefi --no-run
+
+# Build the VMM for bare metal platform
+build-metal-linux:
+	{{linker-script}} cargo build {{cargo_args}} {{x86_64}} {{second-stage}} {{vga-s2}} --release
+	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{linux}} {{vga-s1}} -- --uefi --no-run
+
+# Start the software TPM emulator, if not already running
+_tpm:
+	#!/usr/bin/env sh
+	if pgrep -u $USER swtpm;
+	then
+		echo "TPM is running"
+	else
+		echo "Starting TPM"
+		mkdir -p {{tpm_path}}/
+		swtpm socket --tpm2 --tpmstate dir={{tpm_path}} --ctrl type=unixio,path={{tpm_path}}/sock &
+	fi
 
 # The following line gives highlighting on vim
 # vim: set ft=make :
