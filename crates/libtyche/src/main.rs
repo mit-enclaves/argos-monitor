@@ -1,8 +1,9 @@
 use clap::Parser;
 use libtyche::ErrorCode;
 use libtyche::{
-    config_nb_regions, config_read_region, debug_iommu, domain_create, domain_get_own_id,
-    domain_grant_region, domain_share_region, exit, region_get_info, region_split,
+    config_nb_regions, config_read_region, debug_iommu, debug_ipi, domain_create,
+    domain_get_own_id, domain_grant_region, domain_share_region, exit, region_get_info,
+    region_split,
 };
 
 #[derive(clap::Parser)]
@@ -47,6 +48,7 @@ enum Config {
 #[derive(clap::Subcommand)]
 enum Debug {
     Iommu,
+    Ipi { vector: usize },
 }
 
 pub fn main() {
@@ -144,6 +146,7 @@ fn handle_store(cmd: Config) -> Result<(), ErrorCode> {
 fn handle_debug(cmd: Debug) -> Result<(), ErrorCode> {
     match cmd {
         Debug::Iommu => debug_iommu()?,
+        Debug::Ipi { vector } => debug_ipi(vector)?,
     }
 
     Ok(())
