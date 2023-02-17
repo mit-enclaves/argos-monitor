@@ -179,6 +179,10 @@ where
                 };
                 Ok(HandlerResult::Resume)
             }
+            VmxExitReason::InitSignal => {
+                println!("vCPU{} (Host) received IPI", self.vcpu_id);
+                Ok(HandlerResult::Resume)
+            }
             VmxExitReason::EptViolation => {
                 let addr = self.guest_phys_addr()?;
                 println!(
