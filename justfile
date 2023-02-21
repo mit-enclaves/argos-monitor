@@ -52,6 +52,7 @@ setup:
 	rustup component add llvm-tools-preview --toolchain {{toolchain}}
 	rustup component add rust-src --toolchain {{toolchain}}
 	rustup target add x86_64-unknown-linux-musl
+	rustup component add rustfmt --toolchain {{toolchain}}
 
 	# Download UEFI firmware for QEMU usage
 	wget https://github.com/rust-osdev/ovmf-prebuilt/releases/download/v0.20220719.209%2Bgf0064ac3af/OVMF-pure-efi.fd
