@@ -112,15 +112,21 @@ build-ramfs:
 
 	@just build-linux
 
-# Build the VMM for bare metal platform
+# Build the monitor for bare metal platform
 build-metal-no-guest:
-	{{linker-script}} cargo build {{cargo_args}} {{x86_64}} {{second-stage}} {{vga-s2}} --release
-	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{no-guest}} {{vga-s1}} -- --uefi --no-run
+	@just _common-metal {{no-guest}}
 
-# Build the VMM for bare metal platform
+# Build the monitor for bare metal platform
+build-metal-rawc:
+	@just _common-metal {{rawc}}
+
+# Build the monitor for bare metal platform
 build-metal-linux:
+	@just _common-metal {{linux}}
+
+_common-metal TARGET:
 	{{linker-script}} cargo build {{cargo_args}} {{x86_64}} {{second-stage}} {{vga-s2}} --release
-	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{linux}} {{vga-s1}} -- --uefi --no-run
+	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{TARGET}} {{vga-s1}} -- --uefi --no-run
 
 # Start the software TPM emulator, if not already running
 _tpm:
