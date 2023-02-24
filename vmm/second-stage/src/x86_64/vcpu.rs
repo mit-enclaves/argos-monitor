@@ -231,10 +231,19 @@ where
                     Ok(HandlerResult::Crash)
                 }
             }
+            VmxExitReason::Rdmsr => {
+                let ecx = self.get(Register::Rcx);
+                println!("MSR: {:#x}", ecx);
+                self.next_instruction()?;
+                Ok(HandlerResult::Resume)
+            }
             VmxExitReason::Exception => {
                 match self.interrupt_info() {
                     Ok(Some(exit)) => {
                         println!("Exception: {:?}", self.interrupt_info());
+                        println!("VM received an exception on vector {}", exit.vector);
+                        println!("{:?}", self.active_vmcs);
+                        self.next_instruction()?;
                         // Inject the fault back into the guest.
                         let injection = exit.as_injectable_u32();
                         self.set_vm_entry_interruption_information(injection)?;
