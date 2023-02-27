@@ -7,10 +7,10 @@
 extern crate alloc;
 
 use core::panic::PanicInfo;
+use core::sync::atomic::Ordering;
 
 use acpi::AcpiTables;
 use bootloader::{entry_point, BootInfo};
-use core::sync::atomic::Ordering;
 use first_stage::acpi::AcpiInfo;
 use first_stage::acpi_handler::TycheACPIHandler;
 use first_stage::guests::Guest;
