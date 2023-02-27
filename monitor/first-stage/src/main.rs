@@ -13,10 +13,8 @@ use bootloader::{entry_point, BootInfo};
 use core::sync::atomic::Ordering;
 use first_stage::acpi::AcpiInfo;
 use first_stage::acpi_handler::TycheACPIHandler;
-use first_stage::getsec::configure_getsec;
 use first_stage::guests::Guest;
 use first_stage::mmu::MemoryMap;
-use first_stage::smx::senter;
 use first_stage::{guests, println, second_stage, smp, HostPhysAddr, HostVirtAddr};
 use mmu::{PtMapper, RangeAllocator};
 use stage_two_abi::VgaInfo;
@@ -187,16 +185,14 @@ fn launch_guest(
         println!("Saving host state");
         guests::vmx::save_host_info(&mut info.guest_info);
         println!("Loading stage 2");
-        let stage2 = second_stage::load(
+        second_stage::load(
             &info,
             stage1_allocator,
             &mut stage2_allocator,
             &mut pt_mapper,
         );
-        println!("Jumping into stage 2");
-        configure_getsec(stage2.as_slice());
         smp::BSP_READY.store(true, Ordering::SeqCst);
-        senter();
+        second_stage::enter();
     }
 
     println!("Failed to jump into stage 2");

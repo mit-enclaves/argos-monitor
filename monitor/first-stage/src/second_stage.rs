@@ -2,11 +2,13 @@
 
 use alloc::vec::Vec;
 use core::arch::asm;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use mmu::frame_allocator::PhysRange;
 use mmu::{PtFlag, PtMapper, RangeAllocator};
 use stage_two_abi::{EntryPoint, Manifest};
 
+use crate::cpu::MAX_CPU_NUM;
 use crate::elf::{Elf64PhdrType, ElfProgram};
 use crate::guests::ManifestInfo;
 use crate::mmu::frames::RangeFrameAllocator;
@@ -26,9 +28,13 @@ const LOAD_VIRT_ADDR: HostVirtAddr = HostVirtAddr::new(0x80000000000);
 const STACK_VIRT_ADDR: HostVirtAddr = HostVirtAddr::new(0x90000000000);
 const STACK_SIZE: usize = 0x1000 * 2;
 
+/// Second stage jump structures
+static mut SECOND_STAGE_ENTRIES: [Option<Stage2>; MAX_CPU_NUM] = [None; MAX_CPU_NUM];
+
 #[derive(Clone, Copy)]
 pub struct Stage2 {
     entry_point: EntryPoint,
+    entry_barrier: *mut bool,
     stack_addr: u64,
 }
 
@@ -44,6 +50,48 @@ impl Stage2 {
             }
         }
         panic!("Failed entry or unexpected return from second stage");
+    }
+
+    /// Checks if the entry barrier is marked as ready, consume the barrier if ready.
+    /// APs must wait for the barier to be marked as ready before jumping into sage 2.
+    fn barrier_is_ready(&self) -> bool {
+        // Safety: the entry barrier is assumes to point to an atomic bool in stage 2 by
+        // construction.
+        unsafe {
+            let ptr = AtomicBool::from_mut(&mut *self.entry_barrier);
+            match ptr.compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst) {
+                Ok(_) => true,
+                Err(_) => false,
+            }
+        }
+    }
+}
+
+/// Enter stage 2.
+pub unsafe fn enter() {
+    _enter_inner();
+}
+
+fn _enter_inner() {
+    let cpu_id = cpu::id();
+    // Safety:
+    let info = unsafe {
+        match SECOND_STAGE_ENTRIES[cpu_id] {
+            Some(info) => info,
+            None => panic!("Tries to jump into stage 2 before initialisation"),
+        }
+    };
+
+    // BSP do not wait for the barrier
+    if cpu_id == 0 {
+        info.jump_into();
+    } else {
+        loop {
+            if info.barrier_is_ready() {
+                info.jump_into();
+            }
+            core::hint::spin_loop();
+        }
     }
 }
 
@@ -65,7 +113,7 @@ pub fn load(
     stage1_allocator: &impl RangeAllocator,
     stage2_allocator: &impl RangeAllocator,
     pt_mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
-) -> Vec<Stage2> {
+) {
     // Read elf and allocate second stage memory
     let mut second_stage = ElfProgram::new(SECOND_STAGE);
 
@@ -162,6 +210,10 @@ pub fn load(
     };
     let manifest =
         unsafe { Manifest::from_symbol_finder(find_symbol).expect("Missing symbol in stage 2") };
+    let entry_barrier = {
+        let ptr = find_symbol("__entry_barrier").expect("Could not find symbol __entry_barrier");
+        ptr as *mut bool
+    };
     manifest.cr3 = loaded_elf.pt_root.as_u64();
     manifest.info = info.guest_info.clone();
     manifest.iommu = info.iommu;
@@ -173,7 +225,7 @@ pub fn load(
     debug::hook_stage2_offsets(manifest.poffset, manifest.voffset);
     debug::tyche_hook_stage1(1);
 
-    // jump into second stage
+    // Setup second stage jump structure
     unsafe {
         // We need to manually ensure that the type corresponds to the second stage entry point
         // function.
@@ -181,11 +233,14 @@ pub fn load(
 
         smp_stacks
             .iter()
-            .map(|&(_, rsp, _)| Stage2 {
-                entry_point,
-                stack_addr: rsp.as_u64(),
-            })
-            .collect()
+            .enumerate()
+            .for_each(|(cpu_id, &(_, rsp, _))| {
+                SECOND_STAGE_ENTRIES[cpu_id] = Some(Stage2 {
+                    entry_point,
+                    entry_barrier,
+                    stack_addr: rsp.as_u64(),
+                });
+            });
     }
 }
 

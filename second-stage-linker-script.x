@@ -1,5 +1,5 @@
 /* Force the linker to look for some symbols.                              */
-EXTERN(__manifest)
+EXTERN(__manifest, __entry_barrier)
 
 SECTIONS
 {
@@ -22,7 +22,7 @@ SECTIONS
   /* Finally, all data                                         */
   /* NOTE: no need to page-align bss, both bss and data are RW */
   .data : ALIGN(0x1000) {
-    KEEP(*(__manifest))
+    KEEP(*(__*))
     *(.data)
     *(.data.*)
   }
