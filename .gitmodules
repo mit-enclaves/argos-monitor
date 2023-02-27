@@ -1,3 +1,6 @@
 [submodule "linux-image"]
 	path = linux-image
 	url = git@github.com:epfl-dcsl/linux-image.git
+[submodule "opensbi-stage1"]
+	path = opensbi-stage1
+	url = git@github.com:neeluk7/opensbi-stage1.git
