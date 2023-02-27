@@ -203,7 +203,19 @@ impl Vmxon {
         Ok(frame)
     }
 
-    pub unsafe fn create_vm(&self, mut frame: Frame) -> Result<VmcsRegion, VmxError> {
+    /// Creates a new VM control structure from the given frame.
+    pub unsafe fn create_vm(&self, frame: Frame) -> Result<VmcsRegion, VmxError> {
+        self.create_vm_unsafe(frame)
+    }
+
+    /// Creates a new VM control structure from the given frame.
+    ///
+    /// This version returns a VmcsRegion that is not bound to Vmxon, which means that the caller
+    /// has to ensure Vmxon outlives the resulting VmcsRegion.
+    pub unsafe fn create_vm_unsafe(
+        &self,
+        mut frame: Frame,
+    ) -> Result<VmcsRegion<'static>, VmxError> {
         let vmcs_info = get_vmx_info();
 
         // Initialize the VMCS region by copying the revision ID into the 4 first bytes of VMCS
@@ -242,28 +254,24 @@ pub struct VmcsRegion<'vmx> {
 }
 
 /// The active Vmcs. Writting to vmcs using assembly or raw wrappers will write to this structures.
-pub struct ActiveVmcs<'active, 'vmx> {
-    region: &'active mut VmcsRegion<'vmx>,
+pub struct ActiveVmcs<'vmx> {
+    region: VmcsRegion<'vmx>,
 }
 
 impl<'vmx> VmcsRegion<'vmx> {
     /// Makes this region the current active region.
     //  TODO: Enforce that only a single region can be active at any time.
-    pub fn set_as_active<'active>(
-        self: &'active mut Self,
-    ) -> Result<ActiveVmcs<'active, 'vmx>, VmxError> {
+    pub fn set_as_active(self: Self) -> Result<ActiveVmcs<'vmx>, VmxError> {
         unsafe { raw::vmptrld(self.frame.phys_addr.as_u64())? };
         Ok(ActiveVmcs { region: self })
     }
 }
 
-impl<'active, 'vmx> ActiveVmcs<'active, 'vmx>
-where
-    'vmx: 'active,
-{
+impl<'vmx> ActiveVmcs<'vmx> {
     /// Deactivates the region.
-    pub fn deactivate(self) -> Result<(), VmxError> {
-        unsafe { raw::vmclear(self.region.frame.phys_addr.as_u64()) }
+    pub fn deactivate(self) -> Result<VmcsRegion<'vmx>, VmxError> {
+        unsafe { raw::vmclear(self.region.frame.phys_addr.as_u64())? };
+        Ok(self.region)
     }
 
     /// Returns a given register.
@@ -661,7 +669,7 @@ where
     }
 }
 
-impl<'active, 'vmx> core::fmt::Debug for ActiveVmcs<'active, 'vmx> {
+impl<'vmx> core::fmt::Debug for ActiveVmcs<'vmx> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         writeln!(f, "VMCS {{")?;
         writeln!(f, "    registers {{")?;

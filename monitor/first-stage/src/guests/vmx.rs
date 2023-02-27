@@ -23,9 +23,7 @@ pub fn save_host_info(info: &mut GuestInfo) {
 }
 
 /// Saves the host state (control registers, segments...), so that they are restored on VM Exit.
-pub fn save_host_state<'active, 'vmx>(
-    _vmcs: &mut ActiveVmcs<'active, 'vmx>,
-) -> Result<(), VmxError> {
+pub fn save_host_state<'vmx>(_vmcs: &mut ActiveVmcs<'vmx>) -> Result<(), VmxError> {
     // NOTE: See section 24.5 of volume 3C.
 
     // Segments

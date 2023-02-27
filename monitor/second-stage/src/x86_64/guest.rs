@@ -54,7 +54,7 @@ pub fn launch_guest(manifest: &'static Manifest) {
             }
         };
 
-        let mut vmcs = init_vm(&vmxon, &mut allocator);
+        let vmcs = init_vm(&vmxon, &mut allocator);
         println!("Done with the guest init");
         let mut vcpu = vmcs.set_as_active().expect("Failed to activate VMCS");
         let arch = Arch::new(manifest.iommu);
@@ -81,15 +81,15 @@ pub fn launch_guest(manifest: &'static Manifest) {
     qemu::exit(qemu::ExitCode::Success);
 }
 
-pub struct VmxGuest<'active, 'vmx, const N: usize> {
-    vcpu: &'active mut vmx::ActiveVmcs<'active, 'vmx>,
+pub struct VmxGuest<'vmx, const N: usize> {
+    vcpu: &'vmx mut vmx::ActiveVmcs<'vmx>,
     hypercalls: Hypercalls<Arch>,
     allocator: &'vmx Allocator<N>,
 }
 
-impl<'active, 'vmx, const N: usize> VmxGuest<'active, 'vmx, N> {
+impl<'vmx, const N: usize> VmxGuest<'vmx, N> {
     pub fn new(
-        vcpu: &'active mut ActiveVmcs<'active, 'vmx>,
+        vcpu: &'vmx mut ActiveVmcs<'vmx>,
         hypercalls: Hypercalls<Arch>,
         allocator: &'vmx Allocator<N>,
     ) -> Self {
@@ -101,7 +101,7 @@ impl<'active, 'vmx, const N: usize> VmxGuest<'active, 'vmx, N> {
     }
 }
 
-impl<'vcpu, const N: usize> Guest for VmxGuest<'vcpu, 'vcpu, N> {
+impl<'vcpu, const N: usize> Guest for VmxGuest<'vcpu, N> {
     type ExitReason = vmx::VmxExitReason;
 
     type Error = vmx::VmxError;
@@ -306,8 +306,8 @@ pub unsafe fn init_vm<'vmx>(
     }
 }
 
-pub unsafe fn init_vcpu<'active, 'vmx>(
-    vcpu: &mut ActiveVmcs<'active, 'vmx>,
+pub unsafe fn init_vcpu<'vmx>(
+    vcpu: &mut ActiveVmcs<'vmx>,
     info: &GuestInfo,
     allocator: &impl FrameAllocator,
 ) {
@@ -471,8 +471,8 @@ fn cpuid_secondary_controls() -> SecondaryControls {
 }
 
 /// Saves the host state (control registers, segments...), so that they are restored on VM Exit.
-pub fn save_host_state<'active, 'vmx>(
-    _vmcs: &mut ActiveVmcs<'active, 'vmx>,
+pub fn save_host_state<'vmx>(
+    _vmcs: &mut ActiveVmcs<'vmx>,
     info: &GuestInfo,
 ) -> Result<(), VmxError> {
     // NOTE: See section 24.5 of volume 3C.

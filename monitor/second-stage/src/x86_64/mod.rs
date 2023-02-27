@@ -72,7 +72,7 @@ impl Arch {
 }
 
 impl Backend for Arch {
-    type Vcpu<'a> = ActiveVmcs<'a, 'a>;
+    type Vcpu<'a> = ActiveVmcs<'a>;
 
     type Store = Store;
 
