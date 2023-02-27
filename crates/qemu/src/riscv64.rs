@@ -1,12 +1,30 @@
 //! RISC-V 64 implementation
 
 use core::fmt;
-
+use uart_16550::MmioSerialPort;
+use riscv_utils::SERIAL_PORT_BASE_ADDRESS;
 use crate::ExitCode;
+use core::fmt::Write;
+use core::arch::asm;
+
+//static mut SERIAL_PORT: Option<MmioSerialPort> = None;
 
 /// Internal function used to print to stdout when running in Qemu.
 pub fn _print(_args: fmt::Arguments) {
-    // TODO
+
+    static mut SERIAL_PORT: Option<MmioSerialPort> = None;
+
+    unsafe {
+        let mut serial_port = MmioSerialPort::new(SERIAL_PORT_BASE_ADDRESS);
+        serial_port.init();
+        SERIAL_PORT = Some(serial_port);
+
+        if let Some(ref mut serial_port) = SERIAL_PORT {
+        serial_port
+            .write_fmt(_args)
+            .expect("Printing to serial failed");
+        }
+    }
 }
 
 // —————————————————————————————— Exiting QEMU —————————————————————————————— //
@@ -14,6 +32,18 @@ pub fn _print(_args: fmt::Arguments) {
 /// Exit QEMU.
 pub fn exit(_exit_code: ExitCode) {
     const _QEMU_EXIT_PORT: u16 = 0xf4;
-
+    
     // TODO
+    // Add qemu exit using qemu exit code - refer here: https://github.com/andre-richter/qemu-exit/blob/master/src/riscv64.rs
+    // For now just using the loop. 
+
+    unsafe {
+            // For the case that the QEMU exit attempt did not work, transition into an infinite
+            // loop. Calling `panic!()` here is unfeasible, since there is a good chance
+            // this function here is the last expression in the `panic!()` handler
+            // itself. This prevents a possible infinite loop.
+        loop {
+            asm!("wfi", options(nomem, nostack));
+        }
+    }
 }

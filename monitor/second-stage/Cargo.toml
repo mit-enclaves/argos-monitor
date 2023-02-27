@@ -8,6 +8,7 @@ edition = "2021"
 vga = ["dep:vga"]
 
 [dependencies]
+riscv_utils = { path = "../../crates/riscv_utils/" }
 utils = { path = "../../crates/utils/" }
 debug = { version = "0.1.0", path = "../../crates/debug" }
 mmu = { version = "0.1.0", path = "../../crates/mmu" }

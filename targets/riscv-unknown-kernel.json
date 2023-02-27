@@ -4,7 +4,7 @@
     "cpu": "generic-rv64",
     "arch": "riscv64",
     "target-endian": "little",
-    "relocation-model": "static",
+    "relocation-model": "pic",
     "target-pointer-width": "64",
     "target-c-int-width": "32",
     "os": "none",

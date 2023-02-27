@@ -326,6 +326,7 @@ dependencies = [
 name = "qemu"
 version = "0.1.0"
 dependencies = [
+ "riscv_utils",
  "spin 0.5.2",
  "uart_16550",
 ]
@@ -347,6 +348,10 @@ checksum = "a6823ea29436221176fe662da99998ad3b4db2c7f31e7b6f5fe43adccd6320bb"
 dependencies = [
  "bitflags",
 ]
+
+[[package]]
+name = "riscv_utils"
+version = "0.1.0"
 
 [[package]]
 name = "rsdp"
@@ -389,6 +394,7 @@ dependencies = [
  "mmu",
  "monitor",
  "qemu",
+ "riscv_utils",
  "spin 0.9.4",
  "stage_two_abi",
  "utils",

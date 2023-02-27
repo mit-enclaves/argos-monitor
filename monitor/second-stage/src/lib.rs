@@ -24,6 +24,13 @@ pub mod arch {
     pub use crate::riscv::*;
 }
 
+#[cfg(target_arch = "x86_64")]
 pub fn init(manifest: &Manifest, cpuid: usize) {
     arch::init(manifest, cpuid);
 }
+
+#[cfg(target_arch = "riscv64")]
+pub fn init() {
+    arch::init();
+}
+

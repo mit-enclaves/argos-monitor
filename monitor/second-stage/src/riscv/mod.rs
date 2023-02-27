@@ -4,13 +4,14 @@
 // The line just removes the unused warnings.
 #![allow(unused)]
 
+mod arch;
 pub mod backend;
 pub mod guest;
 
 use core::arch::asm;
 
+pub use guest::launch_guest;
 use mmu::FrameAllocator;
-use stage_two_abi::Manifest;
 
 use crate::debug::qemu::ExitCode;
 use crate::statics::{allocator, pool};
@@ -45,11 +46,9 @@ pub fn exit_qemu(exit_code: ExitCode) {
 }
 
 /// Architecture specific initialization.
-pub fn init(manifest: &Manifest, _cpuid: usize) {
-    // TODO
+pub fn init() {
+    arch::init();
 }
-
-pub fn launch_guest(manifest: &'static Manifest) {}
 
 pub fn cpuid() -> usize {
     todo!();

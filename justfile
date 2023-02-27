@@ -8,6 +8,7 @@ build_std      := "-Zbuild-std=core,alloc"
 build_features := "-Zbuild-std-features=compiler-builtins-mem"
 cargo_args     := build_std + " " + build_features
 linker-script  := "RUSTFLAGS='-C link-arg=-Tsecond-stage-linker-script.x'"
+riscv-linker-script := "RUSTFLAGS='-C link-arg=-Triscv_linker_script.x'"
 first-stage    := "--package first-stage --features=first-stage/second-stage"
 second-stage   := "--package second-stage"
 fake-acm       := "--package fake-acm"
@@ -107,7 +108,7 @@ build:
 
 # Build the monitor for RISC-V64
 build-riscv:
-	cargo build {{cargo_args}} {{riscv}} {{second-stage}} --release
+	{{riscv-linker-script}} cargo build {{cargo_args}} {{riscv}} {{second-stage}} --release
 
 # Build linux image.
 build-linux:

@@ -18,6 +18,7 @@ members = [
     "crates/qemu",
     "crates/debug",
     "crates/utils",
+    "crates/riscv_utils",
     "crates/libtyche",
     "crates/arena",
     "crates/capabilities",

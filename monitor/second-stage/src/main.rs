@@ -19,6 +19,7 @@ static CPU_STATUS: [AtomicBool; 256] = [FALSE; 256];
 static NB_BOOTED_CORES: AtomicUsize = AtomicUsize::new(0);
 static mut MANIFEST: Option<&'static Manifest> = None;
 
+#[cfg(target_arch = "x86_64")]
 fn second_stage_entry_point() -> ! {
     if arch::cpuid() == 0 {
         println!("CPU{}: Hello from second stage!", arch::cpuid());
@@ -75,6 +76,19 @@ fn second_stage_entry_point() -> ! {
     unsafe {
         launch_guest(MANIFEST.as_mut().unwrap());
     }
+    qemu::exit(qemu::ExitCode::Success);
+}
+
+#[cfg(target_arch = "riscv64")]
+fn second_stage_entry_point(hartid: u64, arg1: u64, next_addr: u64, next_mode: u64) -> ! {
+
+    second_stage::init();
+
+    println!("============= Second Stage =============");
+    println!("Hello from second stage!");
+
+    //TODO: Change function name to be arch independent. Not launching guest in RV.
+    launch_guest(hartid, arg1, next_addr, next_mode);
     qemu::exit(qemu::ExitCode::Success);
 }
 
