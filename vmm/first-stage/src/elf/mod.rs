@@ -245,22 +245,34 @@ impl ElfProgram {
         PhysAddr: Address,
         VirtAddr: Address,
     {
+        let align_page_down = |addr: u64| addr & !(PAGE_SIZE as u64 - 1);
+        let p_vaddr = align_page_down(segment.p_vaddr);
+        let p_paddr = align_page_down(segment.p_paddr);
+
+        let mut memsz = segment.p_memsz;
+        if p_vaddr != segment.p_vaddr {
+            memsz += segment.p_vaddr - p_vaddr;
+        }
+
+        assert!(p_vaddr % PAGE_SIZE as u64 == 0);
+        assert!(p_paddr % PAGE_SIZE as u64 == 0);
+
         match self.mapping {
             ElfMapping::ElfDefault => {
                 mapper.map_range(
                     guest_allocator,
-                    VirtAddr::from_u64(segment.p_vaddr),
-                    PhysAddr::from_u64(segment.p_paddr),
-                    segment.p_memsz as usize,
+                    VirtAddr::from_u64(p_vaddr),
+                    PhysAddr::from_u64(p_paddr),
+                    memsz as usize,
                     flags_to_prot(segment.p_flags),
                 );
             }
             ElfMapping::Identity => {
                 mapper.map_range(
                     guest_allocator,
-                    VirtAddr::from_u64(segment.p_paddr),
-                    PhysAddr::from_u64(segment.p_paddr),
-                    segment.p_memsz as usize,
+                    VirtAddr::from_u64(p_paddr),
+                    PhysAddr::from_u64(p_paddr),
+                    memsz as usize,
                     flags_to_prot(segment.p_flags),
                 );
             }
