@@ -60,10 +60,10 @@ setup:
 	# IMPORTANT: You might need to perform some additional steps:
 	# - Install `swtpm` (software TPM emulator)
 
-_common TARGET SMP ARG=extra_arg:
+_common TARGET SMP ARG1=extra_arg ARG2=extra_arg:
 	@just build
 	@just _tpm
-	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{TARGET}} -- --uefi --dbg_path={{default_dbg}} --smp={{SMP}} {{ARG}}
+	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{TARGET}} -- --uefi --smp={{SMP}} {{ARG1}} {{ARG2}}
 
 # Run without any guest
 no-guest SMP=default_smp:
@@ -71,7 +71,7 @@ no-guest SMP=default_smp:
 
 # Run without guest, stop to wait for GDB session.
 no-guest-dbg SMP=default_smp:
-	@just _common {{no-guest}} {{SMP}} --stop
+	@just _common {{no-guest}} {{SMP}} --stop --dbg_path={{default_dbg}}
 
 # Run rawc guest
 rawc SMP=default_smp:
@@ -79,7 +79,7 @@ rawc SMP=default_smp:
 
 # Run rawc guest, stop to wait for GDB session.
 rawc-dbg SMP=default_smp:
-	@just _common {{rawc}} {{SMP}} --stop
+	@just _common {{rawc}} {{SMP}} --stop --dbg_path={{default_dbg}}
 
 # Run linux guest with UEFI
 linux SMP=default_smp:
@@ -87,7 +87,7 @@ linux SMP=default_smp:
 
 # Run linux guest, stop to wait for GDB session.
 linux-dbg SMP=default_smp:
-	@just _common {{linux}} {{SMP}} --stop
+	@just _common {{linux}} {{SMP}} --stop --dbg_path={{default_dbg}}
 
 # Start a GDB session
 gdb DBG=default_dbg:
