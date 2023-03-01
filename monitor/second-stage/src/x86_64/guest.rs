@@ -373,6 +373,7 @@ pub fn default_vmcs_config(vmcs: &mut ActiveVmcs, info: &GuestInfo, switching: b
     if xsaves {
         secondary_ctrls |= SecondaryControls::ENABLE_XSAVES_XRSTORS;
     }
+    secondary_ctrls |= unrestricted_guest_secondary_controls();
     secondary_ctrls |= cpuid_secondary_controls();
     println!("2'Ctrl: {:?}", vmcs.set_secondary_ctrls(secondary_ctrls));
 }
@@ -468,6 +469,15 @@ fn cpuid_secondary_controls() -> SecondaryControls {
         controls |= SecondaryControls::ENABLE_INVPCID;
     }
     return controls;
+}
+
+fn unrestricted_guest_secondary_controls() -> SecondaryControls {
+    let mut controls = SecondaryControls::empty();
+    let vmx_misc = unsafe { vmx::msr::VMX_MISC.read() };
+    if vmx_misc & (1 << 5) != 0 {
+        controls |= SecondaryControls::UNRESTRICTED_GUEST;
+    }
+    controls
 }
 
 /// Saves the host state (control registers, segments...), so that they are restored on VM Exit.
