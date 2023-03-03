@@ -33,10 +33,10 @@ const LINUX_MASK: u64 = 0xffffffff82000000;
 const SETUP_HDR: u64 = 0x1f1;
 
 // WARNING: Don't forget that the command line must be null terminated ('\0')!
-#[cfg(not(feature = "vga"))]
+#[cfg(not(feature = "bare_metal"))]
 static COMMAND_LINE: &'static [u8] =
     b"root=/dev/sdb2 apic=debug earlyprintk=serial,ttyS0 console=ttyS0\0";
-#[cfg(feature = "vga")]
+#[cfg(feature = "bare_metal")]
 static COMMAND_LINE: &'static [u8] = b"root=/dev/sdb2 apic=debug\0";
 
 pub struct Linux {}
@@ -78,7 +78,7 @@ impl Guest for Linux {
 
         // Setup I/O MMU
         if let Some(iommus) = &acpi.iommu {
-            if cfg!(not(feature = "vga")) {
+            if cfg!(not(feature = "bare_metal")) {
                 let iommu_addr = HostVirtAddr::new(
                     iommus[0].base_address.as_usize()
                         + host_allocator.get_physical_offset().as_usize(),
