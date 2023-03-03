@@ -26,7 +26,7 @@ const SECOND_STAGE_SIZE: usize = 0x1000 * 512;
 const LOAD_VIRT_ADDR: HostVirtAddr = HostVirtAddr::new(0x80000000000);
 //  Stack definitions
 const STACK_VIRT_ADDR: HostVirtAddr = HostVirtAddr::new(0x90000000000);
-const STACK_SIZE: usize = 0x1000 * 20;
+const STACK_SIZE: usize = 0x1000 * 5;
 
 /// Second stage jump structures
 static mut SECOND_STAGE_ENTRIES: [Option<Stage2>; MAX_CPU_NUM] = [None; MAX_CPU_NUM];
