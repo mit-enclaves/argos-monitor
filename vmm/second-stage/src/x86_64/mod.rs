@@ -20,7 +20,7 @@ use vtd::Iommu;
 // ————————————————————————————— Configuration —————————————————————————————— //
 
 /// Maximum number of CPU supported.
-const MAX_NB_CPU: usize = 16;
+const MAX_NB_CPU: usize = 128;
 
 // —————————————————————————————— x86_64 Arch ——————————————————————————————— //
 
