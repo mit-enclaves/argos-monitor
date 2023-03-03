@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 # Print to VGA text mode
 vga = ["dep:vga"]
+bare_metal = []
 
 # Guest
 guest_linux = []
