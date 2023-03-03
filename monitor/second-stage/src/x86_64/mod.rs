@@ -21,7 +21,7 @@ use crate::println;
 // ————————————————————————————— Configuration —————————————————————————————— //
 
 /// Maximum number of CPU supported.
-const MAX_NB_CPU: usize = 8;
+const MAX_NB_CPU: usize = 128;
 
 // ————————————————————————————— Entry Barrier —————————————————————————————— //
 
