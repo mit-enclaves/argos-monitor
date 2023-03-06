@@ -29,7 +29,7 @@ const FALSE: AtomicBool = AtomicBool::new(false);
 static CPU_STATUS: [AtomicBool; 256] = [FALSE; 256];
 pub static BSP_READY: AtomicBool = FALSE;
 
-const STACK_SIZE: usize = 20 * 0x1000;
+const STACK_SIZE: usize = 5 * 0x1000;
 
 extern "C" {
     fn ap_trampoline_start();
