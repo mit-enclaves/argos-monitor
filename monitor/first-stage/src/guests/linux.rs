@@ -37,7 +37,7 @@ static COMMAND_LINE: &'static [u8] =
     b"root=/dev/sdb2 apic=debug earlyprintk=serial,ttyS0 console=ttyS0\0";
 #[cfg(feature = "bare_metal")]
 static COMMAND_LINE: &'static [u8] =
-    b"root=/dev/sdb2 apic=debug earlyprintk=serial,ttyS0,115200 nr_cpus=2\0";
+    b"root=/dev/sdb2 apic=debug earlyprintk=serial,ttyS0,115200 console=ttyS0,115200 nr_cpus=2\0";
 
 pub struct Linux {}
 
