@@ -2,15 +2,19 @@ use core::cell::RefCell;
 use core::mem::replace;
 
 use arena::{Handle, TypedArena};
-use capabilities::backend::Backend;
+use capabilities::backend::{Backend, BackendContext};
+use capabilities::context::Context;
 use capabilities::cpu::{CPUAccess, CPUFlags, CPU};
-use capabilities::domain::{Domain, DomainAccess, OwnedCapability, CAPAS_PER_DOMAIN};
+use capabilities::domain::{
+    Domain, DomainAccess, OwnedCapability, SealedStatus, CAPAS_PER_DOMAIN, CONTEXT_PER_DOMAIN,
+};
 use capabilities::error::{Error, ErrorCode};
-use capabilities::memory::MemoryRegion;
+use capabilities::memory::{MemoryAccess, MemoryFlags, MemoryRegion};
 use capabilities::{Capability, CapabilityType, Ownership, Pool, State};
-use mmu::FrameAllocator;
+use mmu::{EptMapper, FrameAllocator};
 use stage_two_abi::GuestInfo;
-use utils::{Frame, HostPhysAddr, HostVirtAddr};
+use utils::{Frame, GuestPhysAddr, HostPhysAddr, HostVirtAddr};
+use vmx::bitmaps::EptEntryFlags;
 use vmx::{ActiveVmcs, VmcsRegion};
 use vtd::Iommu;
 
@@ -26,6 +30,14 @@ pub struct BackendX86 {
     pub guest_info: GuestInfo,
     pub iommu: Option<Iommu>,
     pub vmxon: Option<vmx::Vmxon>,
+}
+
+pub struct BackendC86Context {}
+
+impl BackendContext for BackendC86Context {
+    fn init(&mut self, _arg1: usize, _arg2: usize, _arg3: usize) {
+        // TODO
+    }
 }
 
 pub struct BackendX86State {
@@ -46,15 +58,14 @@ impl BackendX86Core {
                 *self = BackendX86Core::Inactive(vmcs);
                 Ok(())
             },
-            _ => todo!(),
+            _ => todo!("Initializing already initialized core"),
         }
     }
 
     pub fn activate(&mut self) -> Result<(), TycheError> {
         let old_self = replace(self, BackendX86Core::Uninitialized);
         let BackendX86Core::Inactive(region) = old_self  else {
-            //TODO error
-            todo!()
+            todo!("Trying to activate a core that is not inactive");
         };
         let active = region.set_as_active()?;
         *self = BackendX86Core::Active(active);
@@ -115,6 +126,7 @@ impl Backend for BackendX86 {
     type DomainState = BackendX86State;
     type Core = BackendX86Core;
     type Error = vmx::VmxError;
+    type Context = BackendC86Context;
 
     fn install_domain(
         &self,
@@ -158,13 +170,27 @@ impl Backend for BackendX86 {
 
     fn install_region(
         &self,
-        _pool: &State<'_, Self>,
-        _capa: &Capability<MemoryRegion>,
+        pool: &State<'_, Self>,
+        capa: &Capability<MemoryRegion>,
     ) -> Result<(), Error<Self::Error>>
     where
         Self: Sized,
     {
-        todo!()
+        println!("#### Setup EPT ####");
+        let owner = capa.get_owner()?;
+        let domain = pool.get_mut(owner);
+        let state = &domain.state;
+        let access = capa.access;
+        let mut mapper = EptMapper::new(self.allocator.get_physical_offset().as_usize(), state.ept);
+        let flags = mem_access_to_ept(access);
+        mapper.map_range(
+            &self.allocator,
+            GuestPhysAddr::new(access.start.as_usize()),
+            access.start,
+            access.end.as_usize() - access.start.as_usize(),
+            flags,
+        );
+        Ok(())
     }
 
     fn uninstall_region(
@@ -229,18 +255,39 @@ impl Backend for BackendX86 {
     }
 }
 
+// ———————————————————————————————— Helpers ————————————————————————————————— //
+
+pub fn mem_access_to_ept(rights: MemoryAccess) -> EptEntryFlags {
+    let rights = rights.flags;
+    let mut def = EptEntryFlags::READ;
+    if rights.contains(MemoryFlags::EXEC) {
+        def |= EptEntryFlags::USER_EXECUTE | EptEntryFlags::SUPERVISOR_EXECUTE;
+    }
+    if rights.contains(MemoryFlags::WRITE) {
+        def |= EptEntryFlags::WRITE;
+    }
+    def
+}
+
 // —————————————————— Empty Structures For Initialization ——————————————————— //
 
 pub const EMPTY_OWNED_CAPABILITY: RefCell<OwnedCapability<BackendX86>> =
     RefCell::new(OwnedCapability::Empty);
 
+pub const EMPTY_CONTEXT: RefCell<Context<BackendX86>> = RefCell::new(Context {
+    in_use: false,
+    state: BackendC86Context {},
+});
+
 pub const EMPTY_DOMAIN: RefCell<Domain<BackendX86>> = RefCell::new(Domain::<BackendX86> {
-    is_sealed: true,
     state: BackendX86State {
         ept: HostPhysAddr::new(0),
     },
     ref_count: usize::MAX,
     owned: TypedArena::new([EMPTY_OWNED_CAPABILITY; CAPAS_PER_DOMAIN]),
+    sealed: SealedStatus::Unsealed,
+    allowed_cores: 0,
+    contexts: TypedArena::new([EMPTY_CONTEXT; CONTEXT_PER_DOMAIN]),
 });
 
 pub const EMPTY_DOMAIN_CAPA: RefCell<Capability<Domain<BackendX86>>> = RefCell::new(Capability {

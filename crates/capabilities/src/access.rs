@@ -12,4 +12,7 @@ pub trait AccessRights {
 
     /// Get a null access right.
     fn get_null() -> Self;
+
+    /// Return the Access Rights as bits.
+    fn as_bits(&self) -> (usize, usize, usize);
 }

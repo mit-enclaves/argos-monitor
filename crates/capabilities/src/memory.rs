@@ -133,6 +133,13 @@ impl AccessRights for MemoryAccess {
             flags: MemoryFlags::NONE,
         }
     }
+    fn as_bits(&self) -> (usize, usize, usize) {
+        (
+            self.start.as_usize(),
+            self.end.as_usize(),
+            self.flags.bits() as usize,
+        )
+    }
 }
 
 impl MemoryRegion {
@@ -427,7 +434,7 @@ impl Object for MemoryRegion {
             obj.incr_ref(pool, &capa);
         }
         if let Ownership::Domain(dom, _) = capa.owner {
-            pool.set_owner_capa(capa_handle, dom)?;
+            pool.set_owner_capa(capa_handle, Handle::new_unchecked(dom))?;
         }
         Ok(capa_handle)
     }

@@ -4,7 +4,7 @@ use capabilities::backend::{
     NoBackend, EMPTY_CPU, EMPTY_CPU_CAPA, EMPTY_DOMAIN, EMPTY_DOMAIN_CAPA,
 };
 use capabilities::domain::DomainAccess::{self, Sealed};
-use capabilities::domain::{Domain, OwnedCapability};
+use capabilities::domain::{Domain, OwnedCapability, ALL_CORES_ALLOWED, CAPAS_PER_DOMAIN};
 use capabilities::error::ErrorCode;
 use capabilities::memory::{self, MemoryRegion, EMPTY_MEMORY_REGION, EMPTY_MEMORY_REGION_CAPA};
 use capabilities::{
@@ -13,7 +13,7 @@ use capabilities::{
 };
 use utils::HostPhysAddr;
 
-use crate::tyche::Tyche;
+use crate::tyche::{Tyche, TYCHE_SWITCH};
 use crate::{tyche, Monitor, MonitorState, Parameters};
 
 macro_rules! declare_pool {
@@ -73,7 +73,7 @@ fn init_test() {
     // Check that there is a valid domain, memory region, and CPU.
     {
         let domain = tyche.resources.pools.domains.get(Handle::new_unchecked(0));
-        assert_eq!(domain.is_sealed, true);
+        assert_eq!(domain.is_sealed(), true);
         assert_eq!(domain.ref_count, 1);
 
         let region = tyche.resources.pools.regions.get(Handle::new_unchecked(0));
@@ -98,9 +98,9 @@ fn init_test() {
             }
             _ => panic!("Default domain is not sealed"),
         }
-        match domain_capa.get_owner() {
+        match domain_capa.get_owner::<(), NoBackend>() {
             Ok(id) => {
-                assert_eq!(id, 0);
+                assert_eq!(id.idx(), 0);
             }
             Err(e) => panic!("Unable to get the owner for default domain {:?}", e),
         }
@@ -124,8 +124,9 @@ fn init_test() {
                     let idx = tyche
                         .resources
                         .get_capa(h)
-                        .get_owner()
-                        .expect("failed owner");
+                        .get_owner::<(), NoBackend>()
+                        .expect("failed owner")
+                        .idx();
                     assert_eq!(idx, 0);
                 }
                 OwnedCapability::Domain(h) => {
@@ -133,8 +134,9 @@ fn init_test() {
                     let idx = tyche
                         .resources
                         .get_capa(h)
-                        .get_owner()
-                        .expect("failed owner");
+                        .get_owner::<(), NoBackend>()
+                        .expect("failed owner")
+                        .idx();
                     assert_eq!(idx, 0);
                 }
                 OwnedCapability::Region(h) => {
@@ -142,8 +144,9 @@ fn init_test() {
                     let idx = tyche
                         .resources
                         .get_capa(h)
-                        .get_owner()
-                        .expect("failed owner");
+                        .get_owner::<(), NoBackend>()
+                        .expect("failed owner")
+                        .idx();
                     assert_eq!(idx, 0);
                 }
             }
@@ -204,7 +207,7 @@ fn create_domain_helper(spawn: usize, comm: usize) {
                 .expect("Could not get domain handle");
             let domain_capa = tyche_state.resources.get_capa(domain_handle);
             let domain = tyche_state.resources.get(domain_capa.handle);
-            assert_eq!(domain.is_sealed, false);
+            assert_eq!(domain.is_sealed(), false);
             assert_eq!(domain.ref_count, 1);
             match domain_capa.access {
                 DomainAccess::Unsealed(s, c) => {
@@ -367,25 +370,33 @@ fn seal_test() {
         ..Default::default()
     };
     match monitor.dispatch(&mut state, &seal_call) {
-        Ok(_) => {
+        Ok(registers) => {
             // We enumerate the local capabilities and ensure there is only
-            // two domain capa left: self and a revocation one.
+            // three domain capa left: self, revocation one, and transition.
             let curr_handle = state.get_current_domain().handle;
             let current = state.resources.get(curr_handle);
             let mut counter = 0;
             let mut revoke = 0;
-            current.enumerate(|_, own| match *own {
+            let mut trans = 0;
+            current.enumerate(|i, own| match *own {
                 OwnedCapability::Domain(h) => {
                     counter += 1;
                     let capa = state.resources.get_capa(h);
                     if capa.capa_type == CapabilityType::Revocation {
                         revoke += 1;
                     }
+                    if let DomainAccess::Transition(_) = capa.access {
+                        trans += 1;
+                        // This should point to another domain.
+                        assert_ne!(capa.handle, curr_handle);
+                        assert_eq!(registers.value_1, i);
+                    }
                 }
                 _ => {}
             });
-            assert_eq!(counter, 2);
+            assert_eq!(counter, 3);
             assert_eq!(revoke, 1);
+            assert_eq!(trans, 1);
         }
         Err(e) => panic!("Did not managed to seal domain: {:?}", e),
     }
@@ -851,5 +862,188 @@ fn domain_collection() {
         assert_eq!(counter, 3);
         assert_eq!(zombied, 1);
         assert_eq!(owned, 2);
+    }
+}
+
+#[test]
+fn enumerate_test() {
+    full_init!(state);
+    let monitor = Tyche {};
+    let mut domain_counter = 0;
+    let mut region_counter = 0;
+    let mut cpu_counter = 0;
+    for i in 0..CAPAS_PER_DOMAIN {
+        let enum_call = Parameters {
+            vmcall: tyche::TYCHE_ENUMERATE,
+            arg_1: i,
+            ..Default::default()
+        };
+
+        match monitor.dispatch(&mut state, &enum_call) {
+            Err(e) => {
+                if e.code() != ErrorCode::OutOfBound {
+                    panic!("Unexpected error {:?}", e);
+                }
+            }
+            Ok(registers) => {
+                // Check the type of the capa
+                assert!(registers.value_2 < 3);
+                match registers.value_2 {
+                    tyche::TYCHE_DOMAIN_TYPE => {
+                        assert_eq!(registers.value_3, 2);
+                        assert_eq!(registers.value_4, 1);
+                        assert_eq!(registers.value_5, 1);
+                        assert_eq!(registers.value_6, 1);
+                        domain_counter += 1;
+                    }
+                    tyche::TYCHE_REGION_TYPE => {
+                        assert_eq!(registers.value_3, 0);
+                        assert_eq!(registers.value_4, MEM_4GB);
+                        assert_eq!(registers.value_5, memory::ALL_RIGHTS.bits() as usize);
+                        assert_eq!(registers.value_6, 1);
+                        region_counter += 1;
+                    }
+                    tyche::TYCHE_CPU_TYPE => {
+                        assert_eq!(registers.value_3, 0);
+                        assert_eq!(registers.value_4, 0);
+                        assert_eq!(registers.value_5, 0);
+                        assert_eq!(registers.value_6, 1);
+                        cpu_counter += 1;
+                    }
+                    _ => panic!("Unexpected value in registers"),
+                }
+            }
+        }
+    }
+    assert_eq!(domain_counter, 1);
+    assert_eq!(region_counter, 1);
+    assert_eq!(cpu_counter, 1);
+}
+
+#[test]
+fn switch_test() {
+    full_init!(state);
+    let monitor = Tyche {};
+    let (_, id_new, _) = create_helper(&monitor, &mut state, 1, 1);
+    // Seal the new domain.
+    let seal_call = Parameters {
+        vmcall: tyche::TYCHE_SEAL_DOMAIN,
+        arg_1: id_new,
+        arg_2: ALL_CORES_ALLOWED,
+        arg_3: 1,
+        arg_4: 2,
+        arg_5: 3,
+    };
+    let registers = monitor
+        .dispatch(&mut state, &seal_call)
+        .expect("Unable to seal the domain");
+
+    // Now do a switch
+    let switch_call = Parameters {
+        vmcall: TYCHE_SWITCH,
+        arg_1: registers.value_1,
+        ..Default::default()
+    };
+    // Get the current domain before the switch.
+    let prev = state.get_current_domain().handle;
+
+    let _registers = monitor
+        .dispatch(&mut state, &switch_call)
+        .expect("unable to perform a switch");
+
+    // Now compare the current domain.
+    let current = state.get_current_domain().handle;
+    assert_ne!(prev, current);
+
+    // Check the CPU disappeared in the previous one.
+    {
+        let domain = state.resources.get(prev);
+        let mut region: i32 = 0;
+        let mut doms: i32 = 0;
+        let mut revoke_dom = 0;
+        let mut dom_active = 0;
+        let mut transition = 0;
+        domain.enumerate(|_i, own| match *own {
+            OwnedCapability::CPU(_) => {
+                panic!("The CPU should have disappeared!");
+            }
+            OwnedCapability::Domain(h) => {
+                doms += 1;
+                let capa = state.resources.get_capa(h);
+                match capa.access {
+                    DomainAccess::Sealed(_, _) => {
+                        if capa.capa_type == CapabilityType::Revocation {
+                            revoke_dom += 1;
+                        } else {
+                            dom_active += 1;
+                        }
+                        assert_eq!(capa.handle, prev);
+                    }
+                    DomainAccess::Transition(_) => {
+                        assert_eq!(capa.capa_type, CapabilityType::Resource);
+                        assert_ne!(capa.handle, prev);
+                        transition += 1;
+                    }
+                    _ => panic!("Unexpected capability type."),
+                }
+            }
+            OwnedCapability::Region(_) => {
+                region += 1;
+            }
+            _ => panic!("Unexpected type of owned capa."),
+        });
+        assert_eq!(region, 1);
+        // 3 sealed (2 revocations, 1 active), and 1 transition.
+        assert_eq!(doms, 4);
+        assert_eq!(revoke_dom, 2);
+        assert_eq!(transition, 1);
+        assert_eq!(dom_active, 1);
+    }
+
+    // Check now the current domain.
+    {
+        let domain = state.resources.get(current);
+        let mut cpu = 0;
+        let mut doms = 0;
+        let mut sealed = 0;
+        let mut sealed_revok = 0;
+        let mut sealed_active = 0;
+        let mut trans = 0;
+        domain.enumerate(|_, own| match *own {
+            OwnedCapability::Region(_) => panic!("There is an owned region capability!"),
+            OwnedCapability::CPU(h) => {
+                cpu += 1;
+                assert_eq!(h, state.get_current_cpu_handle());
+            }
+            OwnedCapability::Domain(h) => {
+                doms += 1;
+                let capa = state.resources.get_capa(h);
+                match capa.access {
+                    DomainAccess::Transition(_) => {
+                        // That's the return transition.
+                        assert_eq!(capa.handle, prev);
+                        trans += 1;
+                    }
+                    DomainAccess::Sealed(_, _) => {
+                        sealed += 1;
+                        if capa.capa_type == CapabilityType::Resource {
+                            sealed_active += 1;
+                            assert_eq!(capa.handle, current);
+                        } else {
+                            sealed_revok += 1;
+                            assert_eq!(capa.handle, current);
+                        }
+                    }
+                    _ => panic!("Unexpected domain access"),
+                }
+            }
+            _ => panic!("Unexpected owned capability"),
+        });
+        assert_eq!(cpu, 1);
+        assert_eq!(doms, 3);
+        assert_eq!(sealed, 2);
+        assert_eq!(sealed_revok, 1);
+        assert_eq!(sealed_active, 1);
+        assert_eq!(trans, 1);
     }
 }

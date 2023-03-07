@@ -64,7 +64,7 @@ fn main_test() {
     }
 
     // Register the capa with the default domain.
-    match pool.set_owner_capa(full_memory_capa_handle, default_domain_handle.idx()) {
+    match pool.set_owner_capa(full_memory_capa_handle, default_domain_handle) {
         Err(e) => panic!("Cannot set owner for the capability {:?}", e),
         _ => {}
     }

@@ -17,17 +17,17 @@ use vmx::bitmaps::{
     SecondaryControls,
 };
 use vmx::fields::traits::*;
+pub use vmx::VmxError as Error;
 use vmx::{fields, secondary_controls_capabilities, ActiveVmcs, Register, VmxError};
 
 use crate::allocator::Allocator;
 use crate::arch::backend::BackendX86;
 use crate::debug::qemu;
 use crate::debug::qemu::ExitCode;
+use crate::guest::Guest;
 //use crate::guest::{Guest, HandlerResult};
 use crate::println;
 use crate::statics::{allocator as get_allocator, pool as get_pool};
-
-pub use vmx::VmxError as Error;
 
 // ————————————————————————————— Configuration —————————————————————————————— //
 
@@ -71,13 +71,25 @@ pub fn launch_guest(manifest: &'static Manifest) {
     // 2) The default memory region.
     // 3) The default vcpus.
     // The state is then passed to the guest.
-    let _tyche_state = match MonitorState::<BackendX86>::new(manifest.poffset as usize, capas) {
-        Ok(ts) => ts,
-        Err(e) => {
-            println!("Unable to create MonitorState {:?}", e);
-            qemu::exit(qemu::ExitCode::Failure);
-        }
-    };
+    let tyche_state = MonitorState::<BackendX86>::new(manifest.poffset as usize, capas)
+        .expect("Unable to create monitor state");
+    let mut guest = guest::GuestX86::new(tyche_state);
+    {
+        let mut vcpu = guest.get_local_cpu_mut();
+        let vmcs = vcpu.core.get_active_mut().expect("Failed to get VMCS");
+
+        // let cpu = tyche_state.get_current_cpu();
+        // let mut cpu = tyche_state.resources.get_mut(cpu.handle);
+        // let vmcs = cpu.core.get_active_mut().expect("Failed to get VMCS");
+        // unsafe {
+        //     init_vcpu(vmcs, &manifest.info, &guest.state.resources.backend.allocator);
+        // }
+
+        println!("VCPU: {:?}", vmcs);
+    }
+
+    println!("Starting main loop");
+    guest.main_loop();
 
     //TODO create guestx86 and call mainloop
 

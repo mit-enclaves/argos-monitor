@@ -3,6 +3,7 @@
 
 pub mod access;
 pub mod backend;
+pub mod context;
 pub mod cpu;
 pub mod domain;
 pub mod error;
@@ -16,7 +17,7 @@ use core::cell::{Ref, RefMut};
 use arena::{ArenaItem, Handle, TypedArena};
 use backend::Backend;
 use cpu::CPU;
-use domain::{Domain, OwnedCapability, CAPAS_PER_DOMAIN};
+use domain::{Domain, DomainAccess, OwnedCapability, SealedStatus, CAPAS_PER_DOMAIN};
 
 use crate::access::AccessRights;
 use crate::error::{Error, ErrorCode};
@@ -42,6 +43,7 @@ pub enum CapabilityType {
 pub enum Ownership {
     Empty,
     Zombie,
+    // TODO: should we put a handle here?
     Domain(usize, usize), // (domain, index)
 }
 
@@ -75,19 +77,8 @@ pub trait Object: Sized {
         capa: &Capability<Self>,
         op: &Self::Access,
     ) -> Result<Handle<Capability<Self>>, ErrorCode>;
-
-    /*    fn install(&mut self, pool: &impl Pool<Self>, capa: &Capability<Self>)
-            -> Result<(), ErrorCode>;
-        fn uninstall(
-            &mut self,
-            pool: &impl Pool<Self>,
-            capa: &Capability<Self>,
-        ) -> Result<(), ErrorCode>;
-    */
 }
 
-//TODO fix all of these operations.
-//The changes on the backend should be reflected only when we are done.
 impl<T> Capability<T>
 where
     T: Object,
@@ -267,17 +258,17 @@ where
         Ok(())
     }
 
-    pub fn get_local_idx(&self) -> Result<usize, ErrorCode> {
+    pub fn get_local_idx<E>(&self) -> Result<usize, Error<E>> {
         match self.owner {
             Ownership::Domain(_, idx) => Ok(idx),
-            _ => Err(ErrorCode::NotOwnedCapability),
+            _ => ErrorCode::NotOwnedCapability.as_err(),
         }
     }
 
-    pub fn get_owner(&self) -> Result<usize, ErrorCode> {
+    pub fn get_owner<E, B: Backend>(&self) -> Result<Handle<Domain<B>>, Error<E>> {
         match self.owner {
-            Ownership::Domain(dom, _idx) => Ok(dom),
-            _ => Err(ErrorCode::NotOwnedCapability),
+            Ownership::Domain(dom, _idx) => Ok(Handle::new_unchecked(dom)),
+            _ => ErrorCode::NotOwnedCapability.as_err(),
         }
     }
 }
@@ -299,10 +290,10 @@ pub struct OPool<B>
 where
     B: Backend + 'static,
 {
-    pub domains: TypedArena<domain::Domain<B>, DOMAIN_POOL_SIZE>, // TODO: make generic over size
+    pub domains: TypedArena<Domain<B>, DOMAIN_POOL_SIZE>, // TODO: make generic over size
     pub regions: TypedArena<memory::MemoryRegion, MEMORY_POOL_SIZE>,
     pub cpus: TypedArena<cpu::CPU<B>, CPU_POOL_SIZE>,
-    pub domain_capas: TypedArena<Capability<domain::Domain<B>>, CAPA_POOL_SIZE>,
+    pub domain_capas: TypedArena<Capability<Domain<B>>, CAPA_POOL_SIZE>,
     pub region_capas: TypedArena<Capability<memory::MemoryRegion>, CAPA_POOL_SIZE>,
     pub cpu_capas: TypedArena<Capability<cpu::CPU<B>>, CAPA_POOL_SIZE>,
 }
@@ -329,7 +320,11 @@ pub trait Pool<T: Object> {
     fn allocate_capa(&self) -> Result<Handle<Capability<T>>, ErrorCode>;
     fn free_capa(&self, handle: Handle<Capability<T>>);
     // Register capability.
-    fn set_owner_capa(&self, capa: Handle<Capability<T>>, domain: usize) -> Result<(), ErrorCode>;
+    fn set_owner_capa(
+        &self,
+        capa: Handle<Capability<T>>,
+        domain: Handle<Domain<Self::B>>,
+    ) -> Result<(), ErrorCode>;
     fn remove_owner(&self, capa: Handle<Capability<T>>) -> Result<(), ErrorCode>;
     fn into_zombie_owner(&self, capa: Handle<Capability<T>>) -> Result<(), ErrorCode> {
         self.remove_owner(capa)?;
@@ -342,13 +337,13 @@ pub trait Pool<T: Object> {
         capa: Handle<Capability<T>>,
         domain: Handle<Domain<Self::B>>,
     ) -> Result<(), Error<<Self::B as Backend>::Error>> {
-        let previous = self.get_capa(capa).get_owner().map_err(|e| e.wrap())?;
-        if previous == domain.idx() {
+        let previous = self.get_capa(capa).get_owner()?;
+        if previous.idx() == domain.idx() {
             return Ok(());
         }
         self.backend_unapply(capa)?;
         self.remove_owner(capa).map_err(|e| e.wrap())?;
-        match self.set_owner_capa(capa, domain.idx()) {
+        match self.set_owner_capa(capa, domain) {
             Ok(()) => {
                 let capa = self.get_capa(capa);
                 self.backend_apply(&capa)?;
@@ -385,51 +380,51 @@ pub trait Pool<T: Object> {
 
 // ———————————————————— Pool Implementation for Domains ————————————————————— //
 
-impl<Back: Backend + Sized> Pool<domain::Domain<Back>> for State<'_, Back> {
+impl<Back: Backend + Sized> Pool<Domain<Back>> for State<'_, Back> {
     type B = Back;
 
-    fn get(&self, handle: Handle<domain::Domain<Self::B>>) -> Ref<domain::Domain<Self::B>> {
+    fn get(&self, handle: Handle<Domain<Self::B>>) -> Ref<Domain<Self::B>> {
         self.pools.domains.get(handle)
     }
 
-    fn get_mut(&self, handle: Handle<domain::Domain<Self::B>>) -> RefMut<domain::Domain<Self::B>> {
+    fn get_mut(&self, handle: Handle<Domain<Self::B>>) -> RefMut<Domain<Self::B>> {
         self.pools.domains.get_mut(handle)
     }
 
-    fn allocate(&self) -> Result<Handle<domain::Domain<Self::B>>, ErrorCode> {
+    fn allocate(&self) -> Result<Handle<Domain<Self::B>>, ErrorCode> {
         self.pools.domains.allocate()
     }
 
-    fn free(&self, handle: Handle<domain::Domain<Self::B>>) {
+    fn free(&self, handle: Handle<Domain<Self::B>>) {
         self.pools.domains.free(handle);
     }
 
     fn get_capa(
         &self,
-        handle: Handle<Capability<domain::Domain<Self::B>>>,
-    ) -> Ref<Capability<domain::Domain<Self::B>>> {
+        handle: Handle<Capability<Domain<Self::B>>>,
+    ) -> Ref<Capability<Domain<Self::B>>> {
         self.pools.domain_capas.get(handle)
     }
 
     fn get_capa_mut(
         &self,
-        handle: Handle<Capability<domain::Domain<Self::B>>>,
-    ) -> RefMut<Capability<domain::Domain<Self::B>>> {
+        handle: Handle<Capability<Domain<Self::B>>>,
+    ) -> RefMut<Capability<Domain<Self::B>>> {
         self.pools.domain_capas.get_mut(handle)
     }
 
-    fn allocate_capa(&self) -> Result<Handle<Capability<domain::Domain<Self::B>>>, ErrorCode> {
+    fn allocate_capa(&self) -> Result<Handle<Capability<Domain<Self::B>>>, ErrorCode> {
         self.pools.domain_capas.allocate()
     }
 
-    fn free_capa(&self, handle: Handle<Capability<domain::Domain<Self::B>>>) {
+    fn free_capa(&self, handle: Handle<Capability<Domain<Self::B>>>) {
         self.pools.domain_capas.free(handle);
     }
 
     fn set_owner_capa(
         &self,
-        capa: Handle<Capability<domain::Domain<Self::B>>>,
-        domain: usize,
+        capa: Handle<Capability<Domain<Self::B>>>,
+        domain: Handle<Domain<Self::B>>,
     ) -> Result<(), ErrorCode> {
         {
             let capa = self.get_capa(capa);
@@ -438,22 +433,19 @@ impl<Back: Backend + Sized> Pool<domain::Domain<Back>> for State<'_, Back> {
             }
         }
         // Create an owner in the domain.
-        let dom = self.pools.domains.get(Handle::new_unchecked(domain));
+        let dom = self.pools.domains.get(domain);
         let owned_handle = dom.owned.allocate()?;
         let mut owned = dom.owned.get_mut(owned_handle);
         *owned = OwnedCapability::Domain(capa);
         // Register it in the capa.
         {
             let mut capa = self.get_capa_mut(capa);
-            capa.owner = Ownership::Domain(domain, owned_handle.idx());
+            capa.owner = Ownership::Domain(domain.idx(), owned_handle.idx());
         }
         Ok(())
     }
 
-    fn remove_owner(
-        &self,
-        capa: Handle<Capability<domain::Domain<Self::B>>>,
-    ) -> Result<(), ErrorCode> {
+    fn remove_owner(&self, capa: Handle<Capability<Domain<Self::B>>>) -> Result<(), ErrorCode> {
         let capa_handle = capa;
         let mut capa = self.get_capa_mut(capa);
         if capa.owner == Ownership::Empty {
@@ -473,7 +465,7 @@ impl<Back: Backend + Sized> Pool<domain::Domain<Back>> for State<'_, Back> {
 
     fn backend_duplicate(
         &self,
-        orig: &Capability<domain::Domain<Back>>,
+        orig: &Capability<Domain<Back>>,
     ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         // With domain duplicates, we are only interested in create calls.
         // That means if right is unsealed.
@@ -481,9 +473,31 @@ impl<Back: Backend + Sized> Pool<domain::Domain<Back>> for State<'_, Back> {
         if orig.right.is_null() {
             return Ok(());
         }
+
+        let left = self.get_capa(orig.left);
+        match left.access {
+            domain::DomainAccess::Sealed(_, _) => {}
+            _ => {
+                return Ok(());
+            }
+        }
+        // The left is a sealed capa, we need to update the seal.
+        if let Ownership::Domain(_, idx) = left.owner {
+            let mut domain = self.get_mut(left.handle);
+            if let SealedStatus::Sealed(_) = domain.sealed {
+                // Nothing to do.
+            } else {
+                return Err(ErrorCode::InvalidDomainCreate.wrap());
+            }
+            // Update the reference to the local sealed capa.
+            domain.sealed = SealedStatus::<Self::B>::Sealed(Handle::new_unchecked(idx));
+        }
+
+        // Last thing to do is create a domain if right is unsealed, i.e.,
+        // if this call was a create.
         let right = self.get_capa(orig.right);
         match right.access {
-            domain::DomainAccess::Unsealed(_, _) => {
+            DomainAccess::Unsealed(_, _) => {
                 self.backend.create_domain(self, &right)?;
             }
             _ => {}
@@ -493,10 +507,36 @@ impl<Back: Backend + Sized> Pool<domain::Domain<Back>> for State<'_, Back> {
 
     fn backend_revoke(
         &self,
-        orig: &Capability<domain::Domain<Back>>,
+        orig: &Capability<Domain<Back>>,
     ) -> Result<(), Error<<Self::B as Backend>::Error>> {
+        // The right cannot be null if it was a sealed capa.
         if orig.right.is_null() {
             return Ok(());
+        }
+
+        //Check if we need to free a transition.
+        {
+            let right = self.get_capa(orig.right);
+            if let DomainAccess::Transition(id) = right.access {
+                let domain = self.get(right.handle);
+                domain.contexts.free(Handle::new_unchecked(id));
+            }
+        }
+
+        if let domain::DomainAccess::Sealed(_, _) = orig.access {
+            if let Ownership::Domain(_, idx) = orig.owner {
+                // We should reestablish the sealed handle.
+                let mut domain = self.get_mut(orig.handle);
+                if let domain::SealedStatus::Sealed(_) = domain.sealed {
+                    domain.sealed =
+                        domain::SealedStatus::<Self::B>::Sealed(Handle::new_unchecked(idx));
+                } else {
+                    return Err(ErrorCode::InvalidSeal.wrap());
+                }
+            } else {
+                // Something is malformed.
+                return Err(ErrorCode::WrongOwnership.wrap());
+            }
         }
         self.backend_unapply(orig.right)?;
         Ok(())
@@ -504,7 +544,7 @@ impl<Back: Backend + Sized> Pool<domain::Domain<Back>> for State<'_, Back> {
 
     fn backend_apply(
         &self,
-        _capa: &Capability<domain::Domain<Self::B>>,
+        _capa: &Capability<Domain<Self::B>>,
     ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         //self.backend.install_domain(&self, capa)
         Ok(())
@@ -512,14 +552,14 @@ impl<Back: Backend + Sized> Pool<domain::Domain<Back>> for State<'_, Back> {
 
     fn backend_unapply(
         &self,
-        capa: Handle<Capability<domain::Domain<Self::B>>>,
+        capa: Handle<Capability<Domain<Self::B>>>,
     ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         //Perform the cleanup now.
         let needs_cleanup = {
             let capa = self.get_capa(capa);
             match capa.access {
-                domain::DomainAccess::Sealed(_, _) => true,
-                domain::DomainAccess::Unsealed(_, _) => true,
+                DomainAccess::Sealed(_, _) => true,
+                DomainAccess::Unsealed(_, _) => true,
                 _ => false,
             }
         };
@@ -612,7 +652,7 @@ impl<Back: Backend + Sized> Pool<memory::MemoryRegion> for State<'_, Back> {
     fn set_owner_capa(
         &self,
         capa: Handle<Capability<memory::MemoryRegion>>,
-        domain: usize,
+        domain: Handle<Domain<Back>>,
     ) -> Result<(), ErrorCode> {
         {
             let capa = self.get_capa(capa);
@@ -621,14 +661,14 @@ impl<Back: Backend + Sized> Pool<memory::MemoryRegion> for State<'_, Back> {
             }
         }
         // Create an owner in the domain.
-        let dom = self.pools.domains.get(Handle::new_unchecked(domain));
+        let dom = self.pools.domains.get(domain);
         let owned_handle = dom.owned.allocate()?;
         let mut owned = dom.owned.get_mut(owned_handle);
         *owned = OwnedCapability::Region(capa);
         // Register it in the capa.
         {
             let mut capa = self.get_capa_mut(capa);
-            capa.owner = Ownership::Domain(domain, owned_handle.idx());
+            capa.owner = Ownership::Domain(domain.idx(), owned_handle.idx());
         }
         Ok(())
     }
@@ -653,17 +693,27 @@ impl<Back: Backend + Sized> Pool<memory::MemoryRegion> for State<'_, Back> {
         capa.owner = Ownership::Empty;
         Ok(())
     }
-    fn backend_duplicate(&self, _orig: &Capability<memory::MemoryRegion>) -> Result<(), Error<<Self::B as Backend>::Error>> {
+
+    fn backend_duplicate(
+        &self,
+        _orig: &Capability<memory::MemoryRegion>,
+    ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         //TODO optimize that call with one from the backend.
         Ok(())
     }
 
-    fn backend_revoke(&self, _orig: &Capability<memory::MemoryRegion>) -> Result<(), Error<<Self::B as Backend>::Error>> {
+    fn backend_revoke(
+        &self,
+        _orig: &Capability<memory::MemoryRegion>,
+    ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         // TODO optimize
         Ok(())
     }
 
-    fn backend_apply(&self, capa: &Capability<memory::MemoryRegion>) -> Result<(), Error<<Self::B as Backend>::Error>> {
+    fn backend_apply(
+        &self,
+        capa: &Capability<memory::MemoryRegion>,
+    ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         let mut region = self.get_mut(capa.handle);
         region.merge(1, self, capa);
         self.backend.install_region(&self, capa)
@@ -719,7 +769,7 @@ impl<Back: Backend + Sized> Pool<CPU<Back>> for State<'_, Back> {
     fn set_owner_capa(
         &self,
         capa: Handle<Capability<CPU<Back>>>,
-        domain: usize,
+        domain: Handle<Domain<Back>>,
     ) -> Result<(), ErrorCode> {
         {
             let capa = self.get_capa(capa);
@@ -728,14 +778,14 @@ impl<Back: Backend + Sized> Pool<CPU<Back>> for State<'_, Back> {
             }
         }
         // Create an owner in the domain.
-        let dom = self.pools.domains.get(Handle::new_unchecked(domain));
+        let dom = self.pools.domains.get(domain);
         let owned_handle = dom.owned.allocate()?;
         let mut owned = dom.owned.get_mut(owned_handle);
         *owned = OwnedCapability::CPU(capa);
         // Register it in the capa.
         {
             let mut capa = self.get_capa_mut(capa);
-            capa.owner = Ownership::Domain(domain, owned_handle.idx());
+            capa.owner = Ownership::Domain(domain.idx(), owned_handle.idx());
         }
         Ok(())
     }
@@ -758,19 +808,31 @@ impl<Back: Backend + Sized> Pool<CPU<Back>> for State<'_, Back> {
         Ok(())
     }
 
-    fn backend_duplicate(&self, _orig: &Capability<CPU<Back>>) -> Result<(), Error<<Self::B as Backend>::Error>> {
+    fn backend_duplicate(
+        &self,
+        _orig: &Capability<CPU<Back>>,
+    ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         // Nothing to do?
         Ok(())
     }
-    fn backend_revoke(&self, _orig: &Capability<CPU<Back>>) -> Result<(), Error<<Self::B as Backend>::Error>> {
+    fn backend_revoke(
+        &self,
+        _orig: &Capability<CPU<Back>>,
+    ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         // TODO optimize
         Ok(())
     }
-    fn backend_apply(&self, capa: &Capability<CPU<Back>>) -> Result<(), Error<<Self::B as Backend>::Error>> {
+    fn backend_apply(
+        &self,
+        capa: &Capability<CPU<Back>>,
+    ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         self.backend.install_cpu(&self, capa)
     }
 
-    fn backend_unapply(&self, capa: Handle<Capability<CPU<Back>>>) -> Result<(), Error<<Self::B as Backend>::Error>> {
+    fn backend_unapply(
+        &self,
+        capa: Handle<Capability<CPU<Back>>>,
+    ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         let capa = self.get_capa(capa);
         self.backend.uninstall_cpu(&self, &capa)
     }

@@ -42,6 +42,9 @@ impl AccessRights for CPUAccess {
             flags: CPUFlags::NONE,
         }
     }
+    fn as_bits(&self) -> (usize, usize, usize) {
+        (0, 0, self.flags.bits() as usize)
+    }
 }
 
 /// CPU object.
@@ -128,7 +131,7 @@ impl<B: Backend> Object for CPU<B> {
         }
         // Handle ownership.
         if let Ownership::Domain(dom, _) = capa.owner {
-            pool.set_owner_capa(new_handle, dom)?;
+            pool.set_owner_capa(new_handle, Handle::new_unchecked(dom))?;
         }
         return Ok(new_handle);
     }

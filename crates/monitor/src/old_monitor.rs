@@ -43,7 +43,14 @@ impl<B: Backend> Monitor<B> for OldMonitor {
                 })
             }
             DOMAIN_CREATE => self.tyche.create_domain(state, 1, 1),
-            DOMAIN_SEAL => self.tyche.seal_domain(state, params.arg_1),
+            DOMAIN_SEAL => self.tyche.seal_domain(
+                state,
+                params.arg_1,
+                params.arg_2,
+                params.arg_3,
+                params.arg_4,
+                params.arg_5,
+            ),
             DOMAIN_GRANT_REGION => {
                 self.share_grant(false, state, params.arg_1, params.arg_2, params.arg_3)
             }
@@ -82,16 +89,8 @@ impl<B: Backend> Monitor<B> for OldMonitor {
                         access2.start = HostPhysAddr::new(params.arg_2);
                         let (left, right) =
                             to_split.duplicate(access1, access2, &state.resources)?;
-                        let left_idx = state
-                            .resources
-                            .get_capa(left)
-                            .get_local_idx()
-                            .map_err(|e| e.wrap())?;
-                        let right_idx = state
-                            .resources
-                            .get_capa(right)
-                            .get_local_idx()
-                            .map_err(|e| e.wrap())?;
+                        let left_idx = state.resources.get_capa(left).get_local_idx()?;
+                        let right_idx = state.resources.get_capa(right).get_local_idx()?;
                         Ok(Registers {
                             value_1: left_idx,
                             value_2: right_idx,
