@@ -41,6 +41,12 @@ check:
 	# Checking formatting...
 	cargo fmt --all -- --check
 
+# Run the test suites
+test:
+	cargo test --package vmx
+	cargo test --package capabilities
+	cargo test --package monitor
+
 # Format all rust code
 format:
 	cargo fmt
