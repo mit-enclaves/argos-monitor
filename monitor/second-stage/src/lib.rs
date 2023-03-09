@@ -1,5 +1,7 @@
 //! Second-stage
 #![no_std]
+#![feature(fn_align)]
+#![feature(naked_functions)]
 
 use stage_two_abi::Manifest;
 

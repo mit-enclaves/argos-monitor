@@ -9,6 +9,7 @@ pub mod backend;
 pub mod guest;
 
 use core::arch::asm;
+use crate::println;
 
 pub use guest::launch_guest;
 use mmu::FrameAllocator;
