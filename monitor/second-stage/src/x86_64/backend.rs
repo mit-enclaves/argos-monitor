@@ -11,6 +11,7 @@ use capabilities::domain::{
 use capabilities::error::{Error, ErrorCode};
 use capabilities::memory::{MemoryAccess, MemoryFlags, MemoryRegion};
 use capabilities::{Capability, CapabilityType, Ownership, Pool, State};
+use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator};
 use stage_two_abi::GuestInfo;
 use utils::{Frame, GuestPhysAddr, HostPhysAddr, HostVirtAddr};
@@ -22,7 +23,7 @@ use super::init_vcpu;
 use crate::allocator::Allocator;
 use crate::error::TycheError;
 use crate::println;
-use crate::statics::NB_PAGES;
+use crate::statics::{NB_CORES, NB_PAGES};
 
 /// Backend for Intel VT-x x86_64
 pub struct BackendX86 {
@@ -30,6 +31,13 @@ pub struct BackendX86 {
     pub guest_info: GuestInfo,
     pub iommu: Option<Iommu>,
     pub vmxon: Option<vmx::Vmxon>,
+    pub locals: [LocalState; NB_CORES],
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct LocalState {
+    pub current_cpu: Handle<Capability<CPU<BackendX86>>>,
+    pub current_domain: Handle<Capability<Domain<BackendX86>>>,
 }
 
 pub struct BackendC86Context {}
@@ -120,29 +128,47 @@ impl BackendX86 {
             self.iommu = None;
         }
     }
+
+    fn cpu_id(&self) -> usize {
+        // TODO: handle multi-cores
+        0
+    }
 }
 
 impl Backend for BackendX86 {
     type DomainState = BackendX86State;
     type Core = BackendX86Core;
-    type Error = vmx::VmxError;
     type Context = BackendC86Context;
+    type Error = vmx::VmxError;
 
-    fn install_domain(
+    fn install_region(
         &self,
-        _pool: &State<'_, Self>,
-        _capa: &Capability<Domain<Self>>,
+        pool: &State<'_, Self>,
+        capa: &Capability<MemoryRegion>,
     ) -> Result<(), Error<Self::Error>>
     where
         Self: Sized,
     {
-        todo!()
+        let owner = capa.get_owner()?;
+        let domain = pool.get_mut(owner);
+        let state = &domain.state;
+        let access = capa.access;
+        let mut mapper = EptMapper::new(self.allocator.get_physical_offset().as_usize(), state.ept);
+        let flags = mem_access_to_ept(access);
+        mapper.map_range(
+            &self.allocator,
+            GuestPhysAddr::new(access.start.as_usize()),
+            access.start,
+            access.end.as_usize() - access.start.as_usize(),
+            flags,
+        );
+        Ok(())
     }
 
-    fn uninstall_domain(
+    fn uninstall_region(
         &self,
         _pool: &State<'_, Self>,
-        _capa: &Capability<Domain<Self>>,
+        _capa: &Capability<MemoryRegion>,
     ) -> Result<(), Error<Self::Error>>
     where
         Self: Sized,
@@ -168,35 +194,28 @@ impl Backend for BackendX86 {
         Ok(())
     }
 
-    fn install_region(
+    fn install_domain(
         &self,
         pool: &State<'_, Self>,
-        capa: &Capability<MemoryRegion>,
+        capa: &Capability<Domain<Self>>,
     ) -> Result<(), Error<Self::Error>>
     where
         Self: Sized,
     {
-        println!("#### Setup EPT ####");
-        let owner = capa.get_owner()?;
-        let domain = pool.get_mut(owner);
-        let state = &domain.state;
-        let access = capa.access;
-        let mut mapper = EptMapper::new(self.allocator.get_physical_offset().as_usize(), state.ept);
-        let flags = mem_access_to_ept(access);
-        mapper.map_range(
-            &self.allocator,
-            GuestPhysAddr::new(access.start.as_usize()),
-            access.start,
-            access.end.as_usize() - access.start.as_usize(),
-            flags,
-        );
+        let domain = pool.get_mut(capa.handle);
+        let cpu_capa = self.get_current_cpu(pool);
+        let mut cpu = pool.get_mut(cpu_capa.handle);
+        let vcpu = cpu.core.get_active_mut()?;
+        vcpu.set_ept_ptr(HostPhysAddr::new(
+            domain.state.ept.as_usize() | EPT_ROOT_FLAGS,
+        ))?;
         Ok(())
     }
 
-    fn uninstall_region(
+    fn uninstall_domain(
         &self,
         _pool: &State<'_, Self>,
-        _capa: &Capability<MemoryRegion>,
+        _capa: &Capability<Domain<Self>>,
     ) -> Result<(), Error<Self::Error>>
     where
         Self: Sized,
@@ -253,6 +272,22 @@ impl Backend for BackendX86 {
     {
         todo!()
     }
+
+    fn set_current_domain(&mut self, current: Handle<Capability<Domain<Self>>>) {
+        self.locals[self.cpu_id()].current_domain = current;
+    }
+
+    fn get_current_domain_handle(&self) -> Handle<Capability<Domain<Self>>> {
+        self.locals[self.cpu_id()].current_domain
+    }
+
+    fn get_current_cpu_handle(&self) -> Handle<Capability<CPU<Self>>> {
+        self.locals[self.cpu_id()].current_cpu
+    }
+
+    fn set_current_cpu(&mut self, current: Handle<Capability<CPU<Self>>>) {
+        self.locals[self.cpu_id()].current_cpu = current;
+    }
 }
 
 // ———————————————————————————————— Helpers ————————————————————————————————— //
@@ -280,13 +315,13 @@ pub const EMPTY_CONTEXT: RefCell<Context<BackendX86>> = RefCell::new(Context {
 });
 
 pub const EMPTY_DOMAIN: RefCell<Domain<BackendX86>> = RefCell::new(Domain::<BackendX86> {
+    sealed: SealedStatus::Unsealed,
     state: BackendX86State {
         ept: HostPhysAddr::new(0),
     },
+    allowed_cores: 0,
     ref_count: usize::MAX,
     owned: TypedArena::new([EMPTY_OWNED_CAPABILITY; CAPAS_PER_DOMAIN]),
-    sealed: SealedStatus::Unsealed,
-    allowed_cores: 0,
     contexts: TypedArena::new([EMPTY_CONTEXT; CONTEXT_PER_DOMAIN]),
 });
 

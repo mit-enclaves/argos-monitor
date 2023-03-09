@@ -70,7 +70,7 @@ impl<B: Backend> Monitor<B> for Tyche {
             TYCHE_ENUMERATE => self.enumerate(state, params.arg_1),
             TYCHE_SWITCH => self.switch(state, params.arg_1),
             TYCHE_EXIT => panic!("Exit should not reach dispatch."),
-            _ => panic!("Unknown MonitorCall in Tyche: {:?}", params.vmcall),
+            _ => panic!("Unknown MonitorCall in Tyche: 0x{:x}", params.vmcall),
         }
     }
 }

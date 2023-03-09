@@ -1,11 +1,9 @@
 //! VMX guest backend
 
 use core::arch::asm;
-use core::cell::{Ref, RefMut};
+use core::cell::RefMut;
 
-use arena::Handle;
 use capabilities::cpu::CPU;
-use capabilities::Capability;
 use monitor::tyche::Tyche;
 use monitor::{Monitor, MonitorState, Parameters};
 use vmx::bitmaps::exit_qualification;
@@ -29,28 +27,9 @@ impl<'active> GuestX86<'active> {
         }
     }
 
-    pub fn get_local_cpu(&self) -> Ref<CPU<BackendX86>> {
-        //TODO how do we identify the current core?
-        let current = self.state.locals[0];
-        // Find the CPU.
-        let cpu_capa =
-            self.state.resources.pools.cpu_capas.get(
-                Handle::<Capability<CPU<BackendX86>>>::new_unchecked(current.current_cpu),
-            );
-        //TOOD do some checks on the capa itself.
-        self.state.resources.pools.cpus.get(cpu_capa.handle)
-    }
-
-    pub fn get_local_cpu_mut(&self) -> RefMut<CPU<BackendX86>> {
-        //TODO how do we identify the current core?
-        let current = self.state.locals[0];
-        // Find the CPU.
-        let cpu_capa =
-            self.state.resources.pools.cpu_capas.get(
-                Handle::<Capability<CPU<BackendX86>>>::new_unchecked(current.current_cpu),
-            );
-        //TOOD do some checks on the capa itself.
-        self.state.resources.pools.cpus.get_mut(cpu_capa.handle)
+    pub fn get_local_cpu(&self) -> RefMut<CPU<BackendX86>> {
+        let current = self.state.get_current_cpu();
+        self.state.resources.pools.cpus.get_mut(current.handle)
     }
 }
 
@@ -59,7 +38,7 @@ impl<'active> Guest for GuestX86<'active> {
     type ExitReason = vmx::VmxExitReason;
 
     fn launch(&mut self) -> Result<Self::ExitReason, Self::Error> {
-        let mut cpu = self.get_local_cpu_mut();
+        let mut cpu = self.get_local_cpu();
         let vcpu = cpu.core.get_active_mut()?;
         unsafe {
             let exit_reason = vcpu.launch()?;
@@ -68,7 +47,7 @@ impl<'active> Guest for GuestX86<'active> {
     }
 
     fn resume(&mut self) -> Result<Self::ExitReason, Self::Error> {
-        let mut cpu = self.get_local_cpu_mut();
+        let mut cpu = self.get_local_cpu();
         let vcpu = cpu.core.get_active_mut()?;
         unsafe {
             let exit_reason = vcpu.resume()?;
@@ -93,7 +72,7 @@ impl<'active> Guest for GuestX86<'active> {
 
         match reason {
             VmxExitReason::Vmcall => {
-                let mut cpu = self.get_local_cpu_mut();
+                let mut cpu = self.get_local_cpu();
                 let vcpu = cpu.core.get_active_mut()?;
                 let params = Parameters {
                     vmcall: vcpu.get(Register::Rax) as usize,
@@ -106,14 +85,14 @@ impl<'active> Guest for GuestX86<'active> {
                 drop(vcpu);
                 drop(cpu);
                 if self.monitor.is_exit(&self.state, &params) {
-                    let mut cpu = self.get_local_cpu_mut();
+                    let mut cpu = self.get_local_cpu();
                     let mut vcpu = cpu.core.get_active_mut()?;
                     dump(&mut vcpu);
                     Ok(HandlerResult::Exit)
                 } else {
                     let advance = match self.monitor.dispatch(&mut self.state, &params) {
                         Ok(values) => {
-                            let mut cpu = self.get_local_cpu_mut();
+                            let mut cpu = self.get_local_cpu();
                             let vcpu = cpu.core.get_active_mut()?;
                             vcpu.set(Register::Rax, 0);
                             vcpu.set(Register::Rcx, values.value_1 as u64);
@@ -123,7 +102,7 @@ impl<'active> Guest for GuestX86<'active> {
                             values.next_instr
                         }
                         Err(err) => {
-                            let mut cpu = self.get_local_cpu_mut();
+                            let mut cpu = self.get_local_cpu();
                             let mut vcpu = cpu.core.get_active_mut()?;
                             dump(&mut vcpu);
                             println!("The error: {:?}", err);
@@ -137,7 +116,7 @@ impl<'active> Guest for GuestX86<'active> {
                         }
                     };
                     if advance {
-                        let mut cpu = self.get_local_cpu_mut();
+                        let mut cpu = self.get_local_cpu();
                         let vcpu = cpu.core.get_active_mut()?;
                         vcpu.next_instruction()?;
                     }
@@ -145,7 +124,7 @@ impl<'active> Guest for GuestX86<'active> {
                 }
             }
             VmxExitReason::Cpuid => {
-                let mut cpu = self.get_local_cpu_mut();
+                let mut cpu = self.get_local_cpu();
                 let vcpu = cpu.core.get_active_mut()?;
                 let input_eax = vcpu.get(Register::Rax);
                 let input_ecx = vcpu.get(Register::Rcx);
@@ -175,7 +154,7 @@ impl<'active> Guest for GuestX86<'active> {
                 Ok(HandlerResult::Resume)
             }
             VmxExitReason::ControlRegisterAccesses => {
-                let mut cpu = self.get_local_cpu_mut();
+                let mut cpu = self.get_local_cpu();
                 let vcpu = cpu.core.get_active_mut()?;
                 let qualification = vcpu.exit_qualification()?.control_register_accesses();
                 match qualification {
@@ -195,7 +174,7 @@ impl<'active> Guest for GuestX86<'active> {
                 Ok(HandlerResult::Resume)
             }
             VmxExitReason::EptViolation => {
-                let mut cpu = self.get_local_cpu_mut();
+                let mut cpu = self.get_local_cpu();
                 let vcpu = cpu.core.get_active_mut()?;
                 let addr = vcpu.guest_phys_addr()?;
                 println!(
@@ -209,7 +188,7 @@ impl<'active> Guest for GuestX86<'active> {
                 Ok(HandlerResult::Crash)
             }
             VmxExitReason::Xsetbv => {
-                let mut cpu = self.get_local_cpu_mut();
+                let mut cpu = self.get_local_cpu();
                 let vcpu = cpu.core.get_active_mut()?;
                 let ecx = vcpu.get(Register::Rcx);
                 let eax = vcpu.get(Register::Rax);
@@ -234,7 +213,7 @@ impl<'active> Guest for GuestX86<'active> {
                 Ok(HandlerResult::Resume)
             }
             VmxExitReason::Wrmsr => {
-                let mut cpu = self.get_local_cpu_mut();
+                let mut cpu = self.get_local_cpu();
                 let vcpu = cpu.core.get_active_mut()?;
                 let ecx = vcpu.get(Register::Rcx);
                 if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
@@ -249,7 +228,7 @@ impl<'active> Guest for GuestX86<'active> {
                 }
             }
             VmxExitReason::Exception => {
-                let mut cpu = self.get_local_cpu_mut();
+                let mut cpu = self.get_local_cpu();
                 let vcpu = cpu.core.get_active_mut()?;
                 match vcpu.interrupt_info() {
                     Ok(Some(exit)) => {

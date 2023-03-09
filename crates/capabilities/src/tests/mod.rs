@@ -29,7 +29,7 @@ fn main_test() {
         cpu_capas: TypedArena::new([EMPTY_CPU_CAPA; CAPA_POOL_SIZE]),
     };
     let pool = State::<NoBackend> {
-        backend: NoBackend {},
+        backend: NoBackend::new(),
         pools: &mut pools,
     };
     // Create an original domain.

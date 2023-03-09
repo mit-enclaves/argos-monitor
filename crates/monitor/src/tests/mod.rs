@@ -32,7 +32,7 @@ macro_rules! declare_pool {
 macro_rules! declare_state {
     ($state:ident, $pool:expr) => {
         let $state = State::<NoBackend> {
-            backend: NoBackend {},
+            backend: NoBackend::new(),
             pools: $pool,
         };
     };
@@ -85,8 +85,8 @@ fn init_test() {
         assert_eq!(cpu.ref_count, 1);
     }
     // Check the local domain and cpu.
-    assert_eq!(tyche.locals[0].current_cpu, 0);
-    assert_eq!(tyche.locals[0].current_domain, 0);
+    assert_eq!(tyche.get_current_cpu().handle.idx(), 0);
+    assert_eq!(tyche.get_current_domain().handle.idx(), 0);
 
     // Check the result from get, that it is sealed, and that it is owned.
     {
@@ -225,7 +225,7 @@ fn create_domain_helper(spawn: usize, comm: usize) {
                 .as_domain()
                 .expect("Could not get domain handle");
             // Check we are still the current domain.
-            assert_eq!(domain_handle.idx(), tyche_state.locals[0].current_domain);
+            assert_eq!(domain_handle.idx(), tyche_state.get_current_domain_handle().idx());
         }
         Err(e) => panic!("Failed create: {:?}", e),
     }
@@ -262,7 +262,7 @@ fn create_domain_on_unsealed_helper(s: usize, c: usize) {
         .as_domain()
         .expect("Wrong owned capability");
     // HERE we install an illegal state.
-    tyche_state.locals[0].current_domain = new_domain_capa.idx();
+    tyche_state.set_current_domain(new_domain_capa);
     match monitor.dispatch(&mut tyche_state, &create_call) {
         Err(e) => assert_eq!(e.code(), ErrorCode::IncreasingAccessRights),
         _ => panic!("We tricked the runtime into accepting a dup on unsealed domain!"),

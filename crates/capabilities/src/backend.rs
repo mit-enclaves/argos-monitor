@@ -2,7 +2,7 @@
 //! The backend is the interface between the platform-independent capability model
 //! and the platform enforcement.
 
-use core::cell::RefCell;
+use core::cell::{RefCell, RefMut};
 
 use arena::{Handle, TypedArena};
 
@@ -14,13 +14,13 @@ use crate::domain::{
 };
 use crate::error::Error;
 use crate::memory::MemoryRegion;
-use crate::{Capability, CapabilityType, Ownership, State};
+use crate::{Capability, CapabilityType, Ownership, Pool, State};
 
 pub trait BackendContext {
     fn init(&mut self, arg1: usize, arg2: usize, arg3: usize);
 }
 
-pub trait Backend: 'static {
+pub trait Backend: 'static + Sized {
     type DomainState;
     type Core;
     type Context: BackendContext;
@@ -30,65 +30,68 @@ pub trait Backend: 'static {
         &self,
         pool: &State<'_, Self>,
         capa: &Capability<MemoryRegion>,
-    ) -> Result<(), Error<Self::Error>>
-    where
-        Self: Sized;
+    ) -> Result<(), Error<Self::Error>>;
 
     fn uninstall_region(
         &self,
         pool: &State<'_, Self>,
         capa: &Capability<MemoryRegion>,
-    ) -> Result<(), Error<Self::Error>>
-    where
-        Self: Sized;
+    ) -> Result<(), Error<Self::Error>>;
 
     fn create_domain(
         &self,
         pool: &State<'_, Self>,
         capa: &Capability<Domain<Self>>,
-    ) -> Result<(), Error<Self::Error>>
-    where
-        Self: Sized;
+    ) -> Result<(), Error<Self::Error>>;
 
     fn install_domain(
         &self,
         pool: &State<'_, Self>,
         capa: &Capability<Domain<Self>>,
-    ) -> Result<(), Error<Self::Error>>
-    where
-        Self: Sized;
+    ) -> Result<(), Error<Self::Error>>;
 
     fn uninstall_domain(
         &self,
         pool: &State<'_, Self>,
         capa: &Capability<Domain<Self>>,
-    ) -> Result<(), Error<Self::Error>>
-    where
-        Self: Sized;
+    ) -> Result<(), Error<Self::Error>>;
 
     fn create_cpu(
         &self,
         pool: &State<'_, Self>,
         capa: &Capability<CPU<Self>>,
-    ) -> Result<(), Error<Self::Error>>
-    where
-        Self: Sized;
+    ) -> Result<(), Error<Self::Error>>;
 
     fn install_cpu(
         &self,
         pool: &State<'_, Self>,
         capa: &Capability<CPU<Self>>,
-    ) -> Result<(), Error<Self::Error>>
-    where
-        Self: Sized;
+    ) -> Result<(), Error<Self::Error>>;
 
     fn uninstall_cpu(
         &self,
         pool: &State<'_, Self>,
         capa: &Capability<CPU<Self>>,
-    ) -> Result<(), Error<Self::Error>>
-    where
-        Self: Sized;
+    ) -> Result<(), Error<Self::Error>>;
+
+    fn get_current_domain<'p>(
+        &self,
+        pool: &'p State<'_, Self>,
+    ) -> RefMut<'p, Capability<Domain<Self>>> {
+        pool.get_capa_mut(self.get_current_domain_handle())
+    }
+
+    fn set_current_domain(&mut self, current: Handle<Capability<Domain<Self>>>);
+
+    fn get_current_domain_handle(&self) -> Handle<Capability<Domain<Self>>>;
+
+    fn get_current_cpu<'p>(&self, pool: &'p State<'_, Self>) -> RefMut<'p, Capability<CPU<Self>>> {
+        pool.get_capa_mut(self.get_current_cpu_handle())
+    }
+
+    fn get_current_cpu_handle(&self) -> Handle<Capability<CPU<Self>>>;
+
+    fn set_current_cpu(&mut self, current: Handle<Capability<CPU<Self>>>);
 }
 
 // ———————————————————— Default NoBackend Implementation ———————————————————— //
@@ -109,10 +112,22 @@ impl BackendContext for NoBackendContext {
 
 /// Placeholder for a backend.
 #[derive(PartialEq)]
-pub struct NoBackend {}
+pub struct NoBackend {
+    current_cpu: Handle<Capability<CPU<NoBackend>>>,
+    current_domain: Handle<Capability<Domain<NoBackend>>>,
+}
+
+impl NoBackend {
+    pub const fn new() -> Self {
+        NO_BACKEND
+    }
+}
 
 /// Used for empty initializers.
-pub const NO_BACKEND: NoBackend = NoBackend {};
+pub const NO_BACKEND: NoBackend = NoBackend {
+    current_cpu: Handle::new_unchecked(usize::MAX),
+    current_domain: Handle::new_unchecked(usize::MAX),
+};
 
 pub const EMPTY_OWNED_CAPABILITY: RefCell<OwnedCapability<NoBackend>> =
     RefCell::new(OwnedCapability::Empty);
@@ -219,6 +234,17 @@ impl Backend for NoBackend {
         Ok(())
     }
 
+    fn create_cpu(
+        &self,
+        _pool: &State<'_, Self>,
+        _capa: &Capability<CPU<Self>>,
+    ) -> Result<(), Error<Self::Error>>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
+
     fn install_cpu(
         &self,
         _pool: &State<'_, Self>,
@@ -241,14 +267,19 @@ impl Backend for NoBackend {
         Ok(())
     }
 
-    fn create_cpu(
-        &self,
-        _pool: &State<'_, Self>,
-        _capa: &Capability<CPU<Self>>,
-    ) -> Result<(), Error<Self::Error>>
-    where
-        Self: Sized,
-    {
-        Ok(())
+    fn set_current_domain(&mut self, current: Handle<Capability<Domain<Self>>>) {
+        self.current_domain = current;
+    }
+
+    fn get_current_domain_handle(&self) -> Handle<Capability<Domain<Self>>> {
+        self.current_domain
+    }
+
+    fn get_current_cpu_handle(&self) -> Handle<Capability<CPU<Self>>> {
+        self.current_cpu
+    }
+
+    fn set_current_cpu(&mut self, current: Handle<Capability<CPU<Self>>>) {
+        self.current_cpu = current;
     }
 }

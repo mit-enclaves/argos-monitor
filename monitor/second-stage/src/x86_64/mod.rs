@@ -8,6 +8,7 @@ use core::arch as platform;
 use core::arch::asm;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use arena::Handle;
 use capabilities::State;
 use mmu::FrameAllocator;
 use monitor::MonitorState;
@@ -21,13 +22,13 @@ pub use vmx::VmxError as Error;
 use vmx::{fields, secondary_controls_capabilities, ActiveVmcs, Register, VmxError};
 
 use crate::allocator::Allocator;
-use crate::arch::backend::BackendX86;
+use crate::arch::backend::{BackendX86, LocalState};
 use crate::debug::qemu;
 use crate::debug::qemu::ExitCode;
 use crate::guest::Guest;
 //use crate::guest::{Guest, HandlerResult};
 use crate::println;
-use crate::statics::{allocator as get_allocator, pool as get_pool};
+use crate::statics::{allocator as get_allocator, pool as get_pool, NB_CORES};
 
 // ————————————————————————————— Configuration —————————————————————————————— //
 
@@ -59,6 +60,10 @@ pub fn launch_guest(manifest: &'static Manifest) {
             guest_info: manifest.info,
             iommu: None,
             vmxon: None,
+            locals: [LocalState {
+                current_domain: Handle::new_unchecked(usize::MAX),
+                current_cpu: Handle::new_unchecked(usize::MAX),
+            }; NB_CORES],
         },
         pools: get_pool(),
     };
@@ -74,24 +79,9 @@ pub fn launch_guest(manifest: &'static Manifest) {
     let tyche_state = MonitorState::<BackendX86>::new(manifest.poffset as usize, capas)
         .expect("Unable to create monitor state");
     let mut guest = guest::GuestX86::new(tyche_state);
-    {
-        let mut vcpu = guest.get_local_cpu_mut();
-        let vmcs = vcpu.core.get_active_mut().expect("Failed to get VMCS");
-
-        // let cpu = tyche_state.get_current_cpu();
-        // let mut cpu = tyche_state.resources.get_mut(cpu.handle);
-        // let vmcs = cpu.core.get_active_mut().expect("Failed to get VMCS");
-        // unsafe {
-        //     init_vcpu(vmcs, &manifest.info, &guest.state.resources.backend.allocator);
-        // }
-
-        println!("VCPU: {:?}", vmcs);
-    }
 
     println!("Starting main loop");
     guest.main_loop();
-
-    //TODO create guestx86 and call mainloop
 
     qemu::exit(qemu::ExitCode::Success);
 }

@@ -17,8 +17,8 @@ __attribute__((force_align_arg_pointer)) void _start() {
       "xsetbv");
 
   // Exit
-  asm("movl $0x500, %eax;"
-      "movl $0x777, %ebx;"
+  asm("movl $0x9, %eax;"
+      "movl $0x9, %ebx;"
       "vmcall");
   __builtin_unreachable();
 }

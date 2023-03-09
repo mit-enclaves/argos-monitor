@@ -20,6 +20,7 @@ use crate::x86_64::backend;
 
 // ————————————————————— Static Resources Configuration ————————————————————— //
 
+pub const NB_CORES: usize = 32;
 pub const NB_PAGES: usize = 200;
 pub const NB_DOMAINS: usize = 16;
 pub const NB_REGIONS: usize = 64;

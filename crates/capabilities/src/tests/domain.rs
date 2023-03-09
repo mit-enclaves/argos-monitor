@@ -33,7 +33,7 @@ macro_rules! declare_pool {
 macro_rules! declare_state {
     ($state:ident, $pool:expr) => {
         let $state = State::<NoBackend> {
-            backend: NoBackend {},
+            backend: NoBackend::new(),
             pools: $pool,
         };
     };
@@ -68,7 +68,7 @@ macro_rules! setup_default_domain {
                 capa.handle = default_domain_handle;
             }
 
-            match $state.set_owner_capa(default_domain_capa_handle, default_domain_handle.idx()) {
+            match $state.set_owner_capa(default_domain_capa_handle, default_domain_handle) {
                 Err(e) => panic!("Error setting owners {:?}", e),
                 _ => {}
             }

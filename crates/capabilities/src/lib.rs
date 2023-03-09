@@ -544,10 +544,9 @@ impl<Back: Backend + Sized> Pool<Domain<Back>> for State<'_, Back> {
 
     fn backend_apply(
         &self,
-        _capa: &Capability<Domain<Self::B>>,
+        capa: &Capability<Domain<Self::B>>,
     ) -> Result<(), Error<<Self::B as Backend>::Error>> {
-        //self.backend.install_domain(&self, capa)
-        Ok(())
+        self.backend.install_domain(&self, capa)
     }
 
     fn backend_unapply(

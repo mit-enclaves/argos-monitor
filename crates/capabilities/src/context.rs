@@ -35,6 +35,7 @@ impl<B: Backend> Context<B> {
 }
 
 // ——————————————————————— Arena Trait Implementation ——————————————————————— //
+
 impl<B: Backend> ArenaItem for Context<B> {
     type Error = ErrorCode;
     const OUT_OF_BOUND_ERROR: Self::Error = ErrorCode::OutOfBound;

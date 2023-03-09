@@ -68,6 +68,7 @@ where
 }
 
 // ————————————————————————————— Monitor State —————————————————————————————— //
+
 /// LocalState is a per-core state.
 /// We use the handle idx rather than Handle types because otherwise I can't
 /// initialize the array in MonitorState::new.
@@ -87,8 +88,6 @@ pub struct MonitorState<'a, B>
 where
     B: Backend + 'static,
 {
-    // Array of LocalState.
-    pub locals: [LocalState; MAX_CORE],
     pub resources: State<'a, B>,
 }
 
@@ -97,7 +96,10 @@ where
     B: Backend + 'static,
 {
     // Initialize the state for the machine.
-    pub fn new(mem_end: usize, capas: State<'a, B>) -> Result<Self, Error<<B as Backend>::Error>> {
+    pub fn new(
+        mem_end: usize,
+        mut capas: State<'a, B>,
+    ) -> Result<Self, Error<<B as Backend>::Error>> {
         // Create the original domain.
         let default_domain = capas.pools.domains.allocate().map_err(|e| e.wrap())?;
 
@@ -134,11 +136,6 @@ where
             .set_owner_capa(mem_capa_handle, default_domain)
             .map_err(|e| e.wrap())?;
 
-        // Apply it on the backend.
-        let default_domain_capa = capas.get_capa(default_domain_capa_handle);
-        capas.backend.create_domain(&capas, &default_domain_capa)?;
-        drop(default_domain_capa);
-
         // Create the default cpu and its associated capability.
         // TODO if we want to allocate multiple ones from the manifest.{number of cores} do it here.
         let default_cpu_handle =
@@ -152,44 +149,43 @@ where
         capas.backend.create_cpu(&capas, &default_cpu)?;
         drop(default_cpu);
 
-        let mut state = Self {
-            locals: [LocalState {
-                current_domain: usize::MAX,
-                current_cpu: usize::MAX,
-            }; MAX_CORE],
-            resources: capas,
-        };
+        // TODO handle initialization properly for multi-core
+        capas.backend.set_current_cpu(default_cpu_handle);
+        capas.backend.set_current_domain(default_domain_capa_handle);
 
-        // Set current domain + core capas in the local state.
-        state.locals[0] = LocalState {
-            current_domain: default_domain_capa_handle.idx(),
-            current_cpu: default_cpu_handle.idx(),
-        };
+        // Apply it on the backend.
+        let default_domain_capa = capas.get_capa(default_domain_capa_handle);
+        let mem_capa = capas.get_capa(mem_capa_handle);
+        capas.backend.create_domain(&capas, &default_domain_capa)?;
+        capas.backend.install_region(&capas, &mem_capa)?;
+        capas.backend.install_domain(&capas, &default_domain_capa)?;
+        drop(default_domain_capa);
+        drop(mem_capa);
 
-        Ok(state)
+        Ok(Self { resources: capas })
     }
 
     pub fn get_current_domain(&self) -> RefMut<Capability<Domain<B>>> {
-        // TODO figure out how to get thread local index.
-        self.resources
-            .get_capa_mut(Handle::new_unchecked(self.locals[0].current_domain))
+        self.resources.backend.get_current_domain(&self.resources)
+    }
+
+    pub fn get_current_domain_handle(&self) -> Handle<Capability<Domain<B>>> {
+        self.resources.backend.get_current_domain_handle()
     }
 
     pub fn set_current_domain(&mut self, current: Handle<Capability<Domain<B>>>) {
-        self.locals[0].current_domain = current.idx();
+        self.resources.backend.set_current_domain(current)
     }
 
     pub fn get_current_cpu(&self) -> RefMut<Capability<CPU<B>>> {
-        // TODO figure out how to get thread local idx
-        self.resources
-            .get_capa_mut(Handle::new_unchecked(self.locals[0].current_cpu))
+        self.resources.backend.get_current_cpu(&self.resources)
     }
 
     pub fn get_current_cpu_handle(&self) -> Handle<Capability<CPU<B>>> {
-        Handle::new_unchecked(self.locals[0].current_cpu)
+        self.resources.backend.get_current_cpu_handle()
     }
 
-    pub fn set_current_cpu(&mut self, current: Handle<Capability<Domain<B>>>) {
-        self.locals[0].current_cpu = current.idx();
+    pub fn set_current_cpu(&mut self, current: Handle<Capability<CPU<B>>>) {
+        self.resources.backend.set_current_cpu(current)
     }
 }
