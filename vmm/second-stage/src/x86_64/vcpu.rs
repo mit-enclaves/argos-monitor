@@ -256,6 +256,12 @@ where
                     }
                 }
             }
+            VmxExitReason::VmxPreemptionTimerExpired => {
+                // Dump the guest state and continue
+                println!("Timer interrupt");
+                println!("CPU{}: {:?}", self.vcpu_id, self.active_vmcs);
+                Ok(HandlerResult::Resume)
+            }
             _ => {
                 println!(
                     "vCPU{}: Emulation is not yet implemented for exit reason: {:?}",
@@ -409,12 +415,13 @@ impl<'active, 'vmx> X86Vcpu<'active, 'vmx> {
         let xsaves = capabilities.contains(SecondaryControls::ENABLE_XSAVES_XRSTORS);
 
         let err = self
-            .set_pin_based_ctrls(PinbasedControls::empty())
+            .set_pin_based_ctrls(PinbasedControls::VMX_PREEMPTION_TIMER)
             .and_then(|_| {
                 self.set_vm_exit_ctrls(
                     ExitControls::HOST_ADDRESS_SPACE_SIZE
                         | ExitControls::LOAD_IA32_EFER
-                        | ExitControls::SAVE_IA32_EFER,
+                        | ExitControls::SAVE_IA32_EFER
+                        | ExitControls::SAVE_VMX_PREEMPTION_TIMER,
                 )
             })
             .and_then(|_| {
@@ -445,6 +452,7 @@ impl<'active, 'vmx> X86Vcpu<'active, 'vmx> {
         secondary_ctrls |= unrestricted_guest_secondary_controls();
         secondary_ctrls |= cpuid_secondary_controls();
         println!("2'Ctrl: {:?}", self.set_secondary_ctrls(secondary_ctrls));
+        println!("VMX Preemption Timer Rate={}", vmx_preemption_timer_rate());
     }
 
     /// Saves the host state (control registers, segments...), so that they are restored on VM Exit.
@@ -575,7 +583,7 @@ impl<'active, 'vmx> X86Vcpu<'active, 'vmx> {
         self.set64(fields::GuestState64::VmcsLinkPtr, u64::max_value())?;
         self.set16(fields::GuestState16::InterruptStatus, 0)?;
         // vcpu.set16(fields::GuestState16::PmlIndex, 0)?; // <- Not supported on dev server
-        self.set32(fields::GuestState32::VmxPreemptionTimerValue, 0)?;
+        self.set32(fields::GuestState32::VmxPreemptionTimerValue, u32::max_value())?;
 
         Ok(())
     }
@@ -796,6 +804,11 @@ fn unrestricted_guest_secondary_controls() -> SecondaryControls {
         controls |= SecondaryControls::UNRESTRICTED_GUEST;
     }
     controls
+}
+
+fn vmx_preemption_timer_rate() -> u8 {
+    let vmx_misc = unsafe { msr::VMX_MISC.read() };
+    (vmx_misc & 0x1F) as u8
 }
 
 /// Returns optional secondary controls depending on the host cpuid.
