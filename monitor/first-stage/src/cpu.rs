@@ -14,15 +14,15 @@ static mut CPUS: [Option<Cpu>; MAX_CPU_NUM] = [INITCPU; MAX_CPU_NUM];
 static NB_CORES: AtomicUsize = AtomicUsize::new(0);
 
 pub struct Cpu {
-    pub id: usize,
     pub gdt: Gdt,
     pub lapic: xapic::XAPIC,
+    pub local_apic_id: usize,
 }
 
 impl Cpu {
     pub fn new() -> Self {
         Self {
-            id: id(),
+            local_apic_id: id(),
             gdt: Gdt::new(),
             // FIXME: it's amazing that this doesn't crash before the memory allocator is
             //        initialized on CPU0...
@@ -37,7 +37,7 @@ impl Cpu {
         initialize_cpu();
 
         // print VMX info on BSP
-        if self.id == 0 {
+        if self.local_apic_id == 0 {
             print_vmx_info();
         }
     }
