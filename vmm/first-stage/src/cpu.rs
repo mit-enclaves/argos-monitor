@@ -11,7 +11,7 @@ const INITCPU: Option<Cpu> = None;
 static mut CPUS: [Option<Cpu>; MAX_CPU_NUM] = [INITCPU; MAX_CPU_NUM];
 
 pub struct Cpu {
-    pub id: usize,
+    pub local_apic_id: usize,
     pub gdt: Gdt,
     pub lapic: xapic::XAPIC,
 }
@@ -19,7 +19,7 @@ pub struct Cpu {
 impl Cpu {
     pub fn new() -> Self {
         Self {
-            id: id(),
+            local_apic_id: id(),
             gdt: Gdt::new(),
             // FIXME: it's amazing that this doesn't crash before the memory allocator is
             //        initialized on CPU0...
