@@ -128,6 +128,7 @@ name = "first-stage"
 version = "0.1.0"
 dependencies = [
  "acpi",
+ "bit_field",
  "bitflags",
  "bootloader",
  "debug",
