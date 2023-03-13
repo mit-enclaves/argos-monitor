@@ -2,12 +2,7 @@ use crate::vmx::{HostPhysAddr, HostVirtAddr};
 use acpi::platform::interrupt;
 use alloc::vec::Vec;
 use mmu::{PtFlag, PtMapper, RangeAllocator};
-use x86::apic::{ioapic, xapic};
-
-// FIXME: LAPIC address should be parsed from ACPI, but parsing the table occurs after we
-//        initialize the BSP...
-pub const LAPIC_PHYS_ADDRESS: usize = 0xfee00000;
-pub const LAPIC_VIRT_ADDRESS: usize = LAPIC_PHYS_ADDRESS + 0x18000000000;
+use x86::apic::{ioapic, x2apic};
 
 pub fn allocate(
     lapic_addr: usize,
@@ -29,12 +24,12 @@ pub fn allocate(
     );
 }
 
-pub fn lapic_new(lapic_addr: usize) -> xapic::XAPIC {
+pub fn lapic_new() -> x2apic::X2APIC {
     // Initialize LAPIC
-    unsafe { xapic::XAPIC::new(core::slice::from_raw_parts_mut(lapic_addr as _, 0x1000)) }
+    x2apic::X2APIC::new()
 }
 
-pub fn lapic_setup(lapic: &mut xapic::XAPIC) {
+pub fn lapic_setup(lapic: &mut x2apic::X2APIC) {
     lapic.attach();
 }
 
