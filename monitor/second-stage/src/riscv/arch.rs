@@ -1,9 +1,9 @@
 //! Architecture specific structures
 
 use core::arch::asm;
-use riscv_utils::{SUP_STACK_POINTER,TYCHE_STACK_POINTER,SERIAL_PORT_BASE_ADDRESS,PMP_SHIFT,TYCHE_START_ADDRESS,TYCHE_SIZE_NAPOT, ECALL_FROM_UMODE};
+use riscv_utils::{MPP_MASK,MPP_LOW,SUP_STACK_POINTER,TYCHE_STACK_POINTER,SERIAL_PORT_BASE_ADDRESS,PMP_SHIFT,TYCHE_START_ADDRESS,TYCHE_SIZE_NAPOT, ECALL_FROM_UMODE,ECALL_FROM_SMODE,SBI_EXT_BASE_GET_SPEC_VERSION,SBI_EXT_BASE,SBI_ECALL_VERSION_MINOR,SBI_ECALL_VERSION_MAJOR,SBI_SPEC_VERSION_MAJOR_OFFSET,SBI_SPEC_VERSION_MAJOR_MASK,SBI_EXT_BASE_GET_IMP_ID,SBI_EXT_BASE_GET_IMP_VERSION,SBI_EXT_BASE_GET_MVENDORID,SBI_EXT_BASE_GET_MARCHID,SBI_EXT_BASE_GET_MIMPID,SBI_EXT_BASE_PROBE_EXT,SBI_EXT_TIME,SBI_EXT_IPI,SBI_EXT_RFENCE,SBI_EXT_SRST,SBI_EXT_HSM,TYCHE_SBI_VERSION,SBI_ECALL_IMPID};
 use crate::println;
-//use riscv_utils::Register_State;
+use riscv_utils::Register_State;
 
 //static mut register_state: Register_State = Register_State::const_default();
 
@@ -15,8 +15,8 @@ pub fn init() {
     println!("Protecting Tyche Region in PMP with pmpaddr value: {:x}",pmpaddr_write(TYCHE_START_ADDRESS,TYCHE_SIZE_NAPOT));
 
     //Making sure that ecalls from user mode trap into Tyche.
-    println!("Updating medeleg");
-    write_medeleg(ECALL_FROM_UMODE, 0);
+    //println!("Updating medeleg");
+    //write_medeleg(ECALL_FROM_UMODE, 0);
 
     unsafe { asm!("csrw mscratch, {}", in(reg) TYCHE_STACK_POINTER); }
 
@@ -25,6 +25,8 @@ pub fn init() {
     println!("mtvec_ptr to be set by Tyche {:p}",mtvec_ptr);
     set_mtvec(mtvec_ptr);
 }
+
+// ------------------------------------------- PMP ---------------------------------------- // 
 
 pub fn pmpaddr_write(addr: u64, log2len: u64) -> u64 {
     println!("Writing PMPAddr");
@@ -53,6 +55,8 @@ pub fn pmpaddr_write(addr: u64, log2len: u64) -> u64 {
     println!("Done writing PMPAddr");
 }
 
+// ------------------------------ Trap Handler Setup -------------------------- // 
+
 pub fn set_mtvec(addr: *const ()) { 
     unsafe { asm!("csrw mtvec, {}", in(reg) addr); }
 
@@ -62,8 +66,8 @@ pub fn set_mtvec(addr: *const ()) {
     println!("Updated mtvec {:x}",mtvec);
 }
 
-pub fn write_medeleg(pos: usize, value: usize) { 
-    let mut medeleg: usize;
+pub fn write_medeleg(pos: u64, value: u64) { 
+    let mut medeleg: u64;
     unsafe { asm!("csrr {}, medeleg", out(reg) medeleg); }
 
     println!("Medeleg set by OpenSBI {:x}",medeleg);
@@ -88,7 +92,7 @@ pub fn machine_trap_handler() {
     
     asm!(
         "csrrw sp, mscratch, sp
-        addi sp, sp, -17*4
+        addi sp, sp, -34*8
         sd ra, 0*8(sp)
         sd a0, 1*8(sp)
         sd a1, 2*8(sp)
@@ -105,6 +109,22 @@ pub fn machine_trap_handler() {
         sd t4, 13*8(sp)
         sd t5, 14*8(sp)
         sd t6, 15*8(sp)
+        sd zero, 16*8(sp)
+        sd gp, 17*8(sp)
+        sd tp, 18*8(sp)
+        sd s0, 19*8(sp)
+        sd s1, 20*8(sp)
+        sd s2, 21*8(sp)
+        sd s3, 22*8(sp)
+        sd s4, 23*8(sp)
+        sd s5, 24*8(sp)
+        sd s6, 25*8(sp)
+        sd s7, 26*8(sp)
+        sd s8, 27*8(sp)
+        sd s9, 28*8(sp)
+        sd s10, 29*8(sp)
+        sd s11, 30*8(sp)
+        mv a0, sp      //arg to trap_handler 
         auipc x1, 0x0
         addi x1, x1, 10
         j {trap_handler} 
@@ -124,10 +144,25 @@ pub fn machine_trap_handler() {
         ld t4, 13*8(sp)
         ld t5, 14*8(sp)
         ld t6, 15*8(sp)
-        addi sp, sp, 17*4
+        ld zero, 16*8(sp)
+        ld gp, 17*8(sp)
+        ld tp, 18*8(sp)
+        ld s0, 19*8(sp)
+        ld s1, 20*8(sp)
+        ld s2, 21*8(sp)
+        ld s3, 22*8(sp)
+        ld s4, 23*8(sp)
+        ld s5, 24*8(sp)
+        ld s6, 25*8(sp)
+        ld s7, 26*8(sp)
+        ld s8, 27*8(sp)
+        ld s9, 28*8(sp)
+        ld s10, 29*8(sp)
+        ld s11, 30*8(sp)
+        addi sp, sp, 34*8
         csrrw sp, mscratch, sp
         mret",
-        trap_handler = sym trap_handler_dummy,
+        trap_handler = sym trap_handler,
         options(noreturn)
     )
 
@@ -229,10 +264,35 @@ pub fn machine_trap_handler() {
     */
 }
 
-pub extern "C" fn trap_handler_dummy() { 
-}
+/* pub extern "C" fn trap_handler_dummy() { 
+} */ 
 
-pub extern "C" fn trap_handler() { 
+pub extern "C" fn trap_handler_dummy() { 
+    let (mut a0, mut a1, mut a2, mut a3, mut a4, mut a5, mut a6, mut a7): (u64, u64, u64, u64, u64, u64, u64, u64);
+
+    unsafe { 
+    asm!(
+        "mv {a0}, a0
+        mv {a1}, a1
+        mv {a2}, a2
+        mv {a3}, a3
+        mv {a4}, a4
+        mv {a5}, a5 
+        mv {a6}, a6
+        mv {a7}, a7",
+        a0 = out(reg) a0, 
+        a1 = out(reg) a1,  
+        a2 = out(reg) a2,  
+        a3 = out(reg) a3,  
+        a4 = out(reg) a4,  
+        a5 = out(reg) a5,  
+        a6 = out(reg) a6,  
+        a7 = out(reg) a7,  
+    )
+    }
+
+    println!("Trap arguments: a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x} ", a0, a1, a2, a3, a4, a5, a6, a7);
+ 
     //Read mcause
     let mut mcause: usize;
     unsafe { asm!("csrr {}, mcause", out(reg) mcause); }
@@ -240,6 +300,9 @@ pub extern "C" fn trap_handler() {
     //Read mepc
     let mut mepc: usize;
     unsafe { asm!("csrr {}, mepc", out(reg) mepc); }
+
+    let mut mstatus: usize;
+    unsafe { asm!("csrr {}, mstatus", out(reg) mstatus); }
 
     let mut sp: u64;
     let mut mscratch: u64;
@@ -268,7 +331,140 @@ pub extern "C" fn trap_handler() {
     //unsafe { asm!("mret", options(noreturn)); }
 }
 
-pub fn restore_register_state() { 
+pub fn trap_handler(reg_state: &mut Register_State) { 
+    //Read mcause
+    let mut mcause: u64;
+    unsafe { asm!("csrr {}, mcause", out(reg) mcause); }
+    println!("mcause: {:x}",mcause);
+    let mut mepc: u64;
+    unsafe { asm!("csrr {}, mepc", out(reg) mepc); }
+    println!("mepc: {:x}",mepc);
+
+    let mut mstatus: usize;
+    unsafe { asm!("csrr {}, mstatus", out(reg) mstatus); }
+    println!("mstatus: {:x}",mstatus);
+
+    let mut ret: u64 = 0;
+    let mut err: u64 = 0;
+
+    /* let (mut a0, mut a1, mut a2, mut a3, mut a4, mut a5, mut a6, mut a7): (u64, u64, u64, u64, u64, u64, u64, u64);
+
+    unsafe { 
+    asm!(
+        "mv {a0}, a0
+        mv {a1}, a1
+        mv {a2}, a2
+        mv {a3}, a3
+        mv {a4}, a4
+        mv {a5}, a5 
+        mv {a6}, a6
+        mv {a7}, a7",
+        a0 = out(reg) a0, 
+        a1 = out(reg) a1,  
+        a2 = out(reg) a2,  
+        a3 = out(reg) a3,  
+        a4 = out(reg) a4,  
+        a5 = out(reg) a5,  
+        a6 = out(reg) a6,  
+        a7 = out(reg) a7,  
+    )
+    } */ 
+
+    println!("Trap arguments: a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x} ", reg_state.a0, reg_state.a1, reg_state.a2, reg_state.a3, reg_state.a4, reg_state.a5, reg_state.a6, reg_state.a7);
+
+
+    // Check which trap it is 
+    match mcause {
+        ILLEGAL_INSTRUCTION_TRAP => { println!("Illegal instruction trap from {} mode", ((mstatus >> MPP_LOW) & MPP_MASK)); },
+        ECALL_FROM_SMODE => ecall_handler(&mut ret, &mut err, reg_state.a0, reg_state.a6, reg_state.a7),
+        _ => trap_handler_dummy(),
+        //Default - just print whatever information you can about the trap. 
+    }
+    println!("Ecall handler complete: returning {:x}", ret);
+    unsafe {
+        asm!("csrr t0, mepc");
+        asm!("addi t0, t0, 0x4");
+        asm!("csrw mepc, t0"); 
+        /*asm!(
+            "li a0, 0x0
+            mv a1, {ret}",
+            ret = in(reg) ret,
+        )*/ 
+    }
+    reg_state.a0 = 0x0;
+    reg_state.a1 = ret;
+}
+
+pub fn ecall_handler(mut ret: &mut u64, mut err: &mut u64, a0: u64, a6: u64, a7: u64) { 
+    //let mut a7: u64;
+    //unsafe { asm!("mv {}, a7", out(reg) a7); }
+    println!("ecall handler a7: {:x}",a7);  
+    match a7 {
+        SBI_EXT_BASE => sbi_ext_base_handler(&mut ret, &mut err, a0, a6),
+        _ => trap_handler_dummy(),
+    }
+}
+
+pub fn sbi_ext_base_handler(ret: &mut u64, err: &mut u64, a0: u64, a6: u64) {
+    //let mut a6: u64;
+    //unsafe { asm!("mv {}, a6", out(reg) a6); }
+    println!("base_handler a6: {:x}",a6);
+    match a6 {
+        SBI_EXT_BASE_GET_SPEC_VERSION => *ret = get_sbi_spec_version(),
+        SBI_EXT_BASE_GET_IMP_ID => *ret = SBI_ECALL_IMPID,
+        SBI_EXT_BASE_GET_IMP_VERSION => *ret = TYCHE_SBI_VERSION,
+        SBI_EXT_BASE_GET_MVENDORID | SBI_EXT_BASE_GET_MARCHID | SBI_EXT_BASE_GET_MIMPID => *ret = get_m_x_id(a6),
+        SBI_EXT_BASE_PROBE_EXT => *ret = probe(a0),
+        _ => trap_handler_dummy(),
+    }
+}
+
+pub fn get_sbi_spec_version() -> u64 {
+    let mut spec_ver: u64;
+
+    spec_ver = (SBI_ECALL_VERSION_MAJOR << SBI_SPEC_VERSION_MAJOR_OFFSET) &
+            (SBI_SPEC_VERSION_MAJOR_MASK << SBI_SPEC_VERSION_MAJOR_OFFSET); 
+    spec_ver |= SBI_ECALL_VERSION_MINOR;
+    println!("Computed spec_version: {:x}",spec_ver);
+    return spec_ver;
+}
+
+pub fn probe(a0: u64) -> u64 {
+    println!("probing a0 {:x}",a0);
+    let mut ret:u64 = 0; 
+
+    match a0 {
+        SBI_EXT_TIME | SBI_EXT_IPI | SBI_EXT_HSM => { ret = 1; println!("PROBING SBI_EXT_TIME/IPI/HSM.") },
+        //Handlers for the corresponding ecall are not yet implemented. 
+        SBI_EXT_RFENCE => { ret = 1; println!("PROBING SBI_EXT_RFENCE") },
+        SBI_EXT_SRST => ret = sbi_ext_srst_probe(a0), 
+        _ => trap_handler_dummy(),
+    }
+
+    println!("Returning from probe {}",ret);
+
+    return ret;
+}
+
+pub fn get_m_x_id(a6: u64) -> u64 {
+    let mut ret: u64 = 0;
+    match a6 {
+        SBI_EXT_BASE_GET_MVENDORID => {unsafe { asm!("csrr {}, mvendorid", out(reg) ret); } },
+        SBI_EXT_BASE_GET_MARCHID => { unsafe { asm!("csrr {}, marchid", out(reg) ret); } },
+        SBI_EXT_BASE_GET_MIMPID => { unsafe { asm!("csrr {}, mimpid", out(reg) ret); } },
+        _ => println!("Invalid get_m_x_id request!"),
+    }
+    println!("Returning m_x_id {:x}",ret);
+    return ret;
+}
+
+pub fn sbi_ext_srst_probe(a0: u64) -> u64 { 
+    //TODO For now this function pretends that srst extension probe works as expected. 
+    //If needed in the future, this must be implemented fully - refer to openSBI for this. 
+    return 1;
+}
+
+/* pub fn restore_register_state() { 
     let mut sp: u64;
     let mut mscratch: u64;
     unsafe { asm!("mv {}, sp", out(reg) sp); }
@@ -349,5 +545,5 @@ pub fn restore_register_state() {
         asm!("lw t5, {}", in(reg) register_state.t5);
         asm!("lw t6, {}", in(reg) register_state.t6);
     } */
-}
+} */ 
 
