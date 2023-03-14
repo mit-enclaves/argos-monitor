@@ -2,9 +2,10 @@ use arena::Handle;
 use capabilities::access::AccessRights;
 use capabilities::backend::Backend;
 use capabilities::context::Context;
+use capabilities::cpu::CPU;
 use capabilities::domain::{Domain, DomainAccess, OwnedCapability};
 use capabilities::error::ErrorCode;
-use capabilities::{Capability, Object, Pool};
+use capabilities::{Capability, CapabilityType, Object, Pool};
 
 use crate::{Monitor, MonitorCallResult, MonitorState, Parameters, Registers};
 
@@ -29,6 +30,9 @@ pub const TYCHE_EXIT: TycheCall = 9;
 pub const TYCHE_DOMAIN_TYPE: usize = 0;
 pub const TYCHE_REGION_TYPE: usize = 1;
 pub const TYCHE_CPU_TYPE: usize = 2;
+
+// For transition
+pub const CPU_LOCAL_TRANSITION: usize = usize::MAX;
 
 impl<B: Backend> Monitor<B> for Tyche {
     type MonitorCall = TycheCall;
@@ -68,7 +72,7 @@ impl<B: Backend> Monitor<B> for Tyche {
             TYCHE_GIVE => self.transfer(state, params.arg_1, params.arg_2),
             TYCHE_REVOKE => self.revoke(state, params.arg_1),
             TYCHE_ENUMERATE => self.enumerate(state, params.arg_1),
-            TYCHE_SWITCH => self.switch(state, params.arg_1),
+            TYCHE_SWITCH => self.switch(state, params.arg_1, params.arg_2),
             TYCHE_EXIT => panic!("Exit should not reach dispatch."),
             _ => panic!("Unknown MonitorCall in Tyche: 0x{:x}", params.vmcall),
         }
@@ -397,16 +401,37 @@ impl Tyche {
         &self,
         state: &mut MonitorState<B>,
         handle: usize,
+        cpu: usize,
     ) -> MonitorCallResult<B> {
-        // 1) check the handle is a transition one.
-        // 2) get the current domain and current cpu
-        // 3) Check that the target domain is allowed on that core.
-        // 4) Allocate a return domain capability.
-        // 5) Call the backend to save the current context & reeastablish the other one.
-        // 6) Lock the transition handle.
-        // 7) Set the return value to be the return handle.
-        let (target, target_ctxt): (Handle<Domain<B>>, Handle<Context<B>>) = {
-            // Check the handle is a valid transition one.
+        if cpu == CPU_LOCAL_TRANSITION {
+            self.switch_internal(state, handle, state.get_current_cpu_handle())
+        } else {
+            let cpu_h = {
+                let dom_h = state.get_current_domain().handle;
+                let dom = state.resources.get(dom_h);
+                let h = dom
+                    .get_local_capa(cpu)
+                    .map_err(|e| e.wrap())?
+                    .as_cpu()
+                    .map_err(|e| e.wrap())?;
+                h
+            };
+            self.switch_internal(state, handle, cpu_h)
+        }
+    }
+
+    fn switch_internal<B: Backend>(
+        &self,
+        state: &mut MonitorState<B>,
+        handle: usize,
+        cpu: Handle<Capability<CPU<B>>>,
+    ) -> MonitorCallResult<B> {
+        // Check the handle points to a transition.
+        let (target, target_ctxt, invoked_trans): (
+            Handle<Domain<B>>,
+            Handle<Context<B>>,
+            Handle<Capability<Domain<B>>>,
+        ) = {
             let curr_handle = state.get_current_domain().handle;
             let current = state.resources.get(curr_handle);
             let transition_h = current
@@ -431,81 +456,114 @@ impl Tyche {
             }
             // Check the domain can run on the current core.
             {
-                let curr_cpu_h = state.get_current_cpu().handle;
+                let curr_cpu_h = state.resources.get_capa(cpu).handle;
                 let curr_cpu = state.resources.get(curr_cpu_h);
                 if !dom.is_allowed_core(curr_cpu.id) {
                     return Err(ErrorCode::InvalidTransition.wrap());
                 }
             }
-            // Check if the context is already in use.
-            let mut context = dom.contexts.get_mut(Handle::new_unchecked(x));
-            if !context.lock() {
-                return Err(ErrorCode::InvalidTransition.wrap());
-            }
-
-            (dom_h, Handle::new_unchecked(x))
+            (dom_h, Handle::new_unchecked(x), transition_h)
         };
+
+        // Pause the invoked transition capability.
+        {
+            let mut invoked = state.resources.get_capa_mut(invoked_trans);
+            invoked.duplicate(
+                DomainAccess::get_null(),
+                DomainAccess::get_null(),
+                &state.resources,
+            )?;
+        }
+
+        // Check if we have a defined transition target.
+        // TODO handle cpu here as well.
+        let return_capa_h = {
+            let tgt = state.resources.get(target);
+            let context = tgt.contexts.get(target_ctxt);
+            match context.return_context {
+                Some(return_handle) => {
+                    // Check the return handle is correct.
+                    let mut return_capa = state.resources.get_capa_mut(return_handle);
+
+                    // This should point to the current domain.
+                    if return_capa.handle != state.get_current_domain().handle {
+                        return Err(ErrorCode::InvalidTransition.wrap());
+                    }
+                    // If this capability does not belong to the target
+                    if return_capa.get_owner()? != target {
+                        return Err(ErrorCode::InvalidTransition.wrap());
+                    }
+
+                    match (return_capa.access, return_capa.capa_type) {
+                        (DomainAccess::Transition(_), CapabilityType::Revocation) => {
+                            // Revoke the capability.
+                            return_capa.revoke(&state.resources)?;
+                            return_handle
+                        }
+                        (_, _) => {
+                            return Err(ErrorCode::InvalidTransition.wrap());
+                        }
+                    }
+                }
+                None => {
+                    // Allocate a local transition handle.
+                    let (_, trans) = {
+                        let mut curr_capa = state.get_current_domain();
+                        curr_capa
+                            .create_transition(&state.resources)
+                            .map_err(|e| e.wrap())?
+                    };
+                    // Transfer it to the other domain.
+                    state.resources.transfer(trans, target)?;
+                    trans
+                }
+            }
+        };
+
+        // Patch the return capa to point to the paused transition.
+        {
+            let return_capa = state.resources.get_capa(return_capa_h);
+            let idx = if let DomainAccess::Transition(y) = return_capa.access {
+                y
+            } else {
+                return Err(ErrorCode::InvalidTransition.wrap());
+            };
+            let current_h = state.get_current_domain().handle;
+            let current = state.resources.get(current_h);
+            let mut to_patch = current.contexts.get_mut(Handle::new_unchecked(idx));
+            to_patch.return_context = Some(invoked_trans);
+        }
+
+        // Transfer the cpu to the target domain.
+        // TODO: Update when we handle multiple vcpu
+        state.resources.transfer(cpu, target)?;
+
+        // Apply the backend switch.
+        let curr_h = state.get_current_domain().handle;
+        state.resources.backend.switch_context(
+            &state.resources,
+            curr_h,
+            target,
+            return_capa_h,
+            invoked_trans,
+            cpu,
+        )?;
 
         // Get the target sealed capability.
         let tgt_sealed = {
             let domain = state.resources.get(target);
             domain.get_sealed_capa().map_err(|e| e.wrap())?
         };
-
-        // Use this to undo the lock in case of error.
-        // TODO: see if we need it multiple times or not.
-        let unlock = |t: Handle<Domain<B>>, t_idx: Handle<Context<B>>| {
-            let dom = state.resources.get(t);
-            let mut context = dom.contexts.get_mut(t_idx);
-            let _ = context.unlock();
-        };
-
-        // Duplicate the current domain capa to obtain a transition capa
-        let (_new_curr, transition) = {
-            let mut curr_capa = state.get_current_domain();
-            curr_capa.create_transition(&state.resources).map_err(|e| {
-                // Remove the lock.
-                unlock(target, target_ctxt);
-                e.wrap()
-            })?
-        };
-        // Transfer the transition capability to the target domain.
-        state.resources.transfer(transition, target).map_err(|e| {
-            unlock(target, target_ctxt);
-            // Clean up the allocated context by revoking the new_curr.
-            let mut curr_capa = state.get_current_domain();
-            match curr_capa.revoke(&state.resources) {
-                Err(f) => {
-                    return f;
-                }
-                _ => {}
-            }
-            e
-        })?;
-
-        // Transfer the CPU.
-        let curr_cpu_h = state.get_current_cpu_handle();
-        state.resources.transfer(curr_cpu_h, target).map_err(|e| {
-            unlock(target, target_ctxt);
-            // Revoke the transition as above.
-            let mut curr_capa = state.get_current_domain();
-            match curr_capa.revoke(&state.resources) {
-                Err(f) => {
-                    return f;
-                }
-                _ => {}
-            }
-            e
-        })?;
-
-        // TODO call the backend to save the current domain restore prev.
-        // state.backend.switch_domain(???);
-
-        // Set the current domain
         state.set_current_domain(tgt_sealed);
-        //TODO figure out what handles we should return.
-        //Probably the transition back?
+        state.set_current_cpu(cpu);
+
+        let local_return_idx = {
+            let capa = state.resources.get_capa(return_capa_h);
+            capa.get_local_idx()?
+        };
+
         Ok(Registers {
+            value_1: local_return_idx,
             ..Default::default()
         })
     }

@@ -32,7 +32,7 @@ pub const CAPA_POOL_SIZE: usize = 100;
 ///
 /// Resource maps to the ability to access a resource.
 /// Revocation maps to the ability to revoke capabilities.
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Copy, Clone)]
 pub enum CapabilityType {
     Resource,
     Revocation,
@@ -43,8 +43,7 @@ pub enum CapabilityType {
 pub enum Ownership {
     Empty,
     Zombie,
-    // TODO: should we put a handle here?
-    Domain(usize, usize), // (domain, index)
+    Domain(usize, usize), // (domain, local_idx)
 }
 
 #[derive(Debug)]
@@ -161,8 +160,6 @@ where
                     left.revoke(pool)?;
                 }
             }
-            //Capability::<T>::destroy(Handle::new_unchecked(self.left.idx()), pool)?;
-            //self.left = Handle::null();
         }
 
         if !self.right.is_null() {
@@ -172,8 +169,6 @@ where
                     right.revoke(pool)?;
                 }
             }
-            //Capability::<T>::destroy(Handle::new_unchecked(self.right.idx()), pool)?;
-            //self.right = Handle::null();
         }
 
         // At this point, root is still revocation, left and right should be resources.
@@ -327,10 +322,12 @@ pub trait Pool<T: Object> {
     ) -> Result<(), ErrorCode>;
     fn remove_owner(&self, capa: Handle<Capability<T>>) -> Result<(), ErrorCode>;
     fn into_zombie_owner(&self, capa: Handle<Capability<T>>) -> Result<(), ErrorCode> {
-        self.remove_owner(capa)?;
         let mut capa = self.get_capa_mut(capa);
-        capa.owner = Ownership::Zombie;
-        Ok(())
+        if let Ownership::Domain(_, _) = capa.owner {
+            capa.owner = Ownership::Zombie;
+            return Ok(());
+        }
+        return Err(ErrorCode::WrongOwnership);
     }
     fn transfer(
         &self,
@@ -448,17 +445,16 @@ impl<Back: Backend + Sized> Pool<Domain<Back>> for State<'_, Back> {
     fn remove_owner(&self, capa: Handle<Capability<Domain<Self::B>>>) -> Result<(), ErrorCode> {
         let capa_handle = capa;
         let mut capa = self.get_capa_mut(capa);
-        if capa.owner == Ownership::Empty {
-            return Err(ErrorCode::NotOwnedCapability);
-        }
-        if capa.owner == Ownership::Zombie {
-            capa.owner = Ownership::Empty;
-            return Ok(());
-        }
-        if let Ownership::Domain(d, idx) = capa.owner {
-            let domain = self.pools.domains.get(Handle::new_unchecked(d));
-            domain.remove_capa(idx, OwnedCapability::Domain(capa_handle))?;
-        }
+        match capa.owner {
+            Ownership::Domain(dom, idx) => {
+                let domain = self.pools.domains.get(Handle::new_unchecked(dom));
+                domain.remove_capa(idx, OwnedCapability::Domain(capa_handle))?;
+            }
+            Ownership::Zombie => {}
+            Ownership::Empty => {
+                return Err(ErrorCode::NotOwnedCapability);
+            }
+        };
         capa.owner = Ownership::Empty;
         Ok(())
     }
@@ -573,12 +569,16 @@ impl<Back: Backend + Sized> Pool<Domain<Back>> for State<'_, Back> {
                     let o = object.owned.get(Handle::new_unchecked(i));
                     match *o {
                         OwnedCapability::Region(h) => {
+                            self.backend_unapply(h)?;
                             self.into_zombie_owner(h).map_err(|e| e.wrap())?
+                            //TODO backend unapply?
                         }
                         OwnedCapability::Domain(h) => {
+                            self.backend_unapply(h)?;
                             self.into_zombie_owner(h).map_err(|e| e.wrap())?
                         }
                         OwnedCapability::CPU(h) => {
+                            self.backend_unapply(h)?;
                             self.into_zombie_owner(h).map_err(|e| e.wrap())?
                         }
                         _ => {}
@@ -678,17 +678,16 @@ impl<Back: Backend + Sized> Pool<memory::MemoryRegion> for State<'_, Back> {
     ) -> Result<(), ErrorCode> {
         let capa_handle = capa;
         let mut capa = self.get_capa_mut(capa);
-        if capa.owner == Ownership::Empty {
-            return Err(ErrorCode::NotOwnedCapability);
-        }
-        if capa.owner == Ownership::Zombie {
-            capa.owner = Ownership::Empty;
-            return Ok(());
-        }
-        if let Ownership::Domain(d, idx) = capa.owner {
-            let domain = self.pools.domains.get(Handle::new_unchecked(d));
-            domain.remove_capa(idx, OwnedCapability::Region(capa_handle))?;
-        }
+        match capa.owner {
+            Ownership::Domain(dom, idx) => {
+                let domain = self.pools.domains.get(Handle::new_unchecked(dom));
+                domain.remove_capa(idx, OwnedCapability::Region(capa_handle))?;
+            }
+            Ownership::Zombie => {}
+            Ownership::Empty => {
+                return Err(ErrorCode::NotOwnedCapability);
+            }
+        };
         capa.owner = Ownership::Empty;
         Ok(())
     }
@@ -792,17 +791,16 @@ impl<Back: Backend + Sized> Pool<CPU<Back>> for State<'_, Back> {
     fn remove_owner(&self, capa: Handle<Capability<CPU<Back>>>) -> Result<(), ErrorCode> {
         let capa_handle = capa;
         let mut capa = self.get_capa_mut(capa);
-        if capa.owner == Ownership::Empty {
-            return Err(ErrorCode::NotOwnedCapability);
-        }
-        if capa.owner == Ownership::Zombie {
-            capa.owner = Ownership::Empty;
-            return Ok(());
-        }
-        if let Ownership::Domain(d, idx) = capa.owner {
-            let domain = self.pools.domains.get(Handle::new_unchecked(d));
-            domain.remove_capa(idx, OwnedCapability::CPU(capa_handle))?;
-        }
+        match capa.owner {
+            Ownership::Domain(dom, idx) => {
+                let domain = self.pools.domains.get(Handle::new_unchecked(dom));
+                domain.remove_capa(idx, OwnedCapability::CPU(capa_handle))?;
+            }
+            Ownership::Zombie => {}
+            Ownership::Empty => {
+                return Err(ErrorCode::NotOwnedCapability);
+            }
+        };
         capa.owner = Ownership::Empty;
         Ok(())
     }

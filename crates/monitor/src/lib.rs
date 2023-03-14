@@ -12,7 +12,7 @@ use core::cell::RefMut;
 use arena::Handle;
 use capabilities::backend::Backend;
 use capabilities::cpu::CPU;
-use capabilities::domain::{Domain, SealedStatus};
+use capabilities::domain::{Domain, SealedStatus, ALL_CORES_ALLOWED};
 use capabilities::error::{Error, ErrorCode};
 use capabilities::memory::{MemoryAccess, MemoryRegion};
 use capabilities::{cpu, domain, memory, Capability, Ownership, Pool, State};
@@ -113,6 +113,7 @@ where
         {
             let mut domain = capas.get_mut(default_domain);
             domain.ref_count = 1;
+            domain.allowed_cores = ALL_CORES_ALLOWED;
             let domain_capa = capas.get_capa(default_domain_capa_handle);
             if let Ownership::Domain(_, idx) = domain_capa.owner {
                 domain.sealed = SealedStatus::<B>::Sealed(Handle::new_unchecked(idx));

@@ -30,9 +30,10 @@ pub enum ErrorCode {
     NotARegion = 21,
     NotACpu = 22,
     InvalidTransition = 23,
-    TODO = 24,
-    Debug = 25,
-    Unexpected = 26,
+    WrongAccessType = 24,
+    TODO = 25,
+    Debug = 26,
+    Unexpected = 27,
 }
 
 impl ErrorCode {

@@ -7,8 +7,8 @@ use arena::{Handle, TypedArena};
 use crate::access::AccessRights;
 use crate::backend::{NoBackend, EMPTY_CPU, EMPTY_CPU_CAPA, EMPTY_DOMAIN, EMPTY_DOMAIN_CAPA};
 use crate::domain::{
-    Domain, DomainAccess, SealedStatus, CONTEXT_PER_DOMAIN, DEFAULT_SEALED, DEFAULT_TRANSITON,
-    DEFAULT_TRANSITON_VAL,
+    Domain, DomainAccess, SealedStatus, ALL_CORES_ALLOWED, CONTEXT_PER_DOMAIN, DEFAULT_SEALED,
+    DEFAULT_TRANSITON, DEFAULT_TRANSITON_VAL,
 };
 use crate::error::ErrorCode;
 use crate::memory::{EMPTY_MEMORY_REGION, EMPTY_MEMORY_REGION_CAPA};
@@ -77,6 +77,7 @@ macro_rules! setup_default_domain {
             {
                 let mut domain = $state.get_mut(default_domain_handle);
                 domain.ref_count = 1;
+                domain.allowed_cores = ALL_CORES_ALLOWED;
                 let domain_capa = $state.get_capa(default_domain_capa_handle);
                 if let Ownership::Domain(_, idx) = domain_capa.owner {
                     domain.sealed = SealedStatus::Sealed(Handle::new_unchecked(idx));

@@ -40,7 +40,11 @@ pub struct LocalState {
     pub current_domain: Handle<Capability<Domain<BackendX86>>>,
 }
 
-pub struct BackendC86Context {}
+pub struct BackendC86Context {
+    cr3: usize,
+    rip: u64,
+    rsp: u64,
+}
 
 impl BackendContext for BackendC86Context {
     fn init(&mut self, _arg1: usize, _arg2: usize, _arg3: usize) {
@@ -77,6 +81,16 @@ impl BackendX86Core {
         };
         let active = region.set_as_active()?;
         *self = BackendX86Core::Active(active);
+        Ok(())
+    }
+
+    pub fn deactivate(&mut self) -> Result<(), TycheError> {
+        let old_self = replace(self, BackendX86Core::Uninitialized);
+        let BackendX86Core::Active(vcpu) = old_self else {
+            todo!("Trying to deactivate a core that is active");
+        };
+        let inactive = vcpu.deactivate()?;
+        *self = BackendX86Core::Inactive(inactive);
         Ok(())
     }
 
@@ -273,6 +287,113 @@ impl Backend for BackendX86 {
         todo!()
     }
 
+    fn switch_context(
+        &self,
+        pool: &State<'_, Self>,
+        caller: Handle<Domain<Self>>,
+        callee: Handle<Domain<Self>>,
+        to_save: Handle<Capability<Domain<Self>>>,
+        to_restore: Handle<Capability<Domain<Self>>>,
+        target_cpu: Handle<Capability<CPU<Self>>>,
+    ) -> Result<(), Error<Self::Error>> {
+        // Save the current CPU state into the caller's to_save context.
+        {
+            //TODO here we could check stuff for the capa, like having to clear
+            //some registers etc.
+            let cpu_h = self.get_current_cpu(pool).handle;
+            let mut cpu = pool.get_mut(cpu_h);
+            let capa = pool.get_capa(to_save);
+            let mut dom = pool.get_mut(capa.handle);
+            #[allow(unused_assignments)]
+            let mut ept_save: u64 = 0;
+            {
+                match capa.access {
+                    DomainAccess::Transition(x) => {
+                        // TODO(@aghosn) is it the callee or the caller?
+                        if capa.handle != callee {
+                            return Err(ErrorCode::InvalidTransition.wrap());
+                        }
+                        if !dom.contexts.is_allocated(x) {
+                            return Err(ErrorCode::OutOfBound.wrap());
+                        }
+                        let mut to_save_context = dom.contexts.get_mut(Handle::new_unchecked(x));
+                        match &cpu.core {
+                            BackendX86Core::Active(vcpu) => {
+                                to_save_context.state.cr3 = vcpu.get_cr(vmx::ControlRegister::Cr3);
+                                to_save_context.state.rip = vcpu.get(vmx::Register::Rip);
+                                to_save_context.state.rsp = vcpu.get(vmx::Register::Rsp);
+                                ept_save = vcpu.get_ept_ptr()?;
+                                if self.get_current_cpu_handle() != target_cpu {
+                                    cpu.core.deactivate()?;
+                                }
+                            }
+                            _ => {
+                                return Err(ErrorCode::InvalidTransition.wrap());
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(ErrorCode::WrongAccessType.wrap());
+                    }
+                }
+            }
+            dom.state.ept = HostPhysAddr::new(ept_save as usize);
+        }
+
+        // Restore the other state.
+        {
+            let cpu_capa = pool.get_capa(target_cpu);
+            let mut cpu = pool.get_mut(cpu_capa.handle);
+            let capa = pool.get_capa(to_restore);
+            let dom = pool.get(capa.handle);
+            let to_restore_context = {
+                match capa.access {
+                    DomainAccess::Transition(x) => {
+                        //TODO(@aghosn) this should be caller right?
+                        if capa.handle != caller {
+                            return Err(ErrorCode::InvalidTransition.wrap());
+                        }
+                        if !dom.contexts.is_allocated(x) {
+                            return Err(ErrorCode::OutOfBound.wrap());
+                        }
+                        dom.contexts.get_mut(Handle::new_unchecked(x))
+                    }
+                    _ => {
+                        return Err(ErrorCode::WrongAccessType.wrap());
+                    }
+                }
+            };
+
+            match &cpu.core {
+                BackendX86Core::Active(_) => {
+                    if target_cpu != self.get_current_cpu_handle() {
+                        return Err(ErrorCode::InvalidTransition.wrap());
+                    }
+                }
+                BackendX86Core::Inactive(_) => {
+                    // TODO(@charly) will that fuck up the main loop when we return?
+                    cpu.core.activate()?;
+                }
+                _ => {
+                    return Err(ErrorCode::InvalidTransition.wrap());
+                }
+            }
+            match &mut cpu.core {
+                BackendX86Core::Active(vcpu) => {
+                    vcpu.set_cr(vmx::ControlRegister::Cr3, to_restore_context.state.cr3);
+                    vcpu.set(vmx::Register::Rip, to_restore_context.state.rip);
+                    vcpu.set(vmx::Register::Rsp, to_restore_context.state.rsp);
+                    vcpu.set_ept_ptr(dom.state.ept)?;
+                }
+                _ => {
+                    return Err(ErrorCode::InvalidTransition.wrap());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     fn set_current_domain(&mut self, current: Handle<Capability<Domain<Self>>>) {
         self.locals[self.cpu_id()].current_domain = current;
     }
@@ -310,8 +431,12 @@ pub const EMPTY_OWNED_CAPABILITY: RefCell<OwnedCapability<BackendX86>> =
     RefCell::new(OwnedCapability::Empty);
 
 pub const EMPTY_CONTEXT: RefCell<Context<BackendX86>> = RefCell::new(Context {
-    in_use: false,
-    state: BackendC86Context {},
+    return_context: None,
+    state: BackendC86Context {
+        cr3: 0,
+        rip: 0,
+        rsp: 0,
+    },
 });
 
 pub const EMPTY_DOMAIN: RefCell<Domain<BackendX86>> = RefCell::new(Domain::<BackendX86> {

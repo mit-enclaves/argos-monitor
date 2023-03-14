@@ -157,7 +157,7 @@ impl AccessRights for DomainAccess {
                 } else {
                     false
                 };
-                left_valid && right_valid
+                (op1.is_null() && op2.is_null()) || (left_valid && right_valid)
             }
             DomainAccess::NONE => false,
         }
@@ -383,8 +383,6 @@ impl<B: Backend> Object for Domain<B> {
                     pool.free_capa(new_handle);
                     e
                 })?;
-                let mut ctxt = obj.contexts.get_mut(ctxt_h);
-                ctxt.in_use = false;
                 DomainAccess::Transition(ctxt_h.idx())
             } else {
                 *op
@@ -420,31 +418,6 @@ impl<B: Backend> Object for Domain<B> {
         // Do not call install now, duplicate might fail on the second handle.
         return Ok(new_handle);
     }
-
-    /*    fn install(
-            &mut self,
-            _pool: &impl Pool<Self>,
-            _capa: &Capability<Self>,
-        ) -> Result<(), ErrorCode>
-        where
-            Self: Sized,
-        {
-            //pool.apply(capa)
-            Ok(())
-        }
-
-        fn uninstall(
-            &mut self,
-            _pool: &impl Pool<Self>,
-            _capa: &Capability<Self>,
-        ) -> Result<(), ErrorCode>
-        where
-            Self: Sized,
-        {
-            //pool.unapply(capa)
-            Ok(())
-        }
-    */
 }
 
 // ——————————————————— Capability<Domain> Implementation ———————————————————— //

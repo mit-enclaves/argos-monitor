@@ -4,7 +4,9 @@ use capabilities::backend::{
     NoBackend, EMPTY_CPU, EMPTY_CPU_CAPA, EMPTY_DOMAIN, EMPTY_DOMAIN_CAPA,
 };
 use capabilities::domain::DomainAccess::{self, Sealed};
-use capabilities::domain::{Domain, OwnedCapability, ALL_CORES_ALLOWED, CAPAS_PER_DOMAIN};
+use capabilities::domain::{
+    Domain, OwnedCapability, ALL_CORES_ALLOWED, CAPAS_PER_DOMAIN, CONTEXT_PER_DOMAIN,
+};
 use capabilities::error::ErrorCode;
 use capabilities::memory::{self, MemoryRegion, EMPTY_MEMORY_REGION, EMPTY_MEMORY_REGION_CAPA};
 use capabilities::{
@@ -13,7 +15,7 @@ use capabilities::{
 };
 use utils::HostPhysAddr;
 
-use crate::tyche::{Tyche, TYCHE_SWITCH};
+use crate::tyche::{Tyche, CPU_LOCAL_TRANSITION, TYCHE_SWITCH};
 use crate::{tyche, Monitor, MonitorState, Parameters};
 
 macro_rules! declare_pool {
@@ -225,7 +227,10 @@ fn create_domain_helper(spawn: usize, comm: usize) {
                 .as_domain()
                 .expect("Could not get domain handle");
             // Check we are still the current domain.
-            assert_eq!(domain_handle.idx(), tyche_state.get_current_domain_handle().idx());
+            assert_eq!(
+                domain_handle.idx(),
+                tyche_state.get_current_domain_handle().idx()
+            );
         }
         Err(e) => panic!("Failed create: {:?}", e),
     }
@@ -435,7 +440,7 @@ fn share_unsealed_test() {
     match tyche.dispatch(&mut state, &share_call) {
         Err(e) => panic!("Unable to share the region: {:?}", e),
         Ok(registers) => {
-            // Check the new_local is now a resource capability with the same reigon.
+            // Check the new_local is now a resource capability with the same region.
             let new_local = registers.value_1;
             let current = state.resources.get(current_handle);
             let h = current
@@ -942,6 +947,7 @@ fn switch_test() {
     let switch_call = Parameters {
         vmcall: TYCHE_SWITCH,
         arg_1: registers.value_1,
+        arg_2: CPU_LOCAL_TRANSITION,
         ..Default::default()
     };
     // Get the current domain before the switch.
@@ -980,7 +986,7 @@ fn switch_test() {
                         assert_eq!(capa.handle, prev);
                     }
                     DomainAccess::Transition(_) => {
-                        assert_eq!(capa.capa_type, CapabilityType::Resource);
+                        assert_eq!(capa.capa_type, CapabilityType::Revocation);
                         assert_ne!(capa.handle, prev);
                         transition += 1;
                     }
@@ -1045,5 +1051,237 @@ fn switch_test() {
         assert_eq!(sealed_revok, 1);
         assert_eq!(sealed_active, 1);
         assert_eq!(trans, 1);
+    }
+}
+
+#[test]
+fn switch_return_test() {
+    full_init!(state);
+    let monitor = Tyche {};
+    let (_, id_new, _) = create_helper(&monitor, &mut state, 1, 1);
+    // Seal the new domain.
+    let seal_call = Parameters {
+        vmcall: tyche::TYCHE_SEAL_DOMAIN,
+        arg_1: id_new,
+        arg_2: ALL_CORES_ALLOWED,
+        arg_3: 1,
+        arg_4: 2,
+        arg_5: 3,
+    };
+    let reg_seal = monitor
+        .dispatch(&mut state, &seal_call)
+        .expect("Unable to seal the domain");
+
+    // Switch once.
+    let switch_call = Parameters {
+        vmcall: TYCHE_SWITCH,
+        arg_1: reg_seal.value_1,
+        arg_2: CPU_LOCAL_TRANSITION,
+        ..Default::default()
+    };
+    // Get the current domain before the switch.
+    let dom1 = state.get_current_domain().handle;
+
+    let reg_switch = monitor
+        .dispatch(&mut state, &switch_call)
+        .expect("unable to perform a switch");
+
+    // Now compare the current domain.
+    let current = state.get_current_domain().handle;
+    assert_ne!(dom1, current);
+
+    // Now perform several switches.
+    let switcheroo = |handle: usize,
+                      curr: Handle<Domain<NoBackend>>,
+                      tgt: Handle<Domain<NoBackend>>,
+                      state: &mut MonitorState<NoBackend>|
+     -> usize {
+        assert_eq!(curr, state.get_current_domain().handle);
+        let switch_call = Parameters {
+            vmcall: TYCHE_SWITCH,
+            arg_1: handle,
+            arg_2: CPU_LOCAL_TRANSITION,
+            ..Default::default()
+        };
+        let res = monitor
+            .dispatch(state, &switch_call)
+            .expect("Failed switch");
+        assert_eq!(tgt, state.get_current_domain().handle);
+        //Things to check.
+        //1) There should be only one context allocated per domain.
+        //2) Contexts should have a return_context set.
+        //3) Ownership should be correct.
+        let check_ctxt = |active: bool,
+                          xpct: usize,
+                          dom_h: Handle<Domain<NoBackend>>,
+                          state: &MonitorState<NoBackend>| {
+            let dom = state.resources.get(dom_h);
+            let mut counter = 0;
+            for i in 0..CONTEXT_PER_DOMAIN {
+                if dom.contexts.is_allocated(i) {
+                    counter += 1;
+                    let ctxt = dom.contexts.get(Handle::new_unchecked(i));
+                    match ctxt.return_context {
+                        None => panic!("The return handle should not be null!"),
+                        Some(ret_h) => {
+                            let ret = state.resources.get_capa(ret_h);
+                            if active {
+                                assert_eq!(ret.capa_type, CapabilityType::Resource);
+                            } else {
+                                assert_eq!(ret.capa_type, CapabilityType::Revocation);
+                            }
+                            let owner = ret.get_owner::<ErrorCode, NoBackend>().expect("No owner?");
+                            assert_eq!(owner, dom_h);
+                        }
+                    }
+                }
+            }
+            assert_eq!(counter, 1);
+
+            // Now check the local transition capa.
+            assert_eq!(dom.owned.is_allocated(xpct), true);
+            {
+                let owned_capa = dom.owned.get(Handle::new_unchecked(xpct));
+                match *owned_capa {
+                    OwnedCapability::Domain(h) => {
+                        let capa = state.resources.get_capa(h);
+                        match capa.access {
+                            DomainAccess::Transition(_) => {
+                                if active {
+                                    assert_eq!(capa.capa_type, CapabilityType::Resource);
+                                } else {
+                                    assert_eq!(capa.capa_type, CapabilityType::Revocation);
+                                }
+                            }
+                            _ => panic!("It is not a transition capability!"),
+                        }
+                    }
+                    _ => panic!("Wrong capability type!"),
+                }
+            }
+        };
+        check_ctxt(true, res.value_1, tgt, &state);
+        check_ctxt(false, handle, curr, &state);
+        return res.value_1;
+    };
+
+    // Now switch back and forth several times!
+    let dom2 = { state.get_current_domain().handle };
+    let mut h2 = reg_switch.value_1;
+    let mut h1 = reg_seal.value_1;
+    for i in 0..10 {
+        if i % 2 == 0 {
+            // dom2 -> dom1.
+            h1 = switcheroo(h2, dom2, dom1, &mut state);
+        } else {
+            // dom1 -> dom2
+            h2 = switcheroo(h1, dom1, dom2, &mut state);
+        }
+    }
+}
+
+#[test]
+fn zombie_test() {
+    full_init!(state);
+    let monitor = Tyche {};
+    let (revok, id_new, _) = create_helper(&monitor, &mut state, 1, 1);
+
+    // Share the memory region multiple times with the new guy.
+    let mut mem_idx = usize::MAX;
+    {
+        let current = state.resources.get(state.get_current_domain().handle);
+        current.enumerate(|idx, own| match *own {
+            OwnedCapability::Region(_) => {
+                mem_idx = idx;
+            }
+            _ => {}
+        });
+    }
+    // Share the region.
+    let mut share_call = Parameters {
+        vmcall: tyche::TYCHE_SHARE,
+        arg_1: id_new,
+        arg_2: mem_idx,
+        arg_3: 0,
+        arg_4: MEM_4GB,
+        arg_5: memory::SHARE_USER.bits() as usize,
+    };
+    // Pointer to the new local region.
+    let new_region = monitor
+        .dispatch(&mut state, &share_call)
+        .expect("Unable to share the region")
+        .value_1;
+    // Share it a second time.
+    share_call.arg_2 = new_region;
+    let _ = monitor
+        .dispatch(&mut state, &share_call)
+        .expect("Unable to share the region a second time");
+
+    // Revoke the original domain.
+    let revok_call = Parameters {
+        vmcall: tyche::TYCHE_REVOKE,
+        arg_1: revok,
+        ..Default::default()
+    };
+    let _ = monitor
+        .dispatch(&mut state, &revok_call)
+        .expect("Unable to revoke domain.");
+
+    // Check there is only one domain left.
+    {
+        let mut counter = 0;
+        for i in 0..DOMAIN_POOL_SIZE {
+            if state.resources.pools.domains.is_allocated(i) {
+                counter += 1;
+            }
+        }
+        assert_eq!(counter, 1);
+    }
+    // Check there are still 5 region handles, two zombied.
+    {
+        let mut counter = 0;
+        let mut count_zombie = 0;
+        for i in 0..CAPA_POOL_SIZE {
+            if state.resources.pools.region_capas.is_allocated(i) {
+                counter += 1;
+                let capa = state
+                    .resources
+                    .pools
+                    .region_capas
+                    .get(Handle::new_unchecked(i));
+                match capa.owner {
+                    Ownership::Zombie => {
+                        count_zombie += 1;
+                    }
+                    Ownership::Domain(dom, _) => {
+                        let dom_h = state.get_current_domain().handle.idx();
+                        assert_eq!(dom, dom_h);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        assert_eq!(counter, 5);
+        assert_eq!(count_zombie, 2);
+    }
+
+    // Now revoke them just to be sure.
+    let revok_call = Parameters {
+        vmcall: tyche::TYCHE_REVOKE,
+        arg_1: mem_idx,
+        ..Default::default()
+    };
+    let _ = monitor
+        .dispatch(&mut state, &revok_call)
+        .expect("Unable to cascade revoke all region capas");
+    // Check there is only one left.
+    {
+        let mut counter = 0;
+        for i in 0..CAPA_POOL_SIZE {
+            if state.resources.pools.region_capas.is_allocated(i) {
+                counter += 1;
+            }
+        }
+        assert_eq!(counter, 1);
     }
 }

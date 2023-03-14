@@ -74,6 +74,22 @@ pub trait Backend: 'static + Sized {
         capa: &Capability<CPU<Self>>,
     ) -> Result<(), Error<Self::Error>>;
 
+    /// Switch needs to:
+    /// 1) Save the current cpu in the to_save context (cpu is still in get_current_cpu()).
+    /// 2) Restore the to_restore state into the cpu capability.
+    /// @warn: do not make assumptions about ownership in its implementation.
+    /// The curr cpu might belong to the other domain already.
+    /// curr cpu might be equal to target cpu so avoid double borrow.
+    fn switch_context(
+        &self,
+        pool: &State<'_, Self>,
+        caller: Handle<Domain<Self>>,
+        callee: Handle<Domain<Self>>,
+        to_save: Handle<Capability<Domain<Self>>>,
+        to_restore: Handle<Capability<Domain<Self>>>,
+        target_cpu: Handle<Capability<CPU<Self>>>,
+    ) -> Result<(), Error<Self::Error>>;
+
     fn get_current_domain<'p>(
         &self,
         pool: &'p State<'_, Self>,
@@ -133,7 +149,7 @@ pub const EMPTY_OWNED_CAPABILITY: RefCell<OwnedCapability<NoBackend>> =
     RefCell::new(OwnedCapability::Empty);
 
 pub const EMPTY_CONTEXT: RefCell<Context<NoBackend>> = RefCell::new(Context {
-    in_use: false,
+    return_context: None,
     state: NoBackendContext {},
 });
 
@@ -264,6 +280,18 @@ impl Backend for NoBackend {
     where
         Self: Sized,
     {
+        Ok(())
+    }
+
+    fn switch_context(
+        &self,
+        _pool: &State<'_, Self>,
+        _caller: Handle<Domain<Self>>,
+        _callee: Handle<Domain<Self>>,
+        _to_save: Handle<Capability<Domain<Self>>>,
+        _to_restore: Handle<Capability<Domain<Self>>>,
+        _target_cpu: Handle<Capability<CPU<Self>>>,
+    ) -> Result<(), Error<Self::Error>> {
         Ok(())
     }
 

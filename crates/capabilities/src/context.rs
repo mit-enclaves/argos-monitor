@@ -1,35 +1,21 @@
 //! Represents an execution context.
 
-use arena::ArenaItem;
+use arena::{ArenaItem, Handle};
 
 use crate::backend::{Backend, BackendContext};
+use crate::domain::Domain;
 use crate::error::ErrorCode;
+use crate::Capability;
 
 pub struct Context<B: Backend> {
-    pub in_use: bool,
+    //TODO this should be a local capability pointer?
+    pub return_context: Option<Handle<Capability<Domain<B>>>>,
+    //TODO this should have a cpu associated that is a local capability too?
     pub state: B::Context,
 }
 
 impl<B: Backend> Context<B> {
-    // TODO make these atomic
-    pub fn lock(&mut self) -> bool {
-        if self.in_use {
-            return false;
-        }
-        self.in_use = true;
-        return true;
-    }
-
-    pub fn unlock(&mut self) -> bool {
-        if self.in_use {
-            self.in_use = false;
-            return true;
-        }
-        return false;
-    }
-
     pub fn init(&mut self, arg1: usize, arg2: usize, arg3: usize) {
-        self.in_use = false;
         self.state.init(arg1, arg2, arg3);
     }
 }
