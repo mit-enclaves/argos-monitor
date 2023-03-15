@@ -220,22 +220,7 @@ where
             }
             VmxExitReason::Wrmsr => {
                 let ecx = self.get(Register::Rcx);
-                println!("VmExit on Wrmsr: {:#x}", ecx);
-                if ecx >= 0x800 && ecx <= 0x832 {
-                    use msr::Msr;
-                    let mut msr = Msr::new(ecx as u32);
-
-                    let low = self.get(Register::Rax);
-                    let high = self.get(Register::Rdx);
-                    let val = (high << 32) | low;
-                    println!("Wrmsr value: {:#x}", val);
-                    unsafe {
-                        msr.write(val);
-                    }
-
-                    self.next_instruction()?;
-                    Ok(HandlerResult::Resume)
-                } else if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
+                if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
                     // Custom MSR range, used by KVM
                     // See https://docs.kernel.org/virt/kvm/x86/msr.html
                     // TODO: just ignore them for now, should add support in the future
@@ -248,17 +233,7 @@ where
             }
             VmxExitReason::Rdmsr => {
                 let ecx = self.get(Register::Rcx);
-                println!("VmExit on Rdmsr: {:#x}", ecx);
-                if ecx >= 0x800 && ecx <= 0x832 {
-                    use msr::Msr;
-                    let msr = Msr::new(ecx as u32);
-                    let result = unsafe { msr.read() };
-                    let high = result >> 32;
-                    let low = result & 0xffff;
-
-                    self.set(Register::Rax, low);
-                    self.set(Register::Rdx, high);
-                }
+                println!("MSR: {:#x}", ecx);
                 self.next_instruction()?;
                 Ok(HandlerResult::Resume)
             }
@@ -410,49 +385,6 @@ impl<'active, 'vmx> X86Vcpu<'active, 'vmx> {
             .initialize_msr_bitmaps(bit_frame)
             .expect("Failed to install MSR bitmaps");
         msr_bitmaps.allow_all();
-
-        const X2APIC_EXIT_REGS: [msr::Msr; 34] = [
-            msr::IA32_X2APIC_APICID,
-            msr::IA32_X2APIC_VERSION,
-            msr::IA32_X2APIC_TPR,
-            msr::IA32_X2APIC_PPR,
-            msr::IA32_X2APIC_EOI,
-            msr::IA32_X2APIC_LDR,
-            msr::IA32_X2APIC_SIVR,
-            msr::IA32_X2APIC_TMR0,
-            msr::IA32_X2APIC_TMR1,
-            msr::IA32_X2APIC_TMR2,
-            msr::IA32_X2APIC_TMR3,
-            msr::IA32_X2APIC_TMR4,
-            msr::IA32_X2APIC_TMR5,
-            msr::IA32_X2APIC_TMR6,
-            msr::IA32_X2APIC_TMR7,
-            msr::IA32_X2APIC_ISR0,
-            msr::IA32_X2APIC_ISR1,
-            msr::IA32_X2APIC_ISR2,
-            msr::IA32_X2APIC_ISR3,
-            msr::IA32_X2APIC_ISR4,
-            msr::IA32_X2APIC_ISR5,
-            msr::IA32_X2APIC_ISR6,
-            msr::IA32_X2APIC_ISR7,
-            msr::IA32_X2APIC_IRR0,
-            msr::IA32_X2APIC_IRR1,
-            msr::IA32_X2APIC_IRR2,
-            msr::IA32_X2APIC_IRR3,
-            msr::IA32_X2APIC_IRR4,
-            msr::IA32_X2APIC_IRR5,
-            msr::IA32_X2APIC_IRR6,
-            msr::IA32_X2APIC_IRR7,
-            msr::IA32_X2APIC_ICR0,
-            msr::IA32_X2APIC_ICR1,
-            msr::IA32_X2APIC_LVT_TIMER,
-        ];
-
-        X2APIC_EXIT_REGS.iter().for_each(|reg| {
-            msr_bitmaps.deny_read(*reg);
-            msr_bitmaps.deny_write(*reg);
-        });
-
         self.set_nat(fields::GuestStateNat::Rip, info.rip).ok();
         self.set_nat(fields::GuestStateNat::Cr3, info.cr3).ok();
         self.set_nat(fields::GuestStateNat::Rsp, info.rsp).ok();
