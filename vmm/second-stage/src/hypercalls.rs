@@ -2,6 +2,7 @@
 
 use crate::arena::{ArenaItem, Handle, TypedArena};
 use crate::statics::{NB_DOMAINS, NB_REGIONS, NB_REGIONS_PER_DOMAIN, NB_SWITCH_PER_DOMAIN};
+use vmx::msr;
 use mmu::FrameAllocator;
 use stage_two_abi::Manifest;
 
@@ -1039,9 +1040,9 @@ where
 
         unsafe fn write_icr(icr: u64) {
             // ICR1
-            core::ptr::write_volatile(0xfee00310 as *mut u32, (icr >> 32) as u32);
+            msr::IA32_X2APIC_ICR1.write(icr >> 32);
             // ICR0
-            core::ptr::write_volatile(0xfee00300 as *mut u32, (icr & 0xffff_ffff) as u32);
+            msr::IA32_X2APIC_ICR0.write(icr & 0xffff_ffff);
         }
 
         for i in 0..8 {
