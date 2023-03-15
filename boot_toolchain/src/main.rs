@@ -156,7 +156,6 @@ fn main() {
         // GDB path
         if let Some(dbg) = config.dbg {
             run_cmd
-                .arg("-s")
                 .arg("-chardev")
                 .arg(format!("socket,path={},server=on,wait=off,id=dbg0", dbg))
                 .arg("-gdb")
