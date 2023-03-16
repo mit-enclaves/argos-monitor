@@ -16,6 +16,8 @@ __attribute__((force_align_arg_pointer)) void _start() {
       "movl $0x0, %ecx;"
       "xsetbv");
 
+  asm("cpuid");
+
   // Exit
   asm("movl $0x9, %eax;"
       "movl $0x9, %ebx;"

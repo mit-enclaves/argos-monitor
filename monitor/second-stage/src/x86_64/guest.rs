@@ -137,9 +137,9 @@ impl<'active> Guest for GuestX86<'active> {
                     // Note: LLVM reserves %rbx for its internal use, so we need to use a scratch
                     // register for %rbx here.
                     asm!(
-                        "mov rbx, {tmp}",
-                        "cpuid",
                         "mov {tmp}, rbx",
+                        "cpuid",
+                        "mov rbx, {tmp}",
                         tmp = out(reg) ebx ,
                         inout("rax") input_eax => eax,
                         inout("rcx") input_ecx => ecx,
@@ -233,6 +233,7 @@ impl<'active> Guest for GuestX86<'active> {
                 match vcpu.interrupt_info() {
                     Ok(Some(exit)) => {
                         println!("Exception: {:?}", vcpu.interrupt_info());
+                        dump(vcpu);
                         // Inject the fault back into the guest.
                         let injection = exit.as_injectable_u32();
                         vcpu.set_vm_entry_interruption_information(injection)?;
