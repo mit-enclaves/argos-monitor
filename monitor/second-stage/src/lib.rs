@@ -35,4 +35,3 @@ pub fn init(manifest: &Manifest, cpuid: usize) {
 pub fn init() {
     arch::init();
 }
-

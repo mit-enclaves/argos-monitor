@@ -9,12 +9,12 @@ pub mod backend;
 pub mod guest;
 
 use core::arch::asm;
-use crate::println;
 
 pub use guest::launch_guest;
 use mmu::FrameAllocator;
 
 use crate::debug::qemu::ExitCode;
+use crate::println;
 use crate::statics::{allocator, pool};
 
 // TODO: some empty types to be filled.

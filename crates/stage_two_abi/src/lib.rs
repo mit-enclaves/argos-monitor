@@ -45,7 +45,6 @@ macro_rules! entry_point {
     };
 }
 
-
 // ———————————————————————————————— Manifest ———————————————————————————————— //
 
 /// The second stage manifest, describing the state of the system at the time the second stage is

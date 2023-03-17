@@ -81,7 +81,6 @@ fn second_stage_entry_point() -> ! {
 
 #[cfg(target_arch = "riscv64")]
 fn second_stage_entry_point(hartid: u64, arg1: u64, next_addr: u64, next_mode: u64) -> ! {
-
     second_stage::init();
 
     println!("============= Second Stage =============");
