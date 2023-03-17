@@ -2,7 +2,7 @@
 
 use core::arch::asm;
 
-use riscv_utils::{MPIE, MPP_LOW, MPP_MASK};
+use riscv_csrs::mstatus;
 
 use crate::println;
 
@@ -18,12 +18,12 @@ pub fn launch_guest(hartid: u64, arg1: u64, next_addr: u64, next_mode: u64) {
         asm!("csrr {}, mstatus", out(reg) mstatus);
     }
     //clear MPP
-    mstatus = mstatus & !(MPP_MASK << MPP_LOW);
+    mstatus = mstatus & !(mstatus::MPP_MASK << mstatus::MPP_LOW);
     //set MPP = 01 i.e. S-mode
-    mstatus |= 1 << MPP_LOW;
+    mstatus |= 1 << mstatus::MPP_LOW;
 
     //reset mpie
-    mstatus = mstatus & !(1 << MPIE);
+    mstatus = mstatus & !(1 << mstatus::MPIE);
 
     //write updated mstatus
     unsafe {

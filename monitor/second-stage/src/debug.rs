@@ -15,12 +15,7 @@ pub mod serial {
 
 #[cfg(target_arch = "riscv64")]
 pub mod serial {
-    //use core::fmt;
-
-    /// Internal function used to print to stdout when running in Qemu.
-    //pub fn _print(_args: fmt::Arguments) {
     pub use qemu::_print;
-    //}
 }
 
 #[macro_export]

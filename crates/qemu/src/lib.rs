@@ -15,14 +15,14 @@ pub use riscv64::{_print, exit};
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => {
-        $crate::_print(core::format_args!($($arg)*));
+        $crate::_print(core::format_args!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! println {
     () => ($crate::print!("\r\n"));
-    ($($arg:tt)*) => ($crate::print!("{}\r\n", core::format_args!($($arg)*)));
+    ($($arg:tt)*) => ($crate::print!("{}\r\n", core::format_args!($($arg)*)))
 }
 
 // —————————————————————————————— Exiting QEMU —————————————————————————————— //
