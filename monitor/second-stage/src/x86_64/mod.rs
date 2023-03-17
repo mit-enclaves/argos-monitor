@@ -18,7 +18,7 @@ use vmx::bitmaps::{
     SecondaryControls,
 };
 use vmx::fields::traits::*;
-pub use vmx::VmxError as Error;
+pub use vmx::VmxError as BackendError;
 use vmx::{fields, secondary_controls_capabilities, ActiveVmcs, Register, VmxError};
 
 use crate::allocator::Allocator;

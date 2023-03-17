@@ -8,13 +8,13 @@
 //! mutable reference with static lifetime.
 
 use arena::TypedArena;
-#[cfg(target_arch = "riscv64")]
-use capabilities::backend;
 use capabilities::memory::{EMPTY_MEMORY_REGION, EMPTY_MEMORY_REGION_CAPA};
 use capabilities::{OPool, CAPA_POOL_SIZE, CPU_POOL_SIZE, DOMAIN_POOL_SIZE, MEMORY_POOL_SIZE};
 use stage_two_abi::make_manifest;
 
 use crate::allocator::{FreeListAllocator, Page, PAGE_SIZE};
+#[cfg(target_arch = "riscv64")]
+use crate::riscv::backend;
 #[cfg(target_arch = "x86_64")]
 use crate::x86_64::backend;
 
@@ -79,14 +79,14 @@ make_static! {
     };
 }
 
-#[cfg(target_arch = "risc64")]
+#[cfg(target_arch = "riscv64")]
 make_static! {
-    static mut pool: OPool<NoBackend> = OPool {
+    static mut pool: OPool<backend::RiscvBackend> = OPool {
         domains: TypedArena::new([backend::EMPTY_DOMAIN; DOMAIN_POOL_SIZE]),
         domain_capas: TypedArena::new([backend::EMPTY_DOMAIN_CAPA; CAPA_POOL_SIZE]),
         regions: TypedArena::new([EMPTY_MEMORY_REGION; MEMORY_POOL_SIZE]),
         region_capas: TypedArena::new([EMPTY_MEMORY_REGION_CAPA; CAPA_POOL_SIZE]),
-        cpus: TypedArena::new([backend::EMPTY_CPU_CAPA; CPU_POOL_SIZE]),
+        cpus: TypedArena::new([backend::EMPTY_CPU; CPU_POOL_SIZE]),
         cpu_capas: TypedArena::new([backend::EMPTY_CPU_CAPA; CAPA_POOL_SIZE]),
     };
 }

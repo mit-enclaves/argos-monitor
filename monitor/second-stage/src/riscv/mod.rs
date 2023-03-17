@@ -1,5 +1,10 @@
 //! Risc-V backend
 
+// TODO: remove this once the backend is implemented.
+// The line just removes the unused warnings.
+#![allow(unused)]
+
+pub mod backend;
 pub mod guest;
 
 use core::arch::asm;
@@ -7,97 +12,12 @@ use core::arch::asm;
 use mmu::FrameAllocator;
 use stage_two_abi::Manifest;
 
-use crate::allocator::Allocator;
 use crate::debug::qemu::ExitCode;
-use crate::hypercalls::{Backend, Domain, ErrorCode, HypercallResult, Hypercalls, Region};
-use crate::statics::{
-    allocator as get_allocator, domains_arena as get_domains_arena,
-    regions_arena as get_regions_arena,
-};
+use crate::statics::{allocator, pool};
 
-// TODO: this represents the backend errors, for now it is empty.
-pub enum Error {}
-
-pub struct Arch {}
-
-impl Arch {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
-pub struct Vcpu {}
-pub struct Store {}
-pub struct Context {}
-
-impl Backend for Arch {
-    type Vcpu<'a> = Vcpu;
-    type Store = Store;
-    type Context = Context;
-
-    const EMPTY_STORE: Self::Store = Store {};
-    const EMPTY_CONTEXT: Self::Context = Context {};
-
-    fn debug_iommu(&mut self) -> HypercallResult {
-        // No I/O MMU with Risc-V backend
-        Ok(Default::default())
-    }
-
-    fn domain_seal(
-        &mut self,
-        _target: usize,
-        _current: &mut Domain<Self>,
-        _reg_1: usize,
-        _reg_2: usize,
-        _reg_3: usize,
-    ) -> HypercallResult {
-        todo!();
-    }
-
-    fn domain_create(
-        &mut self,
-        _store: &mut Self::Store,
-        _allocator: &impl FrameAllocator,
-    ) -> Result<(), ErrorCode> {
-        todo!();
-    }
-
-    fn domain_restore<'a>(
-        &mut self,
-        _store: &Self::Store,
-        _context: &Self::Context,
-        _vcpu: &mut Self::Vcpu<'a>,
-    ) -> Result<(), ErrorCode> {
-        todo!();
-    }
-
-    fn domain_save<'a>(
-        &mut self,
-        _context: &mut Self::Context,
-        _vcpu: &mut Self::Vcpu<'a>,
-    ) -> Result<(), ErrorCode> {
-        todo!();
-    }
-
-    fn add_region(
-        &mut self,
-        _store: &mut Self::Store,
-        _region: &Region,
-        _access: usize,
-        _allocator: &impl FrameAllocator,
-    ) -> Result<(), ErrorCode> {
-        todo!();
-    }
-
-    fn remove_region(
-        &mut self,
-        _store: &mut Self::Store,
-        _region: &Region,
-        _allocator: &impl FrameAllocator,
-    ) -> Result<(), ErrorCode> {
-        todo!();
-    }
-}
+// TODO: some empty types to be filled.
+#[derive(Debug)]
+pub enum BackendError {}
 
 /// Halt the CPU in a spinloop;
 pub fn hlt() -> ! {
@@ -126,22 +46,10 @@ pub fn exit_qemu(exit_code: ExitCode) {
 
 /// Architecture specific initialization.
 pub fn init(manifest: &Manifest, _cpuid: usize) {
-    let mut allocator = Allocator::new(
-        get_allocator(),
-        (manifest.voffset - manifest.poffset) as usize,
-    );
-    let domains_arena = get_domains_arena();
-    let regions_arena = get_regions_arena();
-    let _hypercalls = Hypercalls::new(
-        &manifest,
-        Arch::new(),
-        &mut Vcpu {},
-        &mut allocator,
-        domains_arena,
-        regions_arena,
-    );
     // TODO
 }
+
+pub fn launch_guest(manifest: &'static Manifest) {}
 
 pub fn cpuid() -> usize {
     todo!();
