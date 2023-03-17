@@ -1,4 +1,5 @@
 use arena::Handle;
+use bitflags::bitflags;
 use capabilities::access::AccessRights;
 use capabilities::backend::Backend;
 use capabilities::context::Context;
@@ -27,9 +28,15 @@ pub const TYCHE_SWITCH: TycheCall = 8;
 pub const TYCHE_EXIT: TycheCall = 9;
 
 // For enumeration
-pub const TYCHE_DOMAIN_TYPE: usize = 0;
-pub const TYCHE_REGION_TYPE: usize = 1;
-pub const TYCHE_CPU_TYPE: usize = 2;
+bitflags! {
+    pub struct EnumerationFlags : usize {
+        const NONE = 0;
+        const TYCHE_DOMAIN = 1 << 0;
+        const TYCHE_REGION = 1 << 1;
+        const TYCHE_CPU = 1 << 2;
+        const TYCHE_REVOKE = 1 << 3;
+    }
+}
 
 // For transition
 pub const CPU_LOCAL_TRANSITION: usize = usize::MAX;
@@ -353,21 +360,36 @@ impl Tyche {
                             let obj = state.resources.get(capa.handle);
                             let (b1, b2, b3) = capa.access.as_bits();
                             let ref_count = obj.get_ref(&state.resources, &capa);
-                            return (idx, TYCHE_DOMAIN_TYPE, b1, b2, b3, ref_count);
+                            let flags = if capa.capa_type == CapabilityType::Resource {
+                                EnumerationFlags::TYCHE_DOMAIN
+                            } else {
+                                EnumerationFlags::TYCHE_DOMAIN | EnumerationFlags::TYCHE_REVOKE
+                            };
+                            return (idx, flags.bits(), b1, b2, b3, ref_count);
                         }
                         OwnedCapability::CPU(h) => {
                             let capa = state.resources.get_capa(h);
                             let obj = state.resources.get(capa.handle);
                             let (b1, b2, b3) = capa.access.as_bits();
                             let ref_count = obj.get_ref(&state.resources, &capa);
-                            return (idx, TYCHE_CPU_TYPE, b1, b2, b3, ref_count);
+                            let flags = if capa.capa_type == CapabilityType::Resource {
+                                EnumerationFlags::TYCHE_CPU
+                            } else {
+                                EnumerationFlags::TYCHE_CPU | EnumerationFlags::TYCHE_REVOKE
+                            };
+                            return (idx, flags.bits(), b1, b2, b3, ref_count);
                         }
                         OwnedCapability::Region(h) => {
                             let capa = state.resources.get_capa(h);
                             let obj = state.resources.get(capa.handle);
                             let (b1, b2, b3) = capa.access.as_bits();
                             let ref_count = obj.get_ref(&state.resources, &capa);
-                            return (idx, TYCHE_REGION_TYPE, b1, b2, b3, ref_count);
+                            let flags = if capa.capa_type == CapabilityType::Resource {
+                                EnumerationFlags::TYCHE_REGION
+                            } else {
+                                EnumerationFlags::TYCHE_REGION | EnumerationFlags::TYCHE_REVOKE
+                            };
+                            return (idx, flags.bits(), b1, b2, b3, ref_count);
                         }
                         _ => {
                             return (

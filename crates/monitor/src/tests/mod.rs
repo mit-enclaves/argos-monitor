@@ -892,23 +892,22 @@ fn enumerate_test() {
             }
             Ok(registers) => {
                 // Check the type of the capa
-                assert!(registers.value_2 < 3);
-                match registers.value_2 {
-                    tyche::TYCHE_DOMAIN_TYPE => {
+                match tyche::EnumerationFlags::from_bits_truncate(registers.value_2) {
+                    tyche::EnumerationFlags::TYCHE_DOMAIN => {
                         assert_eq!(registers.value_3, 2);
                         assert_eq!(registers.value_4, 1);
                         assert_eq!(registers.value_5, 1);
                         assert_eq!(registers.value_6, 1);
                         domain_counter += 1;
                     }
-                    tyche::TYCHE_REGION_TYPE => {
+                    tyche::EnumerationFlags::TYCHE_REGION => {
                         assert_eq!(registers.value_3, 0);
                         assert_eq!(registers.value_4, MEM_4GB);
                         assert_eq!(registers.value_5, memory::ALL_RIGHTS.bits() as usize);
                         assert_eq!(registers.value_6, 1);
                         region_counter += 1;
                     }
-                    tyche::TYCHE_CPU_TYPE => {
+                    tyche::EnumerationFlags::TYCHE_CPU => {
                         assert_eq!(registers.value_3, 0);
                         assert_eq!(registers.value_4, 0);
                         assert_eq!(registers.value_5, 0);
