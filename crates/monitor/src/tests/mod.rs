@@ -339,6 +339,7 @@ fn give_test() {
         arg_3: 0,
         arg_4: MEM_4GB,
         arg_5: memory::SHARE_USER.bits() as usize,
+        ..Default::default()
     };
 
     match monitor.dispatch(&mut state, &give_call) {
@@ -435,6 +436,7 @@ fn share_unsealed_test() {
         arg_3: 0,
         arg_4: MEM_4GB,
         arg_5: memory::SHARE_USER.bits() as usize,
+        ..Default::default()
     };
 
     match tyche.dispatch(&mut state, &share_call) {
@@ -519,6 +521,7 @@ fn grant_unsealed_test() {
         arg_3: 0,
         arg_4: MEM_4GB,
         arg_5: memory::SHARE_USER.bits() as usize,
+        ..Default::default()
     };
 
     match tyche.dispatch(&mut state, &grant_call) {
@@ -606,6 +609,7 @@ fn revoke_test() {
         arg_3: 0,
         arg_4: MEM_4GB / 2,
         arg_5: memory::SHARE_USER.bits() as usize,
+        ..Default::default()
     };
     let new_local = monitor
         .dispatch(&mut state, &share_call)
@@ -725,6 +729,7 @@ fn revoke_invalid() {
         arg_3: 0,
         arg_4: MEM_4GB / 2,
         arg_5: memory::SHARE_USER.bits() as usize,
+        ..Default::default()
     };
     let new_local = monitor
         .dispatch(&mut state, &share_call)
@@ -814,6 +819,7 @@ fn domain_collection() {
         arg_3: 0,
         arg_4: MEM_4GB / 2,
         arg_5: memory::SHARE_USER.bits() as usize,
+        ..Default::default()
     };
     let _ = monitor
         .dispatch(&mut state, &share_call)
@@ -937,6 +943,7 @@ fn switch_test() {
         arg_3: 1,
         arg_4: 2,
         arg_5: 3,
+        ..Default::default()
     };
     let registers = monitor
         .dispatch(&mut state, &seal_call)
@@ -1066,6 +1073,7 @@ fn switch_return_test() {
         arg_3: 1,
         arg_4: 2,
         arg_5: 3,
+        ..Default::default()
     };
     let reg_seal = monitor
         .dispatch(&mut state, &seal_call)
@@ -1204,6 +1212,7 @@ fn zombie_test() {
         arg_3: 0,
         arg_4: MEM_4GB,
         arg_5: memory::SHARE_USER.bits() as usize,
+        ..Default::default()
     };
     // Pointer to the new local region.
     let new_region = monitor

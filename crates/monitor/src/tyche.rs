@@ -6,6 +6,7 @@ use capabilities::context::Context;
 use capabilities::cpu::CPU;
 use capabilities::domain::{Domain, DomainAccess, OwnedCapability};
 use capabilities::error::ErrorCode;
+use capabilities::memory::MemoryRegion;
 use capabilities::{Capability, CapabilityType, Object, Pool};
 
 use crate::{Monitor, MonitorCallResult, MonitorState, Parameters, Registers};
@@ -23,9 +24,10 @@ pub const TYCHE_SHARE: TycheCall = 3;
 pub const TYCHE_GRANT: TycheCall = 4;
 pub const TYCHE_GIVE: TycheCall = 5;
 pub const TYCHE_REVOKE: TycheCall = 6;
-pub const TYCHE_ENUMERATE: TycheCall = 7;
-pub const TYCHE_SWITCH: TycheCall = 8;
-pub const TYCHE_EXIT: TycheCall = 9;
+pub const TYCHE_DUPLICATE: TycheCall = 7;
+pub const TYCHE_ENUMERATE: TycheCall = 8;
+pub const TYCHE_SWITCH: TycheCall = 9;
+pub const TYCHE_EXIT: TycheCall = 10;
 
 // For enumeration
 bitflags! {
@@ -78,6 +80,16 @@ impl<B: Backend> Monitor<B> for Tyche {
             ),
             TYCHE_GIVE => self.transfer(state, params.arg_1, params.arg_2),
             TYCHE_REVOKE => self.revoke(state, params.arg_1),
+            TYCHE_DUPLICATE => self.duplicate(
+                state,
+                params.arg_1,
+                params.arg_2,
+                params.arg_3,
+                params.arg_4,
+                params.arg_5,
+                params.arg_6,
+                params.arg_7,
+            ),
             TYCHE_ENUMERATE => self.enumerate(state, params.arg_1),
             TYCHE_SWITCH => self.switch(state, params.arg_1, params.arg_2),
             TYCHE_EXIT => panic!("Exit should not reach dispatch."),
@@ -339,6 +351,74 @@ impl Tyche {
             }
         }
         Ok(Registers {
+            ..Default::default()
+        })
+    }
+
+    fn duplicate<B: Backend>(
+        &self,
+        state: &MonitorState<B>,
+        capa_idx: usize,
+        a1_1: usize,
+        a1_2: usize,
+        a1_3: usize,
+        a2_1: usize,
+        a2_2: usize,
+        a2_3: usize,
+    ) -> MonitorCallResult<B> {
+        let curr_handle = state.get_current_domain().handle;
+        match *state
+            .resources
+            .get(curr_handle)
+            .get_local_capa(capa_idx)
+            .map_err(|e| e.wrap())?
+        {
+            OwnedCapability::CPU(h) => self.duplicate_inner(
+                &state.resources,
+                h,
+                CPU::<B>::from_bits(a1_1, a1_2, a1_3),
+                CPU::<B>::from_bits(a2_1, a2_2, a2_3),
+            ),
+            OwnedCapability::Domain(h) => self.duplicate_inner(
+                &state.resources,
+                h,
+                Domain::<B>::from_bits(a1_1, a1_2, a1_3),
+                Domain::<B>::from_bits(a2_1, a2_2, a2_3),
+            ),
+            OwnedCapability::Region(h) => self.duplicate_inner(
+                &state.resources,
+                h,
+                MemoryRegion::from_bits(a1_1, a1_2, a1_3),
+                MemoryRegion::from_bits(a2_1, a2_2, a2_3),
+            ),
+            _ => {
+                return ErrorCode::WrongOwnership.as_err();
+            }
+        }
+    }
+
+    fn duplicate_inner<B: Backend, T: Object>(
+        &self,
+        pool: &impl Pool<T, B = B>,
+        handle: Handle<Capability<T>>,
+        op1: T::Access,
+        op2: T::Access,
+    ) -> MonitorCallResult<B> {
+        let mut capa = pool.get_capa_mut(handle);
+        let (lh, rh) = capa.duplicate(op1, op2, pool)?;
+        let left = if !lh.is_null() {
+            pool.get_capa(lh).get_local_idx()?
+        } else {
+            usize::MAX
+        };
+        let right = if !rh.is_null() {
+            pool.get_capa(rh).get_local_idx()?
+        } else {
+            usize::MAX
+        };
+        Ok(Registers {
+            value_1: left,
+            value_2: right,
             ..Default::default()
         })
     }

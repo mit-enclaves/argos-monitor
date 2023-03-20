@@ -28,6 +28,8 @@ pub struct Parameters {
     pub arg_3: usize,
     pub arg_4: usize,
     pub arg_5: usize,
+    pub arg_6: usize,
+    pub arg_7: usize,
 }
 
 pub struct Registers {
