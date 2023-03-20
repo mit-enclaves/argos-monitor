@@ -3,19 +3,14 @@
 use core::arch::asm;
 
 use riscv_utils::{
-    Register_State, ECALL_FROM_SMODE, ECALL_FROM_UMODE, MPP_LOW, MPP_MASK, PMP_SHIFT,
-    SBI_ECALL_IMPID, SBI_ECALL_VERSION_MAJOR, SBI_ECALL_VERSION_MINOR, SBI_EXT_BASE,
-    SBI_EXT_BASE_GET_IMP_ID, SBI_EXT_BASE_GET_IMP_VERSION, SBI_EXT_BASE_GET_MARCHID,
-    SBI_EXT_BASE_GET_MIMPID, SBI_EXT_BASE_GET_MVENDORID, SBI_EXT_BASE_GET_SPEC_VERSION,
-    SBI_EXT_BASE_PROBE_EXT, SBI_EXT_HSM, SBI_EXT_IPI, SBI_EXT_RFENCE, SBI_EXT_SRST, SBI_EXT_TIME,
-    SBI_SPEC_VERSION_MAJOR_MASK, SBI_SPEC_VERSION_MAJOR_OFFSET, SERIAL_PORT_BASE_ADDRESS,
+    mcause, sbi, RegisterState, MPP_LOW, MPP_MASK, PMP_SHIFT, SERIAL_PORT_BASE_ADDRESS,
     SUP_STACK_POINTER, TYCHE_SBI_VERSION, TYCHE_SIZE_NAPOT, TYCHE_STACK_POINTER,
     TYCHE_START_ADDRESS,
 };
 
 use crate::println;
 
-//static mut register_state: Register_State = Register_State::const_default();
+//static mut register_state: RegisterState = RegisterState::const_default();
 
 pub fn init() {
     //Configuring PMP to protect the monitor's memory.
@@ -112,7 +107,7 @@ pub fn write_medeleg(pos: u64, value: u64) {
 
 #[repr(align(4))]
 #[naked]
-pub fn machine_trap_handler() {
+pub extern "C" fn machine_trap_handler() {
     unsafe {
         asm!(
             "csrrw sp, mscratch, sp
@@ -377,7 +372,7 @@ pub extern "C" fn trap_handler_dummy() {
     //unsafe { asm!("mret", options(noreturn)); }
 }
 
-pub fn trap_handler(reg_state: &mut Register_State) {
+pub fn trap_handler(reg_state: &mut RegisterState) {
     //Read mcause
     let mut mcause: u64;
     unsafe {
@@ -436,13 +431,13 @@ pub fn trap_handler(reg_state: &mut Register_State) {
 
     // Check which trap it is
     match mcause {
-        ILLEGAL_INSTRUCTION_TRAP => {
+        mcause::ILLEGAL_INSTRUCTION => {
             println!(
                 "Illegal instruction trap from {} mode",
                 ((mstatus >> MPP_LOW) & MPP_MASK)
             );
         }
-        ECALL_FROM_SMODE => {
+        mcause::ECALL_FROM_SMODE => {
             ecall_handler(&mut ret, &mut err, reg_state.a0, reg_state.a6, reg_state.a7)
         }
         _ => trap_handler_dummy(),
@@ -468,7 +463,7 @@ pub fn ecall_handler(mut ret: &mut u64, mut err: &mut u64, a0: u64, a6: u64, a7:
     //unsafe { asm!("mv {}, a7", out(reg) a7); }
     println!("ecall handler a7: {:x}", a7);
     match a7 {
-        SBI_EXT_BASE => sbi_ext_base_handler(&mut ret, &mut err, a0, a6),
+        sbi::EXT_BASE => sbi_ext_base_handler(&mut ret, &mut err, a0, a6),
         _ => trap_handler_dummy(),
     }
 }
@@ -478,13 +473,13 @@ pub fn sbi_ext_base_handler(ret: &mut u64, err: &mut u64, a0: u64, a6: u64) {
     //unsafe { asm!("mv {}, a6", out(reg) a6); }
     println!("base_handler a6: {:x}", a6);
     match a6 {
-        SBI_EXT_BASE_GET_SPEC_VERSION => *ret = get_sbi_spec_version(),
-        SBI_EXT_BASE_GET_IMP_ID => *ret = SBI_ECALL_IMPID,
-        SBI_EXT_BASE_GET_IMP_VERSION => *ret = TYCHE_SBI_VERSION,
-        SBI_EXT_BASE_GET_MVENDORID | SBI_EXT_BASE_GET_MARCHID | SBI_EXT_BASE_GET_MIMPID => {
+        sbi::EXT_BASE_GET_SPEC_VERSION => *ret = get_sbi_spec_version(),
+        sbi::EXT_BASE_GET_IMP_ID => *ret = sbi::ECALL_IMPID,
+        sbi::EXT_BASE_GET_IMP_VERSION => *ret = TYCHE_SBI_VERSION,
+        sbi::EXT_BASE_GET_MVENDORID | sbi::EXT_BASE_GET_MARCHID | sbi::EXT_BASE_GET_MIMPID => {
             *ret = get_m_x_id(a6)
         }
-        SBI_EXT_BASE_PROBE_EXT => *ret = probe(a0),
+        sbi::EXT_BASE_PROBE_EXT => *ret = probe(a0),
         _ => trap_handler_dummy(),
     }
 }
@@ -492,9 +487,9 @@ pub fn sbi_ext_base_handler(ret: &mut u64, err: &mut u64, a0: u64, a6: u64) {
 pub fn get_sbi_spec_version() -> u64 {
     let mut spec_ver: u64;
 
-    spec_ver = (SBI_ECALL_VERSION_MAJOR << SBI_SPEC_VERSION_MAJOR_OFFSET)
-        & (SBI_SPEC_VERSION_MAJOR_MASK << SBI_SPEC_VERSION_MAJOR_OFFSET);
-    spec_ver |= SBI_ECALL_VERSION_MINOR;
+    spec_ver = (sbi::ECALL_VERSION_MAJOR << sbi::SPEC_VERSION_MAJOR_OFFSET)
+        & (sbi::SPEC_VERSION_MAJOR_MASK << sbi::SPEC_VERSION_MAJOR_OFFSET);
+    spec_ver |= sbi::ECALL_VERSION_MINOR;
     println!("Computed spec_version: {:x}", spec_ver);
     return spec_ver;
 }
@@ -504,16 +499,16 @@ pub fn probe(a0: u64) -> u64 {
     let mut ret: u64 = 0;
 
     match a0 {
-        SBI_EXT_TIME | SBI_EXT_IPI | SBI_EXT_HSM => {
+        sbi::EXT_TIME | sbi::EXT_IPI | sbi::EXT_HSM => {
             ret = 1;
             println!("PROBING SBI_EXT_TIME/IPI/HSM.")
         }
         //Handlers for the corresponding ecall are not yet implemented.
-        SBI_EXT_RFENCE => {
+        sbi::EXT_RFENCE => {
             ret = 1;
             println!("PROBING SBI_EXT_RFENCE")
         }
-        SBI_EXT_SRST => ret = sbi_ext_srst_probe(a0),
+        sbi::EXT_SRST => ret = sbi_ext_srst_probe(a0),
         _ => trap_handler_dummy(),
     }
 
@@ -525,13 +520,13 @@ pub fn probe(a0: u64) -> u64 {
 pub fn get_m_x_id(a6: u64) -> u64 {
     let mut ret: u64 = 0;
     match a6 {
-        SBI_EXT_BASE_GET_MVENDORID => unsafe {
+        sbi::EXT_BASE_GET_MVENDORID => unsafe {
             asm!("csrr {}, mvendorid", out(reg) ret);
         },
-        SBI_EXT_BASE_GET_MARCHID => unsafe {
+        sbi::EXT_BASE_GET_MARCHID => unsafe {
             asm!("csrr {}, marchid", out(reg) ret);
         },
-        SBI_EXT_BASE_GET_MIMPID => unsafe {
+        sbi::EXT_BASE_GET_MIMPID => unsafe {
             asm!("csrr {}, mimpid", out(reg) ret);
         },
         _ => println!("Invalid get_m_x_id request!"),

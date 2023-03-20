@@ -26,14 +26,14 @@ pub mod serial {
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => {
-        $crate::debug::serial::_print(core::format_args!($($arg)*));
+        $crate::debug::serial::_print(core::format_args!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! println {
     () => ($crate::print!("\n"));
-    ($($arg:tt)*) => ($crate::print!("{}\n", core::format_args!($($arg)*)));
+    ($($arg:tt)*) => ($crate::print!("{}\n", core::format_args!($($arg)*)))
 }
 
 // —————————————————————————————————— Qemu —————————————————————————————————— //
