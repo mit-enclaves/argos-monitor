@@ -36,8 +36,12 @@ pub enum DomainAccess {
 bitflags! {
     pub struct DomainCreateFlags: usize {
         const NONE = 0;
-        const SPAWN = 1 << 0;
-        const COMM = 1 << 1;
+        const UNSEALED = 1 << 0;
+        const SEALED = 1 << 1;
+        const CHANNEL = 1 << 2;
+        const TRANSITION = 1 << 3;
+        const SPAWN = 1 << 4;
+        const COMM = 1 << 5;
     }
 }
 
@@ -326,10 +330,29 @@ where
 
 impl<B: Backend> Object for Domain<B> {
     type Access = DomainAccess;
-    fn from_bits(bits: usize, _: usize, _: usize) -> Self::Access {
-        let bits = DomainCreateFlags::from_bits_truncate(bits);
-        if bits == DomainCreateFlags::COMM {
+    fn from_bits(tpe: usize, x: usize, _: usize) -> Self::Access {
+        let bits = DomainCreateFlags::from_bits_truncate(tpe);
+        let spawn = if bits & DomainCreateFlags::SPAWN != DomainCreateFlags::NONE {
+            true
+        } else {
+            false
+        };
+        let comm = if bits & DomainCreateFlags::COMM != DomainCreateFlags::NONE {
+            true
+        } else {
+            false
+        };
+        if bits & DomainCreateFlags::UNSEALED != DomainCreateFlags::NONE {
+            return DomainAccess::Unsealed(spawn, comm);
+        }
+        if bits & DomainCreateFlags::SEALED != DomainCreateFlags::NONE {
+            return DomainAccess::Sealed(spawn, comm);
+        }
+        if bits & DomainCreateFlags::CHANNEL != DomainCreateFlags::NONE {
             return DomainAccess::Channel;
+        }
+        if bits & DomainCreateFlags::TRANSITION != DomainCreateFlags::NONE {
+            return DomainAccess::Transition(x);
         }
         return DomainAccess::NONE;
     }
