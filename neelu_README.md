@@ -25,6 +25,7 @@ Note: qemu-system-x86\_64 version used: 6.2.
 Following this blogpost: https://danielmangum.com/posts/risc-v-bytes-rust-cross-compilation/ 
 
 If you want to skip reading the blogpost, execute the following command: 
+
 `rustup target add riscv64gc-unknown-linux-gnu` 
 
 
