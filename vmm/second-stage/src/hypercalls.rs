@@ -2,9 +2,11 @@
 
 use crate::arena::{ArenaItem, Handle, TypedArena};
 use crate::statics::{NB_DOMAINS, NB_REGIONS, NB_REGIONS_PER_DOMAIN, NB_SWITCH_PER_DOMAIN};
-use vmx::msr;
 use mmu::FrameAllocator;
 use stage_two_abi::Manifest;
+use vmx::msr;
+
+pub static mut TIMER_INTERRUPT_COUNTER: usize = 0;
 
 // ——————————————————————————————— Hypercalls ——————————————————————————————— //
 
@@ -24,6 +26,7 @@ pub mod vmcalls {
     pub const EXIT: usize                = 0x500;
     pub const DEBUG_IOMMU: usize         = 0x600;
     pub const SEND_IPI: usize            = 0x700;
+    pub const TIMER_INTERRUPT_HANDLER: usize = 0x800;
     pub const DOMAIN_SWITCH: usize       = 0x999;
 }
 
@@ -541,6 +544,7 @@ where
             vmcalls::DOMAIN_SEAL => {
                 self.domain_seal(params.arg_1, params.arg_2, params.arg_3, params.arg_4)
             }
+            vmcalls::TIMER_INTERRUPT_HANDLER => self.handle_guest_timer_interrupt(),
             vmcalls::SEND_IPI => self.send_ipi(params.arg_1 as u8),
             _ => Err(ErrorCode::UnknownVmCall),
         }
@@ -1034,6 +1038,16 @@ where
             .domain_seal(handle, domain, reg_1, reg_2, reg_3)
     }
 
+    fn handle_guest_timer_interrupt(&mut self) -> HypercallResult {
+        // crate::println!("handling timer interrupt...");
+
+        unsafe { TIMER_INTERRUPT_COUNTER += 1 };
+
+        Ok(Registers {
+            ..Default::default()
+        })
+    }
+
     fn send_ipi(&mut self, vector: u8) -> HypercallResult {
         // Assume Local APIC is at 0xfee00000
         crate::println!("send_ipi ...");
@@ -1069,7 +1083,6 @@ where
                 | (vector as u64);
 
             unsafe { write_icr(icr) };
-
 
             // Deassert the level interrupt
 
