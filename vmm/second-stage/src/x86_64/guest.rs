@@ -43,8 +43,15 @@ pub fn get_allocator_static() -> &'static Option<Allocator<NB_PAGES>> {
 
 static BSP_GUEST_INIT_DONE: AtomicBool = AtomicBool::new(false);
 static mut HYPERCALLS: Option<Hypercalls<Arch>> = None;
-pub static mut VMX_GUEST: [Option<VmxGuest<200>>; 8] =
-    [None, None, None, None, None, None, None, None];
+pub static mut VMX_GUEST: [Option<VmxGuest<200>>; 64] =
+    [None, None, None, None, None, None, None, None,
+     None, None, None, None, None, None, None, None,
+     None, None, None, None, None, None, None, None,
+     None, None, None, None, None, None, None, None,
+     None, None, None, None, None, None, None, None,
+     None, None, None, None, None, None, None, None,
+     None, None, None, None, None, None, None, None,
+     None, None, None, None, None, None, None, None];
 
 pub fn launch(manifest: &'static mut Manifest, cpuid: usize) {
     if !manifest.info.loaded {
