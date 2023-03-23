@@ -257,9 +257,16 @@ where
                 }
             }
             VmxExitReason::VmxPreemptionTimerExpired => {
-                // Dump the guest state and continue
-                println!("Timer interrupt");
-                println!("CPU{}: {:?}", self.vcpu_id, self.active_vmcs);
+                self.set32(
+                    fields::GuestState32::VmxPreemptionTimerValue,
+                    24_000_000,
+                    /* u32::max_value() */
+                )?;
+                println!(
+                    "VCPU{}: {:#x}",
+                    self.vcpu_id,
+                    self.active_vmcs.as_ref().unwrap().get(Register::Rip)
+                );
                 Ok(HandlerResult::Resume)
             }
             _ => {
@@ -583,7 +590,10 @@ impl<'active, 'vmx> X86Vcpu<'active, 'vmx> {
         self.set64(fields::GuestState64::VmcsLinkPtr, u64::max_value())?;
         self.set16(fields::GuestState16::InterruptStatus, 0)?;
         // vcpu.set16(fields::GuestState16::PmlIndex, 0)?; // <- Not supported on dev server
-        self.set32(fields::GuestState32::VmxPreemptionTimerValue, u32::max_value())?;
+        self.set32(
+            fields::GuestState32::VmxPreemptionTimerValue,
+            24_000_000, /* u32::max_value() */
+        )?;
 
         Ok(())
     }
