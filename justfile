@@ -61,7 +61,7 @@ setup:
 	rustup toolchain install {{toolchain}}
 	rustup component add llvm-tools-preview --toolchain {{toolchain}}
 	rustup component add rust-src --toolchain {{toolchain}}
-	rustup target add x86_64-unknown-linux-musl
+	rustup target add x86_64-unknown-linux-musl --toolchain {{toolchain}}
 	rustup component add rustfmt --toolchain {{toolchain}}
 
 	# Download UEFI firmware for QEMU usage
@@ -221,6 +221,10 @@ build-metal-linux:
 _common-metal TARGET:
 	{{x86-linker-script}} cargo build {{cargo_args}} {{x86_64}} {{second-stage}} --release
 	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{TARGET}} {{bare-metal}} -- --uefi --no-run
+
+# Build user-space programs
+user-space:
+	cargo build --package libtyche --target=x86_64-unknown-linux-musl --release
 
 # Start the software TPM emulator, if not already running
 _tpm:

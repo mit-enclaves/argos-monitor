@@ -19,8 +19,8 @@ __attribute__((force_align_arg_pointer)) void _start() {
   asm("cpuid");
 
   // Exit
-  asm("movl $0x9, %eax;"
-      "movl $0x9, %ebx;"
+  asm("movl $0xa, %eax;"
+      "movl $0xa, %ebx;"
       "vmcall");
   __builtin_unreachable();
 }
