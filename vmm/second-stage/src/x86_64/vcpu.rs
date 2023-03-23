@@ -1,6 +1,6 @@
 use super::guest::VMX_GUEST;
 use crate::debug::qemu;
-use crate::hypercalls::{ErrorCode, Parameters};
+use crate::hypercalls::{self, ErrorCode, Parameters};
 use crate::println;
 use crate::vcpu::HandlerResult;
 use crate::vcpu::Vcpu;
@@ -262,11 +262,14 @@ where
                     24_000_000,
                     /* u32::max_value() */
                 )?;
-                println!(
-                    "VCPU{}: {:#x}",
-                    self.vcpu_id,
-                    self.active_vmcs.as_ref().unwrap().get(Register::Rip)
-                );
+                unsafe {
+                    println!(
+                        "VCPU{}: Rip={:#x}, Timer Interrupt Count={}",
+                        self.vcpu_id,
+                        self.active_vmcs.as_ref().unwrap().get(Register::Rip),
+                        hypercalls::TIMER_INTERRUPT_COUNTER
+                    );
+                }
                 Ok(HandlerResult::Resume)
             }
             _ => {
