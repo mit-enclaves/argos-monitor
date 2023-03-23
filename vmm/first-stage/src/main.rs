@@ -130,7 +130,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     }
 
     // Enable interrupts
-    x86_64::instructions::interrupts::enable();
+    x86_64::instructions::interrupts::disable();
 
     // Select appropriate guest depending on selected features
     if cfg!(feature = "guest_linux") {

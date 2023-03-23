@@ -60,6 +60,7 @@ unsafe fn ap_entry() {
     while !BSP_READY.load(Ordering::SeqCst) {
         core::hint::spin_loop();
     }
+    x86_64::instructions::interrupts::disable();
     // APs enter the 2nd stage and spins until BSP gets the manifest
     smx::senter();
 }
