@@ -10,7 +10,7 @@ use crate::ecall::ecall_handler;
 
 #[repr(align(4))]
 #[naked]
-pub fn machine_trap_handler() {
+pub extern "C" fn machine_trap_handler() {
     unsafe {
         asm!(
             "csrrw sp, mscratch, sp

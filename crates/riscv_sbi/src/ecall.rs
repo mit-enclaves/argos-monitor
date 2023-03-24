@@ -14,7 +14,7 @@ pub fn ecall_handler(mut ret: &mut usize, mut err: &mut usize, a0: usize, a6: us
 }
 
 // ------------------------------- SBI BASE CALL HANDLER and HELPERS ----------------------- //
-pub fn sbi_ext_base_handler(ret: &mut usize, err: &mut usize, a0: usize, a6: usize) {
+pub fn sbi_ext_base_handler(ret: &mut usize, _err: &mut usize, a0: usize, a6: usize) {
     //let mut a6: usize;
     //unsafe { asm!("mv {}, a6", out(reg) a6); }
     //println!("base_handler a6: {:x}",a6);
@@ -81,7 +81,7 @@ pub fn get_m_x_id(a6: usize) -> usize {
     return ret;
 }
 
-pub fn sbi_ext_srst_probe(a0: usize) -> usize {
+pub fn sbi_ext_srst_probe(_a0: usize) -> usize {
     //TODO For now this function pretends that srst extension probe works as expected.
     //If needed in the future, this must be implemented fully - refer to openSBI for this.
     return 1;
