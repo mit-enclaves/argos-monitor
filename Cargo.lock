@@ -326,7 +326,7 @@ dependencies = [
 name = "qemu"
 version = "0.1.0"
 dependencies = [
- "riscv_utils",
+ "riscv_tyche",
  "spin 0.5.2",
  "uart_16550",
 ]
@@ -348,6 +348,27 @@ checksum = "a6823ea29436221176fe662da99998ad3b4db2c7f31e7b6f5fe43adccd6320bb"
 dependencies = [
  "bitflags",
 ]
+
+[[package]]
+name = "riscv_csrs"
+version = "0.1.0"
+
+[[package]]
+name = "riscv_pmp"
+version = "0.1.0"
+
+[[package]]
+name = "riscv_sbi"
+version = "0.1.0"
+dependencies = [
+ "qemu",
+ "riscv_csrs",
+ "riscv_utils",
+]
+
+[[package]]
+name = "riscv_tyche"
+version = "0.1.0"
 
 [[package]]
 name = "riscv_utils"
@@ -394,6 +415,10 @@ dependencies = [
  "mmu",
  "monitor",
  "qemu",
+ "riscv_csrs",
+ "riscv_pmp",
+ "riscv_sbi",
+ "riscv_tyche",
  "riscv_utils",
  "spin 0.9.4",
  "stage_two_abi",
