@@ -141,14 +141,6 @@ pub fn load(
         PtFlag::PRESENT | PtFlag::WRITE,
     );
 
-    loaded_elf.pt_mapper.map_range(
-        stage2_allocator,
-        HostVirtAddr::new(0xfee00000),
-        HostPhysAddr::new(0xfee00000),
-        0x1000,
-        PtFlag::PRESENT | PtFlag::WRITE,
-    );
-
     smp_stacks
         .iter()
         .for_each(|&(stack_virt_addr, _, stack_phys_addr)| {
