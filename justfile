@@ -55,6 +55,8 @@ format:
 # Install the required dependencies
 setup:
 	# Installing Rust
+	rustup target add x86_64-unknown-linux-musl
+	rustup target add riscv64gc-unknown-linux-gnu
 	rustup toolchain install {{toolchain}}
 	rustup component add llvm-tools-preview --toolchain {{toolchain}}
 	rustup component add rust-src --toolchain {{toolchain}}
@@ -62,11 +64,19 @@ setup:
 	rustup component add rustfmt --toolchain {{toolchain}}
 
 	# Download UEFI firmware for QEMU usage
-	wget https://github.com/rust-osdev/ovmf-prebuilt/releases/download/v0.20220719.209%2Bgf0064ac3af/OVMF-pure-efi.fd
+	wget -O OVMF-pure-efi.fd https://github.com/rust-osdev/ovmf-prebuilt/releases/download/v0.20220719.209%2Bgf0064ac3af/OVMF-pure-efi.fd
 
 	# -----------------------------------------------------------
 	# IMPORTANT: You might need to perform some additional steps:
 	# - Install `swtpm` (software TPM emulator)
+	# - Install `qemu-system-misc` and `gcc-riscv64-unknown-elf` for RISC-V support
+
+# Similar to `setup`, but more complete and targeted at ubuntu 22.04
+setup-ubuntu:
+	@just setup
+	sudo apt install -y swtpm
+	sudo apt install -y gcc-riscv64-unknown-elf
+	sudo apt install -y qemu-system-misc
 
 _common TARGET SMP ARG1=extra_arg ARG2=extra_arg:
 	@just build
