@@ -85,7 +85,7 @@ impl EptMapper {
                         if (addr.as_usize() + GIANT_PAGE_SIZE <= end)
                             && (hphys % GIANT_PAGE_SIZE == 0)
                         {
-                            *entry = hphys as u64 | EptEntryFlags::PAGE.bits() | prot.bits();
+                            *entry = hphys as u64 | EptEntryFlags::PAGE.bits() | prot.bits()  | (6 << 3) | 0x40;
                             return WalkNext::Leaf;
                         }
                     }
@@ -94,13 +94,13 @@ impl EptMapper {
                         if (addr.as_usize() + HUGE_PAGE_SIZE <= end)
                             && (hphys % HUGE_PAGE_SIZE == 0)
                         {
-                            *entry = hphys as u64 | EptEntryFlags::PAGE.bits() | prot.bits();
+                            *entry = hphys as u64 | EptEntryFlags::PAGE.bits() | prot.bits() | (6 << 3)/* | 0x40 */;
                             return WalkNext::Leaf;
                         }
                     }
                     if level == Level::L1 {
                         assert!(hphys % PAGE_SIZE == 0);
-                        *entry = hphys as u64 | prot.bits();
+                        *entry = hphys as u64 | prot.bits() | (6 << 3)/* | 0x40 */;
                         return WalkNext::Leaf;
                     }
                     let frame = allocator
