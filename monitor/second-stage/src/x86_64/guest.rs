@@ -76,7 +76,7 @@ impl<'active> Guest for GuestX86<'active> {
                 let vcpu = cpu.core.get_active_mut()?;
                 let params = Parameters {
                     vmcall: vcpu.get(Register::Rax) as usize,
-                    arg_1: vcpu.get(Register::Rdx) as usize,
+                    arg_1: vcpu.get(Register::Rdi) as usize,
                     arg_2: vcpu.get(Register::Rsi) as usize,
                     arg_3: vcpu.get(Register::Rdx) as usize,
                     arg_4: vcpu.get(Register::Rcx) as usize,
