@@ -120,7 +120,6 @@ build:
 build-riscv:
 	{{riscv-linker-script}} cargo build {{cargo_args}} {{riscv}} {{second-stage}} --release
 
-
 ## ——————————————————————————— Linux Kernel Build ——————————————————————————— ##
 
 # Build linux image.
@@ -137,8 +136,37 @@ _build-linux-common CONFIG ARCH:
 	make -C ./linux O=../builds/{{CONFIG}} -j `nproc`
 	rm ./linux/arch/{{ARCH}}/configs/{{CONFIG}}_defconfig
 
-
 ## —————————————————————————————— RamFS Build ——————————————————————————————— ##
+
+build-busybox-x86:
+	mkdir -p ./builds/busybox-x86
+	cp ./configs/busybox-x86.config ./builds/busybox-x86/.config
+	make -C ./busybox O=../builds/busybox-x86/ -j `nproc`
+	make -C ./busybox O=../builds/busybox-x86/ PREFIX=../builds/ramfs-x86 install
+
+init-ramfs-x86:
+	mkdir -p ./builds/ramfs-x86
+	mkdir -p ./builds/ramfs-x86/bin
+	mkdir -p ./builds/ramfs-x86/dev
+	mkdir -p ./builds/ramfs-x86/sbin
+	mkdir -p ./builds/ramfs-x86/etc
+	mkdir -p ./builds/ramfs-x86/proc
+	mkdir -p ./builds/ramfs-x86/sys/kernel/debug
+	mkdir -p ./builds/ramfs-x86/usr/bin
+	mkdir -p ./builds/ramfs-x86/usr/sbin
+	mkdir -p ./builds/ramfs-x86/lib
+	mkdir -p ./builds/ramfs-x86/lib64
+	mkdir -p ./builds/ramfs-x86/mnt/root
+	mkdir -p ./builds/ramfs-x86/root
+
+	##### You will be asked for sudo permission #####
+	# This is necessary in order to create the `null`, `tty`, and `console` devices in the ramfs
+	sudo mknod ./builds/ramfs-x86/dev/null c 1 3
+	sudo mknod ./builds/ramfs-x86/dev/tty c 5 0
+	sudo mknod ./builds/ramfs-x86/dev/console c 5 1
+
+pack-ramfs-x86:
+	cd ./builds/ramfs-x86/ && find . | cpio -H newc --create | gzip > ../ramfs-x86.igz
 
 # Build the ramfs, packing all the userspace binaries
 build-ramfs:
