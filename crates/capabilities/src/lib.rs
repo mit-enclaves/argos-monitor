@@ -550,11 +550,13 @@ impl<Back: Backend + Sized> Pool<Domain<Back>> for State<'_, Back> {
         capa: Handle<Capability<Domain<Self::B>>>,
     ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         //Perform the cleanup now.
+        //TODO the logic here is flawed for some reason.
         let needs_cleanup = {
             let capa = self.get_capa(capa);
+            let count = self.get(capa.handle).get_ref(self, &capa);
             match capa.access {
-                DomainAccess::Sealed(_, _) => true,
-                DomainAccess::Unsealed(_, _) => true,
+                DomainAccess::Sealed(_, _) => true && count == 1,
+                DomainAccess::Unsealed(_, _) => true && count == 1,
                 _ => false,
             }
         };
@@ -571,7 +573,6 @@ impl<Back: Backend + Sized> Pool<Domain<Back>> for State<'_, Back> {
                         OwnedCapability::Region(h) => {
                             self.backend_unapply(h)?;
                             self.into_zombie_owner(h).map_err(|e| e.wrap())?
-                            //TODO backend unapply?
                         }
                         OwnedCapability::Domain(h) => {
                             self.backend_unapply(h)?;

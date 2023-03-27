@@ -177,11 +177,15 @@ impl AccessRights for DomainAccess {
             DomainAccess::Unsealed(s, c) => {
                 let spawn: usize = if s { 1 } else { 0 };
                 let comm: usize = if c { 1 } else { 0 };
-                (1, spawn, comm)
+                (DomainCreateFlags::UNSEALED.bits(), spawn, comm)
             }
-            DomainAccess::Sealed(s, c) => (2, if s { 1 } else { 0 }, if c { 1 } else { 0 }),
-            DomainAccess::Channel => (3, 0, 0),
-            DomainAccess::Transition(x) => (4, x, 0),
+            DomainAccess::Sealed(s, c) => (
+                DomainCreateFlags::SEALED.bits(),
+                if s { 1 } else { 0 },
+                if c { 1 } else { 0 },
+            ),
+            DomainAccess::Channel => (DomainCreateFlags::CHANNEL.bits(), 0, 0),
+            DomainAccess::Transition(x) => (DomainCreateFlags::TRANSITION.bits(), x, 0),
         }
     }
 }
