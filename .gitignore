@@ -1,4 +1,6 @@
 target
+builds/*
+!builds/.gitkeep
 .vim
 .gdb_history
 *__pycache__*

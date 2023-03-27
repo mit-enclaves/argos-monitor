@@ -2,8 +2,8 @@
 # https://github.com/casey/just
 
 toolchain      := "nightly-2023-03-01"
-x86_64         := "--target targets/x86_64-unknown-kernel.json"
-riscv          := "--target targets/riscv-unknown-kernel.json"
+x86_64         := "--target configs/x86_64-unknown-kernel.json"
+riscv          := "--target configs/riscv-unknown-kernel.json"
 build_std      := "-Zbuild-std=core,alloc"
 build_features := "-Zbuild-std-features=compiler-builtins-mem"
 cargo_args     := build_std + " " + build_features
@@ -109,7 +109,7 @@ linux-dbg SMP=default_smp:
 
 # Start a GDB session
 gdb DBG=default_dbg:
-	rust-gdb -q -ex "file target/x86_64-unknown-kernel/debug/first-stage" -ex "target remote {{DBG}}" -ex "source scripts/tyche-gdb.gdb" 
+	rust-gdb -q -ex "file target/x86_64-unknown-kernel/debug/first-stage" -ex "target remote {{DBG}}" -ex "source scripts/tyche-gdb.gdb"
 
 # Build the monitor for x86_64
 build:
@@ -120,9 +120,25 @@ build:
 build-riscv:
 	{{riscv-linker-script}} cargo build {{cargo_args}} {{riscv}} {{second-stage}} --release
 
+
+## ——————————————————————————— Linux Kernel Build ——————————————————————————— ##
+
 # Build linux image.
 build-linux:
 	make -C linux-image/
+
+build-linux-x86:
+	@just _build-linux-common linux-x86 x86
+
+_build-linux-common CONFIG ARCH:
+	cp ./configs/{{CONFIG}}.config  ./linux/arch/{{ARCH}}/configs/{{CONFIG}}_defconfig
+	mkdir -p ./builds/{{CONFIG}}
+	make -C ./linux O=../builds/{{CONFIG}} defconfig KBUILD_DEFCONFIG={{CONFIG}}_defconfig
+	make -C ./linux O=../builds/{{CONFIG}} -j `nproc`
+	rm ./linux/arch/{{ARCH}}/configs/{{CONFIG}}_defconfig
+
+
+## —————————————————————————————— RamFS Build ——————————————————————————————— ##
 
 # Build the ramfs, packing all the userspace binaries
 build-ramfs:
