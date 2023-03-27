@@ -8,11 +8,6 @@ edition = "2021"
 vga = ["dep:vga"]
 
 [dependencies]
-riscv_utils = { path = "../../crates/riscv_utils/" }
-riscv_tyche = { path = "../../crates/riscv_tyche/" }
-riscv_csrs = { path = "../../crates/riscv_csrs/" }
-riscv_sbi = { path = "../../crates/riscv_sbi/" }
-riscv_pmp = { path = "../../crates/riscv_pmp/" }
 utils = { path = "../../crates/utils/" }
 debug = { version = "0.1.0", path = "../../crates/debug" }
 mmu = { version = "0.1.0", path = "../../crates/mmu" }
@@ -31,3 +26,9 @@ vtd = { path = "../../crates/vtd" }
 vmx = { version = "0.1.0", path = "../../crates/vmx" }
 
 [target.'cfg(target_arch = "risc64")'.dependencies]
+riscv_utils = { path = "../../crates/riscv_utils/" }
+riscv_tyche = { path = "../../crates/riscv_tyche/" }
+riscv_csrs = { path = "../../crates/riscv_csrs/" }
+riscv_sbi = { path = "../../crates/riscv_sbi/" }
+riscv_pmp = { path = "../../crates/riscv_pmp/" }
+
