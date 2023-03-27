@@ -1,27 +1,27 @@
 # Justfile, see documentation here:
 # https://github.com/casey/just
 
-toolchain      := "nightly-2023-03-01"
-x86_64         := "--target configs/x86_64-unknown-kernel.json"
-riscv          := "--target configs/riscv-unknown-kernel.json"
-build_std      := "-Zbuild-std=core,alloc"
-build_features := "-Zbuild-std-features=compiler-builtins-mem"
-cargo_args     := build_std + " " + build_features
-linker-script  := "RUSTFLAGS='-C link-arg=-Tsecond-stage-linker-script.x'"
-riscv-linker-script := "RUSTFLAGS='-C link-arg=-Triscv_linker_script.x'"
-first-stage    := "--package first-stage --features=first-stage/second-stage"
-second-stage   := "--package second-stage"
-fake-acm       := "--package fake-acm"
-rawc           := "--features=first-stage/guest_rawc"
-linux          := "--features=first-stage/guest_linux"
-no-guest       := "--features=first-stage/no_guest"
-vga-s1         := "--features=first-stage/vga"
-vga-s2         := "--features=second-stage/vga"
-bare-metal     := "--features=first-stage/bare_metal"
-tpm_path       := "/tmp/tpm-dev-" + env_var('USER')
-default_dbg    := "/tmp/dbg-" + env_var('USER')
-default_smp    := "1"
-extra_arg      := ""
+toolchain           := "nightly-2023-03-01"
+x86_64              := "--target configs/x86_64-unknown-kernel.json"
+riscv               := "--target configs/riscv-unknown-kernel.json"
+build_std           := "-Zbuild-std=core,alloc"
+build_features      := "-Zbuild-std-features=compiler-builtins-mem"
+cargo_args          := build_std + " " + build_features
+x86-linker-script   := "RUSTFLAGS='-C link-arg=-Tconfigs/x86-linker-script.x'"
+riscv-linker-script := "RUSTFLAGS='-C link-arg=-Tconfigs/riscv-linker-script.x'"
+first-stage         := "--package first-stage --features=first-stage/second-stage"
+second-stage        := "--package second-stage"
+fake-acm            := "--package fake-acm"
+rawc                := "--features=first-stage/guest_rawc"
+linux               := "--features=first-stage/guest_linux"
+no-guest            := "--features=first-stage/no_guest"
+vga-s1              := "--features=first-stage/vga"
+vga-s2              := "--features=second-stage/vga"
+bare-metal          := "--features=first-stage/bare_metal"
+tpm_path            := "/tmp/tpm-dev-" + env_var('USER')
+default_dbg         := "/tmp/dbg-" + env_var('USER')
+default_smp         := "1"
+extra_arg           := ""
 
 # Print list of commands
 help:
@@ -113,7 +113,7 @@ gdb DBG=default_dbg:
 
 # Build the monitor for x86_64
 build:
-	{{linker-script}} cargo build {{cargo_args}} {{x86_64}} {{second-stage}} --release
+	{{x86-linker-script}} cargo build {{cargo_args}} {{x86_64}} {{second-stage}} --release
 	cargo build {{cargo_args}} {{x86_64}} {{first-stage}}
 
 # Build the monitor for RISC-V64
@@ -160,7 +160,7 @@ build-metal-linux:
 	@just _common-metal {{linux}}
 
 _common-metal TARGET:
-	{{linker-script}} cargo build {{cargo_args}} {{x86_64}} {{second-stage}} --release
+	{{x86-linker-script}} cargo build {{cargo_args}} {{x86_64}} {{second-stage}} --release
 	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{TARGET}} {{bare-metal}} -- --uefi --no-run
 
 # Start the software TPM emulator, if not already running
