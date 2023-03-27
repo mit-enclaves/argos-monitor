@@ -227,6 +227,19 @@ impl<'active> Guest for GuestX86<'active> {
                     Ok(HandlerResult::Crash)
                 }
             }
+            VmxExitReason::Rdmsr => {
+                let mut cpu = self.get_local_cpu();
+                let vcpu = cpu.core.get_active_mut()?;
+                let ecx = vcpu.get(Register::Rcx);
+                if ecx == 0xc0011029 {
+                    // Reading an AMD specifig register, just ignore it
+                    vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                } else {
+                    println!("Unexpected rdmsr number: {:#x}", ecx);
+                    Ok(HandlerResult::Crash)
+                }
+            }
             VmxExitReason::Exception => {
                 let mut cpu = self.get_local_cpu();
                 let vcpu = cpu.core.get_active_mut()?;

@@ -143,6 +143,7 @@ build-busybox-x86:
 	cp ./configs/busybox-x86.config ./builds/busybox-x86/.config
 	make -C ./busybox O=../builds/busybox-x86/ -j `nproc`
 	make -C ./busybox O=../builds/busybox-x86/ PREFIX=../builds/ramfs-x86 install
+	cp ./configs/init.sh ./builds/ramfs-x86/init
 
 init-ramfs-x86:
 	mkdir -p ./builds/ramfs-x86
