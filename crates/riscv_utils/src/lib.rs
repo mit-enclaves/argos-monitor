@@ -1,5 +1,8 @@
 #![no_std]
 
+//uart base address
+pub const SERIAL_PORT_BASE_ADDRESS: usize = 0x1000_0000;
+
 pub struct RegisterState {
     pub ra: usize,
     pub a0: usize,
