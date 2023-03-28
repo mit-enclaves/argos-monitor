@@ -2,14 +2,13 @@ use core::arch::asm;
 
 use qemu::println;
 
-use crate::trap::trap_handler_dummy;
 use crate::{sbi, TYCHE_SBI_VERSION};
 
 pub fn ecall_handler(mut ret: &mut usize, mut err: &mut usize, a0: usize, a6: usize, a7: usize) {
     //println!("ecall handler a7: {:x}",a7);
     match a7 {
         sbi::EXT_BASE => sbi_ext_base_handler(&mut ret, &mut err, a0, a6),
-        _ => trap_handler_dummy(),
+        _ => ecall_handler_failed(),
     }
 }
 
@@ -26,7 +25,7 @@ pub fn sbi_ext_base_handler(ret: &mut usize, _err: &mut usize, a0: usize, a6: us
             *ret = get_m_x_id(a6)
         }
         sbi::EXT_BASE_PROBE_EXT => *ret = probe(a0),
-        _ => trap_handler_dummy(),
+        _ => ecall_handler_failed(),
     }
 }
 
@@ -55,7 +54,7 @@ pub fn probe(a0: usize) -> usize {
             println!("PROBING sbi::EXT_RFENCE")
         }
         sbi::EXT_SRST => ret = sbi_ext_srst_probe(a0),
-        _ => trap_handler_dummy(),
+        _ => ecall_handler_failed(),
     }
 
     //println!("Returning from probe {}",ret);
@@ -85,4 +84,9 @@ pub fn sbi_ext_srst_probe(_a0: usize) -> usize {
     //TODO For now this function pretends that srst extension probe works as expected.
     //If needed in the future, this must be implemented fully - refer to openSBI for this.
     return 1;
+}
+
+pub fn ecall_handler_failed() {
+    //TODO: Print information about requested ecall.
+    println!("Cannot service SBI ecall - invalid ecall.");
 }

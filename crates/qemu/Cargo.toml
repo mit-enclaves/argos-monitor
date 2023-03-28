@@ -8,4 +8,4 @@ edition = "2021"
 [dependencies]
 uart_16550 = "0.2.0"
 spin = "0.5.2"
-riscv_tyche = { path = "../riscv_tyche/" }
+riscv_utils = { path = "../riscv_utils/" }

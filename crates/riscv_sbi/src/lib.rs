@@ -5,7 +5,6 @@
 //SBI Trap Related
 
 pub mod ecall;
-pub mod trap;
 
 pub const TYCHE_SBI_VERSION: usize = 0x10001;
 
