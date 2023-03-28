@@ -851,7 +851,7 @@ dependencies = [
 name = "qemu"
 version = "0.1.0"
 dependencies = [
- "riscv_tyche",
+ "riscv_utils",
  "spin 0.5.2",
  "uart_16550",
 ]

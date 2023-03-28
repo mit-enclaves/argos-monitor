@@ -4,12 +4,12 @@ use core::arch::asm;
 
 use riscv_csrs::*;
 use riscv_pmp::pmpaddr_write;
-use riscv_sbi::trap::*;
 use riscv_sbi::*;
 use riscv_tyche::*;
 use riscv_utils::*;
 
 use crate::println;
+use crate::riscv::guest::machine_trap_handler;
 
 pub fn init() {
     //Configuring PMP to protect the monitor's memory.
