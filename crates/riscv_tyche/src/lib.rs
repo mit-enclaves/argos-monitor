@@ -1,8 +1,5 @@
 #![no_std]
 
-//uart base address
-pub const SERIAL_PORT_BASE_ADDRESS: usize = 0x1000_0000;
-
 //tyche monitor base address and size
 pub const TYCHE_START_ADDRESS: usize = 0x80100000;
 pub const TYCHE_SIZE_NAPOT: usize = 14;
