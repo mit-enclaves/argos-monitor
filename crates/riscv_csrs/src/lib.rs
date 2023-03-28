@@ -6,6 +6,7 @@ pub mod mstatus {
     pub const MPP_HIGH: usize = 12;
     pub const MPP_MASK: usize = 0x3; // 2 bits
     pub const MPIE: usize = 7;
+    pub const MPRV: usize = 17;
 }
 
 //MEDELEG register fields or mcause register valid values.

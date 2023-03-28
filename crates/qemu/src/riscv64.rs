@@ -4,7 +4,7 @@ use core::arch::asm;
 use core::fmt;
 use core::fmt::Write;
 
-use riscv_tyche::SERIAL_PORT_BASE_ADDRESS;
+use riscv_utils::SERIAL_PORT_BASE_ADDRESS;
 use uart_16550::MmioSerialPort;
 
 use crate::ExitCode;
