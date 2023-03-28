@@ -187,7 +187,8 @@ impl Backend for BackendX86 {
     where
         Self: Sized,
     {
-        todo!()
+        //todo!()
+        Ok(())
     }
 
     fn create_domain(
@@ -234,7 +235,9 @@ impl Backend for BackendX86 {
     where
         Self: Sized,
     {
-        todo!()
+        //todo!()
+        //SHOULD IMPLEMENT
+        Ok(())
     }
 
     fn create_cpu(
@@ -273,7 +276,8 @@ impl Backend for BackendX86 {
     where
         Self: Sized,
     {
-        todo!()
+        //todo!()
+        Ok(())
     }
 
     fn uninstall_cpu(
@@ -284,7 +288,9 @@ impl Backend for BackendX86 {
     where
         Self: Sized,
     {
-        todo!()
+        //todo!()
+        //TODO
+        Ok(())
     }
 
     fn switch_context(
@@ -310,7 +316,7 @@ impl Backend for BackendX86 {
                 match capa.access {
                     DomainAccess::Transition(x) => {
                         // TODO(@aghosn) is it the callee or the caller?
-                        if capa.handle != callee {
+                        if capa.handle != caller {
                             return Err(ErrorCode::InvalidTransition.wrap());
                         }
                         if !dom.contexts.is_allocated(x) {
@@ -350,7 +356,7 @@ impl Backend for BackendX86 {
                 match capa.access {
                     DomainAccess::Transition(x) => {
                         //TODO(@aghosn) this should be caller right?
-                        if capa.handle != caller {
+                        if capa.handle != callee {
                             return Err(ErrorCode::InvalidTransition.wrap());
                         }
                         if !dom.contexts.is_allocated(x) {
@@ -372,6 +378,7 @@ impl Backend for BackendX86 {
                 }
                 BackendX86Core::Inactive(_) => {
                     // TODO(@charly) will that fuck up the main loop when we return?
+                    println!("Activating a CPU?");
                     cpu.core.activate()?;
                 }
                 _ => {
@@ -390,7 +397,6 @@ impl Backend for BackendX86 {
                 }
             }
         }
-
         Ok(())
     }
 

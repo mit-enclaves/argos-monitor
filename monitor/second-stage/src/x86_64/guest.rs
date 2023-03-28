@@ -97,10 +97,12 @@ impl<'active> Guest for GuestX86<'active> {
                             let mut cpu = self.get_local_cpu();
                             let vcpu = cpu.core.get_active_mut()?;
                             vcpu.set(Register::Rax, 0);
-                            vcpu.set(Register::Rcx, values.value_1 as u64);
-                            vcpu.set(Register::Rdx, values.value_2 as u64);
-                            vcpu.set(Register::Rsi, values.value_3 as u64);
-                            vcpu.set(Register::R9, values.value_4 as u64);
+                            vcpu.set(Register::Rdi, values.value_1 as u64);
+                            vcpu.set(Register::Rsi, values.value_2 as u64);
+                            vcpu.set(Register::Rdx, values.value_3 as u64);
+                            vcpu.set(Register::Rcx, values.value_4 as u64);
+                            vcpu.set(Register::R8, values.value_5 as u64);
+                            vcpu.set(Register::R9, values.value_6 as u64);
                             values.next_instr
                         }
                         Err(err) => {
