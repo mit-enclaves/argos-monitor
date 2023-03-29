@@ -666,6 +666,7 @@ impl Tyche {
 
         Ok(Registers {
             value_1: local_return_idx,
+            next_instr: false,
             ..Default::default()
         })
     }

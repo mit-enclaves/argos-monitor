@@ -47,8 +47,10 @@ pub struct BackendC86Context {
 }
 
 impl BackendContext for BackendC86Context {
-    fn init(&mut self, _arg1: usize, _arg2: usize, _arg3: usize) {
-        // TODO
+    fn init(&mut self, cr3: usize, rip: usize, rsp: usize) {
+        self.cr3 = cr3;
+        self.rip = rip as u64;
+        self.rsp = rsp as u64;
     }
 }
 
@@ -165,6 +167,7 @@ impl Backend for BackendX86 {
     {
         let owner = capa.get_owner()?;
         let domain = pool.get_mut(owner);
+        println!("In install region for {:?}", owner.idx());
         let state = &domain.state;
         let access = capa.access;
         let mut mapper = EptMapper::new(self.allocator.get_physical_offset().as_usize(), state.ept);
@@ -182,12 +185,13 @@ impl Backend for BackendX86 {
     fn uninstall_region(
         &self,
         _pool: &State<'_, Self>,
-        _capa: &Capability<MemoryRegion>,
+        capa: &Capability<MemoryRegion>,
     ) -> Result<(), Error<Self::Error>>
     where
         Self: Sized,
     {
-        //todo!()
+        let owner: Handle<Domain<BackendX86>> = capa.get_owner()?;
+        println!("In uninstall region! {:?}", owner.idx());
         Ok(())
     }
 
@@ -206,6 +210,7 @@ impl Backend for BackendX86 {
             .zeroed();
         let mut domain = pool.get_mut(capa.handle);
         domain.state.ept = ept.phys_addr;
+        println!("Allocated a new domain {:?}", domain.state.ept);
         Ok(())
     }
 
@@ -323,13 +328,15 @@ impl Backend for BackendX86 {
                             return Err(ErrorCode::OutOfBound.wrap());
                         }
                         let mut to_save_context = dom.contexts.get_mut(Handle::new_unchecked(x));
-                        match &cpu.core {
+                        match &mut cpu.core {
                             BackendX86Core::Active(vcpu) => {
+                                vcpu.next_instruction()?;
                                 to_save_context.state.cr3 = vcpu.get_cr(vmx::ControlRegister::Cr3);
                                 to_save_context.state.rip = vcpu.get(vmx::Register::Rip);
                                 to_save_context.state.rsp = vcpu.get(vmx::Register::Rsp);
                                 ept_save = vcpu.get_ept_ptr()?;
                                 if self.get_current_cpu_handle() != target_cpu {
+                                    println!("We are deactivating?");
                                     cpu.core.deactivate()?;
                                 }
                             }
@@ -344,6 +351,7 @@ impl Backend for BackendX86 {
                 }
             }
             dom.state.ept = HostPhysAddr::new(ept_save as usize);
+            println!("Saved the ept {:?}", dom.state.ept);
         }
 
         // Restore the other state.
@@ -387,10 +395,17 @@ impl Backend for BackendX86 {
             }
             match &mut cpu.core {
                 BackendX86Core::Active(vcpu) => {
+                    println!("About to overwrite the values");
                     vcpu.set_cr(vmx::ControlRegister::Cr3, to_restore_context.state.cr3);
                     vcpu.set(vmx::Register::Rip, to_restore_context.state.rip);
                     vcpu.set(vmx::Register::Rsp, to_restore_context.state.rsp);
-                    vcpu.set_ept_ptr(dom.state.ept)?;
+                    println!(
+                        "We have rip {:x?}, rsp {:#?}, cr3: {:#?}",
+                        to_restore_context.state.rip,
+                        to_restore_context.state.rsp,
+                        to_restore_context.state.cr3
+                    );
+                    vcpu.set_ept_ptr(HostPhysAddr::new(dom.state.ept.as_usize() | EPT_ROOT_FLAGS))?;
                 }
                 _ => {
                     return Err(ErrorCode::InvalidTransition.wrap());
