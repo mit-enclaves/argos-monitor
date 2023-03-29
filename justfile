@@ -69,13 +69,13 @@ setup:
 	# -----------------------------------------------------------
 	# IMPORTANT: You might need to perform some additional steps:
 	# - Install `swtpm` (software TPM emulator)
-	# - Install `qemu-system-misc` and `gcc-riscv64-unknown-elf` for RISC-V support
+	# - Install `qemu-system-misc` and `gcc-riscv64-linux-gnu` for RISC-V support
 
 # Similar to `setup`, but more complete and targeted at ubuntu 22.04
 setup-ubuntu:
 	@just setup
 	sudo apt install -y swtpm
-	sudo apt install -y gcc-riscv64-unknown-elf
+	sudo apt install -y gcc-riscv64-linux-gnu
 	sudo apt install -y qemu-system-misc
 
 _common TARGET SMP ARG1=extra_arg ARG2=extra_arg:
@@ -129,11 +129,14 @@ build-linux:
 build-linux-x86:
 	@just _build-linux-common linux-x86 x86
 
-_build-linux-common CONFIG ARCH:
+build-linux-riscv:
+	@just _build-linux-common linux-riscv riscv CROSS_COMPILE=riscv64-linux-gnu-
+
+_build-linux-common CONFIG ARCH CROSS_COMPILE=extra_arg:
 	cp ./configs/{{CONFIG}}.config  ./linux/arch/{{ARCH}}/configs/{{CONFIG}}_defconfig
 	mkdir -p ./builds/{{CONFIG}}
-	make -C ./linux O=../builds/{{CONFIG}} defconfig KBUILD_DEFCONFIG={{CONFIG}}_defconfig
-	make -C ./linux O=../builds/{{CONFIG}} -j `nproc`
+	make -C ./linux ARCH={{ARCH}} O=../builds/{{CONFIG}} defconfig KBUILD_DEFCONFIG={{CONFIG}}_defconfig
+	make -C ./linux ARCH={{ARCH}} O=../builds/{{CONFIG}} {{CROSS_COMPILE}} -j `nproc`
 	rm ./linux/arch/{{ARCH}}/configs/{{CONFIG}}_defconfig
 
 ## —————————————————————————————— RamFS Build ——————————————————————————————— ##
