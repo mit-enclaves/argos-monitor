@@ -171,7 +171,7 @@ fn main() {
                 "emulator,id=tpm0,chardev=tpm-chardev",
                 "-chardev",
             ]);
-            run_cmd.arg(&format!("socket,id=tpm-chardev,path={}", tpm));
+            run_cmd.arg(&format!("socket,id=tpm-chardev,path={}/sock", tpm));
         }
 
         // Disk image
