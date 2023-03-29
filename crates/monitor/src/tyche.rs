@@ -315,7 +315,7 @@ impl Tyche {
 
     pub fn revoke<B: Backend>(
         &self,
-        state: &MonitorState<B>,
+        state: &mut MonitorState<B>,
         capa_idx: usize,
     ) -> MonitorCallResult<B> {
         let current = state.get_current_domain().handle;
@@ -349,6 +349,15 @@ impl Tyche {
             _ => {
                 return ErrorCode::InvalidRevocation.as_err();
             }
+        }
+        // Current domain handle might have changed, fix it.
+        {
+            let handle = {
+                let curr_dom = state.resources.get(current);
+                let capa = curr_dom.get_sealed_capa().map_err(|e| e.wrap())?;
+                capa
+            };
+            state.set_current_domain(handle);
         }
         Ok(Registers {
             ..Default::default()
