@@ -18,6 +18,7 @@ no-guest            := "--features=first-stage/no_guest"
 vga-s1              := "--features=first-stage/vga"
 vga-s2              := "--features=second-stage/vga"
 bare-metal          := "--features=first-stage/bare_metal"
+build_path          := justfile_directory() + "/builds"
 tpm_path            := "/tmp/tpm-dev-" + env_var('USER')
 default_dbg         := "/tmp/dbg-" + env_var('USER')
 default_smp         := "1"
@@ -76,6 +77,7 @@ setup-ubuntu:
 	@just setup
 	sudo apt install -y swtpm
 	sudo apt install -y gcc-riscv64-linux-gnu
+	sudo apt install -y libc6-dev-riscv64-cross
 	sudo apt install -y qemu-system-misc
 
 _common TARGET SMP ARG1=extra_arg ARG2=extra_arg:
@@ -127,50 +129,75 @@ build-linux:
 	make -C linux-image/
 
 build-linux-x86:
-	@just _build-linux-common linux-x86 x86
+	@just _build-linux-common x86
 
 build-linux-riscv:
-	@just _build-linux-common linux-riscv riscv CROSS_COMPILE=riscv64-linux-gnu-
+	@just _build-linux-common riscv CROSS_COMPILE=riscv64-linux-gnu-
 
-_build-linux-common CONFIG ARCH CROSS_COMPILE=extra_arg:
-	cp ./configs/{{CONFIG}}.config  ./linux/arch/{{ARCH}}/configs/{{CONFIG}}_defconfig
-	mkdir -p ./builds/{{CONFIG}}
-	make -C ./linux ARCH={{ARCH}} O=../builds/{{CONFIG}} defconfig KBUILD_DEFCONFIG={{CONFIG}}_defconfig
-	make -C ./linux ARCH={{ARCH}} O=../builds/{{CONFIG}} {{CROSS_COMPILE}} -j `nproc`
-	rm ./linux/arch/{{ARCH}}/configs/{{CONFIG}}_defconfig
+_build-linux-common ARCH CROSS_COMPILE=extra_arg:
+	@just _setup-linux-config {{ARCH}}
+	make -C ./linux ARCH={{ARCH}} O=../builds/linux-{{ARCH}} {{CROSS_COMPILE}} -j `nproc`
+	@just _clean-linux-config {{ARCH}}
+
+_build-linux-header-common ARCH CROSS_COMPILE=extra_arg:
+	@just _setup-linux-config {{ARCH}}
+	mkdir -p ./builds/linux-headers-{{ARCH}}
+	make -C ./linux ARCH={{ARCH}} O={{build_path}}/linux-{{ARCH}} {{CROSS_COMPILE}} INSTALL_HDR_PATH={{build_path}}/linux-headers-{{ARCH}} headers_install
+	@just _clean-linux-config {{ARCH}}
+
+_setup-linux-config ARCH:
+	cp ./configs/linux-{{ARCH}}.config  ./linux/arch/{{ARCH}}/configs/linux-{{ARCH}}_defconfig
+	mkdir -p ./builds/linux-{{ARCH}}
+	make -C ./linux ARCH={{ARCH}} O=../builds/linux-{{ARCH}} defconfig KBUILD_DEFCONFIG=linux-{{ARCH}}_defconfig
+
+_clean-linux-config ARCH:
+	rm ./linux/arch/{{ARCH}}/configs/linux-{{ARCH}}_defconfig
 
 ## —————————————————————————————— RamFS Build ——————————————————————————————— ##
 
 build-busybox-x86:
-	mkdir -p ./builds/busybox-x86
-	cp ./configs/busybox-x86.config ./builds/busybox-x86/.config
-	make -C ./busybox O=../builds/busybox-x86/ -j `nproc`
-	make -C ./busybox O=../builds/busybox-x86/ PREFIX=../builds/ramfs-x86 install
-	cp ./configs/init.sh ./builds/ramfs-x86/init
+	@just _build-busybox-common x86
+
+build-busybox-riscv:
+	@just _build-linux-header-common riscv CROSS_COMPILE=riscv64-linux-gnu-
+	@just _build-busybox-common riscv CROSS_COMPILE=riscv64-linux-gnu-
+
+_build-busybox-common ARCH CROSS_COMPILE=extra_arg:
+	mkdir -p ./builds/busybox-{{ARCH}}
+	cp ./configs/busybox-{{ARCH}}.config ./builds/busybox-{{ARCH}}/.config
+	make -C ./busybox ARCH={{ARCH}} CFLAGS="-I{{build_path}}/linux-headers-{{ARCH}}/include" O=../builds/busybox-{{ARCH}}/ {{CROSS_COMPILE}} -j `nproc`
+	make -C ./busybox ARCH={{ARCH}} O=../builds/busybox-{{ARCH}}/ {{CROSS_COMPILE}} PREFIX=../builds/ramfs-{{ARCH}} install
+	cp ./configs/init.sh ./builds/ramfs-{{ARCH}}/init
 
 init-ramfs-x86:
-	mkdir -p ./builds/ramfs-x86
-	mkdir -p ./builds/ramfs-x86/bin
-	mkdir -p ./builds/ramfs-x86/dev
-	mkdir -p ./builds/ramfs-x86/sbin
-	mkdir -p ./builds/ramfs-x86/etc
-	mkdir -p ./builds/ramfs-x86/proc
-	mkdir -p ./builds/ramfs-x86/sys/kernel/debug
-	mkdir -p ./builds/ramfs-x86/usr/bin
-	mkdir -p ./builds/ramfs-x86/usr/sbin
-	mkdir -p ./builds/ramfs-x86/lib
-	mkdir -p ./builds/ramfs-x86/lib64
-	mkdir -p ./builds/ramfs-x86/mnt/root
-	mkdir -p ./builds/ramfs-x86/root
+	@just _init-ramfs-common x86
 
-	##### You will be asked for sudo permission #####
+init-ramfs-riscv:
+	@just _init-ramfs-common riscv
+
+_init-ramfs-common ARCH:
+	mkdir -p ./builds/ramfs-{{ARCH}}
+	mkdir -p ./builds/ramfs-{{ARCH}}/bin
+	mkdir -p ./builds/ramfs-{{ARCH}}/dev
+	mkdir -p ./builds/ramfs-{{ARCH}}/sbin
+	mkdir -p ./builds/ramfs-{{ARCH}}/etc
+	mkdir -p ./builds/ramfs-{{ARCH}}/proc
+	mkdir -p ./builds/ramfs-{{ARCH}}/sys/kernel/debug
+	mkdir -p ./builds/ramfs-{{ARCH}}/usr/bin
+	mkdir -p ./builds/ramfs-{{ARCH}}/usr/sbin
+	mkdir -p ./builds/ramfs-{{ARCH}}/lib
+	mkdir -p ./builds/ramfs-{{ARCH}}/lib64
+	mkdir -p ./builds/ramfs-{{ARCH}}/mnt/root
+	mkdir -p ./builds/ramfs-{{ARCH}}/root
+
+	#
+	#
+	##### Please, run the following commands (with sudo) #####
 	# This is necessary in order to create the `null`, `tty`, and `console` devices in the ramfs
-	sudo mknod ./builds/ramfs-x86/dev/null c 1 3
-	sudo mknod ./builds/ramfs-x86/dev/tty c 5 0
-	sudo mknod ./builds/ramfs-x86/dev/console c 5 1
-
-pack-ramfs-x86:
-	cd ./builds/ramfs-x86/ && find . | cpio -H newc --create | gzip > ../ramfs-x86.igz
+	#
+	# sudo mknod ./builds/ramfs-{{ARCH}}/dev/null c 1 3
+	# sudo mknod ./builds/ramfs-{{ARCH}}/dev/tty c 5 0
+	# sudo mknod ./builds/ramfs-{{ARCH}}/dev/console c 5 1
 
 # Build the ramfs, packing all the userspace binaries
 build-ramfs:
