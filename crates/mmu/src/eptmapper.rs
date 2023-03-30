@@ -15,7 +15,8 @@ pub struct EptMapper {
 
 pub const EPT_PRESENT: EptEntryFlags = EptEntryFlags::READ
     .union(EptEntryFlags::WRITE)
-    .union(EptEntryFlags::SUPERVISOR_EXECUTE);
+    .union(EptEntryFlags::SUPERVISOR_EXECUTE)
+    .union(EptEntryFlags::USER_EXECUTE);
 
 /// Flags:
 /// 6 << 0; // write-back
@@ -51,6 +52,43 @@ impl EptMapper {
             host_offset,
             root,
             level,
+        }
+    }
+
+    pub fn debug_range(
+        &mut self,
+        gpa: GuestPhysAddr,
+        size: usize,
+        print: impl Fn(core::fmt::Arguments),
+    ) {
+        /*unsafe {
+            let (phys_addr, _) = self.root();
+            let page = self.as_page(self.translate(phys_addr));
+            for i in 0..512 {
+                print(core::format_args!("Entry: {:x?}", page[i]));
+            }
+        }*/
+        let (phys_addr, _) = self.root();
+        print(core::format_args!("The root {:x?}\n", phys_addr));
+        unsafe {
+            self.walk_range(
+                gpa,
+                GuestPhysAddr::new(gpa.as_usize() + size),
+                &mut |addr, entry, level| {
+                    if (*entry & EPT_PRESENT.bits()) == 0 {
+                        print(core::format_args!("no entry\n"));
+                        return WalkNext::Leaf;
+                    }
+                    print(core::format_args!(
+                        "{:?} -- {:x?} -- {:x?}\n",
+                        level,
+                        addr,
+                        entry
+                    ));
+                    return WalkNext::Continue;
+                },
+            )
+            .expect("Failed to print the epts");
         }
     }
 
@@ -104,7 +142,8 @@ impl EptMapper {
                         .allocate_frame()
                         .expect("map_range: unable to allocate page table entry")
                         .zeroed();
-                    *entry = frame.phys_addr.as_u64() | prot.bits();
+                    //*entry = frame.phys_addr.as_u64() | prot.bits();
+                    *entry = frame.phys_addr.as_u64() | EPT_PRESENT.bits();
                     WalkNext::Continue
                 },
             )
