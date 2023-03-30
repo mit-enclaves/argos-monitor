@@ -1,8 +1,17 @@
-# VMXVMM
-
-A Virtual Machine Monitor based on Intel VT-x.
+# Tyche
 
 ## Setup
+
+This project is controled through a _justfile_, this section details how to
+setup the tools needed to build and run the monitors.
+
+### Requirements
+
+This project assumes an Intel x86_64 processor with VT-x capabilities in order
+to build and run the x86_64 version. The risc-v version can be built from any
+platform.
+
+### Justfiles
 
 This project uses _justfiles_ as a command line runner (think makefiles but
 without the build-system bits). To get started [install
@@ -11,6 +20,36 @@ if you have rust installed with `cargo install just`.
 
 To list available commands, run `just help`. For instance, the monitor can be
 built with `just build`.
+
+To get started with this project, run `just setup`.
+
+### Linux Images
+
+A standard, unmodified Linux image is provided to run on top of the monitor, as
+well as a minimal busybox-based distribution. Both Linux and Busybox
+configuratons can be found in the `configs/` folder.
+
+In order to build the Linux kernel, follow those steps:
+
+#### For x86_64
+
+These steps assumes you are compiling from an x86_64 machine.
+
+```sh
+just init-ramfs-x86
+just build-busybox-x86
+just build-linux-x86
+```
+
+Then you can run the monitor with `just linux`
+
+#### For risc-v
+
+```sh
+just init-ramfs-riscv
+just build-busybox-riscv
+just build-linux-riscv
+```
 
 ## Usage
 
