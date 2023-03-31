@@ -299,9 +299,9 @@ fn check_guest_state() -> Result<(), VmxError> {
     if (tr_ar >> 16) != 0 {
         return Err(VmxError::Misconfigured(VmxFieldError::GuestTrAccessRights));
     }
-    if (ldtr_ar & UNUSABLE_MASK) == 0 {
-        todo!();
-    }
+    // if (ldtr_ar & UNUSABLE_MASK) == 0 {
+    //     todo!();
+    // }
     if (gdtr_limit >> 16) != 0 {
         return Err(VmxError::Misconfigured(VmxFieldError::GuestGdtrLimit));
     }

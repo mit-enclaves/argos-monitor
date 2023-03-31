@@ -82,6 +82,9 @@ pub const IA32_X2APIC_ICR0: Msr = Msr::new(0x830);
 pub const IA32_X2APIC_ICR1: Msr = Msr::new(0x831);
 // Timer
 pub const IA32_X2APIC_LVT_TIMER: Msr = Msr::new(0x832);
+pub const IA32_X2APIC_INIT_COUNT: Msr = Msr::new(0x838);
+pub const IA32_X2APIC_CUR_COUNT: Msr = Msr::new(0x839);
+pub const IA32_X2APIC_DIV_CONF: Msr = Msr::new(0x83e);
 
 // —————————————————————————————————— MSR ——————————————————————————————————— //
 
