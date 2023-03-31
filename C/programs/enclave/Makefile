@@ -18,6 +18,7 @@ DYN_LIBS= -l:encl_loader.so -lelf64
 
 # Destination for installation.
 DISK_PATH = /tmp/mount/tyche/
+DISK_PATH2 = /tmp/mount/tyche/programs
 INSTALL_PATH = /tyche
 
 a.out: src/main.c enclave 
@@ -41,6 +42,10 @@ install_disk: a.out enclave
 	mkdir -p $(DISK_PATH)/enclaves
 	cp -r libs $(DISK_PATH)/enclaves
 	cp -t $(DISK_PATH)/enclaves $^
+
+install_disk2: a.out enclave
+	mkdir -p $(DISK_PATH2)
+	cp -t $(DISK_PATH2) $^
 
 
 .PHONY: clean
