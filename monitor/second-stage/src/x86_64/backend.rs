@@ -13,6 +13,7 @@ use capabilities::memory::{MemoryAccess, MemoryFlags, MemoryRegion};
 use capabilities::{Capability, CapabilityType, Ownership, Pool, State};
 use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator};
+//use qemu::_print;
 use stage_two_abi::GuestInfo;
 use utils::{Frame, GuestPhysAddr, HostPhysAddr, HostVirtAddr};
 use vmx::bitmaps::EptEntryFlags;
@@ -167,11 +168,16 @@ impl Backend for BackendX86 {
     {
         let owner = capa.get_owner()?;
         let domain = pool.get_mut(owner);
-        println!("In install region for {:?}", owner.idx());
+
         let state = &domain.state;
         let access = capa.access;
         let mut mapper = EptMapper::new(self.allocator.get_physical_offset().as_usize(), state.ept);
         let flags = mem_access_to_ept(access);
+        /*println!("In install region for {:?}", owner.idx());
+        println!(
+            "Mapping {:x?} -- {:x?} [{:x?}]\n",
+            access.start, access.end, flags
+        );*/
         mapper.map_range(
             &self.allocator,
             GuestPhysAddr::new(access.start.as_usize()),
@@ -179,6 +185,13 @@ impl Backend for BackendX86 {
             access.end.as_usize() - access.start.as_usize(),
             flags,
         );
+        /*if owner.idx() == 1 {
+            mapper.debug_range(
+                GuestPhysAddr::new(access.start.as_usize()),
+                access.end.as_usize() - access.start.as_usize(),
+                |args| _print(args),
+            );
+        }*/
         Ok(())
     }
 

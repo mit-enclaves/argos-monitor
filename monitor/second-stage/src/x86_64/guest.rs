@@ -4,8 +4,12 @@ use core::arch::asm;
 use core::cell::RefMut;
 
 use capabilities::cpu::CPU;
+//use mmu::eptmapper::EPT_ROOT_FLAGS;
+//use mmu::{EptMapper, FrameAllocator};
 use monitor::tyche::Tyche;
 use monitor::{Monitor, MonitorState, Parameters};
+//use qemu::_print;
+//use utils::HostPhysAddr;
 use vmx::bitmaps::exit_qualification;
 use vmx::{ActiveVmcs, ControlRegister, Register, VmxExitReason};
 
@@ -186,8 +190,18 @@ impl<'active> Guest for GuestX86<'active> {
                     vcpu.guest_linear_addr()
                         .expect("unable to get the virt addr")
                         .as_u64(),
-                    addr.as_u64()
+                    addr.as_u64(),
                 );
+                /*let mut ept_map = EptMapper::new(
+                    self.state
+                        .resources
+                        .backend
+                        .allocator
+                        .get_physical_offset()
+                        .as_usize(),
+                    HostPhysAddr::new(vcpu.get_ept_ptr()? as usize - EPT_ROOT_FLAGS),
+                );
+                ept_map.debug_range(addr, 0x1000, |args| _print(args));*/
                 println!("The vcpu {:x?}", vcpu);
                 Ok(HandlerResult::Crash)
             }
