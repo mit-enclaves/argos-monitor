@@ -4,6 +4,7 @@ const char* message = "Hello World!\n\t";
 
 char encl_stack[0x4000] __attribute__((section(".encl_stack")));
 
+#define NO_CPU_SWITCH (~((unsigned long long)0)) 
 
 void print_message(void* source)
 {
@@ -18,26 +19,18 @@ void print_message(void* source)
 }
 
 // Puts hello world inside the shared dest buffer.
-void trusted_entry(unsigned long ret_handle, void* args)
+void trusted_entry(unsigned long long ret_handle, void* args)
 {
-  if (args == 0) {
-    asm(
-      "movq $0x500, %%rax\n\t"
-      "movq $0xbadb1, %%rcx\n\t"
-      "vmcall"
-      :
-      :
-      : "rax", "rcx", "memory");
-  }
   print_message(args);
   // Use the return handle.
   asm(
-    "movq $0x999, %%rax\n\t"
-    "movq %0, %%rcx\n\t"
+    "movq $9, %%rax\n\t"
+    "movq %0, %%rdi\n\t"
+    "movq %1, %%rsi\n\t"
     "vmcall"
     :
-    : "rm" (ret_handle)
-    : "rax", "rcx", "memory");
+    : "rm" (ret_handle), "rm" (NO_CPU_SWITCH)
+    : "rax", "rdi", "memory");
 }
 
 int fibonnacci(int n)

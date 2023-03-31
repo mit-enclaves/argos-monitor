@@ -11,6 +11,7 @@
 // Extrernal libs.
 #include <encl_loader.h>
 #include <tyche_enclave.h>
+#include <tyche_capabilities_types.h>
 
 #include "my_shared.h"
 
@@ -47,8 +48,8 @@ int main(void) {
     .start = (uint64_t) sharedRO,
     .end = ((uint64_t)sharedRO)+0x1000,
     .src = (uint64_t) sharedRO,
-    .flags = TE_READ,
-    .tpe = SharedRO,
+    .flags = TE_READ|TE_SUPER,
+    .tpe = SHARED,
     .extra = NULL,
   };
 
@@ -57,8 +58,8 @@ int main(void) {
     .start = (uint64_t) shared,
     .end = ((uint64_t)shared)+0x1000,
     .src = (uint64_t) shared,
-    .flags = TE_READ|TE_WRITE,
-    .tpe = Shared,
+    .flags = TE_READ|TE_WRITE|TE_SUPER,
+    .tpe = SHARED,
     .extra = (void*)(&extra_ro),
   };
 

@@ -5,9 +5,10 @@ ELF64=../../libraries/elf64
 LOADER=../../libraries/enclave
 DRIVER=../../drivers/enclave
 CAPA=../../libraries/capabilities
+DLL=../../libraries/dll
 
 # All the includes
-INCLUDES= -Iinclude/ -I$(ELF64)/include -I$(LOADER)/include -I$(DRIVER)/include -I$(CAPA)/include
+INCLUDES= -Iinclude/ -I$(DLL)/include -I$(ELF64)/include -I$(LOADER)/include -I$(DRIVER)/include -I$(CAPA)/include
 
 # Enclave includes
 TRUSTED_INCLUDES=-I$(CAPA)/include
@@ -18,7 +19,6 @@ DYN_LIBS= -l:encl_loader.so -lelf64
 
 # Destination for installation.
 DISK_PATH = /tmp/mount/tyche/
-DISK_PATH2 = /tmp/mount/tyche/programs
 INSTALL_PATH = /tyche
 
 a.out: src/main.c enclave 
@@ -43,13 +43,9 @@ install_disk: a.out enclave
 	cp -r libs $(DISK_PATH)/enclaves
 	cp -t $(DISK_PATH)/enclaves $^
 
-install_disk2: a.out enclave
-	mkdir -p $(DISK_PATH2)
-	cp -t $(DISK_PATH2) $^
-
 
 .PHONY: clean
 
 clean:
-	rm enclave a.out
+	rm enclave
 
