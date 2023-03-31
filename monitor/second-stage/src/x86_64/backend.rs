@@ -223,7 +223,6 @@ impl Backend for BackendX86 {
             .zeroed();
         let mut domain = pool.get_mut(capa.handle);
         domain.state.ept = ept.phys_addr;
-        println!("Allocated a new domain {:?}", domain.state.ept);
         Ok(())
     }
 
