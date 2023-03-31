@@ -18,7 +18,7 @@ CAPA_LIB=$(CAPA)/libcapabilities.a
 DYN_LIBS= -l:encl_loader.so -lelf64
 
 # Destination for installation.
-DISK_PATH = /tmp/mount/tyche/
+DISK_PATH = /tmp/mount/tyche/programs
 INSTALL_PATH = /tyche
 
 a.out: src/main.c enclave 
@@ -39,9 +39,9 @@ install: a.out enclave
 	cp -t $(INSTALL_PATH)/enclaves $^
 
 install_disk: a.out enclave
-	mkdir -p $(DISK_PATH)/enclaves
-	cp -r libs $(DISK_PATH)/enclaves
-	cp -t $(DISK_PATH)/enclaves $^
+	mkdir -p $(DISK_PATH)
+	cp -r libs $(DISK_PATH)
+	cp -t $(DISK_PATH) $^
 
 
 .PHONY: clean
