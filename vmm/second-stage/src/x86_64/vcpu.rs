@@ -220,7 +220,21 @@ where
             }
             VmxExitReason::Wrmsr => {
                 let ecx = self.get(Register::Rcx);
-                if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
+
+                if ecx == 0x832 || ecx == 0x838 || ecx == 0x839 || ecx == 0x83e {
+                    let mut msr = msr::Msr::new(ecx as u32);
+                    let rax = self.get(Register::Rax);
+                    let rdx = self.get(Register::Rdx);
+
+                    println!("rax={}, rdx={}", rax, rdx);
+
+                    // let low = value as u32;
+                    // let high = (value >> 32) as u32;
+                    unsafe { msr.write(((rdx as u64) << 32) | (rax as u64)) };
+
+                    // msr.read();
+                    Ok(HandlerResult::Resume)
+                } else if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
                     // Custom MSR range, used by KVM
                     // See https://docs.kernel.org/virt/kvm/x86/msr.html
                     // TODO: just ignore them for now, should add support in the future
@@ -233,6 +247,17 @@ where
             }
             VmxExitReason::Rdmsr => {
                 let ecx = self.get(Register::Rcx);
+                if ecx == 0x832 || ecx == 0x838 || ecx == 0x839 || ecx == 0x83e {
+                    let msr = msr::Msr::new(ecx as u32);
+                    // let rax = self.get(Register::Rax);
+                    // let rdx = self.get(Register::Rdx);
+                    // let low = value as u32;
+                    // let high = (value >> 32) as u32;
+                    let result = unsafe { msr.read() };
+                    println!("result={}", result);
+                    self.set(Register::Rax, result);
+                    self.set(Register::Rdx, result << 32);
+                }
                 println!("MSR: {:#x}", ecx);
                 self.next_instruction()?;
                 Ok(HandlerResult::Resume)
@@ -401,6 +426,15 @@ impl<'active, 'vmx> X86Vcpu<'active, 'vmx> {
             .initialize_msr_bitmaps(bit_frame)
             .expect("Failed to install MSR bitmaps");
         msr_bitmaps.allow_all();
+        // msr_bitmaps.deny_read(msr::IA32_X2APIC_LVT_TIMER);
+        // msr_bitmaps.deny_read(msr::IA32_X2APIC_INIT_COUNT);
+        // msr_bitmaps.deny_read(msr::IA32_X2APIC_CUR_COUNT);
+        // msr_bitmaps.deny_read(msr::IA32_X2APIC_DIV_CONF);
+        // msr_bitmaps.deny_write(msr::IA32_X2APIC_LVT_TIMER);
+        // msr_bitmaps.deny_write(msr::IA32_X2APIC_INIT_COUNT);
+        // msr_bitmaps.deny_write(msr::IA32_X2APIC_CUR_COUNT);
+        // msr_bitmaps.deny_write(msr::IA32_X2APIC_DIV_CONF);
+
         self.set_nat(fields::GuestStateNat::Rip, info.rip).ok();
         self.set_nat(fields::GuestStateNat::Cr3, info.cr3).ok();
         self.set_nat(fields::GuestStateNat::Rsp, info.rsp).ok();
@@ -534,6 +568,7 @@ impl<'active, 'vmx> X86Vcpu<'active, 'vmx> {
         let cr4: usize;
         unsafe {
             asm!("mov {}, cr0", out(reg) cr0, options(nomem, nostack, preserves_flags));
+
             self.set_nat(fields::GuestStateNat::Cr0, cr0)?;
             asm!("mov {}, cr3", out(reg) cr3, options(nomem, nostack, preserves_flags));
             self.set_nat(fields::GuestStateNat::Cr3, cr3)?;
@@ -551,25 +586,27 @@ impl<'active, 'vmx> X86Vcpu<'active, 'vmx> {
         self.set16(fields::GuestState16::TrSelector, 0)?;
         self.set16(fields::GuestState16::LdtrSelector, 0)?;
         // Segments access rights
-        self.set32(fields::GuestState32::EsAccessRights, 0xC093)?;
         self.set32(fields::GuestState32::CsAccessRights, 0xA09B)?;
-        self.set32(fields::GuestState32::SsAccessRights, 0x10000)?;
-        self.set32(fields::GuestState32::DsAccessRights, 0xC093)?;
-        self.set32(fields::GuestState32::FsAccessRights, 0x10000)?;
-        self.set32(fields::GuestState32::GsAccessRights, 0x10000)?;
-        self.set32(fields::GuestState32::TrAccessRights, 0x8B)?;
-        self.set32(fields::GuestState32::LdtrAccessRights, 0x10000)?;
+        self.set32(fields::GuestState32::DsAccessRights, 0xA093)?;
+        self.set32(fields::GuestState32::EsAccessRights, 0xA093)?;
+        self.set32(fields::GuestState32::FsAccessRights, 0xA093)?;
+        self.set32(fields::GuestState32::GsAccessRights, 0xA093)?;
+        self.set32(fields::GuestState32::SsAccessRights, 0xA093)?;
+
+
+        self.set32(fields::GuestState32::TrAccessRights, 0x0080 | 11)?;
+        self.set32(fields::GuestState32::LdtrAccessRights, 0x0082)?;
         // Segments limits
-        self.set32(fields::GuestState32::EsLimit, 0xFFFF)?;
-        self.set32(fields::GuestState32::CsLimit, 0xFFFF)?;
-        self.set32(fields::GuestState32::SsLimit, 0xFFFF)?;
-        self.set32(fields::GuestState32::DsLimit, 0xFFFF)?;
-        self.set32(fields::GuestState32::FsLimit, 0xFFFF)?;
-        self.set32(fields::GuestState32::GsLimit, 0xFFFF)?;
+        self.set32(fields::GuestState32::EsLimit, 0xFFFFFFFF)?;
+        self.set32(fields::GuestState32::CsLimit, 0xFFFFFFFF)?;
+        self.set32(fields::GuestState32::SsLimit, 0xFFFFFFFF)?;
+        self.set32(fields::GuestState32::DsLimit, 0xFFFFFFFF)?;
+        self.set32(fields::GuestState32::FsLimit, 0xFFFFFFFF)?;
+        self.set32(fields::GuestState32::GsLimit, 0xFFFFFFFF)?;
         self.set32(fields::GuestState32::TrLimit, 0xFF)?; // At least 0x67
-        self.set32(fields::GuestState32::LdtrLimit, 0xFFFF)?;
-        self.set32(fields::GuestState32::GdtrLimit, 0xFFFF)?;
-        self.set32(fields::GuestState32::IdtrLimit, 0xFFFF)?;
+        self.set32(fields::GuestState32::LdtrLimit, 0)?;
+        self.set32(fields::GuestState32::GdtrLimit, 0)?;
+        self.set32(fields::GuestState32::IdtrLimit, 0)?;
         // Segments bases
         self.set_nat(fields::GuestStateNat::EsBase, 0)?;
         self.set_nat(fields::GuestStateNat::CsBase, 0)?;
@@ -587,7 +624,7 @@ impl<'active, 'vmx> X86Vcpu<'active, 'vmx> {
             println!("Ia32Efer field is not supported");
         }
         self.set64(fields::GuestState64::Ia32Efer, info.efer)?;
-        self.set_nat(fields::GuestStateNat::Rflags, 0x2)?;
+        self.set_nat(fields::GuestStateNat::Rflags, 0x2 | 0x0200)?;
 
         self.set32(fields::GuestState32::ActivityState, 0)?;
         self.set64(fields::GuestState64::VmcsLinkPtr, u64::max_value())?;

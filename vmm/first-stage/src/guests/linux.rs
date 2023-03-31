@@ -35,11 +35,11 @@ const SETUP_HDR: u64 = 0x1f1;
 // WARNING: Don't forget that the command line must be null terminated ('\0')!
 #[cfg(not(feature = "bare_metal"))]
 static COMMAND_LINE: &'static [u8] =
-    b"root=/dev/sdb2 apic=debug earlyprintk=serial,ttyS0 console=ttyS0 nokaslr sched_verbose\0";
+    b"root=/dev/sdb2 apic=debug earlyprintk=serial,ttyS0 console=ttyS0 nokaslr sched_verbose bootmem_debug debug debugpat loglevel=7 memblock=debug\0";
 #[cfg(feature = "bare_metal")]
 static COMMAND_LINE: &'static [u8] =
-    b"root=/dev/sdb2 apic=debug show_lapic=all nokaslr earlyprintk=serial,ttyS0,115200 console=ttyS0,115200 pci=earlydump nr_cpus=1 sched_verbose\0";
-
+    b"root=/dev/sdb2 apic=debug nokaslr  memblock=debug\0";
+// pci=earlydump sched_verbose bootmem_debug debug debugpat loglevel=7 show_lapic=all earlyprintk=serial,ttyS0,115200 console=ttyS0,115200 
 pub struct Linux {}
 
 pub const LINUX: Linux = Linux {};
