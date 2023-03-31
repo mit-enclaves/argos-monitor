@@ -27,6 +27,15 @@ callback_action_t x86_64_how_visit_leaves(entry_t* entry, level_t level, pt_prof
   return WALK;
 }
 
+/// Function visiting all the present nodes.
+callback_action_t x86_64_how_visit_present(entry_t* entry, level_t level, pt_profile_t* profile)
+{
+  if ((*entry & PT_PP) != PT_PP) {
+    return SKIP; 
+  }
+  return VISIT;
+}
+
 /// Example how function that asks to map missing entries.
 callback_action_t x86_64_how_map(entry_t* entry, level_t level, pt_profile_t* profile)
 {

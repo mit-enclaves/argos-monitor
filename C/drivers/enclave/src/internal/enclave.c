@@ -55,15 +55,15 @@ static int region_check(struct tyche_encl_add_region_t* region)
 
   // Check access rights, we do not allow execute with write.
   if (region->flags == 0) {
-    printk(KERN_NOTICE "[TE]: missing flags in region.\n");
+    printk(KERN_NOTICE "[TE]: missing access in region.\n");
     goto failure;
   }
-  if ((region->flags & TE_EXEC) && (region->flags & TE_WRITE)) {
+  if ((region->flags & MEM_WRITE) && (region->flags & MEM_EXEC)) {
     printk(KERN_NOTICE "[TE]: region is both exec and write.\n");
     goto failure;
   }
 
-  if (region->tpe > MaxTpe || region->tpe < MinTpe) {
+  if (region->tpe != SHARED && region->tpe != CONFIDENTIAL) {
     printk(KERN_NOTICE "[TE]: unknown region type.\n");
     goto failure;
   }
@@ -88,7 +88,7 @@ static struct enclave_t* find_enclave(tyche_encl_handle_t handle)
   }
   // Check that the task calling is the one that created the enclave.
   if (encl->pid != current->pid) {
-    printk(KERN_NOTICE "[TE]: Attempt to add a page to enclave [%lx] from a different task!\n", handle);
+    printk(KERN_NOTICE "[TE]: Attempt to add a page to enclave [%llx] from a different task!\n", handle);
     printk(KERN_NOTICE " Expected: %d; got %d\n", encl->pid, current->pid);
     return NULL;
   }
@@ -102,14 +102,14 @@ void enclave_init(void)
 
 /// Add a new enclave.
 /// The handle must be fresh.
-int add_enclave(tyche_encl_handle_t handle)
+int add_enclave(tyche_encl_handle_t handle, usize spawn, usize comm)
 {
   struct enclave_t* encl = NULL;
   // Check whether the enclave exists.
   dll_foreach((&enclaves), encl, list) {
     if (compare_encl(encl->handle, handle)) {
       // The enclave exists.    
-      return -1;
+      return FAILURE;
     }
   }
   
@@ -117,7 +117,7 @@ int add_enclave(tyche_encl_handle_t handle)
   if (!encl) {
     // Failure to allocate.
     pr_err("[TE]: Failed to allocate new enclave!\n");
-    return -1;
+    return FAILURE;
   }
 
   // Setup the handle.
@@ -131,13 +131,13 @@ int add_enclave(tyche_encl_handle_t handle)
   dll_add((&enclaves), encl, list);
 
   // Invoke tyche.
-  if(tyche_domain_create(encl) != 0) {
+  if(tyche_domain_create(encl, spawn, comm) != 0) {
     pr_err("[TE]: tyche rejected new enclave creation.\n");
     dll_remove((&enclaves), encl, list);
-    return -1;
+    return FAILURE;
   }
-  printk(KERN_NOTICE "[TE]: A new enclave[%lx] was created by %d.\n", handle, current->pid); 
-  return 0;
+  printk(KERN_NOTICE "[TE]: A new enclave[%llx] was created by %d.\n", handle, current->pid); 
+  return SUCCESS;
 }
 
 /// Deletes all the physical regions in a region.
@@ -163,7 +163,7 @@ int add_region(struct tyche_encl_add_region_t* region)
   encl = find_enclave(region->handle);
   if (encl == NULL) {
     pr_err("[TE]: unable to find enclave in add_region.\n");
-    return -1;
+    return FAILURE;
   }
  
   // Lightweight checks.
@@ -171,14 +171,14 @@ int add_region(struct tyche_encl_add_region_t* region)
   if (!region_check(region))
   {
     pr_err("[TE]: Malformed region.\n");
-    return -1;
+    return FAILURE;
   }
 
   // Allocate the region & set its attributes.
   e_reg = kmalloc(sizeof(struct region_t), GFP_KERNEL);
   if (!e_reg) {
     pr_err("[TE]: Failed to allocate a new region.\n");
-    return -1;
+    return FAILURE;
   }
   e_reg->start = region->start;
   e_reg->end = region->end;
@@ -273,26 +273,26 @@ next:
     dll_add_first(&encl->regions, e_reg, list);
   }
 done:
-  return 0;
+  return SUCCESS;
 failure:
   kfree(e_reg);
   pr_err("[TE]: add_region failure.\n");
-  return -1;
+  return FAILURE;
 }
 
 int add_stack_region(struct tyche_encl_add_region_t* region)
 {
   struct enclave_t* encl = NULL; 
   if (add_region(region) != 0) {
-    return -1;
+    return FAILURE;
   }
   encl = find_enclave(region->handle);
   if (encl == NULL) {
     pr_err("[TE]: unable to find the enclave.\n");
-    return -1;
+    return FAILURE;
   }
   encl->stack = region->end;
-  return 0;
+  return SUCCESS;
 }
 
 /// Done adding virtual regions to an enclave.
@@ -308,17 +308,17 @@ int commit_enclave(struct tyche_encl_commit_t* commit)
   struct pa_region_t* pa_region = NULL;
   if (commit == NULL) {
     pr_err("[TE]: Null commit message.\n");
-    return -1;
+    return FAILURE;
   }
   encl = find_enclave(commit->handle);
   if (encl == NULL || current == NULL) {
     pr_err("[TE]: unable to find enclave in commit_enclave.\n");
-    return -1;
+    return FAILURE;
   }
 
   if (encl->pid != current->pid) {
     pr_err("[TE]: The enclave cannot be commited by another pid.\n");
-    return -1;
+    return FAILURE;
   }
   
   dll_foreach(&(encl->regions), region, list) {
@@ -334,14 +334,17 @@ int commit_enclave(struct tyche_encl_commit_t* commit)
     pr_err("[TE]: failed to build enclave cr3.\n");
     goto failure;
   }
+  //TODO this was for debugging cr3
+  /*register_cr3(encl->cr3);
+  debugging_cr3();*/
 
   // All pages should be inside all_pages now.
   // Call tyche to split regions. 
   pa_region = NULL;
   dll_foreach(&(encl->all_pages), pa_region, globals) {
     // The call will set the handle in the pa_region.
-    if (tyche_split_grant(encl, pa_region) != 0) {
-      pr_err("[TE]: tyche_split grant failed %d.\n", pa_region->tpe);
+    if (tyche_share_grant(encl, pa_region) != 0) {
+      pr_err("[TE]: tyche_share_grant failed %d.\n", pa_region->tpe);
       goto failure;
     }
   }
@@ -358,8 +361,7 @@ int commit_enclave(struct tyche_encl_commit_t* commit)
 
   // Give back the handle for the domain.
   commit->domain_handle = encl->tyche_handle;
-  register_cr3(encl->cr3);
-  return 0;
+  return SUCCESS;
 
 failure:
   // Delete all the pas.
@@ -378,7 +380,7 @@ failure:
   }
   encl->cr3 = 0;
   pr_info("[TE]: deleted the enclave pages.\n");
-  return -1;
+  return FAILURE;
 }
 
 /// Adds a physical range to an enclave region.
@@ -405,7 +407,7 @@ int add_pa_to_region(struct region_t* region, struct pa_region_t** pa_region) {
   }
   // All good, we add at the tail of the list.
   dll_add(&region->pas, *pa_region, list);
-  return 0;
+  return SUCCESS;
 }
 
 int delete_enclave(tyche_encl_handle_t handle)
@@ -417,13 +419,13 @@ int delete_enclave(tyche_encl_handle_t handle)
   encl = find_enclave(handle);
   if (encl == NULL) {
     pr_err("[TE] delete_enclave unable to find enclave.\n");
-    return -1;
+    return FAILURE;
   }
   // Collect all the handles and re-merge.
   dll_foreach(&(encl->all_pages), pa_reg, globals) {
-    if (tyche_revoke_region(encl->tyche_handle, pa_reg->start, pa_reg->end) != 0) {
+    if (tyche_revoke_region(encl->tyche_handle, pa_reg->start, pa_reg->end) != SUCCESS) {
       pr_err("[TE] failed to revoke a region.\n");
-      return -1;
+      return FAILURE;
     }
   }
 
@@ -451,44 +453,25 @@ int delete_enclave(tyche_encl_handle_t handle)
   // Remove the enclave from the list.
   dll_remove(&(enclaves), encl, list);
 
-  // Delete the enclave.
-  //TODO call tyche to delete the domain.
+  // Delete the tyche domain.
+  if (tyche_revoke_domain(encl->tyche_handle) != SUCCESS) {
+    pr_err("[TE] unable to delete enclave\n");
+    return FAILURE;
+  } 
   kfree(encl);
-  return 0;
+  return SUCCESS;
 }
 
-int enclave_transition(struct tyche_encl_transition_t* transition)
+int switch_enclave(struct tyche_encl_switch_t* sw)
 {
   struct enclave_t* encl = NULL;
-  unsigned long result = 0;
-  capa_index_t index;
-  if (transition == NULL) {
-    return -1;
-  }
-  encl = find_enclave(transition->handle);
+  encl = find_enclave(sw->handle);
   if (encl == NULL) {
-    pr_err("[TE] unable to find enclave for transition.\n");
-    return -1;
+    pr_err("[TE] unable to find enclave for switch.\n");
+    return FAILURE;
   }
- 
-  asm volatile (
-      "cli\n\t"
-      "pushq %%rbp\n\t"
-      "pushq %%rdi\n\t"
-      "movq $0x999, %%rax\n\t"
-      "movq %2, %%rcx\n\t"
-      "movq %3, %%r10\n\t"
-      "vmcall\n\t"
-      "popq %%rdi\n\t"
-      "popq %%rbp\n\t"
-      "movq %%rax, %0\n\t"
-      "movq %%rcx, %1\n\t"
-      : "=rm" (result), "=rm" (index)
-      : "rm" (encl->invoke), "rm" (transition->args)
-      : "rax", "rcx", "rdx", "rsi", "r9", "r10", "memory"
-      );
-  encl->invoke = index;
-  return result;
+  //TODO might need a CLI?
+  return tyche_switch_domain(encl->tyche_handle, sw->args);
 }
 
 // —————————————————————————————— Internal API —————————————————————————————— //

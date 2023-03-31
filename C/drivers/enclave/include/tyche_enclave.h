@@ -12,10 +12,10 @@
 #include "tyche_capabilities_types.h"
 
 // ———————————————————— Constants Defined in the Module ————————————————————— //
-#define TE_READ ((uint64_t)CAPA_READ)
-#define TE_WRITE ((uint64_t)CAPA_WRITE)
-#define TE_EXEC ((uint64_t)CAPA_EXEC)
-#define TE_USER ((uint64_t)(CAPA_MAX << 1))
+#define TE_READ ((uint64_t)MEM_READ)
+#define TE_WRITE ((uint64_t)MEM_WRITE)
+#define TE_EXEC ((uint64_t)MEM_EXEC)
+#define TE_SUPER ((uint64_t)MEM_SUPER)
 #define TE_DEFAULT ((uint64_t)(TE_READ | TE_WRITE | TE_EXEC))
 
 // —————————————————————— Types Exposed by the Library —————————————————————— //
@@ -26,7 +26,10 @@ struct tyche_encl_create_t {
   tyche_encl_handle_t handle;
 };
 
-typedef capability_type_t tyche_encl_mapping_t;
+typedef enum tyche_encl_mapping_t {
+  SHARED = 0,
+  CONFIDENTIAL = 1,
+} tyche_encl_mapping_t;
 
 /// Message type to add a new region.
 struct tyche_encl_add_region_t {
@@ -42,8 +45,8 @@ struct tyche_encl_add_region_t {
   /// Source for the content of the region.
   uint64_t src;
 
-  /// Protection flags (RWXU) for this region.
-  uint64_t flags;
+  /// Access right (RWXU) for this region.
+  memory_access_right_t flags;
 
   /// Type of mapping: Confidential or Shared.
   tyche_encl_mapping_t tpe;
@@ -68,12 +71,12 @@ struct tyche_encl_commit_t {
   uint64_t entry;
 };
 
-/// Structure to describe a transition.
-struct tyche_encl_transition_t {
-  /// The enclave handle to transition into.
+/// Structure to perform a transition.
+struct tyche_encl_switch_t {
+  /// The driver handle.
   tyche_encl_handle_t handle;
 
-  /// Argument for this transition.
+  /// The args, will end up in r11 on x86.
   void* args;
 };
 
@@ -83,7 +86,7 @@ struct tyche_encl_transition_t {
 #define TYCHE_ENCLAVE_ADD_REGION _IOW('a', 'c', struct tyche_encl_add_region_t*)
 #define TYCHE_ENCLAVE_COMMIT _IOWR('a', 'd', struct tyche_encl_commit_t*)
 #define TYCHE_ENCLAVE_ADD_STACK _IOW('a', 'e', struct tyche_encl_add_region_t*)
-#define TYCHE_TRANSITION _IOR('a', 'f', struct tyche_encl_transition_t*)
+#define TYCHE_TRANSITION _IOR('a', 'f', struct tyche_encl_switch_t*)
 #define TYCHE_ENCLAVE_DELETE _IOR('a', 'g', tyche_encl_handle_t)
 
 #endif

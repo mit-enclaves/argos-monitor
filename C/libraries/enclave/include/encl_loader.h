@@ -88,6 +88,10 @@ int delete_enclave(load_encl_t* encl);
 /// An implementation of the transition that goes through the kernel driver.
 /// This allows to disable interrupts before transitioning.
 int enclave_driver_transition(domain_id_t handle, void* args);
+
+/// An implementation of the transition directly in use space.
+/// We do not disable interrupts before transitioning.
+int enclave_user_switch(domain_id_t handle, void* args);
 // ————————————————————————————— Debugging API —————————————————————————————— //
 void* mmap_file(const char* file, int* fd, size_t* size);
 int parse_enclave(load_encl_t* enclave);

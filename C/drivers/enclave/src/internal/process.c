@@ -47,6 +47,7 @@ static int pte_entry(pte_t *pte, unsigned long addr, unsigned long next, struct 
   pa_region->start = phys_addr;
   pa_region->end = phys_addr + PAGE_SIZE;
   pa_region->tpe = info->region->tpe;
+  pa_region->flags = info->region->flags;
   dll_init_elem(pa_region, list);
   dll_init_elem(pa_region, globals);
   if (add_pa_to_region(info->region, &pa_region)) {

@@ -108,34 +108,30 @@ long tyche_enclave_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
   struct tyche_encl_create_t handle;
   struct tyche_encl_add_region_t region;
   struct tyche_encl_commit_t commit;
-  struct tyche_encl_transition_t transition;
+  struct tyche_encl_switch_t sw;
+  //struct tyche_encl_transition_t transition;
   //uint64_t dest = 0;
   switch(cmd)
   {
     case TYCHE_ENCLAVE_DBG:
       pr_info("[TE]: Invoked TYCHE_ENCLAVE_DBG.\n");
-      /*dest = (uint64_t) debugging_cr3();
-      if (copy_to_user((uint64_t*)arg, &dest, sizeof(uint64_t))) {
-        pr_err("[TE]: Debugging error.\n");
-        return -1;
-      }*/
       debugging_transition(arg);
       break;
     case TYCHE_TRANSITION:
-      if (copy_from_user(&transition, (struct tyche_encl_transition_t*)arg,
-            sizeof(struct tyche_encl_transition_t))) {
-        pr_err("[TE]: unable to copy transition argument.\n");
-        return -1;
+     if (copy_from_user(&sw, (struct tyche_encl_switch_t*)arg, sizeof(sw)))
+      {
+        pr_err("[TE]: Error copying switch from user space.\n");
+        return FAILURE;
       }
-      if(enclave_transition(&transition) != 0) {
+      if(switch_enclave(&sw) != 0) {
         pr_err("[TE]: error enclave_transition.\n");
-        return -1;
+        return FAILURE;
       }
       break;
     case TYCHE_ENCLAVE_DELETE:
       if (delete_enclave((tyche_encl_handle_t) arg) != 0) {
         pr_err("[TE]: delete_enclave failed!\n");
-        return -1;
+        return FAILURE;
       }
       break;
     case TYCHE_ENCLAVE_CREATE:
@@ -144,16 +140,16 @@ long tyche_enclave_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
       handle.handle = tyche_ids++;
 
       //TODO initialize some internal structure etc. to keep track of the enclave.
-      if(add_enclave(handle.handle)) {
+      if(add_enclave(handle.handle, 1 ,1)) {
         pr_err("[TE]: Error adding the enclave!\n");
-        return -1;
+        return FAILURE;
       }
 
       // Return handle number to the user.
       if (copy_to_user((struct tyche_encl_create_t*)arg, &handle, sizeof(handle)))
       {
         pr_err("[TE]: Error copying handle to user space.\n");
-        return -1;
+        return FAILURE;
       }
       break;
     case TYCHE_ENCLAVE_ADD_REGION:
@@ -162,13 +158,13 @@ long tyche_enclave_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
       if (copy_from_user(&region, (struct tyche_encl_add_region_t*)arg, sizeof(region)))
       {
         pr_err("[TE]: Error copying region from user space.\n");
-        return -1;
+        return FAILURE;
       }
      
       // The region is now safe against TOCTOU.
       if (add_region(&region) == -1) {
         pr_err("[TE]: Failed to add region.\n");
-        return -1;
+        return FAILURE;
       }
       break;
     case TYCHE_ENCLAVE_COMMIT:
@@ -177,31 +173,31 @@ long tyche_enclave_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
       }
       if (commit_enclave(&commit) == -1) {
         pr_err("[TE]: Failed to commit the enclave!\n");
-        return -1;
+        return FAILURE;
       } 
       // Copy back the result.
       if (copy_to_user((struct tyche_encl_commit_t*)arg, &commit, sizeof(commit))) {
         pr_err("[TE]: Failed to copy back the commit result.\n");
-        return -1;
+        return FAILURE;
       }
       break;
     case TYCHE_ENCLAVE_ADD_STACK:
       if (copy_from_user(&region, (struct tyche_encl_add_region_t*) arg, sizeof(region)))
       {
         pr_err("[TE]: error copying stack region from user space.\n");
-        return -1;
+        return FAILURE;
       }
       if (add_stack_region(&region) == -1) {
         pr_err("[TE]: unable to add the stack region.\n");
-        return -1;
+        return FAILURE;
       }  
       break; 
     default:
       pr_err("[TE]: Wrong command for tyche enclave driver.\n");
-      return -1;
+      return FAILURE;
       break;
   }
-  return 0; 
+  return SUCCESS; 
 }
 
 

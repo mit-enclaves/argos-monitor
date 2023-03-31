@@ -43,7 +43,8 @@ static entry_t* allocate(void* ptr)
   // Populate the region's attributes.
   region->start = (uint64_t)(page);
   region->end = region->start + PT_PAGE_SIZE;
-  region->tpe = PtEntry;
+  region->tpe = CONFIDENTIAL;
+  region->flags = TE_READ | TE_WRITE | TE_SUPER;
   dll_init_elem(region, list);
   dll_init_elem(region, globals);
   
@@ -58,6 +59,7 @@ static entry_t* allocate(void* ptr)
   in_all_pages->start = region->start;
   in_all_pages->end = region->end;
   in_all_pages->tpe = region->tpe;
+  in_all_pages->flags = region->flags; 
   dll_init_elem(in_all_pages, list);
   dll_init_elem(in_all_pages, globals);
   
@@ -88,7 +90,7 @@ static entry_t translate_flags(uint64_t flags)
   if ((flags & TE_WRITE) == TE_WRITE) {
     translation |= PT_RW;
   }
-  if ((flags & TE_USER) == TE_USER) {
+  if ((flags & TE_SUPER) == 0) {
     translation |= PT_USR;
   }
   return translation;
@@ -217,6 +219,7 @@ int build_enclave_cr3(struct enclave_t* encl) {
       copy->start = curr->start;
       copy->end = curr->end;
       copy->tpe = curr->tpe;
+      copy->flags = curr->flags;
       dll_init_elem(copy, list);
       dll_init_elem(copy, globals);
       if (add_merge_global(encl, copy) !=0 ) {

@@ -13,6 +13,9 @@
 #include "elf64.h"
 // local includes.
 #include "encl_loader.h"
+// Tyche API for vmcall_frame_t.
+#include "tyche_api.h"
+#include "tyche_capabilities_types.h"
 
 // ———————————————————————————————— Logging ————————————————————————————————— //
 
@@ -224,8 +227,8 @@ int create_enclave(load_encl_t* enclave, struct tyche_encl_add_region_t* extras)
       .start = (uint64_t)library_plugin->plugin,
       .end = ((uint64_t)(library_plugin->plugin)) + library_plugin->size,
       .src = (uint64_t)library_plugin->plugin,
-      .flags = TE_READ|TE_EXEC|TE_USER,
-      .tpe = Shared,
+      .flags = TE_READ|TE_EXEC|TE_SUPER,
+      .tpe = SHARED,
     };
     if (ioctl(enclave->driver_fd, TYCHE_ENCLAVE_ADD_REGION, &region) != 0) {
       LOG("create_enclave unable to add encl.so region.\n");
@@ -262,8 +265,8 @@ int create_enclave(load_encl_t* enclave, struct tyche_encl_add_region_t* extras)
       .start = segment.p_vaddr, //TODO this will depend on the elf type.
       .end = segment.p_vaddr + enclave->sizes[i],
       .src = (uint64_t)enclave->mappings[i],
-      .flags = flags,
-      .tpe = Confidential,
+      .flags = flags|TE_SUPER,
+      .tpe = CONFIDENTIAL,
     };
     // Call the driver with segment.p_vaddr, p_vaddr + pmemsz, p_flags
     if(ioctl(enclave->driver_fd, TYCHE_ENCLAVE_ADD_REGION, &region) != 0) {
@@ -510,22 +513,39 @@ int delete_enclave(load_encl_t* encl)
   return 0;
 }
 
-int enclave_driver_transition(tyche_encl_handle_t handle, void* args)
+int enclave_driver_transition(domain_id_t id, void* args)
 {
+  struct tyche_encl_switch_t sw = {id, args};
   int driver_fd = open(ENCL_DRIVER, O_RDWR);
   if (driver_fd < 0) {
     LOG("create_enclave fd invalid %d\n", errno);
     return -1;
   }
-  struct tyche_encl_transition_t transition = {
-    .handle = handle,
-    .args = args,
-  };
-  int ret = ioctl(driver_fd, TYCHE_TRANSITION, &transition);
+
+  int ret = ioctl(driver_fd, TYCHE_TRANSITION, &sw);
   if (ret != 0) {
     LOG("driver refused transition: %d\n", ret);
     return -1;
   }
   close(driver_fd);
   return 0;
+}
+
+int enclave_user_switch(domain_id_t handle, void* args)
+{
+  usize arg_n = (usize) args;
+  usize result = FAILURE; 
+  usize vmcall = TYCHE_SWITCH;
+  asm volatile(
+    "movq %1, %%rax\n\t"
+    "movq %2, %%rdi\n\t"
+    "movq %3, %%rsi\n\t"
+    "movq %4, %%r11\n\t"
+    "vmcall\n\t"
+    "movq %%rax, %0\n\t"
+    : "=rm" (result)
+    : "rm" (vmcall), "rm" (handle), "rm" (NO_CPU_SWITCH), "rm" (arg_n)
+    : "rax", "rdi", "rsi", "r11", "memory"
+      );
+  return (int) result;
 }

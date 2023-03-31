@@ -129,6 +129,8 @@ extern const pt_profile_t x86_64_profile;
 
 callback_action_t x86_64_how_visit_leaves(entry_t* entry, level_t level, pt_profile_t* profile);
 
+callback_action_t x86_64_how_visit_present(entry_t* entry, level_t level, pt_profile_t* profile);
+
 callback_action_t x86_64_how_map(entry_t* entry, level_t level, pt_profile_t* profile);
 
 entry_t x86_64_next(entry_t entry, level_t curr_level);

@@ -3,7 +3,7 @@ TARGET_MODULE:=tyche_enclave
 ## ———————————————————————— Use Tyche's Linux build ————————————————————————— ##
 BUILDSYSTEM_DIR ?= ../../../builds/linux-x86/
 
-LIB_PT=../../libraries/pts
+LIB_PT=../../libraries//pts
 LIB_DLL=../../libraries/dll
 LIB_CAPA=../../libraries/capabilities
 

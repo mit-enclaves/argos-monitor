@@ -28,7 +28,7 @@ struct region_t {
   /// Source address from the parent address space. Must be page aligned.
   uint64_t src;
 
-  /// Protection flags (RWXU) for this region.
+  /// Access (RWXU) for this region.
   uint64_t flags;
 
   /// Type of mapping: Confidential or Shared.
@@ -42,6 +42,7 @@ struct region_t {
 struct pa_region_t {
   uint64_t start;
   uint64_t end;
+  uint64_t flags;
   tyche_encl_mapping_t tpe;
 
   dll_elem(struct pa_region_t, list);
@@ -58,9 +59,6 @@ struct enclave_t {
 
   /// Unique identifier within tyche.
   domain_id_t tyche_handle;
-
-  /// The ability to invoke an enclave.
-  capa_index_t invoke;
 
   /// The enclave's physical value of cr3.
   uint64_t cr3;
@@ -86,13 +84,13 @@ struct enclave_t {
 
 // —————————————————————————————— Enclave API ——————————————————————————————— //
 void enclave_init(void);
-int add_enclave(tyche_encl_handle_t handle);
+int add_enclave(tyche_encl_handle_t handle, usize spawn, usize comm);
 int add_region(struct tyche_encl_add_region_t* region);
 int add_stack_region(struct tyche_encl_add_region_t* region);
 int add_pa_to_region(struct region_t* region, struct pa_region_t** pa_region);
 int commit_enclave(struct tyche_encl_commit_t* handle);
 int delete_enclave(tyche_encl_handle_t handle);
-int enclave_transition(struct tyche_encl_transition_t*);
+int switch_enclave(struct tyche_encl_switch_t* sw);
 
 // —————————————————————————— Enclave Internal API —————————————————————————— //
 int add_merge_global(struct enclave_t* enclave, struct pa_region_t* region);
