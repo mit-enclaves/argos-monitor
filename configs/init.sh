@@ -51,6 +51,7 @@ mknod /dev/sdb2 b 8 18
 #### Create new root
 mkdir /newroot
 mount /dev/sdb2 /newroot || error_part3
+ls /newroot/sbin || error_part3
 ###
 #### Switch root
 exec switch_root /newroot /sbin/init || error
