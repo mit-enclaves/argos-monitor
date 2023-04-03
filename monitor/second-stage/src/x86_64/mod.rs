@@ -4,14 +4,16 @@ mod arch;
 pub mod backend;
 pub mod guest;
 
-use core::arch as platform;
 use core::arch::asm;
+use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicBool, Ordering};
+use core::{arch as platform, mem};
 
 use arena::Handle;
 use capabilities::State;
 use mmu::FrameAllocator;
 use monitor::MonitorState;
+use spin::{Mutex, MutexGuard};
 use stage_two_abi::{GuestInfo, Manifest};
 use vmx::bitmaps::{
     EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
@@ -25,8 +27,6 @@ use crate::allocator::Allocator;
 use crate::arch::backend::{BackendX86, LocalState};
 use crate::debug::qemu;
 use crate::debug::qemu::ExitCode;
-use crate::guest::Guest;
-//use crate::guest::{Guest, HandlerResult};
 use crate::println;
 use crate::statics::{allocator as get_allocator, pool as get_pool, NB_CORES};
 
@@ -41,6 +41,54 @@ const MAX_NB_CPU: usize = 128;
 #[used]
 #[export_name = "__entry_barrier"]
 static ENTRY_BARRIER: AtomicBool = AtomicBool::new(false);
+
+// —————————————————————————————— Shared State —————————————————————————————— //
+
+static GUEST_IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
+static GUEST: Mutex<X86State> = Mutex::new(X86State(mem::MaybeUninit::uninit()));
+
+pub struct X86State(mem::MaybeUninit<MonitorState<'static, BackendX86>>);
+
+// SAFETY: GuestX86 is not Send because of pointers in the VMCS. This implementaiton is safe as
+// long as VMCS are not moving or being sent between cores.
+//
+// WARNING: actually there are some RefCells that are !Sync, which makes the whole thing !Send.
+// This will be fixed with the upcoming capability refactor, so I guest for now we just hack around
+// it unsafely.
+unsafe impl Send for X86State {}
+
+impl Deref for X86State {
+    type Target = MonitorState<'static, BackendX86>;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.0.assume_init_ref() }
+    }
+}
+
+impl DerefMut for X86State {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { self.0.assume_init_mut() }
+    }
+}
+
+pub fn get_state() -> MutexGuard<'static, X86State> {
+    if !GUEST_IS_INITIALIZED.load(Ordering::SeqCst) {
+        panic!("Guest is not yet initialized");
+    }
+    let state = GUEST.lock();
+    state
+}
+
+fn set_state(state: MonitorState<'static, BackendX86>) {
+    if GUEST_IS_INITIALIZED.load(Ordering::SeqCst) {
+        panic!("Guest is already initialized");
+    }
+
+    let mut guard = GUEST.lock();
+    *MutexGuard::deref_mut(&mut guard) = X86State(mem::MaybeUninit::new(state));
+
+    GUEST_IS_INITIALIZED.store(true, Ordering::SeqCst);
+}
 
 // —————————————————————————————— x86_64 Arch ——————————————————————————————— //
 
@@ -78,7 +126,7 @@ pub fn launch_guest(manifest: &'static Manifest) {
     // The state is then passed to the guest.
     let tyche_state = MonitorState::<BackendX86>::new(manifest.poffset as usize, capas)
         .expect("Unable to create monitor state");
-    let mut guest = guest::GuestX86::new(tyche_state);
+    set_state(tyche_state);
     let cpuid = cpuid();
 
     if cpuid != 0 {
@@ -98,7 +146,8 @@ pub fn launch_guest(manifest: &'static Manifest) {
                 "Launching CPU {} on wakeup_vector {:#?}",
                 cpuid, wakeup_vector
             );
-            let mut cpu = guest.get_local_cpu();
+            let state = get_state();
+            let mut cpu = guest::get_local_cpu(state.deref());
             let vcpu = cpu.core.get_active_mut().unwrap();
             vcpu.set_nat(vmx::fields::GuestStateNat::Rip, wakeup_vector as usize)
                 .ok();
@@ -108,7 +157,7 @@ pub fn launch_guest(manifest: &'static Manifest) {
     }
 
     println!("Starting main loop");
-    guest.main_loop();
+    guest::main_loop();
 
     qemu::exit(qemu::ExitCode::Success);
 }
@@ -339,186 +388,6 @@ pub fn save_host_state<'vmx>(
         fields::HostStateNat::Cr4.vmwrite(cr4)
     }
 }
-
-// —————————————————————————————— x86_64 Arch ——————————————————————————————— //
-/*
-pub struct Arch {
-    iommu: Option<Iommu>,
-}
-
-pub struct Context {
-    cr3: GuestPhysAddr,
-    entry: GuestVirtAddr,
-    stack: GuestVirtAddr,
-}
-
-pub struct Store {
-    ept: HostPhysAddr,
-}
-
-impl Arch {
-    pub fn new(iommu_addr: u64) -> Self {
-        let iommu = if iommu_addr != 0 {
-            unsafe { Some(Iommu::new(HostVirtAddr::new(iommu_addr as usize))) }
-        } else {
-            None
-        };
-        Self { iommu }
-    }
-
-    pub fn convert_to_ept(&self, rights: usize) -> EptEntryFlags {
-        let mut def = EptEntryFlags::READ;
-        if (rights & access::WRITE) != 0 {
-            def |= EptEntryFlags::WRITE;
-        }
-        if (rights & access::EXEC) != 0 {
-            def |= EptEntryFlags::USER_EXECUTE | EptEntryFlags::SUPERVISOR_EXECUTE;
-        }
-        if (rights & access::WRITE) != 0 {
-            def |= EptEntryFlags::WRITE;
-        }
-        def
-    }
-}
-
-impl Backend for Arch {
-    type Vcpu<'a> = ActiveVmcs<'a>;
-
-    type Store = Store;
-
-    type Context = Context;
-
-    const EMPTY_STORE: Self::Store = Store {
-        ept: HostPhysAddr::new(0),
-    };
-
-    const EMPTY_CONTEXT: Self::Context = Context {
-        cr3: GuestPhysAddr::new(0),
-        entry: GuestVirtAddr::new(0),
-        stack: GuestVirtAddr::new(0),
-    };
-
-    fn debug_iommu(&mut self) -> HypercallResult {
-        let iommu = match &mut self.iommu {
-            Some(iommu) => iommu,
-            None => {
-                println!("Missing I/O MMU");
-                return Err(ErrorCode::Failure);
-            }
-        };
-
-        for fault in iommu.iter_fault() {
-            println!(
-                "I/O MMU fault:\n  addr:   0x{:x}\n  reason: 0x{:x}\n  record: {:?}",
-                fault.addr,
-                fault.record.reason(),
-                fault.record
-            );
-        }
-
-        Ok(Default::default())
-    }
-
-    fn add_region(
-        &mut self,
-        store: &mut Store,
-        region: &Region,
-        rights: usize,
-        allocator: &impl FrameAllocator,
-    ) -> Result<(), ErrorCode> {
-        let mut mapper = EptMapper::new(allocator.get_physical_offset().as_usize(), store.ept);
-        let flags: EptEntryFlags = self.convert_to_ept(rights);
-        mapper.map_range(
-            allocator,
-            GuestPhysAddr::new(region.start),
-            HostPhysAddr::new(region.start),
-            region.end - region.start,
-            flags,
-            //EptEntryFlags::READ | EptEntryFlags::WRITE | EptEntryFlags::USER_EXECUTE | EPT_PRESENT,
-        );
-        Ok(())
-    }
-
-    fn remove_region(
-        &mut self,
-        store: &mut Store,
-        region: &Region,
-        allocator: &impl FrameAllocator,
-    ) -> Result<(), ErrorCode> {
-        let root = store.ept;
-        let offset = allocator.get_physical_offset();
-        let mut mapper = EptMapper::new(offset.as_usize(), root);
-        mapper.unmap_range(
-            allocator,
-            GuestPhysAddr::new(region.start),
-            region.end - region.start,
-            root,
-            allocator.get_physical_offset().as_usize(),
-        );
-        Ok(())
-    }
-
-    fn domain_create(
-        &mut self,
-        store: &mut Store,
-        allocator: &impl FrameAllocator,
-    ) -> Result<(), ErrorCode> {
-        let ept = allocator
-            .allocate_frame()
-            .ok_or(ErrorCode::OutOfMemory)?
-            .zeroed();
-        store.ept = ept.phys_addr;
-        Ok(())
-    }
-
-    fn domain_save<'a>(
-        &mut self,
-        context: &mut Self::Context,
-        vcpu: &mut Self::Vcpu<'a>,
-    ) -> Result<(), ErrorCode> {
-        vcpu.next_instruction()
-            .expect("Failed to advance instruction");
-        context.cr3 = GuestPhysAddr::new(vcpu.get_cr(ControlRegister::Cr3));
-        context.entry = GuestVirtAddr::new(vcpu.get(Register::Rip) as usize);
-        context.stack = GuestVirtAddr::new(vcpu.get(Register::Rsp) as usize);
-        Ok(())
-    }
-
-    fn domain_restore<'a>(
-        &mut self,
-        store: &Self::Store,
-        context: &Self::Context,
-        vcpu: &mut Self::Vcpu<'a>,
-    ) -> Result<(), ErrorCode> {
-        vcpu.set_ept_ptr(HostPhysAddr::new(store.ept.as_usize() | EPT_ROOT_FLAGS))
-            .map_err(|_| ErrorCode::DomainSwitchFailed)?;
-        vcpu.set_cr(ControlRegister::Cr3, context.cr3.as_usize());
-        vcpu.set(Register::Rip, context.entry.as_u64());
-        vcpu.set(Register::Rsp, context.stack.as_u64());
-        Ok(())
-    }
-
-    fn domain_seal(
-        &mut self,
-        target: usize,
-        current: &mut Domain<Self>,
-        reg_1: usize,
-        reg_2: usize,
-        reg_3: usize,
-    ) -> HypercallResult {
-        let switch_handle = current.switches.allocate()?;
-        let mut switch = current.switches.get_mut(switch_handle);
-        switch.domain = target;
-        switch.context.cr3 = GuestPhysAddr::new(reg_1);
-        switch.context.entry = GuestVirtAddr::new(reg_2);
-        switch.context.stack = GuestVirtAddr::new(reg_3);
-        switch.is_valid = true;
-        Ok(Registers {
-            value_1: switch_handle.into(),
-            ..Default::default()
-        })
-    }
-}*/
 
 /// Architecture specific initialization.
 pub fn init(manifest: &Manifest, cpuid: usize) {

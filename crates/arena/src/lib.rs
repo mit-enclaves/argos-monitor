@@ -79,7 +79,7 @@ where
 /// An handle to an object of type T allocated in a Typed Arena.
 pub struct Handle<T> {
     idx: usize,
-    _type: PhantomData<*const T>,
+    _type: PhantomData<T>,
 }
 
 impl<T> Handle<T> {
