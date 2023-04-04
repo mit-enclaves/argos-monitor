@@ -3,8 +3,6 @@
 #![feature(fn_align)]
 #![feature(naked_functions)]
 
-use stage_two_abi::Manifest;
-
 pub mod allocator;
 pub mod debug;
 pub mod error;
@@ -23,11 +21,6 @@ pub mod arch {
 #[cfg(target_arch = "riscv64")]
 pub mod arch {
     pub use crate::riscv::*;
-}
-
-#[cfg(target_arch = "x86_64")]
-pub fn init(manifest: &Manifest, cpuid: usize) {
-    arch::init(manifest, cpuid);
 }
 
 #[cfg(target_arch = "riscv64")]

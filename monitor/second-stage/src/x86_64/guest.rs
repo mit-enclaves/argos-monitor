@@ -4,12 +4,8 @@ use core::arch::asm;
 use core::cell::RefMut;
 
 use capabilities::cpu::CPU;
-//use mmu::eptmapper::EPT_ROOT_FLAGS;
-//use mmu::{EptMapper, FrameAllocator};
 use monitor::tyche::Tyche;
 use monitor::{Monitor, MonitorState, Parameters};
-//use qemu::_print;
-//use utils::HostPhysAddr;
 use vmx::bitmaps::exit_qualification;
 use vmx::{ActiveVmcs, ControlRegister, Register, VmxExitReason};
 
@@ -17,11 +13,6 @@ use super::backend::BackendX86;
 use crate::error::TycheError;
 use crate::println;
 use crate::x86_64::get_state;
-
-pub struct GuestX86<'a> {
-    pub state: MonitorState<'a, BackendX86>,
-    pub monitor: Tyche,
-}
 
 static MONITOR: Tyche = Tyche {};
 
@@ -49,13 +40,6 @@ pub fn main_loop() {
         }
         // Resume VM
         result = resume();
-    }
-}
-
-pub fn new<'active>(s: MonitorState<'active, BackendX86>) -> GuestX86<'active> {
-    GuestX86 {
-        state: s,
-        monitor: Tyche {},
     }
 }
 

@@ -20,7 +20,7 @@ use vmx::bitmaps::EptEntryFlags;
 use vmx::{ActiveVmcs, VmcsRegion};
 use vtd::Iommu;
 
-use super::init_vcpu;
+use super::vmx_helper::init_vcpu;
 use crate::allocator::Allocator;
 use crate::error::TycheError;
 use crate::println;
