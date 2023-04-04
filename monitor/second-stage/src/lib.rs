@@ -8,7 +8,6 @@ use stage_two_abi::Manifest;
 pub mod allocator;
 pub mod debug;
 pub mod error;
-pub mod guest;
 pub mod statics;
 
 #[cfg(target_arch = "riscv64")]
