@@ -49,10 +49,16 @@ impl<B: Backend> Monitor<B> for Tyche {
         params.vmcall == TYCHE_EXIT
     }
 
-    fn dispatch(&self, state: &mut MonitorState<B>, params: &Parameters) -> MonitorCallResult<B> {
+    fn dispatch(
+        &self,
+        cpu: &mut B::Core,
+        state: &mut MonitorState<B>,
+        params: &Parameters,
+    ) -> MonitorCallResult<B> {
         match params.vmcall {
             TYCHE_CREATE_DOMAIN => self.create_domain(state, params.arg_1, params.arg_2),
             TYCHE_SEAL_DOMAIN => self.seal_domain(
+                cpu,
                 state,
                 params.arg_1,
                 params.arg_2,
@@ -62,6 +68,7 @@ impl<B: Backend> Monitor<B> for Tyche {
             ),
             TYCHE_SHARE => self.share_grant(
                 true,
+                cpu,
                 state,
                 params.arg_1,
                 params.arg_2,
@@ -71,6 +78,7 @@ impl<B: Backend> Monitor<B> for Tyche {
             ),
             TYCHE_GRANT => self.share_grant(
                 false,
+                cpu,
                 state,
                 params.arg_1,
                 params.arg_2,
@@ -78,8 +86,8 @@ impl<B: Backend> Monitor<B> for Tyche {
                 params.arg_4,
                 params.arg_5,
             ),
-            TYCHE_GIVE => self.transfer(state, params.arg_1, params.arg_2),
-            TYCHE_REVOKE => self.revoke(state, params.arg_1),
+            TYCHE_GIVE => self.transfer(cpu, state, params.arg_1, params.arg_2),
+            TYCHE_REVOKE => self.revoke(cpu, state, params.arg_1),
             TYCHE_DUPLICATE => self.duplicate(
                 state,
                 params.arg_1,
@@ -91,7 +99,7 @@ impl<B: Backend> Monitor<B> for Tyche {
                 params.arg_7,
             ),
             TYCHE_ENUMERATE => self.enumerate(state, params.arg_1),
-            TYCHE_SWITCH => self.switch(state, params.arg_1, params.arg_2),
+            TYCHE_SWITCH => self.switch(cpu, state, params.arg_1, params.arg_2),
             TYCHE_EXIT => panic!("Exit should not reach dispatch."),
             _ => panic!("Unknown MonitorCall in Tyche: 0x{:x}", params.vmcall),
         }
@@ -133,6 +141,7 @@ impl Tyche {
 
     pub fn seal_domain<B: Backend>(
         &self,
+        core: &mut B::Core,
         state: &MonitorState<B>,
         dom_idx: usize,
         core_map: usize,
@@ -154,14 +163,14 @@ impl Tyche {
             }
         };
         let dom = state.resources.get_capa(handle).handle;
-        state.resources.transfer(handle, dom)?;
+        state.resources.transfer(handle, dom, core)?;
         let trans = state
             .resources
             .get_capa_mut(handle)
             .seal(&state.resources, core_map, arg1, arg2, arg3)
             .map_err(|e| e.wrap())?;
         // Now transfer the transition capability to the current domain.
-        state.resources.transfer(trans, current.handle)?;
+        state.resources.transfer(trans, current.handle, core)?;
         let local_id = state.resources.get_capa(trans).get_local_idx()?;
         Ok(Registers {
             value_1: local_id,
@@ -200,6 +209,7 @@ impl Tyche {
 
     pub fn transfer<B: Backend>(
         &self,
+        cpu: &mut B::Core,
         state: &MonitorState<B>,
         tgt_idx: usize,
         idx: usize,
@@ -214,10 +224,10 @@ impl Tyche {
         {
             // Easy cases
             OwnedCapability::CPU(h) => {
-                state.resources.transfer(h, target)?;
+                state.resources.transfer(h, target, cpu)?;
             }
             OwnedCapability::Region(h) => {
-                state.resources.transfer(h, target)?;
+                state.resources.transfer(h, target, cpu)?;
             }
             // Cases with checks
             OwnedCapability::Domain(h) => {
@@ -231,7 +241,7 @@ impl Tyche {
                         }
                     }
                 }
-                state.resources.transfer(h, target)?;
+                state.resources.transfer(h, target, cpu)?;
             }
             _ => {
                 return ErrorCode::InvalidTransfer.as_err();
@@ -245,6 +255,7 @@ impl Tyche {
     pub fn share_grant<B: Backend>(
         &self,
         is_share: bool,
+        cpu: &mut B::Core,
         state: &MonitorState<B>,
         tgt_idx: usize,
         capa_idx: usize,
@@ -261,15 +272,22 @@ impl Tyche {
             .map_err(|e| e.wrap())?
         {
             OwnedCapability::CPU(h) => {
-                self.share_grant_inner(is_share, &state.resources, h, target, arg1, arg2, arg3)
+                self.share_grant_inner(is_share, cpu, &state.resources, h, target, arg1, arg2, arg3)
             }
             OwnedCapability::Region(h) => {
-                self.share_grant_inner(is_share, &state.resources, h, target, arg1, arg2, arg3)
+                self.share_grant_inner(is_share, cpu, &state.resources, h, target, arg1, arg2, arg3)
             }
             OwnedCapability::Domain(h) => match state.resources.get_capa(h).access {
-                DomainAccess::Channel => {
-                    self.share_grant_inner(is_share, &state.resources, h, target, arg1, arg2, arg3)
-                }
+                DomainAccess::Channel => self.share_grant_inner(
+                    is_share,
+                    cpu,
+                    &state.resources,
+                    h,
+                    target,
+                    arg1,
+                    arg2,
+                    arg3,
+                ),
                 _ => {
                     return ErrorCode::InvalidShareGrant.as_err();
                 }
@@ -283,6 +301,7 @@ impl Tyche {
     fn share_grant_inner<O: Object, B: Backend>(
         &self,
         is_share: bool,
+        cpu: &mut B::Core,
         pool: &impl Pool<O, B = B>,
         handle: Handle<Capability<O>>,
         target: Handle<Domain<B>>,
@@ -298,7 +317,7 @@ impl Tyche {
             O::Access::get_null()
         };
         let (left, right) = capa.duplicate(access, O::from_bits(arg1, arg2, arg3), pool)?;
-        pool.transfer(right, target)?;
+        pool.transfer(right, target, cpu)?;
         let left_idx = {
             if is_share {
                 pool.get_capa(left).get_local_idx()?
@@ -315,6 +334,7 @@ impl Tyche {
 
     pub fn revoke<B: Backend>(
         &self,
+        cpu: &mut B::Core,
         state: &mut MonitorState<B>,
         capa_idx: usize,
     ) -> MonitorCallResult<B> {
@@ -338,14 +358,19 @@ impl Tyche {
         // safely call the revoke function.
         match owned {
             OwnedCapability::CPU(h) => {
-                state.resources.get_capa_mut(h).revoke(&state.resources)?;
+                state
+                    .resources
+                    .get_capa_mut(h)
+                    .revoke(&state.resources, cpu)?;
             }
-            OwnedCapability::Region(h) => {
-                state.resources.get_capa_mut(h).revoke(&state.resources)?
-            }
-            OwnedCapability::Domain(h) => {
-                state.resources.get_capa_mut(h).revoke(&state.resources)?
-            }
+            OwnedCapability::Region(h) => state
+                .resources
+                .get_capa_mut(h)
+                .revoke(&state.resources, cpu)?,
+            OwnedCapability::Domain(h) => state
+                .resources
+                .get_capa_mut(h)
+                .revoke(&state.resources, cpu)?,
             _ => {
                 return ErrorCode::InvalidRevocation.as_err();
             }
@@ -515,12 +540,13 @@ impl Tyche {
 
     fn switch<B: Backend>(
         &self,
+        core: &mut B::Core,
         state: &mut MonitorState<B>,
         handle: usize,
         cpu: usize,
     ) -> MonitorCallResult<B> {
         if cpu == CPU_LOCAL_TRANSITION {
-            self.switch_internal(state, handle, state.get_current_cpu_handle())
+            self.switch_internal(core, state, handle, state.get_current_cpu_handle())
         } else {
             let cpu_h = {
                 let dom_h = state.get_current_domain().handle;
@@ -532,15 +558,16 @@ impl Tyche {
                     .map_err(|e| e.wrap())?;
                 h
             };
-            self.switch_internal(state, handle, cpu_h)
+            self.switch_internal(core, state, handle, cpu_h)
         }
     }
 
     fn switch_internal<B: Backend>(
         &self,
+        cpu: &mut B::Core,
         state: &mut MonitorState<B>,
         handle: usize,
-        cpu: Handle<Capability<CPU<B>>>,
+        cpu_handle: Handle<Capability<CPU<B>>>,
     ) -> MonitorCallResult<B> {
         // Check the handle points to a transition.
         let (target, target_ctxt, invoked_trans): (
@@ -572,7 +599,7 @@ impl Tyche {
             }
             // Check the domain can run on the current core.
             {
-                let curr_cpu_h = state.resources.get_capa(cpu).handle;
+                let curr_cpu_h = state.resources.get_capa(cpu_handle).handle;
                 let curr_cpu = state.resources.get(curr_cpu_h);
                 if !dom.is_allowed_core(curr_cpu.id) {
                     return Err(ErrorCode::InvalidTransition.wrap());
@@ -614,7 +641,7 @@ impl Tyche {
                     match (return_capa.access, return_capa.capa_type) {
                         (DomainAccess::Transition(_), CapabilityType::Revocation) => {
                             // Revoke the capability.
-                            return_capa.revoke(&state.resources)?;
+                            return_capa.revoke(&state.resources, cpu)?;
                             return_handle
                         }
                         (_, _) => {
@@ -631,7 +658,7 @@ impl Tyche {
                             .map_err(|e| e.wrap())?
                     };
                     // Transfer it to the other domain.
-                    state.resources.transfer(trans, target)?;
+                    state.resources.transfer(trans, target, cpu)?;
                     trans
                 }
             }
@@ -653,7 +680,7 @@ impl Tyche {
 
         // Transfer the cpu to the target domain.
         // TODO: Update when we handle multiple vcpu
-        state.resources.transfer(cpu, target)?;
+        state.resources.transfer(cpu_handle, target, cpu)?;
 
         // Apply the backend switch.
         let curr_h = state.get_current_domain().handle;
@@ -663,6 +690,7 @@ impl Tyche {
             target,
             return_capa_h,
             invoked_trans,
+            cpu_handle,
             cpu,
         )?;
 
@@ -672,7 +700,7 @@ impl Tyche {
             domain.get_sealed_capa().map_err(|e| e.wrap())?
         };
         state.set_current_domain(tgt_sealed);
-        state.set_current_cpu(cpu);
+        state.set_current_cpu(cpu_handle);
 
         let local_return_idx = {
             let capa = state.resources.get_capa(return_capa_h);

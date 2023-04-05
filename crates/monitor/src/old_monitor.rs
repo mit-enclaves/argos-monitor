@@ -33,7 +33,12 @@ pub const DOMAIN_SWITCH: OldMonitorCall = 0x999;
 impl<B: Backend> Monitor<B> for OldMonitor {
     type MonitorCall = OldMonitorCall;
 
-    fn dispatch(&self, state: &mut MonitorState<B>, params: &Parameters) -> MonitorCallResult<B> {
+    fn dispatch(
+        &self,
+        cpu: &mut B::Core,
+        state: &mut MonitorState<B>,
+        params: &Parameters,
+    ) -> MonitorCallResult<B> {
         match params.vmcall {
             DOMAIN_GET_OWN_ID => {
                 let current = state.get_current_domain().handle.idx();
@@ -44,6 +49,7 @@ impl<B: Backend> Monitor<B> for OldMonitor {
             }
             DOMAIN_CREATE => self.tyche.create_domain(state, 1, 1),
             DOMAIN_SEAL => self.tyche.seal_domain(
+                cpu,
                 state,
                 params.arg_1,
                 params.arg_2,
@@ -52,10 +58,10 @@ impl<B: Backend> Monitor<B> for OldMonitor {
                 params.arg_5,
             ),
             DOMAIN_GRANT_REGION => {
-                self.share_grant(false, state, params.arg_1, params.arg_2, params.arg_3)
+                self.share_grant(false, cpu, state, params.arg_1, params.arg_2, params.arg_3)
             }
             DOMAIN_SHARE_REGION => {
-                self.share_grant(true, state, params.arg_1, params.arg_2, params.arg_3)
+                self.share_grant(true, cpu, state, params.arg_1, params.arg_2, params.arg_3)
             }
             DOMAIN_REVOK_REGION => {
                 let current = state.get_current_domain().handle;
@@ -70,7 +76,7 @@ impl<B: Backend> Monitor<B> for OldMonitor {
                         return ErrorCode::InvalidRevocation.as_err();
                     }
                 }
-                self.tyche.revoke(state, params.arg_1)
+                self.tyche.revoke(cpu, state, params.arg_1)
             }
             REGION_SPLIT => {
                 // Check it is a region.
@@ -113,6 +119,7 @@ impl OldMonitor {
     fn share_grant<B: Backend>(
         &self,
         is_share: bool,
+        cpu: &mut B::Core,
         state: &MonitorState<B>,
         tgt_idx: usize,
         idx: usize,
@@ -139,6 +146,6 @@ impl OldMonitor {
             }
         };
         self.tyche
-            .share_grant(is_share, state, tgt_idx, idx, start, end, flags)
+            .share_grant(is_share, cpu, state, tgt_idx, idx, start, end, flags)
     }
 }

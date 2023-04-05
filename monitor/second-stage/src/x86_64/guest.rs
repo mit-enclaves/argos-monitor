@@ -23,11 +23,13 @@ pub enum HandlerResult {
     Crash,
 }
 
-pub fn main_loop() {
-    let mut result = launch();
+pub fn main_loop(mut vcpu: ActiveVmcs<'static>) {
+    let mut result = unsafe { vcpu.launch() };
     loop {
         let exit_reason = match result {
-            Ok(exit_reason) => handle_exit(exit_reason).expect("Failed to handle VM exit"),
+            Ok(exit_reason) => {
+                handle_exit(&mut vcpu, exit_reason).expect("Failed to handle VM exit")
+            }
             Err(err) => {
                 println!("Guest crash: {:?}", err);
                 HandlerResult::Crash
@@ -39,7 +41,7 @@ pub fn main_loop() {
             break;
         }
         // Resume VM
-        result = resume();
+        result = unsafe { vcpu.resume() };
     }
 }
 
@@ -48,27 +50,10 @@ pub fn get_local_cpu<'a>(state: &'a MonitorState<'a, BackendX86>) -> RefMut<CPU<
     state.resources.pools.cpus.get_mut(current.handle)
 }
 
-fn launch() -> Result<vmx::VmxExitReason, TycheError> {
-    let state = get_state();
-    let mut cpu = get_local_cpu(&state);
-    let vcpu = cpu.core.get_active_mut()?;
-    unsafe {
-        let exit_reason = vcpu.launch()?;
-        Ok(exit_reason)
-    }
-}
-
-fn resume() -> Result<vmx::VmxExitReason, TycheError> {
-    let state = get_state();
-    let mut cpu = get_local_cpu(&state);
-    let vcpu = cpu.core.get_active_mut()?;
-    unsafe {
-        let exit_reason = vcpu.resume()?;
-        Ok(exit_reason)
-    }
-}
-
-fn handle_exit(reason: vmx::VmxExitReason) -> Result<HandlerResult, TycheError> {
+fn handle_exit(
+    vcpu: &mut ActiveVmcs<'static>,
+    reason: vmx::VmxExitReason,
+) -> Result<HandlerResult, TycheError> {
     let dump = |vcpu: &mut ActiveVmcs| {
         let rip = vcpu.get(Register::Rip);
         let rax = vcpu.get(Register::Rax);
@@ -84,8 +69,6 @@ fn handle_exit(reason: vmx::VmxExitReason) -> Result<HandlerResult, TycheError> 
 
     match reason {
         VmxExitReason::Vmcall => {
-            let mut cpu = get_local_cpu(&state);
-            let vcpu = cpu.core.get_active_mut()?;
             let params = Parameters {
                 vmcall: vcpu.get(Register::Rax) as usize,
                 arg_1: vcpu.get(Register::Rdi) as usize,
@@ -96,18 +79,12 @@ fn handle_exit(reason: vmx::VmxExitReason) -> Result<HandlerResult, TycheError> 
                 arg_6: vcpu.get(Register::R9) as usize,
                 arg_7: vcpu.get(Register::R10) as usize,
             };
-            drop(vcpu);
-            drop(cpu);
             if MONITOR.is_exit(&state, &params) {
-                let mut cpu = get_local_cpu(&state);
-                let mut vcpu = cpu.core.get_active_mut()?;
-                dump(&mut vcpu);
+                dump(vcpu);
                 Ok(HandlerResult::Exit)
             } else {
-                let advance = match MONITOR.dispatch(&mut state, &params) {
+                let advance = match MONITOR.dispatch(vcpu, &mut state, &params) {
                     Ok(values) => {
-                        let mut cpu = get_local_cpu(&state);
-                        let vcpu = cpu.core.get_active_mut()?;
                         vcpu.set(Register::Rax, 0);
                         vcpu.set(Register::Rdi, values.value_1 as u64);
                         vcpu.set(Register::Rsi, values.value_2 as u64);
@@ -118,9 +95,6 @@ fn handle_exit(reason: vmx::VmxExitReason) -> Result<HandlerResult, TycheError> 
                         values.next_instr
                     }
                     Err(err) => {
-                        let mut cpu = get_local_cpu(&state);
-                        let mut vcpu = cpu.core.get_active_mut()?;
-                        dump(&mut vcpu);
                         println!("The error: {:?}", err);
                         match err {
                             capabilities::error::Error::Capability(code) => {
@@ -132,16 +106,12 @@ fn handle_exit(reason: vmx::VmxExitReason) -> Result<HandlerResult, TycheError> 
                     }
                 };
                 if advance {
-                    let mut cpu = get_local_cpu(&state);
-                    let vcpu = cpu.core.get_active_mut()?;
                     vcpu.next_instruction()?;
                 }
                 Ok(HandlerResult::Resume)
             }
         }
         VmxExitReason::Cpuid => {
-            let mut cpu = get_local_cpu(&state);
-            let vcpu = cpu.core.get_active_mut()?;
             let input_eax = vcpu.get(Register::Rax);
             let input_ecx = vcpu.get(Register::Rcx);
             let eax: u64;
@@ -170,8 +140,6 @@ fn handle_exit(reason: vmx::VmxExitReason) -> Result<HandlerResult, TycheError> 
             Ok(HandlerResult::Resume)
         }
         VmxExitReason::ControlRegisterAccesses => {
-            let mut cpu = get_local_cpu(&state);
-            let vcpu = cpu.core.get_active_mut()?;
             let qualification = vcpu.exit_qualification()?.control_register_accesses();
             match qualification {
                 exit_qualification::ControlRegisterAccesses::MovToCr(cr, reg) => {
@@ -190,8 +158,6 @@ fn handle_exit(reason: vmx::VmxExitReason) -> Result<HandlerResult, TycheError> 
             Ok(HandlerResult::Resume)
         }
         VmxExitReason::EptViolation => {
-            let mut cpu = get_local_cpu(&state);
-            let vcpu = cpu.core.get_active_mut()?;
             let addr = vcpu.guest_phys_addr()?;
             println!(
                 "EPT Violation! virt: 0x{:x}, phys: 0x{:x}",
@@ -204,8 +170,6 @@ fn handle_exit(reason: vmx::VmxExitReason) -> Result<HandlerResult, TycheError> 
             Ok(HandlerResult::Crash)
         }
         VmxExitReason::Xsetbv => {
-            let mut cpu = get_local_cpu(&state);
-            let vcpu = cpu.core.get_active_mut()?;
             let ecx = vcpu.get(Register::Rcx);
             let eax = vcpu.get(Register::Rax);
             let edx = vcpu.get(Register::Rdx);
@@ -229,8 +193,6 @@ fn handle_exit(reason: vmx::VmxExitReason) -> Result<HandlerResult, TycheError> 
             Ok(HandlerResult::Resume)
         }
         VmxExitReason::Wrmsr => {
-            let mut cpu = get_local_cpu(&state);
-            let vcpu = cpu.core.get_active_mut()?;
             let ecx = vcpu.get(Register::Rcx);
             if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
                 // Custom MSR range, used by KVM
@@ -244,8 +206,6 @@ fn handle_exit(reason: vmx::VmxExitReason) -> Result<HandlerResult, TycheError> 
             }
         }
         VmxExitReason::Rdmsr => {
-            let mut cpu = get_local_cpu(&state);
-            let vcpu = cpu.core.get_active_mut()?;
             let ecx = vcpu.get(Register::Rcx);
             if ecx == 0xc0011029 {
                 // Reading an AMD specifig register, just ignore it
@@ -257,8 +217,6 @@ fn handle_exit(reason: vmx::VmxExitReason) -> Result<HandlerResult, TycheError> 
             }
         }
         VmxExitReason::Exception => {
-            let mut cpu = get_local_cpu(&state);
-            let vcpu = cpu.core.get_active_mut()?;
             match vcpu.interrupt_info() {
                 Ok(Some(exit)) => {
                     println!("Exception: {:?}", vcpu.interrupt_info());
@@ -280,8 +238,6 @@ fn handle_exit(reason: vmx::VmxExitReason) -> Result<HandlerResult, TycheError> 
                 "Emulation is not yet implemented for exit reason: {:?}",
                 reason
             );
-            let cpu = get_local_cpu(&state);
-            let vcpu = cpu.core.get_active()?;
             println!("{:?}", vcpu);
             Ok(HandlerResult::Crash)
         }

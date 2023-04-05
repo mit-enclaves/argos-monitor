@@ -2,7 +2,6 @@
 
 use core::arch as platform;
 use core::arch::asm;
-use super::arch;
 
 use mmu::FrameAllocator;
 use stage_two_abi::GuestInfo;
@@ -11,9 +10,9 @@ use vmx::bitmaps::{
     SecondaryControls,
 };
 use vmx::fields::traits::*;
-pub use vmx::VmxError as BackendError;
 use vmx::{fields, secondary_controls_capabilities, ActiveVmcs, Register, VmxError};
 
+use super::arch;
 use crate::println;
 
 pub unsafe fn init_vcpu<'vmx>(
@@ -46,7 +45,7 @@ pub unsafe fn init_vcpu<'vmx>(
     vmx::check::check().expect("check error");
 }
 
-pub fn default_vmcs_config(vmcs: &mut ActiveVmcs, info: &GuestInfo, switching: bool) {
+fn default_vmcs_config(vmcs: &mut ActiveVmcs, info: &GuestInfo, switching: bool) {
     // Look for XSAVES capabilities
     let capabilities =
         secondary_controls_capabilities().expect("Secondary controls are not supported");
@@ -181,10 +180,7 @@ fn cpuid_secondary_controls() -> SecondaryControls {
 }
 
 /// Saves the host state (control registers, segments...), so that they are restored on VM Exit.
-pub fn save_host_state<'vmx>(
-    _vmcs: &mut ActiveVmcs<'vmx>,
-    info: &GuestInfo,
-) -> Result<(), VmxError> {
+fn save_host_state<'vmx>(_vmcs: &mut ActiveVmcs<'vmx>, info: &GuestInfo) -> Result<(), VmxError> {
     // NOTE: See section 24.5 of volume 3C.
 
     let tr: u16;

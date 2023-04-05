@@ -22,6 +22,7 @@ pub trait BackendContext {
 
 pub trait Backend: 'static + Sized {
     type DomainState;
+    type CoreState;
     type Core;
     type Context: BackendContext;
     type Error: core::fmt::Debug;
@@ -66,12 +67,22 @@ pub trait Backend: 'static + Sized {
         &self,
         pool: &State<'_, Self>,
         capa: &Capability<CPU<Self>>,
+        cpu: &mut Self::Core,
     ) -> Result<(), Error<Self::Error>>;
 
     fn uninstall_cpu(
         &self,
         pool: &State<'_, Self>,
         capa: &Capability<CPU<Self>>,
+        cpu: &mut Self::Core,
+    ) -> Result<(), Error<Self::Error>>;
+
+    fn init_cpu(
+        &self,
+        pool: &State<'_, Self>,
+        cpu: &mut Self::Core,
+        cpu_handle: Handle<CPU<Self>>,
+        domain_handle: Handle<Domain<Self>>,
     ) -> Result<(), Error<Self::Error>>;
 
     /// Switch needs to:
@@ -88,6 +99,7 @@ pub trait Backend: 'static + Sized {
         to_save: Handle<Capability<Domain<Self>>>,
         to_restore: Handle<Capability<Domain<Self>>>,
         target_cpu: Handle<Capability<CPU<Self>>>,
+        cpu: &mut Self::Core,
     ) -> Result<(), Error<Self::Error>>;
 
     fn get_current_domain<'p>(
@@ -191,6 +203,7 @@ pub const EMPTY_CPU_CAPA: RefCell<Capability<CPU<NoBackend>>> = RefCell::new(Cap
 
 impl Backend for NoBackend {
     type DomainState = NoBackendState;
+    type CoreState = NoBackendCore;
     type Core = NoBackendCore;
     type Context = NoBackendContext;
     type Error = ();
@@ -265,6 +278,7 @@ impl Backend for NoBackend {
         &self,
         _pool: &State<'_, Self>,
         _capa: &Capability<CPU<Self>>,
+        _cpu: &mut Self::Core,
     ) -> Result<(), Error<Self::Error>>
     where
         Self: Sized,
@@ -276,6 +290,7 @@ impl Backend for NoBackend {
         &self,
         _pool: &State<'_, Self>,
         _capa: &Capability<CPU<Self>>,
+        _cpu: &mut Self::Core,
     ) -> Result<(), Error<Self::Error>>
     where
         Self: Sized,
@@ -291,6 +306,7 @@ impl Backend for NoBackend {
         _to_save: Handle<Capability<Domain<Self>>>,
         _to_restore: Handle<Capability<Domain<Self>>>,
         _target_cpu: Handle<Capability<CPU<Self>>>,
+        _cpu: &mut Self::Core,
     ) -> Result<(), Error<Self::Error>> {
         Ok(())
     }
@@ -309,5 +325,15 @@ impl Backend for NoBackend {
 
     fn set_current_cpu(&mut self, current: Handle<Capability<CPU<Self>>>) {
         self.current_cpu = current;
+    }
+
+    fn init_cpu(
+        &self,
+        _pool: &State<'_, Self>,
+        _cpu: &mut Self::Core,
+        _cpu_handle: Handle<CPU<Self>>,
+        _domain_handle: Handle<Domain<Self>>,
+    ) -> Result<(), Error<Self::Error>> {
+        Ok(())
     }
 }

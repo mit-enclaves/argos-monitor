@@ -50,6 +50,7 @@ unsafe fn ap_entry() {
     // Setup IDT on the core
     idt::init();
     // Signal the AP is ready
+    println!("CPU {}: vmx {:?}", cpu::id(), vmx::vmx_available());
     CPU_STATUS[cpu::id()].store(true, Ordering::SeqCst);
     println!("Hello World from cpu {}", cpu::id());
     // Wait until all cores has been initialized

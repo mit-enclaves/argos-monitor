@@ -66,7 +66,12 @@ where
 {
     type MonitorCall;
     fn is_exit(&self, state: &MonitorState<B>, params: &Parameters) -> bool;
-    fn dispatch(&self, state: &mut MonitorState<B>, params: &Parameters) -> MonitorCallResult<B>;
+    fn dispatch(
+        &self,
+        core: &mut B::Core,
+        state: &mut MonitorState<B>,
+        params: &Parameters,
+    ) -> MonitorCallResult<B>;
 }
 
 // ————————————————————————————— Monitor State —————————————————————————————— //
@@ -91,6 +96,8 @@ where
     B: Backend + 'static,
 {
     pub resources: State<'a, B>,
+    default_domain: Handle<Domain<B>>,
+    default_domain_capa: Handle<Capability<Domain<B>>>,
 }
 
 impl<'a, B> MonitorState<'a, B>
@@ -98,10 +105,7 @@ where
     B: Backend + 'static,
 {
     // Initialize the state for the machine.
-    pub fn new(
-        mem_end: usize,
-        mut capas: State<'a, B>,
-    ) -> Result<Self, Error<<B as Backend>::Error>> {
+    pub fn new(mem_end: usize, mut capas: State<'a, B>) -> Result<Self, Error<<B as Backend>::Error>> {
         // Create the original domain.
         let default_domain = capas.pools.domains.allocate().map_err(|e| e.wrap())?;
 
@@ -140,7 +144,6 @@ where
             .map_err(|e| e.wrap())?;
 
         // Create the default cpu and its associated capability.
-        // TODO if we want to allocate multiple ones from the manifest.{number of cores} do it here.
         let default_cpu_handle =
             Capability::<CPU<B>>::new(&capas, 0, cpu::ALL_RIGHTS).map_err(|e| e.wrap())?;
         capas
@@ -152,7 +155,6 @@ where
         capas.backend.create_cpu(&capas, &default_cpu)?;
         drop(default_cpu);
 
-        // TODO handle initialization properly for multi-core
         capas.backend.set_current_cpu(default_cpu_handle);
         capas.backend.set_current_domain(default_domain_capa_handle);
 
@@ -161,11 +163,42 @@ where
         let mem_capa = capas.get_capa(mem_capa_handle);
         capas.backend.create_domain(&capas, &default_domain_capa)?;
         capas.backend.install_region(&capas, &mem_capa)?;
-        capas.backend.install_domain(&capas, &default_domain_capa)?;
+        // capas.backend.install_domain(&capas, &default_domain_capa)?;
         drop(default_domain_capa);
         drop(mem_capa);
 
-        Ok(Self { resources: capas })
+        Ok(Self {
+            resources: capas,
+            default_domain,
+            default_domain_capa: default_domain_capa_handle,
+        })
+    }
+
+    pub fn add_cpu(&mut self, core: &mut B::Core) -> Result<(), Error<<B as Backend>::Error>> {
+        let resources = &mut self.resources;
+        let cpu_capa_handle =
+            Capability::<CPU<B>>::new(resources, 0, cpu::ALL_RIGHTS).map_err(|e| e.wrap())?;
+        resources
+            .set_owner_capa(cpu_capa_handle, self.default_domain)
+            .map_err(|e| e.wrap())?;
+
+        // Call the backend to allocate the physical core.
+        let cpu = resources.get_capa(cpu_capa_handle);
+        let cpu_handle = cpu.handle;
+        resources.backend.create_cpu(resources, &cpu)?;
+        drop(cpu);
+
+        resources.backend.set_current_cpu(cpu_capa_handle);
+        resources
+            .backend
+            .set_current_domain(self.default_domain_capa);
+
+        // Apply the changes
+        resources
+            .backend
+            .init_cpu(resources, core, cpu_handle, self.default_domain)?;
+
+        Ok(())
     }
 
     pub fn get_current_domain(&self) -> RefMut<Capability<Domain<B>>> {

@@ -139,7 +139,11 @@ where
         Ok((self.left, self.right))
     }
 
-    pub fn revoke<P>(&mut self, pool: &P) -> Result<(), Error<<P::B as Backend>::Error>>
+    pub fn revoke<P>(
+        &mut self,
+        pool: &P,
+        cpu: &mut <P::B as Backend>::Core,
+    ) -> Result<(), Error<<P::B as Backend>::Error>>
     where
         P: Pool<T>,
     {
@@ -157,7 +161,7 @@ where
             {
                 let mut left = pool.get_capa_mut(Handle::new_unchecked(self.left.idx()));
                 if left.capa_type != CapabilityType::Resource {
-                    left.revoke(pool)?;
+                    left.revoke(pool, cpu)?;
                 }
             }
         }
@@ -166,13 +170,13 @@ where
             {
                 let mut right = pool.get_capa_mut(Handle::new_unchecked(self.right.idx()));
                 if right.capa_type != CapabilityType::Resource {
-                    right.revoke(pool)?;
+                    right.revoke(pool, cpu)?;
                 }
             }
         }
 
         // At this point, root is still revocation, left and right should be resources.
-        pool.backend_revoke(self)?;
+        pool.backend_revoke(self, cpu)?;
         if !self.left.is_null() {
             Capability::<T>::destroy(self.left, pool)?;
             self.left = Handle::null();
@@ -182,7 +186,7 @@ where
             self.right = Handle::null();
         }
 
-        self.into_resource(pool)?;
+        self.into_resource(pool, cpu)?;
         Ok(())
     }
 
@@ -195,7 +199,11 @@ where
         Ok(())
     }
 
-    pub fn into_resource<P>(&mut self, pool: &P) -> Result<(), Error<<P::B as Backend>::Error>>
+    pub fn into_resource<P>(
+        &mut self,
+        pool: &P,
+        cpu: &mut <P::B as Backend>::Core,
+    ) -> Result<(), Error<<P::B as Backend>::Error>>
     where
         P: Pool<T>,
     {
@@ -209,7 +217,7 @@ where
             //obj.install(pool, self)?;
         }
         // Backend call to reinstall the capability.
-        pool.backend_apply(self)?;
+        pool.backend_apply(self, cpu)?;
         Ok(())
     }
 
@@ -334,17 +342,18 @@ pub trait Pool<T: Object> {
         &self,
         capa: Handle<Capability<T>>,
         domain: Handle<Domain<Self::B>>,
+        cpu: &mut <Self::B as Backend>::Core,
     ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         let previous = self.get_capa(capa).get_owner()?;
         if previous.idx() == domain.idx() {
             return Ok(());
         }
-        self.backend_unapply(capa)?;
+        self.backend_unapply(capa, cpu)?;
         self.remove_owner(capa).map_err(|e| e.wrap())?;
         match self.set_owner_capa(capa, domain) {
             Ok(()) => {
                 let capa = self.get_capa(capa);
-                self.backend_apply(&capa)?;
+                self.backend_apply(&capa, cpu)?;
                 Ok(())
             }
             // Something went wrong, try to reestablish the original owner.
@@ -365,14 +374,19 @@ pub trait Pool<T: Object> {
     fn backend_revoke(
         &self,
         orig: &Capability<T>,
+        cpu: &mut <Self::B as Backend>::Core,
     ) -> Result<(), Error<<Self::B as Backend>::Error>>;
     /// Called when we go from revoke to resource or when we transfer (receive).
-    fn backend_apply(&self, capa: &Capability<T>)
-        -> Result<(), Error<<Self::B as Backend>::Error>>;
+    fn backend_apply(
+        &self,
+        capa: &Capability<T>,
+        cpu: &mut <Self::B as Backend>::Core,
+    ) -> Result<(), Error<<Self::B as Backend>::Error>>;
     /// Called when the capability is revoked or transfered (send).
     fn backend_unapply(
         &self,
         capa: Handle<Capability<T>>,
+        cpu: &mut <Self::B as Backend>::Core,
     ) -> Result<(), Error<<Self::B as Backend>::Error>>;
 }
 
@@ -505,6 +519,7 @@ impl<Back: Backend + Sized> Pool<Domain<Back>> for State<'_, Back> {
     fn backend_revoke(
         &self,
         orig: &Capability<Domain<Back>>,
+        cpu: &mut <Self::B as Backend>::Core,
     ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         // The right cannot be null if it was a sealed capa.
         if orig.right.is_null() {
@@ -539,13 +554,14 @@ impl<Back: Backend + Sized> Pool<Domain<Back>> for State<'_, Back> {
                 return Err(ErrorCode::WrongOwnership.wrap());
             }
         }
-        self.backend_unapply(orig.right)?;
+        self.backend_unapply(orig.right, cpu)?;
         Ok(())
     }
 
     fn backend_apply(
         &self,
         _capa: &Capability<Domain<Self::B>>,
+        _cpu: &mut <Self::B as Backend>::Core,
     ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         //self.backend.install_domain(&self, capa)
         // TODO figure that out.
@@ -555,6 +571,7 @@ impl<Back: Backend + Sized> Pool<Domain<Back>> for State<'_, Back> {
     fn backend_unapply(
         &self,
         capa: Handle<Capability<Domain<Self::B>>>,
+        cpu: &mut <Self::B as Backend>::Core,
     ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         //Perform the cleanup now.
         //TODO the logic here is flawed for some reason.
@@ -578,15 +595,15 @@ impl<Back: Backend + Sized> Pool<Domain<Back>> for State<'_, Back> {
                     let o = object.owned.get(Handle::new_unchecked(i));
                     match *o {
                         OwnedCapability::Region(h) => {
-                            self.backend_unapply(h)?;
+                            self.backend_unapply(h, cpu)?;
                             self.into_zombie_owner(h).map_err(|e| e.wrap())?
                         }
                         OwnedCapability::Domain(h) => {
-                            self.backend_unapply(h)?;
+                            self.backend_unapply(h, cpu)?;
                             self.into_zombie_owner(h).map_err(|e| e.wrap())?
                         }
                         OwnedCapability::CPU(h) => {
-                            self.backend_unapply(h)?;
+                            self.backend_unapply(h, cpu)?;
                             self.into_zombie_owner(h).map_err(|e| e.wrap())?
                         }
                         _ => {}
@@ -622,6 +639,7 @@ impl<Back: Backend + Sized> Pool<memory::MemoryRegion> for State<'_, Back> {
     fn get(&self, handle: Handle<memory::MemoryRegion>) -> Ref<memory::MemoryRegion> {
         self.pools.regions.get(handle)
     }
+
     fn get_mut(&self, handle: Handle<memory::MemoryRegion>) -> RefMut<memory::MemoryRegion> {
         self.pools.regions.get_mut(handle)
     }
@@ -711,6 +729,7 @@ impl<Back: Backend + Sized> Pool<memory::MemoryRegion> for State<'_, Back> {
     fn backend_revoke(
         &self,
         _orig: &Capability<memory::MemoryRegion>,
+        _cpu: &mut <Self::B as Backend>::Core,
     ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         // TODO optimize
         Ok(())
@@ -719,6 +738,7 @@ impl<Back: Backend + Sized> Pool<memory::MemoryRegion> for State<'_, Back> {
     fn backend_apply(
         &self,
         capa: &Capability<memory::MemoryRegion>,
+        _cpu: &mut <Self::B as Backend>::Core,
     ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         let mut region = self.get_mut(capa.handle);
         region.merge(1, self, capa);
@@ -728,6 +748,7 @@ impl<Back: Backend + Sized> Pool<memory::MemoryRegion> for State<'_, Back> {
     fn backend_unapply(
         &self,
         capa: Handle<Capability<memory::MemoryRegion>>,
+        _cpu: &mut <Self::B as Backend>::Core,
     ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         let capa = self.get_capa(capa);
         let mut region = self.get_mut(capa.handle);
@@ -823,6 +844,7 @@ impl<Back: Backend + Sized> Pool<CPU<Back>> for State<'_, Back> {
     fn backend_revoke(
         &self,
         _orig: &Capability<CPU<Back>>,
+        _cpu: &mut <Self::B as Backend>::Core,
     ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         // TODO optimize
         Ok(())
@@ -830,15 +852,17 @@ impl<Back: Backend + Sized> Pool<CPU<Back>> for State<'_, Back> {
     fn backend_apply(
         &self,
         capa: &Capability<CPU<Back>>,
+        cpu: &mut <Self::B as Backend>::Core,
     ) -> Result<(), Error<<Self::B as Backend>::Error>> {
-        self.backend.install_cpu(&self, capa)
+        self.backend.install_cpu(&self, capa, cpu)
     }
 
     fn backend_unapply(
         &self,
         capa: Handle<Capability<CPU<Back>>>,
+        cpu: &mut <Self::B as Backend>::Core,
     ) -> Result<(), Error<<Self::B as Backend>::Error>> {
         let capa = self.get_capa(capa);
-        self.backend.uninstall_cpu(&self, &capa)
+        self.backend.uninstall_cpu(&self, &capa, cpu)
     }
 }

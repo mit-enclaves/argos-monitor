@@ -1,5 +1,4 @@
 use core::cell::RefCell;
-use core::mem::replace;
 
 use arena::{Handle, TypedArena};
 use capabilities::backend::{Backend, BackendContext};
@@ -15,14 +14,13 @@ use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator};
 //use qemu::_print;
 use stage_two_abi::GuestInfo;
-use utils::{Frame, GuestPhysAddr, HostPhysAddr, HostVirtAddr};
+use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
 use vmx::bitmaps::EptEntryFlags;
-use vmx::{ActiveVmcs, VmcsRegion};
+use vmx::ActiveVmcs;
 use vtd::Iommu;
 
-use super::vmx_helper::init_vcpu;
+use super::cpuid;
 use crate::allocator::Allocator;
-use crate::error::TycheError;
 use crate::println;
 use crate::statics::{NB_CORES, NB_PAGES};
 
@@ -31,7 +29,6 @@ pub struct BackendX86 {
     pub allocator: Allocator<NB_PAGES>,
     pub guest_info: GuestInfo,
     pub iommu: Option<Iommu>,
-    pub vmxon: Option<vmx::Vmxon>,
     pub locals: [LocalState; NB_CORES],
 }
 
@@ -61,80 +58,59 @@ pub struct BackendX86State {
 
 pub enum BackendX86Core {
     Uninitialized,
-    Inactive(VmcsRegion<'static>),
-    Active(ActiveVmcs<'static>),
+    // Inactive(VmcsRegion<'static>),
+    // Active(ActiveVmcs<'static>),
 }
 
 impl BackendX86Core {
-    pub fn initialize(&mut self, frame: Frame, vmxon: &vmx::Vmxon) -> Result<(), TycheError> {
-        match self {
-            BackendX86Core::Uninitialized => unsafe {
-                let vmcs = vmxon.create_vm_unsafe(frame)?;
-                *self = BackendX86Core::Inactive(vmcs);
-                Ok(())
-            },
-            _ => todo!("Initializing already initialized core"),
-        }
-    }
+    // pub fn initialize(&mut self, frame: Frame, vmxon: &vmx::Vmxon) -> Result<(), TycheError> {
+    //     match self {
+    //         BackendX86Core::Uninitialized => unsafe {
+    //             let vmcs = vmxon.create_vm_unsafe(frame)?;
+    //             *self = BackendX86Core::Inactive(vmcs);
+    //             Ok(())
+    //         },
+    //         _ => todo!("Initializing already initialized core"),
+    //     }
+    // }
 
-    pub fn activate(&mut self) -> Result<(), TycheError> {
-        let old_self = replace(self, BackendX86Core::Uninitialized);
-        let BackendX86Core::Inactive(region) = old_self  else {
-            todo!("Trying to activate a core that is not inactive");
-        };
-        let active = region.set_as_active()?;
-        *self = BackendX86Core::Active(active);
-        Ok(())
-    }
+    // pub fn activate(&mut self) -> Result<(), TycheError> {
+    //     let old_self = replace(self, BackendX86Core::Uninitialized);
+    //     let BackendX86Core::Inactive(region) = old_self  else {
+    //         todo!("Trying to activate a core that is not inactive");
+    //     };
+    //     let active = region.set_as_active()?;
+    //     *self = BackendX86Core::Active(active);
+    //     Ok(())
+    // }
 
-    pub fn deactivate(&mut self) -> Result<(), TycheError> {
-        let old_self = replace(self, BackendX86Core::Uninitialized);
-        let BackendX86Core::Active(vcpu) = old_self else {
-            todo!("Trying to deactivate a core that is active");
-        };
-        let inactive = vcpu.deactivate()?;
-        *self = BackendX86Core::Inactive(inactive);
-        Ok(())
-    }
+    // pub fn deactivate(&mut self) -> Result<(), TycheError> {
+    //     let old_self = replace(self, BackendX86Core::Uninitialized);
+    //     let BackendX86Core::Active(vcpu) = old_self else {
+    //         todo!("Trying to deactivate a core that is active");
+    //     };
+    //     let inactive = vcpu.deactivate()?;
+    //     *self = BackendX86Core::Inactive(inactive);
+    //     Ok(())
+    // }
 
-    pub fn get_active(&self) -> Result<&ActiveVmcs<'static>, TycheError> {
-        match self {
-            BackendX86Core::Active(active) => Ok(active),
-            _ => ErrorCode::WrongCPUState.as_err(),
-        }
-    }
+    //     pub fn get_active(&self) -> Result<&ActiveVmcs<'static>, TycheError> {
+    //         match self {
+    //             BackendX86Core::Active(active) => Ok(active),
+    //             _ => ErrorCode::WrongCPUState.as_err(),
+    //         }
+    //     }
 
-    pub fn get_active_mut(&mut self) -> Result<&mut ActiveVmcs<'static>, TycheError> {
-        match self {
-            BackendX86Core::Active(ref mut active) => Ok(active),
-            _ => ErrorCode::WrongCPUState.as_err(),
-        }
-    }
+    //     pub fn get_active_mut(&mut self) -> Result<&mut ActiveVmcs<'static>, TycheError> {
+    //         match self {
+    //             BackendX86Core::Active(ref mut active) => Ok(active),
+    //             _ => ErrorCode::WrongCPUState.as_err(),
+    //         }
+    //     }
 }
 
 impl BackendX86 {
-    pub fn init(&mut self) {
-        // Create vmxon.
-        let frame = self
-            .allocator
-            .allocate_frame()
-            .expect("Failed to allocate VMXON")
-            .zeroed();
-        unsafe {
-            println!("Init the guest");
-            self.vmxon = match vmx::vmxon(frame) {
-                Ok(vmxon) => {
-                    println!("VMXON: ok(vmxon)");
-                    Some(vmxon)
-                }
-                Err(err) => {
-                    println!("VMXON: {:?}", err);
-                    qemu::exit(qemu::ExitCode::Failure);
-                    None
-                }
-            }
-        }
-    }
+    pub fn init(&mut self) {}
 
     pub fn set_iommu(&mut self, iommu_addr: u64) {
         if iommu_addr != 0 {
@@ -147,14 +123,14 @@ impl BackendX86 {
     }
 
     fn cpu_id(&self) -> usize {
-        // TODO: handle multi-cores
-        0
+        cpuid()
     }
 }
 
 impl Backend for BackendX86 {
     type DomainState = BackendX86State;
-    type Core = BackendX86Core;
+    type Core = ActiveVmcs<'static>;
+    type CoreState = BackendX86Core;
     type Context = BackendC86Context;
     type Error = vmx::VmxError;
 
@@ -228,19 +204,20 @@ impl Backend for BackendX86 {
 
     fn install_domain(
         &self,
-        pool: &State<'_, Self>,
-        capa: &Capability<Domain<Self>>,
+        _pool: &State<'_, Self>,
+        _capa: &Capability<Domain<Self>>,
     ) -> Result<(), Error<Self::Error>>
     where
         Self: Sized,
     {
-        let domain = pool.get_mut(capa.handle);
-        let cpu_capa = self.get_current_cpu(pool);
-        let mut cpu = pool.get_mut(cpu_capa.handle);
-        let vcpu = cpu.core.get_active_mut()?;
-        vcpu.set_ept_ptr(HostPhysAddr::new(
-            domain.state.ept.as_usize() | EPT_ROOT_FLAGS,
-        ))?;
+        // TODO: install EPT on cpu
+        // let domain = pool.get_mut(capa.handle);
+        // let cpu_capa = self.get_current_cpu(pool);
+        // let mut cpu = pool.get_mut(cpu_capa.handle);
+        // let vcpu = cpu.core.get_active_mut()?;
+        // vcpu.set_ept_ptr(HostPhysAddr::new(
+        //     domain.state.ept.as_usize() | EPT_ROOT_FLAGS,
+        // ))?;
         Ok(())
     }
 
@@ -259,29 +236,12 @@ impl Backend for BackendX86 {
 
     fn create_cpu(
         &self,
-        pool: &State<'_, Self>,
-        capa: &Capability<capabilities::cpu::CPU<Self>>,
+        _pool: &State<'_, Self>,
+        _capa: &Capability<capabilities::cpu::CPU<Self>>,
     ) -> Result<(), Error<Self::Error>>
     where
         Self: Sized,
     {
-        // Get the CPU object.
-        let mut cpu = pool.get_mut(capa.handle);
-        // Create a VMCS.
-        let frame = self
-            .allocator
-            .allocate_frame()
-            .expect("Failed to allocate VMCS")
-            .zeroed();
-
-        let Some(ref vmxon) = self.vmxon else {panic!("VMXON is None");};
-        cpu.core.initialize(frame, vmxon)?;
-        cpu.core.activate()?;
-        //TODO init vcpu
-        let BackendX86Core::Active(ref mut active) = cpu.core else { return ErrorCode::WrongCPUState.as_err();};
-        unsafe {
-            init_vcpu(active, &self.guest_info, &self.allocator);
-        }
         Ok(())
     }
 
@@ -289,6 +249,7 @@ impl Backend for BackendX86 {
         &self,
         _pool: &State<'_, Self>,
         _capa: &Capability<capabilities::cpu::CPU<Self>>,
+        _cpu: &mut Self::Core,
     ) -> Result<(), Error<Self::Error>>
     where
         Self: Sized,
@@ -301,12 +262,27 @@ impl Backend for BackendX86 {
         &self,
         _pool: &State<'_, Self>,
         _capa: &Capability<capabilities::cpu::CPU<Self>>,
+        _cpu: &mut Self::Core,
     ) -> Result<(), Error<Self::Error>>
     where
         Self: Sized,
     {
         //todo!()
         //TODO
+        Ok(())
+    }
+
+    fn init_cpu(
+        &self,
+        pool: &State<'_, Self>,
+        cpu: &mut Self::Core,
+        _cpu_handle: Handle<CPU<Self>>,
+        domain_handle: Handle<Domain<Self>>,
+    ) -> Result<(), Error<Self::Error>> {
+        let domain = pool.get(domain_handle);
+        cpu.set_ept_ptr(HostPhysAddr::new(
+            domain.state.ept.as_usize() | EPT_ROOT_FLAGS,
+        ))?;
         Ok(())
     }
 
@@ -318,13 +294,12 @@ impl Backend for BackendX86 {
         to_save: Handle<Capability<Domain<Self>>>,
         to_restore: Handle<Capability<Domain<Self>>>,
         target_cpu: Handle<Capability<CPU<Self>>>,
+        cpu: &mut Self::Core,
     ) -> Result<(), Error<Self::Error>> {
         // Save the current CPU state into the caller's to_save context.
         {
             //TODO here we could check stuff for the capa, like having to clear
             //some registers etc.
-            let cpu_h = self.get_current_cpu(pool).handle;
-            let mut cpu = pool.get_mut(cpu_h);
             let capa = pool.get_capa(to_save);
             let mut dom = pool.get_mut(capa.handle);
             #[allow(unused_assignments)]
@@ -340,21 +315,15 @@ impl Backend for BackendX86 {
                             return Err(ErrorCode::OutOfBound.wrap());
                         }
                         let mut to_save_context = dom.contexts.get_mut(Handle::new_unchecked(x));
-                        match &mut cpu.core {
-                            BackendX86Core::Active(vcpu) => {
-                                vcpu.next_instruction()?;
-                                to_save_context.state.cr3 = vcpu.get_cr(vmx::ControlRegister::Cr3);
-                                to_save_context.state.rip = vcpu.get(vmx::Register::Rip);
-                                to_save_context.state.rsp = vcpu.get(vmx::Register::Rsp);
-                                ept_save = vcpu.get_ept_ptr()?;
-                                if self.get_current_cpu_handle() != target_cpu {
-                                    println!("We are deactivating?");
-                                    cpu.core.deactivate()?;
-                                }
-                            }
-                            _ => {
-                                return Err(ErrorCode::InvalidTransition.wrap());
-                            }
+                        cpu.next_instruction()?;
+                        to_save_context.state.cr3 = cpu.get_cr(vmx::ControlRegister::Cr3);
+                        to_save_context.state.rip = cpu.get(vmx::Register::Rip);
+                        to_save_context.state.rsp = cpu.get(vmx::Register::Rsp);
+                        ept_save = cpu.get_ept_ptr()?;
+                        if self.get_current_cpu_handle() != target_cpu {
+                            println!("We are deactivating?");
+                            // TODO
+                            // cpu.core.deactivate()?;
                         }
                     }
                     _ => {
@@ -368,8 +337,6 @@ impl Backend for BackendX86 {
 
         // Restore the other state.
         {
-            let cpu_capa = pool.get_capa(target_cpu);
-            let mut cpu = pool.get_mut(cpu_capa.handle);
             let capa = pool.get_capa(to_restore);
             let dom = pool.get(capa.handle);
             let to_restore_context = {
@@ -390,39 +357,17 @@ impl Backend for BackendX86 {
                 }
             };
 
-            match &cpu.core {
-                BackendX86Core::Active(_) => {
-                    if target_cpu != self.get_current_cpu_handle() {
-                        return Err(ErrorCode::InvalidTransition.wrap());
-                    }
-                }
-                BackendX86Core::Inactive(_) => {
-                    // TODO(@charly) will that fuck up the main loop when we return?
-                    println!("Activating a CPU?");
-                    cpu.core.activate()?;
-                }
-                _ => {
-                    return Err(ErrorCode::InvalidTransition.wrap());
-                }
-            }
-            match &mut cpu.core {
-                BackendX86Core::Active(vcpu) => {
-                    println!("About to overwrite the values");
-                    vcpu.set_cr(vmx::ControlRegister::Cr3, to_restore_context.state.cr3);
-                    vcpu.set(vmx::Register::Rip, to_restore_context.state.rip);
-                    vcpu.set(vmx::Register::Rsp, to_restore_context.state.rsp);
-                    println!(
-                        "We have rip {:x?}, rsp {:x?}, cr3: {:x?}",
-                        to_restore_context.state.rip,
-                        to_restore_context.state.rsp,
-                        to_restore_context.state.cr3
-                    );
-                    vcpu.set_ept_ptr(HostPhysAddr::new(dom.state.ept.as_usize() | EPT_ROOT_FLAGS))?;
-                }
-                _ => {
-                    return Err(ErrorCode::InvalidTransition.wrap());
-                }
-            }
+            println!("About to overwrite the values");
+            cpu.set_cr(vmx::ControlRegister::Cr3, to_restore_context.state.cr3);
+            cpu.set(vmx::Register::Rip, to_restore_context.state.rip);
+            cpu.set(vmx::Register::Rsp, to_restore_context.state.rsp);
+            println!(
+                "We have rip {:x?}, rsp {:#?}, cr3: {:#?}",
+                to_restore_context.state.rip,
+                to_restore_context.state.rsp,
+                to_restore_context.state.cr3
+            );
+            cpu.set_ept_ptr(HostPhysAddr::new(dom.state.ept.as_usize() | EPT_ROOT_FLAGS))?;
         }
         Ok(())
     }

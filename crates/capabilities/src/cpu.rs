@@ -52,7 +52,7 @@ impl AccessRights for CPUAccess {
 pub struct CPU<B: Backend> {
     pub id: usize,
     pub ref_count: usize,
-    pub core: B::Core,
+    pub core: B::CoreState,
 }
 
 impl<B: Backend> CPU<B> {
