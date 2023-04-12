@@ -46,6 +46,7 @@ check:
 # Run the test suites
 test:
 	cargo test --package vmx
+	cargo test --package capa-engine
 	cargo test --package capabilities
 	cargo test --package monitor
 

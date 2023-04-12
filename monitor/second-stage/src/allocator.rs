@@ -1,14 +1,27 @@
 //! A simple bump allocator based on a static bss array.
 //! This should be replaced with a verified implementation.
 
-use core::cell::RefCell;
-
 use arena::free_list::FreeList;
-use mmu::FrameAllocator;
+pub use mmu::FrameAllocator;
+use spin::Mutex;
+use stage_two_abi::Manifest;
 use utils::{Frame, HostPhysAddr, HostVirtAddr};
+
+use crate::statics::{EMPTY_PAGE, NB_PAGES};
 
 pub const PAGE_SIZE: u64 = 0x1000;
 pub const PAGE_MASK: u64 = !(PAGE_SIZE - 1);
+
+pub static ALLOCATOR: Allocator<NB_PAGES> = unsafe {
+    Allocator {
+        inner: Mutex::new(FreeListAllocator::new(PHYSICAL_PAGES)),
+    }
+};
+static mut PHYSICAL_PAGES: [Page; NB_PAGES] = [EMPTY_PAGE; NB_PAGES];
+
+pub fn allocator() -> &'static impl FrameAllocator {
+    &ALLOCATOR
+}
 
 // ————————————————————————————————— Pages —————————————————————————————————— //
 
@@ -44,7 +57,7 @@ impl<const N: usize> FreeListAllocator<N> {
     /// Initializes the allocqtor.
     ///
     /// This function must be called before performing any allocation.
-    fn initialize(&mut self, virt_offset: usize) {
+    pub fn initialize(&mut self, virt_offset: usize) {
         self.virt_offset = virt_offset;
     }
 
@@ -52,7 +65,7 @@ impl<const N: usize> FreeListAllocator<N> {
     ///
     /// This function is unsafe as it assume the FreeListAllocator has been properly initialized
     /// prior to allocation. Otherwise, the Frame will contain an invalid physical address.
-    unsafe fn allocate_frame(&mut self) -> Option<Frame> {
+    pub unsafe fn allocate_frame(&mut self) -> Option<Frame> {
         let page_index = self.free_list.allocate()?;
         let frame = &mut self.pages[page_index].data as *mut u8;
         Some(Frame {
@@ -76,26 +89,12 @@ impl<const N: usize> FreeListAllocator<N> {
 }
 
 pub struct Allocator<const N: usize> {
-    inner: RefCell<&'static mut FreeListAllocator<N>>,
-}
-
-impl<const N: usize> Allocator<N> {
-    pub fn new(allocator: &'static mut FreeListAllocator<N>, virt_offset: usize) -> Self {
-        allocator.initialize(virt_offset);
-        Self {
-            inner: RefCell::new(allocator),
-        }
-    }
-
-    pub unsafe fn free(&self, frame: HostPhysAddr) {
-        let mut inner = self.inner.borrow_mut();
-        inner.free_frame(frame)
-    }
+    inner: Mutex<FreeListAllocator<N>>,
 }
 
 unsafe impl<const N: usize> FrameAllocator for Allocator<N> {
     fn allocate_frame(&self) -> Option<Frame> {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.inner.lock();
 
         // SAFETY: We enforce that the inner allocator is properly initialized during construction
         // of the outer struct.
@@ -103,7 +102,7 @@ unsafe impl<const N: usize> FrameAllocator for Allocator<N> {
     }
 
     unsafe fn free_frame(&self, frame: HostPhysAddr) -> Result<(), ()> {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.inner.lock();
 
         unsafe { inner.free_frame(frame) };
         Ok(())
@@ -114,7 +113,14 @@ unsafe impl<const N: usize> FrameAllocator for Allocator<N> {
     }
 
     fn get_physical_offset(&self) -> HostVirtAddr {
-        let inner = self.inner.borrow();
+        let inner = self.inner.lock();
         HostVirtAddr::new(inner.virt_offset)
     }
+}
+
+// ————————————————————————————— Initialization ————————————————————————————— //
+
+pub fn init(manifest: &'static Manifest) {
+    let mut allocator = ALLOCATOR.inner.lock();
+    allocator.initialize((manifest.voffset - manifest.poffset) as usize);
 }

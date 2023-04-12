@@ -1,25 +1,19 @@
 //! Stage 2 initialization on x86_64
 
 use core::arch::asm;
-use core::mem;
-use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use arena::Handle;
-use capabilities::State;
-use mmu::FrameAllocator;
-use monitor::MonitorState;
-use spin::{Mutex, MutexGuard};
+use allocator::FrameAllocator;
+use capa_engine::{permission, AccessRights, CapaEngine};
+use spin::Mutex;
 use stage_two_abi::{GuestInfo, Manifest};
 pub use vmx::{ActiveVmcs, VmxError as BackendError};
 
 use super::vmx_helper::init_vcpu;
-use super::{arch, cpuid, launch_guest};
-use crate::allocator::Allocator;
-use crate::arch::backend::{BackendX86, LocalState};
+use super::{arch, cpuid, launch_guest, monitor};
 use crate::debug::qemu;
-use crate::println;
-use crate::statics::{allocator as get_allocator, get_manifest, pool as get_pool, NB_CORES};
+use crate::statics::{get_manifest, EMPTY_PAGE, NB_PAGES};
+use crate::{allocator, println};
 
 // ————————————————————————————— Entry Barrier —————————————————————————————— //
 
@@ -46,8 +40,9 @@ pub fn arch_entry_point() -> ! {
             MANIFEST.as_ref().unwrap()
         };
 
-        init(manifest, 0);
-        init_state(manifest);
+        init_arch(manifest, 0);
+        allocator::init(manifest);
+        monitor::init(manifest);
 
         println!("Waiting for {} cores", manifest.smp);
         while NB_BOOTED_CORES.load(Ordering::SeqCst) + 1 < manifest.smp {
@@ -59,8 +54,7 @@ pub fn arch_entry_point() -> ! {
         BSP_READY.store(true, Ordering::SeqCst);
 
         // SAFETY: only called once on the BSP
-        let mut vcpu = unsafe { create_vcpu(&manifest.info) };
-        init_cpu(&mut vcpu);
+        let vcpu = unsafe { create_vcpu(&manifest.info) };
 
         // Launch guest and exit
         launch_guest(manifest, vcpu);
@@ -76,7 +70,7 @@ pub fn arch_entry_point() -> ! {
             MANIFEST.as_ref().unwrap()
         };
 
-        init(manifest, cpuid);
+        init_arch(manifest, cpuid);
 
         // Wait until the BSP mark second stage as initialized (e.g. all APs are up).
         NB_BOOTED_CORES.fetch_add(1, Ordering::SeqCst);
@@ -90,7 +84,6 @@ pub fn arch_entry_point() -> ! {
         let vcpu = unsafe {
             let mut vcpu = create_vcpu(&manifest.info);
             wait_on_mailbox(manifest, &mut vcpu, cpuid);
-            init_cpu(&mut vcpu);
             vcpu
         };
 
@@ -101,7 +94,7 @@ pub fn arch_entry_point() -> ! {
 }
 
 /// Architecture specific initialization.
-pub fn init(manifest: &Manifest, cpuid: usize) {
+pub fn init_arch(manifest: &Manifest, cpuid: usize) {
     unsafe {
         asm!(
             "mov cr3, {}",
@@ -136,84 +129,7 @@ pub fn init(manifest: &Manifest, cpuid: usize) {
         .expect("Unexpected ENTRY_BARRIER value");
 }
 
-// —————————————————————————————— Shared State —————————————————————————————— //
-
-static GUEST_IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
-static GUEST: Mutex<X86State> = Mutex::new(X86State(mem::MaybeUninit::uninit()));
-
-pub struct X86State(mem::MaybeUninit<MonitorState<'static, BackendX86>>);
-
-// SAFETY: GuestX86 is not Send because of pointers in the VMCS. This implementaiton is safe as
-// long as VMCS are not moving or being sent between cores.
-//
-// WARNING: actually there are some RefCells that are !Sync, which makes the whole thing !Send.
-// This will be fixed with the upcoming capability refactor, so I guest for now we just hack around
-// it unsafely.
-unsafe impl Send for X86State {}
-
-impl Deref for X86State {
-    type Target = MonitorState<'static, BackendX86>;
-
-    fn deref(&self) -> &Self::Target {
-        unsafe { self.0.assume_init_ref() }
-    }
-}
-
-impl DerefMut for X86State {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { self.0.assume_init_mut() }
-    }
-}
-
-pub fn get_state() -> MutexGuard<'static, X86State> {
-    if !GUEST_IS_INITIALIZED.load(Ordering::SeqCst) {
-        panic!("Guest is not yet initialized");
-    }
-    let state = GUEST.lock();
-    state
-}
-
-fn set_state(state: MonitorState<'static, BackendX86>) {
-    if GUEST_IS_INITIALIZED.load(Ordering::SeqCst) {
-        panic!("Guest is already initialized");
-    }
-
-    let mut guard = GUEST.lock();
-    *MutexGuard::deref_mut(&mut guard) = X86State(mem::MaybeUninit::new(state));
-
-    GUEST_IS_INITIALIZED.store(true, Ordering::SeqCst);
-}
-
-fn init_state(manifest: &'static Manifest) {
-    // Create the capability state.
-    let mut capas = State::<BackendX86> {
-        backend: BackendX86 {
-            allocator: Allocator::new(
-                get_allocator(),
-                (manifest.voffset - manifest.poffset) as usize,
-            ),
-            guest_info: manifest.info,
-            iommu: None,
-            locals: [LocalState {
-                current_domain: Handle::new_unchecked(usize::MAX),
-                current_cpu: Handle::new_unchecked(usize::MAX),
-            }; NB_CORES],
-        },
-        pools: get_pool(),
-    };
-
-    capas.backend.set_iommu(manifest.iommu);
-    capas.backend.init();
-
-    let tyche_state = MonitorState::<BackendX86>::new(manifest.poffset as usize, capas)
-        .expect("Unable to create monitor state");
-    set_state(tyche_state);
-}
-
-fn init_cpu(cpu: &mut ActiveVmcs<'static>) {
-    let mut state = get_state();
-    state.add_cpu(cpu).expect("Failed to initialize vCPU");
-}
+// ——————————————————————————————— Multi-Core ——————————————————————————————— //
 
 unsafe fn wait_on_mailbox(manifest: &Manifest, vcpu: &mut ActiveVmcs<'static>, cpuid: usize) {
     // Spin on the MP Wakeup Page command
@@ -244,8 +160,7 @@ unsafe fn wait_on_mailbox(manifest: &Manifest, vcpu: &mut ActiveVmcs<'static>, c
 
 /// SAFETY: should only be called once per physical core
 unsafe fn create_vcpu(info: &GuestInfo) -> vmx::ActiveVmcs<'static> {
-    let state = get_state();
-    let allocator = &state.resources.backend.allocator;
+    let allocator = allocator::allocator();
     let vmxon_frame = allocator
         .allocate_frame()
         .expect("Failed to allocate VMXON frame")
@@ -259,6 +174,7 @@ unsafe fn create_vcpu(info: &GuestInfo) -> vmx::ActiveVmcs<'static> {
         .create_vm_unsafe(vmcs_frame)
         .expect("Failed to create VMCS");
     let mut vcpu = vmcs.set_as_active().expect("Failed to set VMCS as active");
-    init_vcpu(&mut vcpu, info, allocator);
+    drop(allocator);
+    init_vcpu(&mut vcpu, info);
     vcpu
 }

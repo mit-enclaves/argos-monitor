@@ -12,7 +12,6 @@ use vmx::{ActiveVmcs, ControlRegister, Register, VmxExitReason};
 use super::backend::BackendX86;
 use crate::error::TycheError;
 use crate::println;
-use crate::x86_64::get_state;
 
 static MONITOR: Tyche = Tyche {};
 
@@ -65,51 +64,51 @@ fn handle_exit(
         );
     };
 
-    let mut state = get_state();
 
     match reason {
         VmxExitReason::Vmcall => {
-            let params = Parameters {
-                vmcall: vcpu.get(Register::Rax) as usize,
-                arg_1: vcpu.get(Register::Rdi) as usize,
-                arg_2: vcpu.get(Register::Rsi) as usize,
-                arg_3: vcpu.get(Register::Rdx) as usize,
-                arg_4: vcpu.get(Register::Rcx) as usize,
-                arg_5: vcpu.get(Register::R8) as usize,
-                arg_6: vcpu.get(Register::R9) as usize,
-                arg_7: vcpu.get(Register::R10) as usize,
-            };
-            if MONITOR.is_exit(&state, &params) {
-                dump(vcpu);
-                Ok(HandlerResult::Exit)
-            } else {
-                let advance = match MONITOR.dispatch(vcpu, &mut state, &params) {
-                    Ok(values) => {
-                        vcpu.set(Register::Rax, 0);
-                        vcpu.set(Register::Rdi, values.value_1 as u64);
-                        vcpu.set(Register::Rsi, values.value_2 as u64);
-                        vcpu.set(Register::Rdx, values.value_3 as u64);
-                        vcpu.set(Register::Rcx, values.value_4 as u64);
-                        vcpu.set(Register::R8, values.value_5 as u64);
-                        vcpu.set(Register::R9, values.value_6 as u64);
-                        values.next_instr
-                    }
-                    Err(err) => {
-                        println!("The error: {:?}", err);
-                        match err {
-                            capabilities::error::Error::Capability(code) => {
-                                vcpu.set(Register::Rax, code as u64);
-                            }
-                            capabilities::error::Error::Backend(_) => panic!("Backend error"),
-                        };
-                        true
-                    }
-                };
-                if advance {
-                    vcpu.next_instruction()?;
-                }
-                Ok(HandlerResult::Resume)
-            }
+            todo!("Re-activate monitor calls");
+            // let params = Parameters {
+            //     vmcall: vcpu.get(Register::Rax) as usize,
+            //     arg_1: vcpu.get(Register::Rdi) as usize,
+            //     arg_2: vcpu.get(Register::Rsi) as usize,
+            //     arg_3: vcpu.get(Register::Rdx) as usize,
+            //     arg_4: vcpu.get(Register::Rcx) as usize,
+            //     arg_5: vcpu.get(Register::R8) as usize,
+            //     arg_6: vcpu.get(Register::R9) as usize,
+            //     arg_7: vcpu.get(Register::R10) as usize,
+            // };
+            // if MONITOR.is_exit(&state, &params) {
+            //     dump(vcpu);
+            //     Ok(HandlerResult::Exit)
+            // } else {
+            //     let advance = match MONITOR.dispatch(vcpu, &mut state, &params) {
+            //         Ok(values) => {
+            //             vcpu.set(Register::Rax, 0);
+            //             vcpu.set(Register::Rdi, values.value_1 as u64);
+            //             vcpu.set(Register::Rsi, values.value_2 as u64);
+            //             vcpu.set(Register::Rdx, values.value_3 as u64);
+            //             vcpu.set(Register::Rcx, values.value_4 as u64);
+            //             vcpu.set(Register::R8, values.value_5 as u64);
+            //             vcpu.set(Register::R9, values.value_6 as u64);
+            //             values.next_instr
+            //         }
+            //         Err(err) => {
+            //             println!("The error: {:?}", err);
+            //             match err {
+            //                 capabilities::error::Error::Capability(code) => {
+            //                     vcpu.set(Register::Rax, code as u64);
+            //                 }
+            //                 capabilities::error::Error::Backend(_) => panic!("Backend error"),
+            //             };
+            //             true
+            //         }
+            //     };
+            //     if advance {
+            //         vcpu.next_instruction()?;
+            //     }
+            //     Ok(HandlerResult::Resume)
+            // }
         }
         VmxExitReason::Cpuid => {
             let input_eax = vcpu.get(Register::Rax);

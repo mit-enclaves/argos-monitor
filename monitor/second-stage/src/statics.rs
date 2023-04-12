@@ -29,7 +29,7 @@ pub const NB_SWITCH_PER_DOMAIN: usize = 10;
 
 // —————————————————————— Static Resources Declaration —————————————————————— //
 
-const EMPTY_PAGE: Page = Page {
+pub const EMPTY_PAGE: Page = Page {
     data: [0; PAGE_SIZE as usize],
 };
 

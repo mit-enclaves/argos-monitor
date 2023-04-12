@@ -14,6 +14,7 @@ mmu = { version = "0.1.0", path = "../../crates/mmu" }
 stage_two_abi = { path = "../../crates/stage_two_abi" }
 vga = { path = "../../crates/vga/", optional = true }
 arena = {path = "../../crates/arena"}
+capa-engine = {path = "../../crates/capability-engine/"}
 capabilities = {path = "../../crates/capabilities/"}
 monitor = {path = "../../crates/monitor"}
 

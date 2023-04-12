@@ -3,7 +3,6 @@
 use core::arch as platform;
 use core::arch::asm;
 
-use mmu::FrameAllocator;
 use stage_two_abi::GuestInfo;
 use vmx::bitmaps::{
     EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
@@ -13,13 +12,11 @@ use vmx::fields::traits::*;
 use vmx::{fields, secondary_controls_capabilities, ActiveVmcs, Register, VmxError};
 
 use super::arch;
+use crate::allocator::{allocator, FrameAllocator};
 use crate::println;
 
-pub unsafe fn init_vcpu<'vmx>(
-    vcpu: &mut ActiveVmcs<'vmx>,
-    info: &GuestInfo,
-    allocator: &impl FrameAllocator,
-) {
+pub unsafe fn init_vcpu<'vmx>(vcpu: &mut ActiveVmcs<'vmx>, info: &GuestInfo) {
+    let allocator = allocator();
     default_vmcs_config(vcpu, info, false);
     let bit_frame = allocator
         .allocate_frame()

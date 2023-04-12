@@ -4,11 +4,12 @@ mod arch;
 pub mod backend;
 pub mod guest;
 mod init;
+mod monitor;
 mod vmx_helper;
 
 use core::arch::asm;
 
-pub use init::{arch_entry_point, get_state};
+pub use init::arch_entry_point;
 use stage_two_abi::Manifest;
 pub use vmx::{ActiveVmcs, VmxError as BackendError};
 
