@@ -7,10 +7,13 @@ use spin::Mutex;
 use stage_two_abi::Manifest;
 use utils::{Frame, HostPhysAddr, HostVirtAddr};
 
-use crate::statics::{EMPTY_PAGE, NB_PAGES};
+use crate::statics::NB_PAGES;
 
 pub const PAGE_SIZE: u64 = 0x1000;
 pub const PAGE_MASK: u64 = !(PAGE_SIZE - 1);
+pub const EMPTY_PAGE: Page = Page {
+    data: [0; PAGE_SIZE as usize],
+};
 
 pub static ALLOCATOR: Allocator<NB_PAGES> = unsafe {
     Allocator {

@@ -4,15 +4,13 @@ use core::arch::asm;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use allocator::FrameAllocator;
-use capa_engine::{permission, AccessRights, CapaEngine};
-use spin::Mutex;
 use stage_two_abi::{GuestInfo, Manifest};
 pub use vmx::{ActiveVmcs, VmxError as BackendError};
 
 use super::vmx_helper::init_vcpu;
 use super::{arch, cpuid, launch_guest, monitor};
 use crate::debug::qemu;
-use crate::statics::{get_manifest, EMPTY_PAGE, NB_PAGES};
+use crate::statics::get_manifest;
 use crate::{allocator, println};
 
 // ————————————————————————————— Entry Barrier —————————————————————————————— //

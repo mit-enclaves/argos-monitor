@@ -68,7 +68,7 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
     while let Some(update) = engine.pop_update() {
         match update {
             capa_engine::Update::PermissionUpdate { domain } => update_permission(domain, engine),
-            capa_engine::Update::RevokeDomain { domain } => todo!(),
+            capa_engine::Update::RevokeDomain { domain } => revoke_domain(domain),
             capa_engine::Update::CreateDomain { domain } => create_domain(domain),
             capa_engine::Update::None => todo!(),
         }
@@ -78,7 +78,7 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
 fn create_domain(domain: Handle<Domain>) {
     let mut domain = get_domain(domain);
     let allocator = allocator();
-    if let Some(ept) = domain.ept {
+    if let Some(_ept) = domain.ept {
         // TODO: free all frames.
         // unsafe {
         //     allocator.free_frame(ept).unwrap();
@@ -92,6 +92,10 @@ fn create_domain(domain: Handle<Domain>) {
     domain.ept = Some(ept_root.phys_addr);
 }
 
+fn revoke_domain(_domain: Handle<Domain>) {
+    // Noop for now, might need to send IPIs once we land multi-core
+}
+
 fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) {
     // TODO: handle granular access rights
     let flags = EptEntryFlags::USER_EXECUTE
@@ -102,7 +106,7 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
 
     let mut domain = get_domain(domain_handle);
     let allocator = allocator();
-    if let Some(ept) = domain.ept {
+    if let Some(_ept) = domain.ept {
         // TODO: free all frames.
         // unsafe {
         //     allocator.free_frame(ept).unwrap();
