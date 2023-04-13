@@ -7,6 +7,7 @@ pub mod allocator;
 pub mod debug;
 pub mod error;
 pub mod statics;
+mod calls;
 
 #[cfg(target_arch = "riscv64")]
 pub mod riscv;

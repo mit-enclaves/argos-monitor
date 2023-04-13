@@ -176,5 +176,6 @@ unsafe fn create_vcpu(info: &GuestInfo) -> vmx::ActiveVmcs<'static> {
     let mut vcpu = vmcs.set_as_active().expect("Failed to set VMCS as active");
     drop(allocator);
     init_vcpu(&mut vcpu, info);
+    monitor::init_vcpu(&mut vcpu);
     vcpu
 }

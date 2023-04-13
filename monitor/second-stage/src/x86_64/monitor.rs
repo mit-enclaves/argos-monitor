@@ -1,18 +1,20 @@
 //! Architecture specific monitor state, independant of the CapaEngine.
 
 use capa_engine::{permission, AccessRights, CapaEngine, Domain, Handle, N};
+use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator};
 use spin::{Mutex, MutexGuard};
 use stage_two_abi::Manifest;
-use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
+use utils::{GuestPhysAddr, HostPhysAddr};
 use vmx::bitmaps::EptEntryFlags;
+use vmx::ActiveVmcs;
 
 use crate::allocator::allocator;
-use crate::println;
 
 // ————————————————————————— Statics & Backend Data ————————————————————————— //
 
 static CAPA_ENGINE: Mutex<CapaEngine> = Mutex::new(CapaEngine::new());
+static INITIAL_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
 static DOMAINS: [Mutex<DomainData>; N] = [EMPTY_DOMAIN; N];
 
 pub struct DomainData {
@@ -37,6 +39,21 @@ pub fn init(manifest: &'static Manifest) {
         )
         .unwrap();
     apply_updates(&mut engine);
+
+    // Save the initial domain
+    let mut initial_domain = INITIAL_DOMAIN.lock();
+    *initial_domain = Some(domain);
+}
+
+pub fn init_vcpu(vcpu: &mut ActiveVmcs<'static>) {
+    let initial_domain = INITIAL_DOMAIN
+        .lock()
+        .expect("CapaEngine is not initialized yet");
+    let domain = get_domain(initial_domain);
+    vcpu.set_ept_ptr(HostPhysAddr::new(
+        domain.ept.unwrap().as_usize() | EPT_ROOT_FLAGS,
+    ))
+    .expect("Failed to set initial EPT PTR");
 }
 
 // ———————————————————————————————— Helpers ————————————————————————————————— //
@@ -80,6 +97,7 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
     let flags = EptEntryFlags::USER_EXECUTE
         | EptEntryFlags::SUPERVISOR_EXECUTE
         | EptEntryFlags::READ
+        | EptEntryFlags::WRITE
         | EptEntryFlags::SUPERVISOR_EXECUTE;
 
     let mut domain = get_domain(domain_handle);
