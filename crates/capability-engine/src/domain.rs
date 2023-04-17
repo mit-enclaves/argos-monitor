@@ -30,6 +30,16 @@ pub struct LocalCapa {
     idx: usize,
 }
 
+impl LocalCapa {
+    pub fn as_usize(self) -> usize {
+        self.idx
+    }
+
+    pub fn as_u64(self) -> u64 {
+        self.idx as u64
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum Capa {
     None,

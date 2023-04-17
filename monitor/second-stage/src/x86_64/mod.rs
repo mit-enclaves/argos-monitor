@@ -9,6 +9,7 @@ mod vmx_helper;
 
 use core::arch::asm;
 
+use capa_engine::{Domain, Handle};
 pub use init::arch_entry_point;
 use stage_two_abi::Manifest;
 pub use vmx::{ActiveVmcs, VmxError as BackendError};
@@ -19,14 +20,18 @@ use crate::println;
 
 // —————————————————————————————— x86_64 Arch ——————————————————————————————— //
 
-pub fn launch_guest(manifest: &'static Manifest, vcpu: ActiveVmcs<'static>) {
+pub fn launch_guest(
+    manifest: &'static Manifest,
+    vcpu: ActiveVmcs<'static>,
+    domain: Handle<Domain>,
+) {
     if !manifest.info.loaded {
         println!("No guest found, exiting");
         return;
     }
 
     println!("Starting main loop");
-    guest::main_loop(vcpu);
+    guest::main_loop(vcpu, domain);
 
     qemu::exit(qemu::ExitCode::Success);
 }

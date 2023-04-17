@@ -1,6 +1,6 @@
 //! Architecture specific monitor state, independant of the CapaEngine.
 
-use capa_engine::{permission, AccessRights, CapaEngine, Domain, Handle, N};
+use capa_engine::{permission, AccessRights, CapaEngine, Domain, Handle, LocalCapa, N};
 use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator};
 use spin::{Mutex, MutexGuard};
@@ -19,6 +19,7 @@ static CAPA_ENGINE: Mutex<CapaEngine> = Mutex::new(CapaEngine::new());
 static INITIAL_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
 static DOMAINS: [Mutex<DomainData>; N] = [EMPTY_DOMAIN; N];
 static CORES: [Mutex<CoreData>; NB_CORES] = [EMPTY_CORE; NB_CORES];
+static CONTEXTS: [Mutex<ContextData>; N] = [EMPTY_CONTEXT; N];
 
 pub struct DomainData {
     ept: Option<HostPhysAddr>,
@@ -28,9 +29,20 @@ pub struct CoreData {
     domain: Handle<Domain>,
 }
 
+pub struct ContextData {
+    cr3: usize,
+    rip: usize,
+    rsp: usize,
+}
+
 const EMPTY_DOMAIN: Mutex<DomainData> = Mutex::new(DomainData { ept: None });
 const EMPTY_CORE: Mutex<CoreData> = Mutex::new(CoreData {
     domain: Handle::new_invalid(),
+});
+const EMPTY_CONTEXT: Mutex<ContextData> = Mutex::new(ContextData {
+    cr3: 0,
+    rip: 0,
+    rsp: 0,
 });
 
 // ————————————————————————————— Initialization ————————————————————————————— //
@@ -55,7 +67,7 @@ pub fn init(manifest: &'static Manifest) {
     *initial_domain = Some(domain);
 }
 
-pub fn init_vcpu(vcpu: &mut ActiveVmcs<'static>) {
+pub fn init_vcpu(vcpu: &mut ActiveVmcs<'static>) -> Handle<Domain> {
     let initial_domain = INITIAL_DOMAIN
         .lock()
         .expect("CapaEngine is not initialized yet");
@@ -66,6 +78,7 @@ pub fn init_vcpu(vcpu: &mut ActiveVmcs<'static>) {
     .expect("Failed to set initial EPT PTR");
     let mut core = get_core(cpuid());
     core.domain = initial_domain;
+    initial_domain
 }
 
 // ———————————————————————————————— Helpers ————————————————————————————————— //
@@ -76,6 +89,15 @@ fn get_domain(domain: Handle<Domain>) -> MutexGuard<'static, DomainData> {
 
 fn get_core(cpuid: usize) -> MutexGuard<'static, CoreData> {
     CORES[cpuid].lock()
+}
+
+// ————————————————————————————— Monitor Calls —————————————————————————————— //
+
+pub fn do_create_domain(current: Handle<Domain>) -> Result<LocalCapa, ()> {
+    let mut engine = CAPA_ENGINE.lock();
+    let management_capa = engine.create_domain(current).expect("TODO: handle failure");
+    apply_updates(&mut engine);
+    Ok(management_capa)
 }
 
 // ———————————————————————————————— Updates ————————————————————————————————— //

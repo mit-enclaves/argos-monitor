@@ -11,8 +11,8 @@ mod update;
 use core::ops::Index;
 
 use context::{Context, ContextPool};
-pub use domain::{permission, Domain, NextCapaToken};
-use domain::{Capa, DomainHandle, DomainPool, LocalCapa};
+pub use domain::{permission, Domain, LocalCapa, NextCapaToken};
+use domain::{Capa, DomainHandle, DomainPool};
 use gen_arena::GenArena;
 pub use gen_arena::Handle;
 pub use region::{AccessRights, RegionTracker};

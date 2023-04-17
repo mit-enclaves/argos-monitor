@@ -1,14 +1,12 @@
 //! VMX guest backend
 
 use core::arch::asm;
-use core::cell::RefMut;
 
-use capabilities::cpu::CPU;
-use monitor::{MonitorState, Parameters};
+use capa_engine::{Domain, Handle};
 use vmx::bitmaps::exit_qualification;
 use vmx::{ActiveVmcs, ControlRegister, Register, VmxExitReason};
 
-use super::backend::BackendX86;
+use super::monitor;
 use crate::error::TycheError;
 use crate::{calls, println};
 
@@ -19,12 +17,12 @@ pub enum HandlerResult {
     Crash,
 }
 
-pub fn main_loop(mut vcpu: ActiveVmcs<'static>) {
+pub fn main_loop(mut vcpu: ActiveVmcs<'static>, domain: Handle<Domain>) {
     let mut result = unsafe { vcpu.launch() };
     loop {
         let exit_reason = match result {
             Ok(exit_reason) => {
-                handle_exit(&mut vcpu, exit_reason).expect("Failed to handle VM exit")
+                handle_exit(&mut vcpu, exit_reason, domain).expect("Failed to handle VM exit")
             }
             Err(err) => {
                 println!("Guest crash: {:?}", err);
@@ -41,14 +39,10 @@ pub fn main_loop(mut vcpu: ActiveVmcs<'static>) {
     }
 }
 
-pub fn get_local_cpu<'a>(state: &'a MonitorState<'a, BackendX86>) -> RefMut<CPU<BackendX86>> {
-    let current = state.get_current_cpu();
-    state.resources.pools.cpus.get_mut(current.handle)
-}
-
 fn handle_exit(
     vcpu: &mut ActiveVmcs<'static>,
     reason: vmx::VmxExitReason,
+    domain: Handle<Domain>,
 ) -> Result<HandlerResult, TycheError> {
     let dump = |vcpu: &mut ActiveVmcs| {
         let rip = vcpu.get(Register::Rip);
@@ -63,19 +57,19 @@ fn handle_exit(
 
     match reason {
         VmxExitReason::Vmcall => {
-            let params = Parameters {
-                vmcall: vcpu.get(Register::Rax) as usize,
-                arg_1: vcpu.get(Register::Rdi) as usize,
-                arg_2: vcpu.get(Register::Rsi) as usize,
-                arg_3: vcpu.get(Register::Rdx) as usize,
-                arg_4: vcpu.get(Register::Rcx) as usize,
-                arg_5: vcpu.get(Register::R8) as usize,
-                arg_6: vcpu.get(Register::R9) as usize,
-                arg_7: vcpu.get(Register::R10) as usize,
-            };
-            match params.vmcall {
+            let vmcall = vcpu.get(Register::Rax) as usize;
+            let _arg_1 = vcpu.get(Register::Rdi) as usize;
+            let _arg_2 = vcpu.get(Register::Rsi) as usize;
+            let _arg_3 = vcpu.get(Register::Rdx) as usize;
+            let _arg_4 = vcpu.get(Register::Rcx) as usize;
+            let _arg_5 = vcpu.get(Register::R8) as usize;
+            let _arg_6 = vcpu.get(Register::R9) as usize;
+            let _arg_7 = vcpu.get(Register::R10) as usize;
+            match vmcall {
                 calls::CREATE_DOMAIN => {
                     println!("Create Domain");
+                    let capa = monitor::do_create_domain(domain).expect("TODO");
+                    vcpu.set(Register::Rdi, capa.as_u64());
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
@@ -124,7 +118,7 @@ fn handle_exit(
                     Ok(HandlerResult::Exit)
                 }
                 _ => {
-                    println!("VMCall: 0x{:x}", params.vmcall);
+                    println!("VMCall: 0x{:x}", vmcall);
                     todo!("Unknown VMCall");
                 }
             }

@@ -4,6 +4,7 @@ use core::arch::asm;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use allocator::FrameAllocator;
+use capa_engine::{Domain, Handle};
 use stage_two_abi::{GuestInfo, Manifest};
 pub use vmx::{ActiveVmcs, VmxError as BackendError};
 
@@ -52,10 +53,10 @@ pub fn arch_entry_point() -> ! {
         BSP_READY.store(true, Ordering::SeqCst);
 
         // SAFETY: only called once on the BSP
-        let vcpu = unsafe { create_vcpu(&manifest.info) };
+        let (vcpu, domain) = unsafe { create_vcpu(&manifest.info) };
 
         // Launch guest and exit
-        launch_guest(manifest, vcpu);
+        launch_guest(manifest, vcpu, domain);
         qemu::exit(qemu::ExitCode::Success);
     }
     // The APs spin until the manifest is fetched, and then initialize the second stage
@@ -79,14 +80,14 @@ pub fn arch_entry_point() -> ! {
         println!("CPU{}: Waiting on mailbox", cpuid);
 
         // SAFETY: only called once on the BSP
-        let vcpu = unsafe {
-            let mut vcpu = create_vcpu(&manifest.info);
+        let (vcpu, domain) = unsafe {
+            let (mut vcpu, domain) = create_vcpu(&manifest.info);
             wait_on_mailbox(manifest, &mut vcpu, cpuid);
-            vcpu
+            (vcpu, domain)
         };
 
         // Launch guest and exit
-        launch_guest(manifest, vcpu);
+        launch_guest(manifest, vcpu, domain);
         qemu::exit(qemu::ExitCode::Success);
     }
 }
@@ -157,7 +158,7 @@ unsafe fn wait_on_mailbox(manifest: &Manifest, vcpu: &mut ActiveVmcs<'static>, c
 // —————————————————————————————————— VCPU —————————————————————————————————— //
 
 /// SAFETY: should only be called once per physical core
-unsafe fn create_vcpu(info: &GuestInfo) -> vmx::ActiveVmcs<'static> {
+unsafe fn create_vcpu(info: &GuestInfo) -> (vmx::ActiveVmcs<'static>, Handle<Domain>) {
     let allocator = allocator::allocator();
     let vmxon_frame = allocator
         .allocate_frame()
@@ -174,6 +175,6 @@ unsafe fn create_vcpu(info: &GuestInfo) -> vmx::ActiveVmcs<'static> {
     let mut vcpu = vmcs.set_as_active().expect("Failed to set VMCS as active");
     drop(allocator);
     init_vcpu(&mut vcpu, info);
-    monitor::init_vcpu(&mut vcpu);
-    vcpu
+    let domain = monitor::init_vcpu(&mut vcpu);
+    (vcpu, domain)
 }
