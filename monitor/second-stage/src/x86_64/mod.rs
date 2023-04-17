@@ -17,10 +17,6 @@ use crate::debug::qemu;
 use crate::debug::qemu::ExitCode;
 use crate::println;
 
-// ————————————————————————————— Configuration —————————————————————————————— //
-
-/// Maximum number of CPU supported.
-const MAX_NB_CPU: usize = 128;
 
 // —————————————————————————————— x86_64 Arch ——————————————————————————————— //
 

@@ -4,7 +4,7 @@ use core::arch::asm;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::x86_64::MAX_NB_CPU;
+use crate::statics::NB_CORES;
 
 // ———————————————————— Interrupt-related Initialization ———————————————————— //
 
@@ -49,8 +49,8 @@ static mut GDT: [u64; GDT_SIZE] = [0; GDT_SIZE];
 ///
 /// The first entry is always unused, then we choosed the following layout:
 /// - Second entry is the code segment.
-/// - The next 2 * MAX_NB_CPU are the per-cpu TSS (2 entries are needed per TSS).
-const GDT_SIZE: usize = 2 + 2 * MAX_NB_CPU;
+/// - The next 2 * NB_CORES are the per-cpu TSS (2 entries are needed per TSS).
+const GDT_SIZE: usize = 2 + 2 * NB_CORES;
 
 /// A valid code segment for 64 bits mode.
 const CODE_SEGMENT: u64 = 0xaf9b000000ffff;
@@ -71,7 +71,7 @@ pub fn initialize_gdt() {
     // SAFETY: we hold the unique lock, so there can't be race conditions on the GDT or TSS.
     unsafe {
         GDT[1] = CODE_SEGMENT;
-        for cpu_id in 0..MAX_NB_CPU {
+        for cpu_id in 0..NB_CORES {
             // Configure TSS
             let tss = EMPTY_TSS;
             // TODO: set tss.ist
@@ -141,7 +141,7 @@ const EMPTY_TSS: TaskStateSegment = TaskStateSegment {
 };
 
 /// The array of TSS, each one is supposed to be used by a different CPU.
-static mut TSS_ARRAY: [TaskStateSegment; MAX_NB_CPU] = [EMPTY_TSS; MAX_NB_CPU];
+static mut TSS_ARRAY: [TaskStateSegment; NB_CORES] = [EMPTY_TSS; NB_CORES];
 
 /// Returns the TSS selector for a given CPU.
 ///
@@ -176,7 +176,7 @@ fn get_tss_descriptor(tss: &TaskStateSegment) -> (u64, u64) {
 
 /// Returns the TSS segment selector for the given core.
 pub fn get_tss_selector(cpu_id: usize) -> u16 {
-    assert!(cpu_id < MAX_NB_CPU, "Invalid CPU id");
+    assert!(cpu_id < NB_CORES, "Invalid CPU id");
     // NOTE: the two first entries are used (null + code descriptor)
     //       then each tss selector is 2 * 8 bytes.
     (2 + 2 * cpu_id as u16) << 3

@@ -10,18 +10,28 @@ use vmx::bitmaps::EptEntryFlags;
 use vmx::ActiveVmcs;
 
 use crate::allocator::allocator;
+use crate::statics::NB_CORES;
+use super::cpuid;
 
 // ————————————————————————— Statics & Backend Data ————————————————————————— //
 
 static CAPA_ENGINE: Mutex<CapaEngine> = Mutex::new(CapaEngine::new());
 static INITIAL_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
 static DOMAINS: [Mutex<DomainData>; N] = [EMPTY_DOMAIN; N];
+static CORES: [Mutex<CoreData>; NB_CORES] = [EMPTY_CORE; NB_CORES];
 
 pub struct DomainData {
     ept: Option<HostPhysAddr>,
 }
 
+pub struct CoreData {
+    domain: Handle<Domain>,
+}
+
 const EMPTY_DOMAIN: Mutex<DomainData> = Mutex::new(DomainData { ept: None });
+const EMPTY_CORE: Mutex<CoreData> = Mutex::new(CoreData {
+    domain: Handle::new_invalid(),
+});
 
 // ————————————————————————————— Initialization ————————————————————————————— //
 
@@ -54,12 +64,18 @@ pub fn init_vcpu(vcpu: &mut ActiveVmcs<'static>) {
         domain.ept.unwrap().as_usize() | EPT_ROOT_FLAGS,
     ))
     .expect("Failed to set initial EPT PTR");
+    let mut core = get_core(cpuid());
+    core.domain = initial_domain;
 }
 
 // ———————————————————————————————— Helpers ————————————————————————————————— //
 
 fn get_domain(domain: Handle<Domain>) -> MutexGuard<'static, DomainData> {
     DOMAINS[domain.idx()].lock()
+}
+
+fn get_core(cpuid: usize) -> MutexGuard<'static, CoreData> {
+    CORES[cpuid].lock()
 }
 
 // ———————————————————————————————— Updates ————————————————————————————————— //
