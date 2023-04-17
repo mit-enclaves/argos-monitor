@@ -1,6 +1,7 @@
+use core::fmt;
+
 use crate::gen_arena::{GenArena, Handle};
 use crate::{CapaError, N};
-use core::fmt;
 
 #[derive(Clone, Copy, Debug)]
 pub struct AccessRights {

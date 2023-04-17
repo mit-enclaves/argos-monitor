@@ -1,7 +1,8 @@
 use std::fmt::Write;
 
-use capa_engine::permission;
-use capa_engine::{AccessRights, CapaEngine, Domain, Handle, NextCapaToken, RegionTracker};
+use capa_engine::{
+    permission, AccessRights, CapaEngine, Domain, Handle, NextCapaToken, RegionTracker,
+};
 
 /// Snapshot testing
 ///
@@ -33,7 +34,10 @@ fn scenario_1() {
         .unwrap();
     snap!("{[0x0, 0x1000 | 1]}", regions(domain, &engine));
     snap!("{Region(H(0, gen 0))}", capas(domain, &mut engine));
-    snap!("{PermissionUpdate(H(0, gen 0)), CreateDomain(H(0, gen 0))}", updates(&mut engine));
+    snap!(
+        "{PermissionUpdate(H(0, gen 0)), CreateDomain(H(0, gen 0))}",
+        updates(&mut engine)
+    );
 
     // Duplicate the initial range into two regions
     let (reg2, _reg3) = engine

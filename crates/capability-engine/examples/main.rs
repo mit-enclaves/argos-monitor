@@ -1,5 +1,4 @@
-use capa_engine::{AccessRights, CapaEngine, Domain, Handle};
-use capa_engine::permission;
+use capa_engine::{permission, AccessRights, CapaEngine, Domain, Handle};
 use simple_logger::SimpleLogger;
 
 fn main() {

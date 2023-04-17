@@ -105,7 +105,10 @@ where
     B: Backend + 'static,
 {
     // Initialize the state for the machine.
-    pub fn new(mem_end: usize, mut capas: State<'a, B>) -> Result<Self, Error<<B as Backend>::Error>> {
+    pub fn new(
+        mem_end: usize,
+        mut capas: State<'a, B>,
+    ) -> Result<Self, Error<<B as Backend>::Error>> {
         // Create the original domain.
         let default_domain = capas.pools.domains.allocate().map_err(|e| e.wrap())?;
 

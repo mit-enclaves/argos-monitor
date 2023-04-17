@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
+use core::{fmt, mem};
+
 use crate::{Domain, Handle, N};
-use core::fmt;
-use core::mem;
 
 #[derive(Debug)]
 pub enum Update {

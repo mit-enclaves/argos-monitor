@@ -1,9 +1,9 @@
 //! Generational Arena
 
-use super::free_list::FreeList;
 use core::marker::PhantomData;
-use core::ops::Index;
-use core::ops::IndexMut;
+use core::ops::{Index, IndexMut};
+
+use super::free_list::FreeList;
 
 // ——————————————————————————— Generational Arena ——————————————————————————— //
 

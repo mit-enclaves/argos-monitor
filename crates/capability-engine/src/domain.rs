@@ -1,9 +1,8 @@
 use crate::free_list::FreeList;
 use crate::gen_arena::GenArena;
 use crate::region::{PermissionChange, RegionTracker};
-use crate::region_capa;
 use crate::update::{Update, UpdateBuffer};
-use crate::{AccessRights, CapaError, CapaPool, Handle, RegionCapa, N};
+use crate::{region_capa, AccessRights, CapaError, CapaPool, Handle, RegionCapa, N};
 
 pub type DomainHandle = Handle<Domain>;
 pub type DomainPool = GenArena<Domain, N>;
@@ -235,12 +234,12 @@ pub fn has_permission(
     domains: &DomainPool,
     permission: u64,
 ) -> Result<(), CapaError> {
-    if permission | permission::ALL !=  permission::ALL {
+    if permission | permission::ALL != permission::ALL {
         // There are some undefined bits!
         return Err(CapaError::InvalidPermissions);
     }
     let domain_perms = domains[domain].permissions;
-    if  domain_perms & permission == permission {
+    if domain_perms & permission == permission {
         Ok(())
     } else {
         Err(CapaError::InsufficientPermissions)
