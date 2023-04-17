@@ -1,4 +1,5 @@
 *.a
 test_x86
+test_riscv48
 *.o
 *.cmd

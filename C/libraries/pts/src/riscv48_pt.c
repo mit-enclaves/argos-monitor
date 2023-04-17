@@ -19,7 +19,7 @@ callback_action_t riscv48_how_visit_leaves(entry_t* entry, level_t level, pt_pro
     return SKIP; 
   }
   // Invalid entry.
-  if ((*entry & PT_R) == 0 && (*entry & PT_W) == 0) {
+  if ((*entry & PT_R) == 0 && (*entry & PT_W) != 0) {
     return ERROR;
   }
   // Not a leaf
@@ -36,7 +36,7 @@ callback_action_t riscv48_how_visit_present(entry_t* entry, level_t level, pt_pr
     return SKIP; 
   }
   // Invalid entry.
-  if ((*entry & PT_R) == 0 && (*entry & PT_W) == 0) {
+  if ((*entry & PT_R) == 0 && (*entry & PT_W) != 0) {
     return ERROR;
   }
   return VISIT;
@@ -49,7 +49,7 @@ callback_action_t riscv48_how_map(entry_t* entry, level_t level, pt_profile_t* p
     return MAP; 
   }
   // Invalid entry.
-  if ((*entry & PT_R) == 0 && (*entry & PT_W) == 0) {
+  if ((*entry & PT_R) == 0 && (*entry & PT_W) != 0) {
     return ERROR;
   }
   return WALK;

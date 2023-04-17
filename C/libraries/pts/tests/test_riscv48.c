@@ -137,7 +137,8 @@ void test_simple_map(pt_profile_t* profile)
   extra->invoc_count = 0;
   profile->how = riscv48_how_visit_leaves; 
   profile->visitors[LVL0] = pte_page_visit;
-  TEST(pt_walk_page_range((entry_t) root, LVL3, s, e, profile) == 0);
+  int ret = pt_walk_page_range((entry_t) root, LVL3, s, e, profile);
+  TEST(ret == 0);
   TEST(extra->invoc_count == 3);
   LOG("Done walking.");
 }
