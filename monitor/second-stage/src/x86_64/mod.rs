@@ -17,7 +17,6 @@ use crate::debug::qemu;
 use crate::debug::qemu::ExitCode;
 use crate::println;
 
-
 // —————————————————————————————— x86_64 Arch ——————————————————————————————— //
 
 pub fn launch_guest(manifest: &'static Manifest, vcpu: ActiveVmcs<'static>) {

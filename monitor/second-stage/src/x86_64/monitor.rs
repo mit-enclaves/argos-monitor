@@ -9,9 +9,9 @@ use utils::{GuestPhysAddr, HostPhysAddr};
 use vmx::bitmaps::EptEntryFlags;
 use vmx::ActiveVmcs;
 
+use super::cpuid;
 use crate::allocator::allocator;
 use crate::statics::NB_CORES;
-use super::cpuid;
 
 // ————————————————————————— Statics & Backend Data ————————————————————————— //
 

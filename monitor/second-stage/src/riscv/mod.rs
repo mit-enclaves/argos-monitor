@@ -5,7 +5,6 @@
 #![allow(unused)]
 
 mod arch;
-pub mod backend;
 pub mod guest;
 
 use core::arch::asm;
@@ -15,7 +14,6 @@ use mmu::FrameAllocator;
 
 use crate::debug::qemu::ExitCode;
 use crate::println;
-use crate::statics::{allocator, pool};
 
 // TODO: some empty types to be filled.
 #[derive(Debug)]
