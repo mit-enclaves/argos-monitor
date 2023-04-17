@@ -7,7 +7,11 @@
 #include "pts.h"
 #include "elf64.h"
 #include "common.h"
+#if defined(__x86_64__) || defined(CONFIG_X86)
 #include "x86_64_pt.h"
+#elif defined(__riscv) || defined(CONFIG_RISCV)
+#include "riscv48_pt.h"
+#endif
 #include "tyche_enclave.h"
 #include "enclave_loader.h"
 
@@ -102,6 +106,8 @@ static callback_action_t default_mapper(entry_t* entry, level_t lvl, struct pt_p
     goto failure;
   }
   offset = profile->curr_va - ((addr_t)(info->segment->p_vaddr)); 
+
+#if defined(CONFIG_X86) || defined(__x86_64__)
   switch(lvl) {
     case PT_PGD:
       // Normal mapping.
@@ -127,6 +133,10 @@ normal_page:
   *entry = ((entry_t)new_page) | info->intermed_flags;
   DEBUG("map: lvl: %d, curr_va: %llx, entry: %llx", lvl, profile->curr_va, *entry);
   return WALK; 
+#elif defined(CONFIG_RISCV) || defined(__riscv)
+  //TODO(neelu)
+  TEST(0);
+#endif
 failure:
   return FAILURE;
 }
@@ -236,6 +246,8 @@ int create_page_tables(uint64_t phys_offset, page_tables_t* bump, Elf64_Ehdr* he
     ERROR("Failed to mmap the bump pages.");
     goto failure;
   }
+
+#if defined(__x86_64__) || defined(CONFIG_X86)
   // Set common parts of info
   info.bump = bump;
   info.intermed_flags = PT_PP | PT_RW | PT_ACC | PT_USR | PT_DIRT;
@@ -253,6 +265,10 @@ int create_page_tables(uint64_t phys_offset, page_tables_t* bump, Elf64_Ehdr* he
   profile.mappers[PT_PMD] = default_mapper;
   profile.mappers[PT_PGD] = default_mapper;
   profile.mappers[PT_PML4] = default_mapper;
+#elif defined(__riscv) || defined(CONFIG_RISCV)
+  //TODO(neelu)
+  TEST(0);
+#endif
 
   // Allocate the root.
   entry_t root = (entry_t) allocate((void*)bump);
@@ -268,10 +284,16 @@ int create_page_tables(uint64_t phys_offset, page_tables_t* bump, Elf64_Ehdr* he
     addr_t end = seg.p_vaddr + align_up(seg.p_memsz);
     info.segment = &seg;
     info.segment_offset = mem_size; 
+
+#if defined(__x86_64__) || defined(CONFIG_X86)
     if (pt_walk_page_range(root, PT_PML4, start, end, &profile)) {
       ERROR("Unable to map the region %llx -- %llx ", start, end);
       goto unmap_failure;
     }
+#elif defined(__riscv) || defined(CONFIG_RISCV)
+    //TODO(neelu)
+    TEST(0);
+#endif
     mem_size += align_up(seg.p_memsz);
   }
   if (mem_size != phys_offset) {
@@ -297,12 +319,18 @@ int fix_page_tables(usize offset, page_tables_t * tables)
     page_t* page = &tables->pages[i];
     for (int j = 0; j < ENTRIES_PER_PAGE; j++) {
       uint64_t* entry = &(page->data[j]); 
+
+#if defined(__x86_64__) || defined(CONFIG_X86)
       if ((*entry & PT_PP) != PT_PP) {
         continue;
       }
       uint64_t addr = offset + (*entry & PT_PHYS_PAGE_MASK);
       *entry = (*entry & ~PT_PHYS_PAGE_MASK) | addr;
       DEBUG("fixed: entry: %llx @(%d, %d)", *entry, i, j);
+#elif defined(__riscv) || defined(CONFIG_RISCV)
+      //TODO(neelu) 
+      TEST(0);
+#endif
     }
   } 
   return SUCCESS;

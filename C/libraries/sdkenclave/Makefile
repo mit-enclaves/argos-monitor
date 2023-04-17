@@ -35,4 +35,4 @@ enclave_runtime.so: $(CODE_RUNTIME) $(HDRS_RUNTIME)
 .PHONY: clean
 
 clean:
-	rm -rf enclave_loader.so
+	rm -rf enclave_loader.so enclave_runtime.so

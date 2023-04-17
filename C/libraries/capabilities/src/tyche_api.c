@@ -5,6 +5,7 @@
 int tyche_call(vmcall_frame_t* frame)
 {
   usize result = FAILURE;
+#if defined(CONFIG_X86) || defined(__x86_64__)
   asm volatile(
     "movq %7, %%rax\n\t"
     "movq %8, %%rdi\n\t"
@@ -25,7 +26,10 @@ int tyche_call(vmcall_frame_t* frame)
     : "=rm" (result), "=rm" (frame->value_1), "=rm" (frame->value_2), "=rm" (frame->value_3), "=rm" (frame->value_4), "=rm" (frame->value_5), "=rm" (frame->value_6)
     : "rm" (frame->vmcall), "rm" (frame->arg_1), "rm" (frame->arg_2), "rm" (frame->arg_3), "rm" (frame->arg_4), "rm" (frame->arg_5), "rm" (frame->arg_6), "rm" (frame->arg_7) 
     : "rax", "rdi", "rsi", "rdx", "rcx", "r8", "r9", "r10", "memory");
-
+#elif defined(CONFIG_RISCV) || defined(__riscv)
+  //TODO(neelu)
+  TEST(0);
+#endif
   return (int)result;
 } 
 
@@ -193,6 +197,8 @@ int tyche_switch(capa_index_t transition_handle, usize cpu, void* args)
     .arg_3 = (usize) args,
   };
   DEBUG("About to switch from the capability lib: handle %lld", transition_handle);
+
+#if defined(CONFIG_X86) || defined(__x86_64__)
   asm volatile(
     "cli \n\t"
     "movq %2, %%rax\n\t"
@@ -205,5 +211,9 @@ int tyche_switch(capa_index_t transition_handle, usize cpu, void* args)
     : "=rm" (result), "=rm" (frame.value_1)
     : "rm" (frame.vmcall), "rm" (frame.arg_1), "rm" (frame.arg_2), "rm" (frame.arg_3)
     : "rax", "rdi", "rsi", "r11", "memory");
+#elif defined(CONFIG_RISCV) || defined(__riscv)
+  //TODO(neelu)
+  TEST(0);
+#endif
   return result;
 }
