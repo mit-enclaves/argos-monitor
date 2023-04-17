@@ -5,11 +5,6 @@
 
 #define x86_64_LEVELS 4
 
-// ————————————————————————————— Compatibility —————————————————————————————— //
-#define PT_AT(T, X) ((T)(X))
-#define PT__AC(X, Y) (X##Y)
-#define PT_AC(X, Y) PT__AC(X, Y)
-
 // ——————————————————————————— Page Configuration ——————————————————————————— //
 /* PT_PAGE_SHIFT determines the page size */
 

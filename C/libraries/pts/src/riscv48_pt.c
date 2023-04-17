@@ -1,4 +1,4 @@
-#include "riscv_48_pt.h"
+#include "riscv48_pt.h"
 
 /// Default profile for riscv48.
 /// @warn It is incomplete.
@@ -15,7 +15,7 @@ const pt_profile_t riscv48_profile = {
 callback_action_t riscv48_how_visit_leaves(entry_t* entry, level_t level, pt_profile_t* profile)
 {
   // Not an entry.
-  if ((*entry & PT_V) != PT_PV){
+  if ((*entry & PT_V) != PT_V){
     return SKIP; 
   }
   // Invalid entry.
@@ -64,5 +64,5 @@ index_t riscv48_get_index(addr_t addr, level_t level, pt_profile_t* profile)
 
 entry_t riscv48_next(entry_t entry, level_t curr_level) 
 {
-  return (entry & PT_PHYS_PAGE_MASK);
+  return ((entry & PT_PHYS_PAGE_MASK) >> PT_FLAGS_RESERVED) << PT_PAGE_WIDTH;
 }

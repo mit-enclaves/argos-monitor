@@ -45,7 +45,7 @@
 /// Page table masks
 #define PT_FLAGS_RESERVED 10ULL
 #define PT_VIRT_PAGE_MASK (PT_VIRT_MASK - PT_PAGE_ALIGN)
-#define PT_PHYS_PAGE_MASK (PT_PHYS_PAGE_MASK << (PT_FLAGS_RESERVED))
+#define PT_PHYS_PAGE_MASK (PT_PHYS_MASK << (PT_FLAGS_RESERVED))
 
 // ———————————————————— TODO Other granules? Giant etc. ————————————————————— //
 

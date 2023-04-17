@@ -1,6 +1,11 @@
 #ifndef __INCLUDE_PTS_API_H__
 #define __INCLUDE_PTS_API_H__
 
+// ————————————————————————————— Compatibility —————————————————————————————— //
+#define PT_AT(T, X) ((T)(X))
+#define PT__AC(X, Y) (X##Y)
+#define PT_AC(X, Y) PT__AC(X, Y)
+
 // —————————————————————————————————— API ——————————————————————————————————— //
 
 #define MAX_LEVEL 5
