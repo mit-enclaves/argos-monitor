@@ -75,33 +75,49 @@ fn handle_exit(
             };
             match params.vmcall {
                 calls::CREATE_DOMAIN => {
-                    // NOTE: will need this:
-                    // vcpu.next_instruction()?;
-                    todo!("Create Domain")
+                    println!("Create Domain");
+                    vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
                 }
                 calls::SEAL_DOMAIN => {
-                    todo!("Seal Domain")
+                    println!("Seal Domain");
+                    vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
                 }
                 calls::SHARE => {
-                    todo!("Share")
+                    println!("Share");
+                    vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
                 }
                 calls::GRANT => {
-                    todo!("Grant")
+                    println!("Grant");
+                    vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
                 }
                 calls::GIVE => {
-                    todo!("Give")
+                    println!("Give");
+                    vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
                 }
                 calls::REVOKE => {
-                    todo!("Revoke")
+                    println!("Revoke");
+                    vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
                 }
                 calls::DUPLICATE => {
-                    todo!("Duplicate")
+                    println!("Duplicate");
+                    vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
                 }
                 calls::ENUMERATE => {
-                    todo!("Enumerate")
+                    println!("Enumerate");
+                    vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
                 }
                 calls::SWITCH => {
-                    todo!("Switch")
+                    println!("Switch");
+                    vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
                 }
                 calls::EXIT => {
                     dump(vcpu);
