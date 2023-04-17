@@ -137,15 +137,16 @@ fn handle_exit(
                 asm!(
                     "mov {tmp}, rbx",
                     "cpuid",
-                    "mov {rbx_out}, rbx",
+                    "mov rsi, rbx",
                     "mov rbx, {tmp}",
                     tmp = out(reg) _,
-                    rbx_out = out(reg) ebx,
                     inout("rax") input_eax => eax,
                     inout("rcx") input_ecx => ecx,
                     out("rdx") edx,
+                    out("rsi") ebx
                 )
             }
+
             vcpu.set(Register::Rax, eax);
             vcpu.set(Register::Rbx, ebx);
             vcpu.set(Register::Rcx, ecx);
