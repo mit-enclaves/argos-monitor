@@ -1,5 +1,6 @@
 #![cfg_attr(not(test), no_std)]
 
+mod context;
 mod domain;
 mod free_list;
 mod gen_arena;
@@ -9,6 +10,7 @@ mod update;
 
 use core::ops::Index;
 
+use context::{Context, ContextPool};
 pub use domain::{permission, Domain, NextCapaToken};
 use domain::{Capa, DomainHandle, DomainPool, LocalCapa};
 use gen_arena::GenArena;
@@ -39,6 +41,7 @@ pub struct CapaEngine {
     domains: DomainPool,
     regions: CapaPool,
     updates: UpdateBuffer,
+    contexts: ContextPool,
     id_counter: usize,
 }
 
@@ -46,11 +49,13 @@ impl CapaEngine {
     pub const fn new() -> Self {
         const EMPTY_DOMAIN: Domain = Domain::new(0);
         const EMPTY_CAPA: RegionCapa = RegionCapa::new_invalid();
+        const EMPTY_CONTEXT: Context = Context::new();
 
         Self {
             domains: GenArena::new([EMPTY_DOMAIN; N]),
             regions: GenArena::new([EMPTY_CAPA; N]),
             updates: UpdateBuffer::new(),
+            contexts: GenArena::new([EMPTY_CONTEXT; N]),
             id_counter: 0,
         }
     }
@@ -100,6 +105,7 @@ impl CapaEngine {
             &mut self.regions,
             &mut self.domains,
             &mut self.updates,
+            &mut self.contexts,
         )
     }
 
@@ -182,6 +188,7 @@ impl CapaEngine {
             // No side effect for those capas
             Capa::None => (),
             Capa::Channel(_) => (),
+            Capa::Switch { .. } => (),
 
             // Sending those capa causes side effects
             Capa::Region(region) => {
@@ -219,11 +226,27 @@ impl CapaEngine {
         domain::set_permissions(domain, &mut self.domains, permissions)
     }
 
-    /// Seal a domain.
-    pub fn seal(&mut self, domain: Handle<Domain>, capa: LocalCapa) -> Result<(), CapaError> {
+    /// Seal a domain and return a switch handle for that domain.
+    pub fn seal(
+        &mut self,
+        domain: Handle<Domain>,
+        capa: LocalCapa,
+    ) -> Result<LocalCapa, CapaError> {
         let capa = self.domains[domain].get(capa)?.as_management()?;
+        let context = self
+            .contexts
+            .allocate(Context::new())
+            .ok_or(CapaError::OutOfMemory)?;
         self.domains[capa].seal()?;
-        Ok(())
+        self.domains[domain].insert_capa(Capa::Switch {
+            to: capa,
+            ctx: context,
+        })
+    }
+
+    /// Creates a new switch handle for the current domain.
+    pub fn create_switch(&mut self, domain: Handle<Domain>) -> Result<LocalCapa, CapaError> {
+        domain::create_switch(domain, &mut self.domains, &mut self.contexts)
     }
 
     pub fn enumerate(
@@ -231,7 +254,13 @@ impl CapaEngine {
         domain: Handle<Domain>,
         token: NextCapaToken,
     ) -> Option<(Capa, NextCapaToken)> {
-        domain::next_capa(domain, token, &self.regions, &mut self.domains)
+        domain::next_capa(
+            domain,
+            token,
+            &self.regions,
+            &mut self.domains,
+            &self.contexts,
+        )
     }
 
     pub fn get_domain_capa(

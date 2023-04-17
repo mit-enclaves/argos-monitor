@@ -1,3 +1,4 @@
+use crate::context::{Context, ContextPool};
 use crate::free_list::FreeList;
 use crate::gen_arena::GenArena;
 use crate::region::{PermissionChange, RegionTracker};
@@ -35,6 +36,10 @@ pub enum Capa {
     Region(Handle<RegionCapa>),
     Management(Handle<Domain>),
     Channel(Handle<Domain>),
+    Switch {
+        to: Handle<Domain>,
+        ctx: Handle<Context>,
+    },
 }
 
 impl Capa {
@@ -216,12 +221,19 @@ impl Domain {
         }
     }
 
-    fn is_valid(&self, idx: usize, regions: &CapaPool, domains: &DomainPool) -> bool {
+    fn is_valid(
+        &self,
+        idx: usize,
+        regions: &CapaPool,
+        domains: &DomainPool,
+        contexts: &ContextPool,
+    ) -> bool {
         match self.capas[idx] {
             Capa::None => false,
             Capa::Region(handle) => regions.get(handle).is_some(),
             Capa::Management(handle) => domains.get(handle).is_some(),
             Capa::Channel(handle) => domains.get(handle).is_some(),
+            Capa::Switch { to, ctx } => domains.get(to).is_some() && contexts.get(ctx).is_some(),
         }
     }
 }
@@ -276,6 +288,23 @@ pub fn send_management(
     Ok(())
 }
 
+// ————————————————————————————————— Switch ————————————————————————————————— //
+
+pub(crate) fn create_switch(
+    capa: Handle<Domain>,
+    domains: &mut DomainPool,
+    contexts: &mut ContextPool,
+) -> Result<LocalCapa, CapaError> {
+    let domain = &mut domains[capa];
+    let context = contexts
+        .allocate(Context::new())
+        .ok_or(CapaError::OutOfMemory)?;
+    domain.insert_capa(Capa::Switch {
+        to: capa,
+        ctx: context,
+    })
+}
+
 // ——————————————————————————————— Enumerate ———————————————————————————————— //
 
 pub(crate) fn next_capa(
@@ -283,13 +312,14 @@ pub(crate) fn next_capa(
     token: NextCapaToken,
     regions: &CapaPool,
     domains: &mut DomainPool,
+    contexts: &ContextPool,
 ) -> Option<(Capa, NextCapaToken)> {
     let mut idx = token.idx;
     let len = domains[domain_handle].capas.len();
     while idx < len {
         let domain = &domains[domain_handle];
         if !domain.free_list.is_free(idx) {
-            if domain.is_valid(idx, regions, domains) {
+            if domain.is_valid(idx, regions, domains, contexts) {
                 // Found a valid capa
                 let next_token = NextCapaToken { idx: idx + 1 };
                 return Some((domain.capas[idx], next_token));
@@ -313,6 +343,7 @@ pub(crate) fn revoke(
     regions: &mut CapaPool,
     domains: &mut DomainPool,
     updates: &mut UpdateBuffer,
+    contexts: &mut ContextPool,
 ) -> Result<(), CapaError> {
     log::trace!("Revoke domain {}", handle);
 
@@ -328,19 +359,20 @@ pub(crate) fn revoke(
 
     // Drop all capabilities
     let mut token = NextCapaToken::new();
-    while let Some((capa, next_token)) = next_capa(handle, token, regions, domains) {
+    while let Some((capa, next_token)) = next_capa(handle, token, regions, domains, contexts) {
         token = next_token;
         match capa {
             // Those capa so not cause revokation
             Capa::None => (),
             Capa::Channel(_) => (),
+            Capa::Switch { .. } => (),
 
             // Those capa cause revocation
             Capa::Region(region) => {
                 region_capa::restore(region, regions, domains, updates)?;
             }
             Capa::Management(domain) => {
-                revoke(domain, regions, domains, updates)?;
+                revoke(domain, regions, domains, updates, contexts)?;
             }
         }
     }
