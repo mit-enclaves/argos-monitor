@@ -10,7 +10,8 @@ mod update;
 
 use core::ops::Index;
 
-use context::{Context, ContextPool};
+pub use context::Context;
+use context::ContextPool;
 pub use domain::{permission, Domain, LocalCapa, NextCapaToken};
 use domain::{Capa, DomainHandle, DomainPool};
 use gen_arena::GenArena;
@@ -231,17 +232,18 @@ impl CapaEngine {
         &mut self,
         domain: Handle<Domain>,
         capa: LocalCapa,
-    ) -> Result<LocalCapa, CapaError> {
+    ) -> Result<(LocalCapa, Handle<Context>), CapaError> {
         let capa = self.domains[domain].get(capa)?.as_management()?;
         let context = self
             .contexts
             .allocate(Context::new())
             .ok_or(CapaError::OutOfMemory)?;
         self.domains[capa].seal()?;
-        self.domains[domain].insert_capa(Capa::Switch {
+        let capa = self.domains[domain].insert_capa(Capa::Switch {
             to: capa,
             ctx: context,
-        })
+        })?;
+        Ok((capa, context))
     }
 
     /// Creates a new switch handle for the current domain.

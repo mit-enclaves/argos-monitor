@@ -1,6 +1,6 @@
 //! Architecture specific monitor state, independant of the CapaEngine.
 
-use capa_engine::{permission, AccessRights, CapaEngine, Domain, Handle, LocalCapa, N};
+use capa_engine::{permission, AccessRights, CapaEngine, Context, Domain, Handle, LocalCapa, N};
 use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator};
 use spin::{Mutex, MutexGuard};
@@ -87,6 +87,10 @@ fn get_domain(domain: Handle<Domain>) -> MutexGuard<'static, DomainData> {
     DOMAINS[domain.idx()].lock()
 }
 
+fn get_context(context: Handle<Context>) -> MutexGuard<'static, ContextData> {
+    CONTEXTS[context.idx()].lock()
+}
+
 fn get_core(cpuid: usize) -> MutexGuard<'static, CoreData> {
     CORES[cpuid].lock()
 }
@@ -98,6 +102,22 @@ pub fn do_create_domain(current: Handle<Domain>) -> Result<LocalCapa, ()> {
     let management_capa = engine.create_domain(current).expect("TODO: handle failure");
     apply_updates(&mut engine);
     Ok(management_capa)
+}
+
+pub fn do_seal(
+    current: Handle<Domain>,
+    domain: LocalCapa,
+    cr3: usize,
+    rip: usize,
+    rsp: usize,
+) -> Result<LocalCapa, ()> {
+    let mut engine = CAPA_ENGINE.lock();
+    let (capa, context) = engine.seal(current, domain).expect("TODO: handle failure");
+    let mut context = get_context(context);
+    context.cr3 = cr3;
+    context.rip = rip;
+    context.rsp = rsp;
+    Ok(capa)
 }
 
 // ———————————————————————————————— Updates ————————————————————————————————— //

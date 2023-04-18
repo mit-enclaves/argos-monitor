@@ -38,6 +38,10 @@ impl LocalCapa {
     pub fn as_u64(self) -> u64 {
         self.idx as u64
     }
+
+    pub fn new(idx: usize) -> Self {
+        Self { idx }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

@@ -2,7 +2,7 @@
 
 use core::arch::asm;
 
-use capa_engine::{Domain, Handle};
+use capa_engine::{Domain, Handle, LocalCapa};
 use vmx::bitmaps::exit_qualification;
 use vmx::{ActiveVmcs, ControlRegister, Register, VmxExitReason};
 
@@ -58,10 +58,10 @@ fn handle_exit(
     match reason {
         VmxExitReason::Vmcall => {
             let vmcall = vcpu.get(Register::Rax) as usize;
-            let _arg_1 = vcpu.get(Register::Rdi) as usize;
-            let _arg_2 = vcpu.get(Register::Rsi) as usize;
-            let _arg_3 = vcpu.get(Register::Rdx) as usize;
-            let _arg_4 = vcpu.get(Register::Rcx) as usize;
+            let arg_1 = vcpu.get(Register::Rdi) as usize;
+            let arg_2 = vcpu.get(Register::Rsi) as usize;
+            let arg_3 = vcpu.get(Register::Rdx) as usize;
+            let arg_4 = vcpu.get(Register::Rcx) as usize;
             let _arg_5 = vcpu.get(Register::R8) as usize;
             let _arg_6 = vcpu.get(Register::R9) as usize;
             let _arg_7 = vcpu.get(Register::R10) as usize;
@@ -75,6 +75,9 @@ fn handle_exit(
                 }
                 calls::SEAL_DOMAIN => {
                     println!("Seal Domain");
+                    let capa = monitor::do_seal(domain, LocalCapa::new(arg_1), arg_2, arg_3, arg_4)
+                        .expect("TODO");
+                    vcpu.set(Register::Rdi, capa.as_u64());
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
