@@ -1,9 +1,10 @@
+use crate::capa::{Capa, IntoCapa};
 use crate::context::{Context, ContextPool};
 use crate::free_list::FreeList;
 use crate::gen_arena::GenArena;
 use crate::region::{PermissionChange, RegionTracker};
 use crate::update::{Update, UpdateBuffer};
-use crate::{region_capa, AccessRights, CapaError, CapaPool, Handle, RegionCapa, N};
+use crate::{region_capa, AccessRights, CapaError, Handle, RegionPool, N};
 
 pub type DomainHandle = Handle<Domain>;
 pub type DomainPool = GenArena<Domain, N>;
@@ -44,71 +45,6 @@ impl LocalCapa {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum Capa {
-    None,
-    Region(Handle<RegionCapa>),
-    Management(Handle<Domain>),
-    Channel(Handle<Domain>),
-    Switch {
-        to: Handle<Domain>,
-        ctx: Handle<Context>,
-    },
-}
-
-impl Capa {
-    pub(crate) fn management(managee: Handle<Domain>) -> Self {
-        Capa::Management(managee)
-    }
-
-    pub fn as_region(self) -> Result<Handle<RegionCapa>, CapaError> {
-        match self {
-            Capa::Region(region) => Ok(region),
-            _ => Err(CapaError::WrongCapabilityType),
-        }
-    }
-
-    pub fn as_management(self) -> Result<Handle<Domain>, CapaError> {
-        match self {
-            Capa::Management(domain) => Ok(domain),
-            _ => Err(CapaError::WrongCapabilityType),
-        }
-    }
-
-    pub fn as_channel(self) -> Result<Handle<Domain>, CapaError> {
-        match self {
-            Capa::Management(domain) => Ok(domain),
-            Capa::Channel(domain) => Ok(domain),
-            _ => Err(CapaError::WrongCapabilityType),
-        }
-    }
-
-    pub fn as_domain(self) -> Result<Handle<Domain>, CapaError> {
-        match self {
-            Capa::Management(domain) => Ok(domain),
-            Capa::Channel(domain) => Ok(domain),
-            _ => Err(CapaError::WrongCapabilityType),
-        }
-    }
-}
-
-pub trait IntoCapa {
-    fn into_capa(self) -> Capa;
-}
-
-impl IntoCapa for Handle<RegionCapa> {
-    fn into_capa(self) -> Capa {
-        Capa::Region(self)
-    }
-}
-
-impl IntoCapa for Capa {
-    #[inline]
-    fn into_capa(self) -> Capa {
-        self
-    }
-}
-
 /// A token used to iterate capabilites of a domain.
 pub struct NextCapaToken {
     idx: usize,
@@ -117,6 +53,18 @@ pub struct NextCapaToken {
 impl NextCapaToken {
     pub fn new() -> Self {
         Self { idx: 0 }
+    }
+
+    pub fn from_usize(idx: usize) -> Self {
+        Self { idx }
+    }
+
+    pub fn as_usize(self) -> usize {
+        self.idx
+    }
+
+    pub fn as_u64(self) -> u64 {
+        self.idx as u64
     }
 }
 
@@ -238,7 +186,7 @@ impl Domain {
     fn is_valid(
         &self,
         idx: usize,
-        regions: &CapaPool,
+        regions: &RegionPool,
         domains: &DomainPool,
         contexts: &ContextPool,
     ) -> bool {
@@ -324,7 +272,7 @@ pub(crate) fn create_switch(
 pub(crate) fn next_capa(
     domain_handle: Handle<Domain>,
     token: NextCapaToken,
-    regions: &CapaPool,
+    regions: &RegionPool,
     domains: &mut DomainPool,
     contexts: &ContextPool,
 ) -> Option<(Capa, NextCapaToken)> {
@@ -354,7 +302,7 @@ pub(crate) fn next_capa(
 
 pub(crate) fn revoke(
     handle: DomainHandle,
-    regions: &mut CapaPool,
+    regions: &mut RegionPool,
     domains: &mut DomainPool,
     updates: &mut UpdateBuffer,
     contexts: &mut ContextPool,

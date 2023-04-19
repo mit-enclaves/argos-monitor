@@ -8,8 +8,8 @@ pub struct RegionCapa {
     domain: Handle<Domain>,
     left: Option<Handle<RegionCapa>>,
     right: Option<Handle<RegionCapa>>,
-    is_active: bool,
-    is_confidential: bool,
+    pub(crate) is_active: bool,
+    pub(crate) is_confidential: bool,
     pub(crate) access: AccessRights,
 }
 
@@ -50,12 +50,12 @@ impl RegionCapa {
     }
 }
 
-pub type CapaHandle = Handle<RegionCapa>;
-pub type CapaPool = GenArena<RegionCapa, N>;
+pub type RegionHandle = Handle<RegionCapa>;
+pub type RegionPool = GenArena<RegionCapa, N>;
 
 pub fn restore(
     handle: Handle<RegionCapa>,
-    regions: &mut CapaPool,
+    regions: &mut RegionPool,
     domains: &mut DomainPool,
     updates: &mut UpdateBuffer,
 ) -> Result<(), CapaError> {
@@ -84,8 +84,8 @@ pub fn restore(
 }
 
 pub(crate) fn revoke(
-    handle: CapaHandle,
-    regions: &mut CapaPool,
+    handle: RegionHandle,
+    regions: &mut RegionPool,
     domains: &mut DomainPool,
     updates: &mut UpdateBuffer,
 ) -> Result<(), CapaError> {
@@ -111,7 +111,7 @@ pub(crate) fn revoke(
 
 pub fn duplicate(
     handle: Handle<RegionCapa>,
-    regions: &mut CapaPool,
+    regions: &mut RegionPool,
     domains: &mut DomainPool,
     updates: &mut UpdateBuffer,
     access_left: AccessRights,
@@ -187,7 +187,7 @@ pub fn duplicate(
 
 pub fn send(
     handle: Handle<RegionCapa>,
-    regions: &mut CapaPool,
+    regions: &mut RegionPool,
     domains: &mut DomainPool,
     updates: &mut UpdateBuffer,
     domain: Handle<Domain>,
@@ -205,9 +205,9 @@ pub fn send(
 }
 
 pub fn install(
-    handle: CapaHandle,
+    handle: RegionHandle,
     domain: Handle<Domain>,
-    regions: &mut CapaPool,
+    regions: &mut RegionPool,
     domains: &mut DomainPool,
     updates: &mut UpdateBuffer,
 ) -> Result<LocalCapa, CapaError> {

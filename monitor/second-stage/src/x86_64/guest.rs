@@ -2,7 +2,7 @@
 
 use core::arch::asm;
 
-use capa_engine::{Domain, Handle, LocalCapa};
+use capa_engine::{Domain, Handle, LocalCapa, NextCapaToken};
 use vmx::bitmaps::exit_qualification;
 use vmx::{ActiveVmcs, ControlRegister, Register, VmxExitReason};
 
@@ -88,6 +88,8 @@ fn handle_exit(
                 }
                 calls::GRANT => {
                     println!("Grant");
+                    monitor::do_send(domain, LocalCapa::new(arg_1), LocalCapa::new(arg_2))
+                        .expect("TODO");
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
@@ -108,6 +110,17 @@ fn handle_exit(
                 }
                 calls::ENUMERATE => {
                     println!("Enumerate");
+                    if let Some((info, next)) =
+                        monitor::do_enumerate(domain, NextCapaToken::from_usize(arg_1))
+                    {
+                        let (v1, v2, v3) = info.serialize();
+                        vcpu.set(Register::Rdi, v1 as u64);
+                        vcpu.set(Register::Rsi, v2 as u64);
+                        vcpu.set(Register::Rdx, v3 as u64);
+                        vcpu.set(Register::Rcx, next.as_u64());
+                    } else {
+                        // TODO: return a value that say it's over
+                    }
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }

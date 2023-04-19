@@ -1,5 +1,6 @@
 #![cfg_attr(not(test), no_std)]
 
+mod capa;
 mod context;
 mod domain;
 mod free_list;
@@ -10,14 +11,16 @@ mod update;
 
 use core::ops::Index;
 
+use capa::Capa;
+pub use capa::{capa_type, CapaInfo};
 pub use context::Context;
 use context::ContextPool;
 pub use domain::{permission, Domain, LocalCapa, NextCapaToken};
-use domain::{Capa, DomainHandle, DomainPool};
+use domain::{DomainHandle, DomainPool};
 use gen_arena::GenArena;
 pub use gen_arena::Handle;
 pub use region::{AccessRights, RegionTracker};
-use region_capa::{CapaPool, RegionCapa};
+use region_capa::{RegionCapa, RegionPool};
 pub use update::Update;
 use update::UpdateBuffer;
 
@@ -36,11 +39,12 @@ pub enum CapaError {
     InsufficientPermissions,
     InvalidPermissions,
     OutOfMemory,
+    CouldNotDeserializeInfo,
 }
 
 pub struct CapaEngine {
     domains: DomainPool,
-    regions: CapaPool,
+    regions: RegionPool,
     updates: UpdateBuffer,
     contexts: ContextPool,
     id_counter: usize,
@@ -255,14 +259,16 @@ impl CapaEngine {
         &mut self,
         domain: Handle<Domain>,
         token: NextCapaToken,
-    ) -> Option<(Capa, NextCapaToken)> {
-        domain::next_capa(
+    ) -> Option<(CapaInfo, NextCapaToken)> {
+        let (capa, next_token) = domain::next_capa(
             domain,
             token,
             &self.regions,
             &mut self.domains,
             &self.contexts,
-        )
+        )?;
+        let info = capa.info(&self.regions, &self.domains)?;
+        Some((info, next_token))
     }
 
     pub fn get_domain_capa(

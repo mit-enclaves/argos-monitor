@@ -1,6 +1,9 @@
 //! Architecture specific monitor state, independant of the CapaEngine.
 
-use capa_engine::{permission, AccessRights, CapaEngine, Context, Domain, Handle, LocalCapa, N};
+use capa_engine::{
+    permission, AccessRights, CapaEngine, CapaInfo, Context, Domain, Handle, LocalCapa,
+    NextCapaToken, N,
+};
 use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator};
 use spin::{Mutex, MutexGuard};
@@ -118,6 +121,22 @@ pub fn do_seal(
     context.rip = rip;
     context.rsp = rsp;
     Ok(capa)
+}
+
+pub fn do_send(current: Handle<Domain>, capa: LocalCapa, to: LocalCapa) -> Result<(), ()> {
+    let mut engine = CAPA_ENGINE.lock();
+    engine
+        .send(current, capa, to)
+        .expect("TODO: handle failure");
+    Ok(())
+}
+
+pub fn do_enumerate(
+    current: Handle<Domain>,
+    token: NextCapaToken,
+) -> Option<(CapaInfo, NextCapaToken)> {
+    let mut engine = CAPA_ENGINE.lock();
+    engine.enumerate(current, token)
 }
 
 // ———————————————————————————————— Updates ————————————————————————————————— //
