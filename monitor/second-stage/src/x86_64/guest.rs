@@ -70,6 +70,7 @@ fn handle_exit(
                     println!("Create Domain");
                     let capa = monitor::do_create_domain(domain).expect("TODO");
                     vcpu.set(Register::Rdi, capa.as_u64());
+                    vcpu.set(Register::Rax, 0);
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
@@ -78,6 +79,7 @@ fn handle_exit(
                     let capa = monitor::do_seal(domain, LocalCapa::new(arg_1), arg_2, arg_3, arg_4)
                         .expect("TODO");
                     vcpu.set(Register::Rdi, capa.as_u64());
+                    vcpu.set(Register::Rax, 0);
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
@@ -90,6 +92,7 @@ fn handle_exit(
                     println!("Grant");
                     monitor::do_send(domain, LocalCapa::new(arg_1), LocalCapa::new(arg_2))
                         .expect("TODO");
+                    vcpu.set(Register::Rax, 0);
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
@@ -119,8 +122,10 @@ fn handle_exit(
                         vcpu.set(Register::Rdx, v3 as u64);
                         vcpu.set(Register::Rcx, next.as_u64());
                     } else {
-                        // TODO: return a value that say it's over
+                        // For now, this marks the end
+                        vcpu.set(Register::Rcx, 0);
                     }
+                    vcpu.set(Register::Rax, 0);
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }

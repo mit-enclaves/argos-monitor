@@ -9,3 +9,4 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.0.15", features = ["derive"] }
+capa-engine = { path = "../capability-engine/" }

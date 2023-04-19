@@ -1,5 +1,7 @@
 use core::arch::asm;
 
+use capa_engine::CapaInfo;
+
 // ——————————————————————————————— Hypercalls ——————————————————————————————— //
 
 #[derive(Debug)]
@@ -58,13 +60,9 @@ pub struct RevokHandle(pub usize);
 
 pub struct RegionHandle(pub usize);
 
-pub fn domain_create(
-    spawn: usize,
-    comm: usize,
-) -> Result<(DomainId, DomainId, RevokHandle), ErrorCode> {
-    do_vmcall(VmCalls::DomainCreate, spawn, comm, 0, 0, 0, 0, 0).map(
-        |(origin, new, revok, _, _, _, _)| (DomainId(origin), DomainId(new), RevokHandle(revok)),
-    )
+pub fn domain_create() -> Result<usize, ErrorCode> {
+    do_vmcall(VmCalls::DomainCreate, 0, 0, 0, 0, 0, 0, 0)
+        .map(|(managment, _, _, _, _, _, _)| managment)
 }
 
 pub fn seal_domain(
@@ -98,15 +96,8 @@ pub fn share(
         .map(|(left, _, _, _, _, _, _)| left)
 }
 
-pub fn grant(
-    target: usize,
-    capa: usize,
-    arg1: usize,
-    arg2: usize,
-    arg3: usize,
-) -> Result<usize, ErrorCode> {
-    do_vmcall(VmCalls::Grant, target, capa, arg1, arg2, arg3, 0, 0)
-        .map(|(left, _, _, _, _, _, _)| left)
+pub fn grant(target: usize, capa: usize) -> Result<(), ErrorCode> {
+    do_vmcall(VmCalls::Grant, target, capa, 0, 0, 0, 0, 0).map(|_| ())
 }
 
 pub fn give(target: usize, capa: usize) -> Result<(), ErrorCode> {
@@ -139,9 +130,10 @@ pub fn duplicate(
     .map(|(left, right, _, _, _, _, _)| (left, right))
 }
 
-pub fn enumerate(capa: usize) -> Result<(usize, usize, usize, usize, usize, usize), ErrorCode> {
-    do_vmcall(VmCalls::Duplicate, capa, 0, 0, 0, 0, 0, 0)
-        .map(|(idx, flags, b1, b2, b3, ref_count, _)| (idx, flags, b1, b2, b3, ref_count))
+pub fn enumerate(next_token: usize) -> Result<Option<(CapaInfo, usize)>, ErrorCode> {
+    let (v1, v2, v3, next, _, _, _) = do_vmcall(VmCalls::Enumerate, next_token, 0, 0, 0, 0, 0, 0)?;
+    let info = CapaInfo::deserialize(v1, v2, v3 as u16).expect("Deserialization should not fail");
+    Ok(Some((info, next)))
 }
 
 pub fn switch(handle: usize, cpu: usize) -> Result<usize, ErrorCode> {

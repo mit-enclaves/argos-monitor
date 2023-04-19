@@ -11,10 +11,7 @@ struct Args {
 
 #[derive(clap::Subcommand)]
 enum Subcommand {
-    DomainCreate {
-        spawn: usize,
-        comm: usize,
-    },
+    CreateDomain,
     SealDomain {
         domain: usize,
         core_map: usize,
@@ -32,9 +29,6 @@ enum Subcommand {
     Grant {
         target: usize,
         capa: usize,
-        arg1: usize,
-        arg2: usize,
-        arg3: usize,
     },
     Give {
         target: usize,
@@ -60,6 +54,7 @@ enum Subcommand {
         cpu: usize,
     },
     Exit,
+    List,
 }
 
 pub fn main() {
@@ -74,14 +69,8 @@ pub fn main() {
         } => {
             share(target, capa, arg1, arg2, arg3).unwrap();
         }
-        Subcommand::Grant {
-            target,
-            capa,
-            arg1,
-            arg2,
-            arg3,
-        } => {
-            grant(target, capa, arg1, arg2, arg3).unwrap();
+        Subcommand::Grant { target, capa } => {
+            grant(target, capa).unwrap();
         }
         Subcommand::Give { target, capa } => {
             give(target, capa).unwrap();
@@ -107,8 +96,8 @@ pub fn main() {
             switch(handle, cpu).unwrap();
         }
 
-        Subcommand::DomainCreate { spawn, comm } => {
-            domain_create(spawn, comm).unwrap();
+        Subcommand::CreateDomain => {
+            domain_create().unwrap();
         }
         Subcommand::SealDomain {
             domain,
@@ -122,5 +111,18 @@ pub fn main() {
         Subcommand::Exit => {
             exit().unwrap();
         }
+        Subcommand::List => list_all_capas(),
     };
+}
+
+fn list_all_capas() {
+    let mut token = 0;
+    while let Some((capa, next)) = enumerate(token).unwrap() {
+        if next == 0 {
+            break;
+        }
+
+        println!("{}", capa);
+        token = next;
+    }
 }
