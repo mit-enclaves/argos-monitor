@@ -103,6 +103,7 @@ fn handle_exit(
                 }
                 calls::REVOKE => {
                     println!("Revoke");
+                    monitor::do_revoke(domain, LocalCapa::new(arg_1)).expect("TODO");
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }

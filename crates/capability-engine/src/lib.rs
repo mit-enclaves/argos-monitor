@@ -114,12 +114,12 @@ impl CapaEngine {
         )
     }
 
-    pub fn create_region(
+    pub fn create_root_region(
         &mut self,
         domain: DomainHandle,
         access: AccessRights,
     ) -> Result<LocalCapa, CapaError> {
-        log::trace!("Create new region");
+        log::trace!("Create new root region");
 
         match self
             .regions
@@ -206,6 +206,7 @@ impl CapaEngine {
                 )?;
             }
             Capa::Management(domain) => {
+                // TODO: check that no cycles are created
                 domain::send_management(domain, &mut self.domains, to)?;
             }
         }
@@ -250,6 +251,17 @@ impl CapaEngine {
         Ok((capa, context))
     }
 
+    pub fn revoke(&mut self, domain: Handle<Domain>, capa: LocalCapa) -> Result<(), CapaError> {
+        domain::revoke_capa(
+            domain,
+            capa,
+            &mut self.regions,
+            &mut self.domains,
+            &mut self.contexts,
+            &mut self.updates,
+        )
+    }
+
     /// Creates a new switch handle for the current domain.
     pub fn create_switch(&mut self, domain: Handle<Domain>) -> Result<LocalCapa, CapaError> {
         domain::create_switch(domain, &mut self.domains, &mut self.contexts)
@@ -260,13 +272,14 @@ impl CapaEngine {
         domain: Handle<Domain>,
         token: NextCapaToken,
     ) -> Option<(CapaInfo, NextCapaToken)> {
-        let (capa, next_token) = domain::next_capa(
+        let (index, next_token) = domain::next_capa(
             domain,
             token,
             &self.regions,
             &mut self.domains,
             &self.contexts,
         )?;
+        let capa = self.domains[domain].get(index).unwrap();
         let info = capa.info(&self.regions, &self.domains)?;
         Some((info, next_token))
     }

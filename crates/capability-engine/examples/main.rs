@@ -32,7 +32,7 @@ fn foo() {
     let mut engine = CapaEngine::new();
     let domain = engine.create_manager_domain(permission::ALL).unwrap();
     let region = engine
-        .create_region(
+        .create_root_region(
             domain,
             AccessRights {
                 start: 0,

@@ -154,6 +154,15 @@ impl Domain {
         Ok(self.capas[index.idx])
     }
 
+    /// Get a mutable reference to a capability from a domain.
+    fn get_mut(&mut self, index: LocalCapa) -> Result<&mut Capa, CapaError> {
+        if self.free_list.is_free(index.idx) {
+            log::info!("Invalid capability index: {}", index.idx);
+            return Err(CapaError::CapabilityDoesNotExist);
+        }
+        Ok(&mut self.capas[index.idx])
+    }
+
     /// Remove a capability from a domain.
     pub(crate) fn remove(&mut self, index: LocalCapa) -> Result<Capa, CapaError> {
         let capa = self.get(index)?;
@@ -275,7 +284,7 @@ pub(crate) fn next_capa(
     regions: &RegionPool,
     domains: &mut DomainPool,
     contexts: &ContextPool,
-) -> Option<(Capa, NextCapaToken)> {
+) -> Option<(LocalCapa, NextCapaToken)> {
     let mut idx = token.idx;
     let len = domains[domain_handle].capas.len();
     while idx < len {
@@ -284,7 +293,7 @@ pub(crate) fn next_capa(
             if domain.is_valid(idx, regions, domains, contexts) {
                 // Found a valid capa
                 let next_token = NextCapaToken { idx: idx + 1 };
-                return Some((domain.capas[idx], next_token));
+                return Some((LocalCapa::new(idx), next_token));
             } else {
                 // Capa has been invalidated
                 let domain = &mut domains[domain_handle];
@@ -323,22 +332,42 @@ pub(crate) fn revoke(
     let mut token = NextCapaToken::new();
     while let Some((capa, next_token)) = next_capa(handle, token, regions, domains, contexts) {
         token = next_token;
-        match capa {
-            // Those capa so not cause revokation
-            Capa::None => (),
-            Capa::Channel(_) => (),
-            Capa::Switch { .. } => (),
-
-            // Those capa cause revocation
-            Capa::Region(region) => {
-                region_capa::restore(region, regions, domains, updates)?;
-            }
-            Capa::Management(domain) => {
-                revoke(domain, regions, domains, updates, contexts)?;
-            }
-        }
+        revoke_capa(handle, capa, regions, domains, contexts, updates)?;
     }
 
     domains.free(handle);
+    Ok(())
+}
+
+pub(crate) fn revoke_capa(
+    handle: Handle<Domain>,
+    local: LocalCapa,
+    regions: &mut RegionPool,
+    domains: &mut DomainPool,
+    contexts: &mut ContextPool,
+    updates: &mut UpdateBuffer,
+) -> Result<(), CapaError> {
+    let domain = &mut domains[handle];
+    let capa = domain.get(local)?;
+
+    match capa {
+        // Those capa so not cause revocation side effects
+        Capa::None => (),
+        Capa::Channel(_) => (),
+        Capa::Switch { .. } => (),
+
+        // Those capa cause revocation side effects
+        Capa::Region(region) => {
+            region_capa::restore(region, regions, domains, updates)?;
+        }
+        Capa::Management(domain) => {
+            revoke(domain, regions, domains, updates, contexts)?;
+        }
+    }
+
+    // Deactivate capa
+    let capa = domains[handle].get_mut(local).unwrap();
+    *capa = Capa::None;
+
     Ok(())
 }

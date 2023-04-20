@@ -24,7 +24,7 @@ fn scenario_1() {
     // Create an initial domain with range 0x0 to 0x1000
     let domain = engine.create_manager_domain(permission::ALL).unwrap();
     let region = engine
-        .create_region(
+        .create_root_region(
             domain,
             AccessRights {
                 start: 0,

@@ -1,7 +1,7 @@
 //! Architecture specific monitor state, independant of the CapaEngine.
 
 use capa_engine::{
-    permission, AccessRights, CapaEngine, CapaInfo, Context, Domain, Handle, LocalCapa,
+    permission, AccessRights, CapaEngine, CapaError, CapaInfo, Context, Domain, Handle, LocalCapa,
     NextCapaToken, N,
 };
 use mmu::eptmapper::EPT_ROOT_FLAGS;
@@ -55,7 +55,7 @@ pub fn init(manifest: &'static Manifest) {
     let domain = engine.create_manager_domain(permission::ALL).unwrap();
     apply_updates(&mut engine);
     engine
-        .create_region(
+        .create_root_region(
             domain,
             AccessRights {
                 start: 0,
@@ -100,9 +100,9 @@ fn get_core(cpuid: usize) -> MutexGuard<'static, CoreData> {
 
 // ————————————————————————————— Monitor Calls —————————————————————————————— //
 
-pub fn do_create_domain(current: Handle<Domain>) -> Result<LocalCapa, ()> {
+pub fn do_create_domain(current: Handle<Domain>) -> Result<LocalCapa, CapaError> {
     let mut engine = CAPA_ENGINE.lock();
-    let management_capa = engine.create_domain(current).expect("TODO: handle failure");
+    let management_capa = engine.create_domain(current)?;
     apply_updates(&mut engine);
     Ok(management_capa)
 }
@@ -113,21 +113,21 @@ pub fn do_seal(
     cr3: usize,
     rip: usize,
     rsp: usize,
-) -> Result<LocalCapa, ()> {
+) -> Result<LocalCapa, CapaError> {
     let mut engine = CAPA_ENGINE.lock();
-    let (capa, context) = engine.seal(current, domain).expect("TODO: handle failure");
+    let (capa, context) = engine.seal(current, domain)?;
     let mut context = get_context(context);
     context.cr3 = cr3;
     context.rip = rip;
     context.rsp = rsp;
+    apply_updates(&mut engine);
     Ok(capa)
 }
 
-pub fn do_send(current: Handle<Domain>, capa: LocalCapa, to: LocalCapa) -> Result<(), ()> {
+pub fn do_send(current: Handle<Domain>, capa: LocalCapa, to: LocalCapa) -> Result<(), CapaError> {
     let mut engine = CAPA_ENGINE.lock();
-    engine
-        .send(current, capa, to)
-        .expect("TODO: handle failure");
+    engine.send(current, capa, to)?;
+    apply_updates(&mut engine);
     Ok(())
 }
 
@@ -137,6 +137,13 @@ pub fn do_enumerate(
 ) -> Option<(CapaInfo, NextCapaToken)> {
     let mut engine = CAPA_ENGINE.lock();
     engine.enumerate(current, token)
+}
+
+pub fn do_revoke(current: Handle<Domain>, capa: LocalCapa) -> Result<(), CapaError> {
+    let mut engine = CAPA_ENGINE.lock();
+    engine.revoke(current, capa)?;
+    apply_updates(&mut engine);
+    Ok(())
 }
 
 // ———————————————————————————————— Updates ————————————————————————————————— //
