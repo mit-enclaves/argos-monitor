@@ -136,12 +136,12 @@ pub fn modify_binary(src: &PathBuf, dst: &PathBuf) {
     let data = std::fs::read(src).expect("Unable to read source file");
     info!("We read {} bytes from the file", data.len());
     let mut elf = ModifiedELF::new(&*data);
-    elf.append_nodata_segment(
+    /*elf.append_nodata_segment(
         None,
         TychePhdrTypes::PtPageTables as u32,
         object::elf::PF_R | object::elf::PF_W,
         0x1000,
-    );
+    );*/
 
     elf.split_segment_at_section(
         ".tyche_shared_default_buffer",

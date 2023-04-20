@@ -140,6 +140,14 @@ impl ModifiedELF {
     /// Dump this object into the provided vector.
     pub fn dump(&mut self, out: &mut object::write::elf::Writer) {
         log::info!("The computed size is {}", self.len());
+
+        // Do some cleaning, sort segments by vaddr.
+        self.segments.sort_by(|a, b| {
+            let a_addr = a.program_header.p_vaddr(Endianness::Little);
+            let b_addr = b.program_header.p_vaddr(Endianness::Little);
+            a_addr.cmp(&b_addr)
+        });
+
         //Write the header.
         let hdr_bytes = any_as_u8_slice(&self.header);
         out.write(hdr_bytes);
@@ -221,6 +229,7 @@ impl ModifiedELF {
         }
     }
 
+    #[allow(dead_code)]
     pub fn append_nodata_segment(
         &mut self,
         vaddr: Option<u64>,
@@ -339,12 +348,6 @@ impl ModifiedELF {
             let (seg_start, seg_end) = seg.get_vaddr_bounds();
             let (seg_fstart, seg_fend) = seg.get_file_bounds();
             let copy = seg.program_header.clone();
-            log::debug!(
-                "Middle: {:x} + {:x} = {:x}",
-                seg_fstart,
-                seg_fend - seg_fstart,
-                seg_fend
-            );
             // middle, change in place.
             seg.program_header.p_type = U32Bytes::new(Endianness::Little, seg_type);
             seg.program_header.p_offset = U64Bytes::new(Endianness::Little, sec_fstart);
