@@ -44,7 +44,7 @@ fn foo() {
     display_domain(domain, &engine);
 
     let (reg2, _reg3) = engine
-        .duplicate_region(
+        .segment_region(
             domain,
             region,
             AccessRights {
@@ -60,7 +60,7 @@ fn foo() {
     display(&engine);
     display_domain(domain, &engine);
     let (_reg4, _reg5) = engine
-        .duplicate_region(
+        .segment_region(
             domain,
             reg2,
             AccessRights {

@@ -41,7 +41,7 @@ fn scenario_1() {
 
     // Duplicate the initial range into two regions
     let (reg2, _reg3) = engine
-        .duplicate_region(
+        .segment_region(
             domain,
             region,
             AccessRights {
@@ -66,7 +66,7 @@ fn scenario_1() {
 
     // Duplicate again
     let (_reg4, _reg5) = engine
-        .duplicate_region(
+        .segment_region(
             domain,
             reg2,
             AccessRights {

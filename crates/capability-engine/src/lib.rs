@@ -156,7 +156,7 @@ impl CapaEngine {
         )
     }
 
-    pub fn duplicate_region(
+    pub fn segment_region(
         &mut self,
         domain: Handle<Domain>,
         region: LocalCapa,

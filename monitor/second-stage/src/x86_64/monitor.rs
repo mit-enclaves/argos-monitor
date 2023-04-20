@@ -124,6 +124,30 @@ pub fn do_seal(
     Ok(capa)
 }
 
+pub fn do_segment_region(
+    current: Handle<Domain>,
+    capa: LocalCapa,
+    start_1: usize,
+    end_1: usize,
+    _prot_1: usize,
+    start_2: usize,
+    end_2: usize,
+    _prot_2: usize,
+) -> Result<(LocalCapa, LocalCapa), CapaError> {
+    let mut engine = CAPA_ENGINE.lock();
+    let access_left = AccessRights {
+        start: start_1,
+        end: end_1,
+    };
+    let access_right = AccessRights {
+        start: start_2,
+        end: end_2,
+    };
+    let (left, right) = engine.segment_region(current, capa, access_left, access_right)?;
+    apply_updates(&mut engine);
+    Ok((left, right))
+}
+
 pub fn do_send(current: Handle<Domain>, capa: LocalCapa, to: LocalCapa) -> Result<(), CapaError> {
     let mut engine = CAPA_ENGINE.lock();
     engine.send(current, capa, to)?;
