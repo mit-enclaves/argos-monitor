@@ -1,8 +1,18 @@
 use object::elf::PT_LOAD;
 use object::read::elf::{FileHeader, ProgramHeader, SectionHeader};
-use object::{elf, Endianness, U16Bytes, U32Bytes, U64Bytes};
+use object::{elf, Endian, Endianness, U16Bytes, U32Bytes, U64Bytes};
 
 #[derive(Debug)]
+pub enum ErrorBin {
+    SectionMissing = 1,
+    SegmentMissing = 2,
+    UnalignedAddress = 3,
+}
+
+pub const PAGE_SIZE: u64 = 0x1000;
+
+#[derive(Debug)]
+#[allow(dead_code)]
 #[repr(u32)]
 pub enum TychePhdrTypes {
     PtPageTables = 0x60000000,
@@ -11,12 +21,15 @@ pub enum TychePhdrTypes {
     PtCondidential = 0x60000003,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct ModifiedSection {
     idx: usize,
+    name: String,
     section_header: elf::SectionHeader64<Endianness>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct ModifiedSegment {
     idx: usize,
@@ -88,10 +101,21 @@ impl ModifiedELF {
         let secs = hdr
             .section_headers(Endianness::Little, data)
             .expect("Unable to parse sections");
+        let strings = hdr
+            .section_strings(Endianness::Little, data, secs)
+            .expect("Unable to get the strings");
 
         for (idx, sec) in secs.iter().enumerate() {
+            let name = String::from_utf8(
+                sec.name(Endianness::Little, strings)
+                    .expect("Unable to get section name")
+                    .to_vec(),
+            )
+            .expect("Unable to convert the string bytes");
+
             melf.sections.push(ModifiedSection {
                 idx: idx,
+                name: name,
                 section_header: sec.clone(),
             });
         }
@@ -171,6 +195,31 @@ impl ModifiedELF {
         }
     }
 
+    #[allow(dead_code)]
+    fn construct_shdr(
+        name: u32,
+        sec_type: u32,
+        flags: u64,
+        offset: u64,
+        filesz: u64,
+        vaddr: u64,
+        memsz: u64,
+        align: u64,
+    ) -> elf::SectionHeader64<Endianness> {
+        elf::SectionHeader64::<Endianness> {
+            sh_name: U32Bytes::new(Endianness::Little, name),
+            sh_type: U32Bytes::new(Endianness::Little, sec_type),
+            sh_flags: U64Bytes::new(Endianness::Little, flags),
+            sh_addr: U64Bytes::new(Endianness::Little, vaddr),
+            sh_offset: U64Bytes::new(Endianness::Little, offset),
+            sh_size: U64Bytes::new(Endianness::Little, memsz),
+            sh_info: U32Bytes::new(Endianness::Little, 0),
+            sh_addralign: U64Bytes::new(Endianness::Little, align),
+            sh_entsize: U64Bytes::new(Endianness::Little, filesz),
+            sh_link: U32Bytes::new(Endianness::Little, 0),
+        }
+    }
+
     pub fn add_segment(
         &mut self,
         vaddr: Option<u64>,
@@ -207,7 +256,7 @@ impl ModifiedELF {
             self.layout.max_addr += size as u64;
         }
         // How much we insert.
-        let delta: u64 = std::mem::size_of::<elf::ProgramHeader64<Endianness>>() as u64;
+        let delta: u64 = ModifiedSegment::len() as u64;
         // Offsets that are affected.
         let affected: u64 = (self.len_hdr() + self.len_phdrs()) as u64;
 
@@ -229,10 +278,144 @@ impl ModifiedELF {
 
         // Fix the header.
         self.header.e_phnum = U16Bytes::new(Endianness::Little, self.segments.len() as u16);
-        let shoff = self.header.e_shoff(Endianness::Little) + foff;
+        let shoff = self.header.e_shoff(Endianness::Little) + fsize;
         self.header.e_shoff = U64Bytes::new(Endianness::Little, shoff + delta);
 
         // We are done!
+    }
+
+    pub fn append_nodata_segment(
+        &mut self,
+        vaddr: Option<u64>,
+        seg_type: u32,
+        flags: u32,
+        size: usize,
+    ) {
+        let addr = vaddr.unwrap_or(self.layout.max_addr);
+        // Update the max address.
+        if addr + size as u64 > self.layout.max_addr {
+            self.layout.max_addr = addr + size as u64;
+        }
+
+        //Create header.
+        let phdr = Self::construct_phdr(seg_type, flags, 0, 0, addr, size as u64, PAGE_SIZE);
+
+        // Simply add it to the segments.
+        self.add_segment_header(&phdr);
+    }
+
+    pub fn append_data_segment(
+        &mut self,
+        vaddr: Option<u64>,
+        seg_type: u32,
+        flags: u32,
+        size: usize,
+        data: &Vec<u8>,
+    ) {
+        let foff: u64 = self.data.len() as u64;
+        let fsize: u64 = data.len() as u64;
+        self.data.extend(data);
+
+        let addr = vaddr.unwrap_or(self.layout.max_addr);
+
+        // Update the max address.
+        if addr + size as u64 > self.layout.max_addr {
+            self.layout.max_addr = addr + size as u64;
+        }
+
+        // Fix the header.
+        let shoff = self.header.e_shoff(Endianness::Little) + fsize;
+        self.header.e_shoff = U64Bytes::new(Endianness::Little, shoff);
+
+        // Create a header.
+        let phdr = Self::construct_phdr(seg_type, flags, foff, fsize, addr, size as u64, PAGE_SIZE);
+
+        self.add_segment_header(&phdr);
+    }
+
+    pub fn add_segment_header(&mut self, phdr: &elf::ProgramHeader64<Endianness>) {
+        let delta = ModifiedSegment::len() as u64;
+        let affected = (self.len_hdr() + self.len_phdrs()) as u64;
+        self.segments.push(ModifiedSegment {
+            idx: self.segments.len(),
+            program_header: phdr.clone(),
+        });
+
+        for seg in &mut self.segments {
+            seg.patch_offset(delta, affected);
+        }
+        for sec in &mut self.segments {
+            sec.patch_offset(delta, affected);
+        }
+
+        // Patch the header.
+        self.header.e_phnum = U16Bytes::new(Endianness::Little, self.segments.len() as u16);
+        let shoff = self.header.e_shoff(Endianness::Little);
+        self.header.e_shoff = U64Bytes::new(Endianness::Little, shoff + delta);
+
+        // All done!
+    }
+
+    /// This function relocates a section into its own segment.
+    pub fn split_segment_at_section(
+        &mut self,
+        sec_name: &str,
+        seg_type: u32,
+    ) -> Result<(), ErrorBin> {
+        // Find the section with the right name.
+        let sec_to_move = match self.sections.iter().find(|s| s.name == sec_name) {
+            Some(s) => s,
+            None => {
+                return Err(ErrorBin::SectionMissing);
+            }
+        };
+
+        // Find the file content.
+        let (fstart, fend) = match sec_to_move.section_header.file_range(Endianness::Little) {
+            Some(a) => a,
+            None => (0, 0),
+        };
+
+        // Get virtual boundaries.
+        let (sec_start, sec_end) = sec_to_move.get_vaddr_bounds();
+        if sec_start % PAGE_SIZE != 0 || sec_end % PAGE_SIZE != 0 {
+            log::error!(
+                "Section {} has unaligned start {:x} or end {:x}",
+                sec_to_move.name,
+                sec_start,
+                sec_end
+            );
+            return Err(ErrorBin::UnalignedAddress);
+        }
+
+        // Find the segment that contains it.
+        let seg: &mut ModifiedSegment = match self.segments.iter_mut().find(|s| {
+            let (start, end) = s.get_vaddr_bounds();
+            start <= sec_start && end >= sec_end
+        }) {
+            Some(s) => s,
+            None => {
+                return Err(ErrorBin::SegmentMissing);
+            }
+        };
+
+        // Figure out the split.
+        let (seg_start, seg_end) = seg.get_vaddr_bounds();
+        if sec_start == seg_start && sec_end == seg_end {
+            // Nothing to split, just change the p_type.
+            seg.program_header.p_type = U32Bytes::new(Endianness::Little, seg_type);
+            return Ok(());
+        }
+
+        // It is at the start of the segment.
+        /*if sec_start == seg_start {
+            let mut new_hdr = seg.program_header.clone();
+            new_hdr.p_type = U32Bytes::new(Endianness::Little, seg_type);
+            let fsize = u64::min(sec_end - sec_start, fstart - fend);
+            new_hdr.program_header.
+        }*/
+
+        Ok(())
     }
 }
 
@@ -242,6 +425,18 @@ impl ModifiedSegment {
         if offset >= affected {
             self.program_header.p_offset = U64Bytes::new(Endianness::Little, offset + delta);
         }
+    }
+
+    pub fn get_vaddr_bounds(&self) -> (u64, u64) {
+        let start = self.program_header.p_vaddr(Endianness::Little);
+        let end = start + self.program_header.p_memsz(Endianness::Little);
+        (start, end)
+    }
+
+    pub fn get_file_bounds(&self) -> (u64, u64) {
+        let fstart = self.program_header.p_offset(Endianness::Little);
+        let fsize = self.program_header.p_filesz(Endianness::Little);
+        (fstart, fsize)
     }
 
     pub fn len() -> usize {
@@ -255,6 +450,12 @@ impl ModifiedSection {
         if offset >= affected {
             self.section_header.sh_offset = U64Bytes::new(Endianness::Little, offset + delta);
         }
+    }
+
+    pub fn get_vaddr_bounds(&self) -> (u64, u64) {
+        let start = self.section_header.sh_addr(Endianness::Little);
+        let end = start + self.section_header.sh_size(Endianness::Little);
+        (start, end)
     }
 
     pub fn len() -> usize {
