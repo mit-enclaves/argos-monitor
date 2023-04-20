@@ -143,6 +143,12 @@ pub fn modify_binary(src: &PathBuf, dst: &PathBuf) {
         0x1000,
     );
 
+    elf.split_segment_at_section(
+        ".tyche_shared_default_buffer",
+        TychePhdrTypes::PtShared as u32,
+    )
+    .expect("Oups we failed");
+
     // Let's write that thing out.
     let mut out: Vec<u8> = Vec::with_capacity(elf.len());
     let mut writer = object::write::elf::Writer::new(Endianness::Little, true, &mut out);

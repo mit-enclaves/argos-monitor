@@ -294,67 +294,98 @@ impl ModifiedELF {
         // All done!
     }
 
-    // This function relocates a section into its own segment.
-    /* pub fn split_segment_at_section(
+    /// This function relocates a section into its own segment.
+    #[allow(dead_code)]
+    pub fn split_segment_at_section(
         &mut self,
         sec_name: &str,
         seg_type: u32,
     ) -> Result<(), ErrorBin> {
         // Find the section with the right name.
-        let sec_to_move = match self.sections.iter().find(|s| s.name == sec_name) {
-            Some(s) => s,
-            None => {
-                return Err(ErrorBin::SectionMissing);
+        let (sec_start, sec_end, sec_fstart, sec_fend) = {
+            let sec_to_move = match self.sections.iter().find(|s| s.name == sec_name) {
+                Some(s) => s,
+                None => {
+                    return Err(ErrorBin::SectionMissing);
+                }
+            };
+
+            // Get virtual boundaries.
+            let (sec_start, sec_end) = sec_to_move.get_vaddr_bounds();
+            if sec_start % PAGE_SIZE != 0 || sec_end % PAGE_SIZE != 0 {
+                log::error!(
+                    "Section {} has unaligned start {:x} or end {:x}",
+                    sec_to_move.name,
+                    sec_start,
+                    sec_end
+                );
+                return Err(ErrorBin::UnalignedAddress);
             }
+            let (sec_fstart, sec_fend) = sec_to_move.get_file_bounds();
+            (sec_start, sec_end, sec_fstart, sec_fend)
         };
-
-        // Find the file content.
-        let (fstart, fend) = match sec_to_move.section_header.file_range(Endianness::Little) {
-            Some(a) => a,
-            None => (0, 0),
-        };
-
-        // Get virtual boundaries.
-        let (sec_start, sec_end) = sec_to_move.get_vaddr_bounds();
-        if sec_start % PAGE_SIZE != 0 || sec_end % PAGE_SIZE != 0 {
-            log::error!(
-                "Section {} has unaligned start {:x} or end {:x}",
-                sec_to_move.name,
-                sec_start,
-                sec_end
-            );
-            return Err(ErrorBin::UnalignedAddress);
-        }
 
         // Find the segment that contains it.
-        let seg: &mut ModifiedSegment = match self.segments.iter_mut().find(|s| {
-            let (start, end) = s.get_vaddr_bounds();
-            start <= sec_start && end >= sec_end
-        }) {
-            Some(s) => s,
-            None => {
-                return Err(ErrorBin::SegmentMissing);
-            }
+        let (seg_start, seg_end, seg_fstart, seg_fend, seg_template) = {
+            let seg: &mut ModifiedSegment = match self.segments.iter_mut().find(|s| {
+                let (start, end) = s.get_vaddr_bounds();
+                start <= sec_start && end >= sec_end
+            }) {
+                Some(s) => s,
+                None => {
+                    return Err(ErrorBin::SegmentMissing);
+                }
+            };
+            let (seg_start, seg_end) = seg.get_vaddr_bounds();
+            let (seg_fstart, seg_fend) = seg.get_file_bounds();
+            let copy = seg.program_header.clone();
+            log::debug!(
+                "Middle: {:x} + {:x} = {:x}",
+                seg_fstart,
+                seg_fend - seg_fstart,
+                seg_fend
+            );
+            // middle, change in place.
+            seg.program_header.p_type = U32Bytes::new(Endianness::Little, seg_type);
+            seg.program_header.p_offset = U64Bytes::new(Endianness::Little, sec_fstart);
+            seg.program_header.p_filesz = U64Bytes::new(Endianness::Little, sec_fend - sec_fstart);
+            // Fix addresses.
+            seg.program_header.p_vaddr = U64Bytes::new(Endianness::Little, sec_start);
+            seg.program_header.p_memsz = U64Bytes::new(Endianness::Little, sec_end - sec_start);
+
+            (seg_start, seg_end, seg_fstart, seg_fend, copy)
         };
 
         // Figure out the split.
-        let (seg_start, seg_end) = seg.get_vaddr_bounds();
-        if sec_start == seg_start && sec_end == seg_end {
-            // Nothing to split, just change the p_type.
-            seg.program_header.p_type = U32Bytes::new(Endianness::Little, seg_type);
-            return Ok(());
+        // Left side.
+        if seg_start < sec_start {
+            let mut phdr = seg_template.clone();
+            // Fix the file size.
+            let left_fsize = u64::min(sec_start - seg_start, seg_fend - seg_fstart);
+            phdr.p_filesz = U64Bytes::new(Endianness::Little, left_fsize);
+            // Patch addresses
+            phdr.p_vaddr = U64Bytes::new(Endianness::Little, seg_start);
+            phdr.p_memsz = U64Bytes::new(Endianness::Little, sec_start - seg_start);
+            // Add the header, don't worry about sorting for now.
+            self.add_segment_header(&phdr);
         }
 
-        // It is at the start of the segment.
-        /*if sec_start == seg_start {
-            let mut new_hdr = seg.program_header.clone();
-            new_hdr.p_type = U32Bytes::new(Endianness::Little, seg_type);
-            let fsize = u64::min(sec_end - sec_start, fstart - fend);
-            new_hdr.program_header.
-        }*/
+        // right.
+        if sec_end < seg_end {
+            let mut phdr = seg_template.clone();
+            // Fix the fileoff
+            let right_off = sec_fend;
+            phdr.p_offset = U64Bytes::new(Endianness::Little, right_off);
+            phdr.p_filesz = U64Bytes::new(Endianness::Little, seg_fend - right_off);
+            // Patch addresses
+            phdr.p_vaddr = U64Bytes::new(Endianness::Little, sec_end);
+            phdr.p_memsz = U64Bytes::new(Endianness::Little, seg_end - sec_end);
+            // Add the header, don't worry about sorting for now.
+            self.add_segment_header(&phdr);
+        }
 
         Ok(())
-    }*/
+    }
 }
 
 impl ModifiedSegment {
@@ -376,7 +407,7 @@ impl ModifiedSegment {
     pub fn get_file_bounds(&self) -> (u64, u64) {
         let fstart = self.program_header.p_offset(Endianness::Little);
         let fsize = self.program_header.p_filesz(Endianness::Little);
-        (fstart, fsize)
+        (fstart, fstart + fsize)
     }
 
     pub fn len() -> usize {
@@ -398,6 +429,16 @@ impl ModifiedSection {
         let start = self.section_header.sh_addr(Endianness::Little);
         let end = start + self.section_header.sh_size(Endianness::Little);
         (start, end)
+    }
+
+    #[allow(dead_code)]
+    pub fn get_file_bounds(&self) -> (u64, u64) {
+        if self.section_header.sh_type(Endianness::Little) == elf::SHT_NOBITS {
+            return (0, 0);
+        }
+        let fstart = self.section_header.sh_offset(Endianness::Little);
+        let fsize = self.section_header.sh_size(Endianness::Little);
+        (fstart, fstart + fsize)
     }
 
     pub fn len() -> usize {
