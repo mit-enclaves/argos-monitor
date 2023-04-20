@@ -10,7 +10,7 @@ use utils::{HostPhysAddr, HostVirtAddr};
 use xmas_elf::program::Type;
 
 use crate::allocator::{Allocator, BumpAllocator, DEFAULT_BUMP_SIZE, PAGE_SIZE};
-use crate::instr::ModifiedELF;
+use crate::instr::{ModifiedELF, TychePhdrTypes};
 
 fn align_address(addr: usize) -> usize {
     if addr % PAGE_SIZE == 0 {
@@ -114,60 +114,6 @@ pub fn dump_page_tables(src: &PathBuf, dest: &PathBuf) {
         }
     };
 
-    /*
-    let elf = match Elf::parse(&mut slice) {
-        Ok(e) => e,
-        Err(e) => {
-            error!("Failed to parse the elf {:?} : {}", dest, e);
-            return;
-        }
-    };
-
-    // Add a new program header to the file.
-    let new_phdr = program_header::ProgramHeader {
-        p_type: program_header::PT_NOTE,
-        p_offset: elf.program_headers.last().unwrap().p_offset
-            + elf.program_headers.last().unwrap().p_filesz,
-        p_vaddr: elf.program_headers.last().unwrap().p_vaddr
-            + elf.program_headers.last().unwrap().p_memsz,
-        p_paddr: bump.phys_offset as u64,
-        p_filesz: (bump.idx * PAGE_SIZE) as u64,
-        p_memsz: (bump.idx * PAGE_SIZE) as u64,
-        p_flags: program_header::PF_R,
-        p_align: PAGE_SIZE as u64,
-    };
-
-    elf.program_headers.push(new_phdr.clone());
-
-    // Update the ELF header to contain the new segment.
-    elf.header.e_phnum += 1;
-    elf.header.e_shoff = new_phdr.p_filesz;
-    elf.header.e_phoff += phdr64::program_header64::SIZEOF_PHDR as u64;
-
-    if let Err(e) = file.seek(SeekFrom::Start(0)) {
-        error!("Unable to seek the begining of {:?}: {}", dest, e);
-        return;
-    }
-    match elf.write() {
-        Ok(v) => {
-            if let Err(e) = file.write_all(v) {
-                error!("Unable to write the headers to {:?} : {}", dest, e);
-                return;
-            }
-        }
-        Err(e) => {
-            error!("Unable to convert the elf into a vector: {}", e);
-            return;
-        }
-    }
-
-    // Now write the extra segment.
-    if let Err(e) = file.seek(SeekFrom::End(0)) {
-        error!("Unable to reach the end of the file {:?} : {}", file, e);
-        return;
-    }
-    */
-
     // Add the content to the file.
     // First write the offset.
     if let Err(e) = file.write(&bump.phys_offset.to_ne_bytes()) {
@@ -188,9 +134,15 @@ pub fn dump_page_tables(src: &PathBuf, dest: &PathBuf) {
 
 pub fn modify_binary(src: &PathBuf, dst: &PathBuf) {
     let data = std::fs::read(src).expect("Unable to read source file");
-    let mut elf = ModifiedELF::new(&*data);
-
     info!("We read {} bytes from the file", data.len());
+    let mut elf = ModifiedELF::new(&*data);
+    elf.add_empty_segment(
+        None,
+        TychePhdrTypes::PtPageTables as u32,
+        object::elf::PF_R | object::elf::PF_W,
+        0x1000,
+        None,
+    );
 
     // Let's write that thing out.
     let mut out: Vec<u8> = Vec::with_capacity(elf.len());

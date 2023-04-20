@@ -1,26 +1,41 @@
+use object::elf::PT_LOAD;
 use object::read::elf::{FileHeader, ProgramHeader, SectionHeader};
-use object::{elf, Endian, Endianness};
+use object::{elf, Endianness, U16Bytes, U32Bytes, U64Bytes};
+
+#[derive(Debug)]
+#[repr(u32)]
+pub enum TychePhdrTypes {
+    PtPageTables = 0x60000000,
+    PtStack = 0x60000001,
+    PtShared = 0x60000002,
+    PtCondidential = 0x60000003,
+}
 
 #[derive(Debug)]
 pub struct ModifiedSection {
     idx: usize,
     section_header: elf::SectionHeader64<Endianness>,
-    data: Vec<u8>,
 }
 
 #[derive(Debug)]
 pub struct ModifiedSegment {
     idx: usize,
     program_header: elf::ProgramHeader64<Endianness>,
-    sections: Vec<ModifiedSection>,
-    data: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub struct MemoryLayout {
+    min_addr: u64,
+    max_addr: u64,
 }
 
 #[derive(Debug)]
 pub struct ModifiedELF {
     header: elf::FileHeader64<Endianness>,
     segments: Vec<ModifiedSegment>,
-    no_load: Vec<ModifiedSection>,
+    sections: Vec<ModifiedSection>,
+    layout: MemoryLayout,
+    data: Vec<u8>,
 }
 
 fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
@@ -37,7 +52,12 @@ impl ModifiedELF {
         let mut melf = Box::new(ModifiedELF {
             header: hdr.clone(),
             segments: Vec::new(),
-            no_load: Vec::new(),
+            sections: Vec::new(),
+            layout: MemoryLayout {
+                min_addr: u64::MAX,
+                max_addr: u64::MIN,
+            },
+            data: Vec::new(),
         });
 
         // Parse the segments.
@@ -46,69 +66,48 @@ impl ModifiedELF {
             .expect("Unable to parse segments");
 
         for (idx, seg) in segs.iter().enumerate() {
-            let seg_data = seg
-                .data(Endianness::Little, data)
-                .expect("Unable to get segment data");
             melf.segments.push(ModifiedSegment {
                 idx,
                 program_header: seg.clone(),
-                sections: Vec::new(),
-                data: seg_data.to_vec(),
             });
+
+            // Find the virtual memory boundaries.
+            if seg.p_type(Endianness::Little) == PT_LOAD {
+                let start = seg.p_vaddr(Endianness::Little);
+                let end = start + seg.p_memsz(Endianness::Little);
+                if start < melf.layout.min_addr {
+                    melf.layout.min_addr = start;
+                }
+                if end > melf.layout.max_addr {
+                    melf.layout.max_addr = end;
+                }
+            }
         }
 
-        // Attribute sections.
+        // Parse the sections.
         let secs = hdr
             .section_headers(Endianness::Little, data)
             .expect("Unable to parse sections");
 
         for (idx, sec) in secs.iter().enumerate() {
-            // Find the right segment.
-            let mut found = false;
-
-            let name = {
-                String::from_utf8(
-                    sec.name(
-                        Endianness::Little,
-                        hdr.section_strings(Endianness::Little, data, secs)
-                            .expect("ouf"),
-                    )
-                    .expect("ouf2")
-                    .to_vec(),
-                )
-                .expect("ouf4")
-            };
-
-            for seg in &mut melf.segments {
-                if seg.contains(sec.sh_addr.get(Endianness::Little)) {
-                    found = true;
-                    let sec_data = sec
-                        .data(Endianness::Little, data)
-                        .expect("Unable to read section's data");
-                    seg.sections.push(ModifiedSection {
-                        idx,
-                        section_header: sec.clone(),
-                        data: sec_data.to_vec(),
-                    });
-                    log::debug!("Attributing section {}", name);
-                    break;
-                }
-            }
-            if !found && (sec.sh_flags.get(Endianness::Little) & elf::SHF_ALLOC as u64 == 0) {
-                let sec_data = sec
-                    .data(Endianness::Little, data)
-                    .expect("Unable to access data")
-                    .to_vec();
-                melf.no_load.push(ModifiedSection {
-                    idx,
-                    section_header: sec.clone(),
-                    data: sec_data,
-                });
-                log::debug!("No load section {}", name);
-            } else if !found {
-                panic!("Unable to find a segment for an alloc section");
-            }
+            melf.sections.push(ModifiedSection {
+                idx: idx,
+                section_header: sec.clone(),
+            });
         }
+        // Set the data, compute from what is parsed.
+        let data_start: usize = hdr.e_ehsize(Endianness::Little) as usize
+            + hdr.e_phentsize(Endianness::Little) as usize
+                * hdr.e_phnum(Endianness::Little) as usize;
+        let data_end = hdr.e_shoff(Endianness::Little) as usize;
+
+        melf.data = data[data_start..data_end].to_vec();
+
+        log::debug!(
+            "Done parsing the binary, virt boundaries are {:x} - {:x}",
+            melf.layout.min_addr,
+            melf.layout.max_addr
+        );
         // Return the elf.
         melf
     }
@@ -116,95 +115,149 @@ impl ModifiedELF {
     /// Dump this object into the provided vector.
     pub fn dump(&mut self, out: &mut object::write::elf::Writer) {
         log::info!("The computed size is {}", self.len());
-        out.write(any_as_u8_slice(&self.header));
+        //Write the header.
+        let hdr_bytes = any_as_u8_slice(&self.header);
+        out.write(hdr_bytes);
+        // Write the program headers.
         for seg in &self.segments {
-            out.write(any_as_u8_slice(&seg.program_header));
+            let seg_bytes = any_as_u8_slice(&seg.program_header);
+            out.write(seg_bytes);
         }
-        for seg in &self.segments {
-            for sec in &seg.sections {
-                out.write(&sec.data);
-            }
+        // Write program content.
+        out.write(&self.data);
+        // Sections.
+        for sec in &self.sections {
+            let sec_bytes = any_as_u8_slice(&sec.section_header);
+            out.write(sec_bytes);
         }
-        for sec in &self.no_load {
-            out.write(&sec.data);
-        }
-        for seg in &self.segments {
-            for sec in &seg.sections {
-                out.write(any_as_u8_slice(&sec.section_header));
-            }
-        }
-        for sec in &self.no_load {
-            out.write(any_as_u8_slice(&sec.section_header));
-        }
+        log::debug!("Done writting the binary");
     }
 
-    pub fn pad_bytes(content: usize, align: usize) -> usize {
-        if content % align == 0 {
-            return content;
-        }
-        return content + (align - (content % align));
+    pub fn len_hdr(&self) -> usize {
+        std::mem::size_of::<elf::FileHeader64<Endianness>>()
+    }
+
+    pub fn len_phdrs(&self) -> usize {
+        ModifiedSegment::len() * self.segments.len()
     }
 
     /// Compute the length required in bytes.
     pub fn len(&mut self) -> usize {
-        let mut total: usize = 0;
-        // Header size.
-        /*total += std::mem::size_of::<elf::FileHeader64<Endianness>>();
-        log::debug!("Size after header {}", total);
-        log::debug!(
-            "Program table {:} Section table {:?}",
-            self.header.e_phoff(Endianness::Little),
-            self.header.e_shoff(Endianness::Little)
+        let header = self.len_hdr();
+        let prog_headers: usize = self.len_phdrs();
+        let data = self.data.len();
+        let secs: usize = ModifiedSection::len() * self.sections.len();
+        return header + prog_headers + data + secs;
+    }
+
+    fn construct_phdr(
+        seg_type: u32,
+        flags: u32,
+        offset: u64,
+        filesz: u64,
+        vaddr: u64,
+        memsz: u64,
+        align: u64,
+    ) -> elf::ProgramHeader64<Endianness> {
+        elf::ProgramHeader64::<Endianness> {
+            p_type: U32Bytes::new(Endianness::Little, seg_type),
+            p_flags: U32Bytes::new(Endianness::Little, flags),
+            p_offset: U64Bytes::new(Endianness::Little, offset),
+            p_vaddr: U64Bytes::new(Endianness::Little, vaddr),
+            p_paddr: U64Bytes::new(Endianness::Little, 0),
+            p_filesz: U64Bytes::new(Endianness::Little, filesz),
+            p_memsz: U64Bytes::new(Endianness::Little, memsz),
+            p_align: U64Bytes::new(Endianness::Little, align),
+        }
+    }
+
+    pub fn add_empty_segment(
+        &mut self,
+        vaddr: Option<u64>,
+        seg_type: u32,
+        flags: u32,
+        size: usize,
+        data: Option<&Vec<u8>>,
+    ) {
+        let (foff, fsize): (u64, u64) = match data {
+            None => (0, 0),
+            Some(content) => {
+                let foff = self.data.len();
+                let fsize = content.len();
+                self.data.extend(content);
+                (foff as u64, fsize as u64)
+            }
+        };
+        let phdr = Self::construct_phdr(
+            seg_type,
+            flags,
+            foff,
+            fsize,
+            vaddr.unwrap_or(self.layout.max_addr),
+            size as u64,
+            0x1000,
         );
 
-        // Program headers size.
-        total += std::mem::size_of::<elf::ProgramHeader64<Endianness>>() * self.segments.len();
-        log::debug!("Size after program headers {}", total);*/
-
-        // File content size and section headers.
-        self.segments.sort_by(|a, b| {
-            a.program_header
-                .p_offset(Endianness::Little)
-                .cmp(&b.program_header.p_offset(Endianness::Little))
-        });
-        for seg in &self.segments {
-            total = Self::pad_bytes(
-                total,
-                seg.program_header.p_align(Endianness::Little) as usize,
-            );
-            if seg.program_header.p_offset(Endianness::Little) as usize != total {
-                log::error!(
-                    "[seg {}] Something went wrong, we should be at {}, but got {}",
-                    seg.idx,
-                    seg.program_header.p_offset(Endianness::Little),
-                    total
-                );
+        // Update the max address.
+        if let Some(addr) = vaddr {
+            if addr + size as u64 > self.layout.max_addr {
+                self.layout.max_addr = addr + size as u64;
             }
-            total += seg.program_header.p_filesz(Endianness::Little) as usize;
+        } else {
+            self.layout.max_addr += size as u64;
         }
-        // No load section headers.
-        total += std::mem::size_of::<elf::SectionHeader64<Endianness>>() * self.no_load.len();
-        // Sections with no segments.
-        for sec in &self.no_load {
-            total += sec.data.len();
+        // How much we insert.
+        let delta: u64 = std::mem::size_of::<elf::ProgramHeader64<Endianness>>() as u64;
+        // Offsets that are affected.
+        let affected: u64 = (self.len_hdr() + self.len_phdrs()) as u64;
+
+        // Fix segment offsets.
+        for seg in &mut self.segments {
+            seg.patch_offset(delta, affected);
         }
 
-        // Now add all the section headers.
-        for seg in &self.segments {
-            total += seg.sections.len() * std::mem::size_of::<elf::SectionHeader64<Endianness>>();
+        // Fix section offsets.
+        for sec in &mut self.sections {
+            sec.patch_offset(delta, affected);
         }
-        total
+
+        // Add the segment.
+        self.segments.push(ModifiedSegment {
+            idx: self.segments.len(),
+            program_header: phdr,
+        });
+
+        // Fix the header.
+        self.header.e_phnum = U16Bytes::new(Endianness::Little, self.segments.len() as u16);
+        let shoff = self.header.e_shoff(Endianness::Little) + foff;
+        self.header.e_shoff = U64Bytes::new(Endianness::Little, shoff + delta);
+
+        // We are done!
     }
 }
 
 impl ModifiedSegment {
-    pub fn contains(&self, start: u64) -> bool {
-        let vaddr = self.program_header.p_vaddr.get(Endianness::Little);
-        let end = vaddr + self.program_header.p_memsz.get(Endianness::Little);
-        let within = vaddr <= start && end > start;
-        if self.program_header.p_type.get(Endianness::Little) == elf::PT_LOAD {
-            return within;
+    pub fn patch_offset(&mut self, delta: u64, affected: u64) {
+        let offset = self.program_header.p_offset(Endianness::Little);
+        if offset >= affected {
+            self.program_header.p_offset = U64Bytes::new(Endianness::Little, offset + delta);
         }
-        return false;
+    }
+
+    pub fn len() -> usize {
+        std::mem::size_of::<elf::ProgramHeader64<Endianness>>()
+    }
+}
+
+impl ModifiedSection {
+    pub fn patch_offset(&mut self, delta: u64, affected: u64) {
+        let offset = self.section_header.sh_offset(Endianness::Little);
+        if offset >= affected {
+            self.section_header.sh_offset = U64Bytes::new(Endianness::Little, offset + delta);
+        }
+    }
+
+    pub fn len() -> usize {
+        std::mem::size_of::<elf::SectionHeader64<Endianness>>()
     }
 }
