@@ -5,10 +5,12 @@ use std::path::PathBuf;
 use elfloader::*;
 use log::{debug, error, info};
 use mmu::{FrameAllocator, PtFlag, PtMapper};
+use object::Endianness;
 use utils::{HostPhysAddr, HostVirtAddr};
 use xmas_elf::program::Type;
 
 use crate::allocator::{Allocator, BumpAllocator, DEFAULT_BUMP_SIZE, PAGE_SIZE};
+use crate::instr::ModifiedELF;
 
 fn align_address(addr: usize) -> usize {
     if addr % PAGE_SIZE == 0 {
@@ -182,4 +184,25 @@ pub fn dump_page_tables(src: &PathBuf, dest: &PathBuf) {
         "The binary {:?} page tables have been generated and dumped into {:?}",
         src, dest
     );
+}
+
+pub fn modify_binary(src: &PathBuf, dst: &PathBuf) {
+    let data = std::fs::read(src).expect("Unable to read source file");
+    let mut elf = ModifiedELF::new(&*data);
+
+    info!("We read {} bytes from the file", data.len());
+
+    // Let's write that thing out.
+    let mut out: Vec<u8> = Vec::with_capacity(elf.len());
+    let mut writer = object::write::elf::Writer::new(Endianness::Little, true, &mut out);
+    elf.dump(&mut writer);
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(dst)
+        .expect("Unable to open dest file");
+    file.write(&*out).expect("Unable to dump the content");
+    // TODO Let's add a bss section for tyche_shared2.
 }
