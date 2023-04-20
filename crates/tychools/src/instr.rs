@@ -1,7 +1,8 @@
 use object::elf::PT_LOAD;
 use object::read::elf::{FileHeader, ProgramHeader, SectionHeader};
-use object::{elf, Endian, Endianness, U16Bytes, U32Bytes, U64Bytes};
+use object::{elf, Endianness, U16Bytes, U32Bytes, U64Bytes};
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum ErrorBin {
     SectionMissing = 1,
@@ -220,70 +221,6 @@ impl ModifiedELF {
         }
     }
 
-    pub fn add_segment(
-        &mut self,
-        vaddr: Option<u64>,
-        seg_type: u32,
-        flags: u32,
-        size: usize,
-        data: Option<&Vec<u8>>,
-    ) {
-        let (foff, fsize): (u64, u64) = match data {
-            None => (0, 0),
-            Some(content) => {
-                let foff = self.data.len();
-                let fsize = content.len();
-                self.data.extend(content);
-                (foff as u64, fsize as u64)
-            }
-        };
-        let phdr = Self::construct_phdr(
-            seg_type,
-            flags,
-            foff,
-            fsize,
-            vaddr.unwrap_or(self.layout.max_addr),
-            size as u64,
-            0x1000,
-        );
-
-        // Update the max address.
-        if let Some(addr) = vaddr {
-            if addr + size as u64 > self.layout.max_addr {
-                self.layout.max_addr = addr + size as u64;
-            }
-        } else {
-            self.layout.max_addr += size as u64;
-        }
-        // How much we insert.
-        let delta: u64 = ModifiedSegment::len() as u64;
-        // Offsets that are affected.
-        let affected: u64 = (self.len_hdr() + self.len_phdrs()) as u64;
-
-        // Fix segment offsets.
-        for seg in &mut self.segments {
-            seg.patch_offset(delta, affected);
-        }
-
-        // Fix section offsets.
-        for sec in &mut self.sections {
-            sec.patch_offset(delta, affected);
-        }
-
-        // Add the segment.
-        self.segments.push(ModifiedSegment {
-            idx: self.segments.len(),
-            program_header: phdr,
-        });
-
-        // Fix the header.
-        self.header.e_phnum = U16Bytes::new(Endianness::Little, self.segments.len() as u16);
-        let shoff = self.header.e_shoff(Endianness::Little) + fsize;
-        self.header.e_shoff = U64Bytes::new(Endianness::Little, shoff + delta);
-
-        // We are done!
-    }
-
     pub fn append_nodata_segment(
         &mut self,
         vaddr: Option<u64>,
@@ -304,6 +241,7 @@ impl ModifiedELF {
         self.add_segment_header(&phdr);
     }
 
+    #[allow(dead_code)]
     pub fn append_data_segment(
         &mut self,
         vaddr: Option<u64>,
@@ -344,7 +282,7 @@ impl ModifiedELF {
         for seg in &mut self.segments {
             seg.patch_offset(delta, affected);
         }
-        for sec in &mut self.segments {
+        for sec in &mut self.sections {
             sec.patch_offset(delta, affected);
         }
 
@@ -356,8 +294,8 @@ impl ModifiedELF {
         // All done!
     }
 
-    /// This function relocates a section into its own segment.
-    pub fn split_segment_at_section(
+    // This function relocates a section into its own segment.
+    /* pub fn split_segment_at_section(
         &mut self,
         sec_name: &str,
         seg_type: u32,
@@ -416,7 +354,7 @@ impl ModifiedELF {
         }*/
 
         Ok(())
-    }
+    }*/
 }
 
 impl ModifiedSegment {
@@ -427,12 +365,14 @@ impl ModifiedSegment {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_vaddr_bounds(&self) -> (u64, u64) {
         let start = self.program_header.p_vaddr(Endianness::Little);
         let end = start + self.program_header.p_memsz(Endianness::Little);
         (start, end)
     }
 
+    #[allow(dead_code)]
     pub fn get_file_bounds(&self) -> (u64, u64) {
         let fstart = self.program_header.p_offset(Endianness::Little);
         let fsize = self.program_header.p_filesz(Endianness::Little);
@@ -445,6 +385,7 @@ impl ModifiedSegment {
 }
 
 impl ModifiedSection {
+    #[allow(dead_code)]
     pub fn patch_offset(&mut self, delta: u64, affected: u64) {
         let offset = self.section_header.sh_offset(Endianness::Little);
         if offset >= affected {
@@ -452,6 +393,7 @@ impl ModifiedSection {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_vaddr_bounds(&self) -> (u64, u64) {
         let start = self.section_header.sh_addr(Endianness::Little);
         let end = start + self.section_header.sh_size(Endianness::Little);
