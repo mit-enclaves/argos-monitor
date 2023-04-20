@@ -2,7 +2,7 @@
 pub const CREATE_DOMAIN: usize = 1;
 pub const SEAL_DOMAIN: usize = 2;
 pub const SHARE: usize = 3;
-pub const GRANT: usize = 4;
+pub const SEND: usize = 4;
 pub const GIVE: usize = 5;
 pub const REVOKE: usize = 6;
 pub const DUPLICATE: usize = 7;

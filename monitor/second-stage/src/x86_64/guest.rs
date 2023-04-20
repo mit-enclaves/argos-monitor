@@ -88,8 +88,8 @@ fn handle_exit(
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
-                calls::GRANT => {
-                    println!("Grant");
+                calls::SEND => {
+                    println!("Send");
                     monitor::do_send(domain, LocalCapa::new(arg_1), LocalCapa::new(arg_2))
                         .expect("TODO");
                     vcpu.set(Register::Rax, 0);
@@ -109,6 +109,8 @@ fn handle_exit(
                 }
                 calls::DUPLICATE => {
                     println!("Duplicate");
+                    let capa = monitor::do_duplicate(domain, LocalCapa::new(arg_1)).expect("TODO");
+                    vcpu.set(Register::Rdi, capa.as_u64());
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }

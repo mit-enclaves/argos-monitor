@@ -178,6 +178,16 @@ impl CapaEngine {
         Ok(handles)
     }
 
+    pub fn duplicate(
+        &mut self,
+        domain: Handle<Domain>,
+        capa: LocalCapa,
+    ) -> Result<LocalCapa, CapaError> {
+        // Enforce permissions
+        domain::has_permission(domain, &self.domains, permission::DUPLICATE)?;
+        domain::duplicate_capa(domain, capa, &mut self.domains)
+    }
+
     pub fn send(
         &mut self,
         domain: Handle<Domain>,

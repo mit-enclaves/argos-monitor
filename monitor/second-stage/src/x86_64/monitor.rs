@@ -146,6 +146,13 @@ pub fn do_revoke(current: Handle<Domain>, capa: LocalCapa) -> Result<(), CapaErr
     Ok(())
 }
 
+pub fn do_duplicate(current: Handle<Domain>, capa: LocalCapa) -> Result<LocalCapa, CapaError> {
+    let mut engine = CAPA_ENGINE.lock();
+    let new_capa = engine.duplicate(current, capa)?;
+    apply_updates(&mut engine);
+    Ok(new_capa)
+}
+
 // ———————————————————————————————— Updates ————————————————————————————————— //
 
 fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {

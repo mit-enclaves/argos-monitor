@@ -259,6 +259,28 @@ pub fn send_management(
     Ok(())
 }
 
+// ——————————————————————————————— Duplicate ———————————————————————————————— //
+
+pub fn duplicate_capa(
+    domain: Handle<Domain>,
+    capa: LocalCapa,
+    domains: &mut DomainPool,
+) -> Result<LocalCapa, CapaError> {
+    let domain = &mut domains[domain];
+    let capa = domain.get(capa)?;
+
+    match capa {
+        // Capa that can not be duplicated
+        Capa::None | Capa::Region(_) | Capa::Management(_) | Capa::Switch { .. } => {
+            return Err(CapaError::CannotDuplicate);
+        }
+        Capa::Channel(_) => {
+            // NOTE: there is no side effects when duplicating these capas
+            domain.insert_capa(capa)
+        }
+    }
+}
+
 // ————————————————————————————————— Switch ————————————————————————————————— //
 
 pub(crate) fn create_switch(
