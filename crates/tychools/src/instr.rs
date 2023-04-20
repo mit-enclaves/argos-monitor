@@ -171,7 +171,7 @@ impl ModifiedELF {
         }
     }
 
-    pub fn add_empty_segment(
+    pub fn add_segment(
         &mut self,
         vaddr: Option<u64>,
         seg_type: u32,
