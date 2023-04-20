@@ -11,8 +11,8 @@ pub enum VmCalls {
     DomainCreate      = 0x1,
     SealDomain        = 0x2,
     Share             = 0x3,
-    Grant             = 0x4,
-    Give              = 0x5,
+    Send             = 0x4,
+    SegmentRegion     = 0x5,
     Revoke            = 0x6,
     Duplicate         = 0x7,
     Enumerate         = 0x8,
@@ -85,49 +85,49 @@ pub fn seal_domain(
     .map(|(domain, _, _, _, _, _, _)| DomainId(domain))
 }
 
-pub fn share(
-    target: usize,
+// pub fn share(
+//     target: usize,
+//     capa: usize,
+//     arg1: usize,
+//     arg2: usize,
+//     arg3: usize,
+// ) -> Result<usize, ErrorCode> {
+//     do_vmcall(VmCalls::Share, target, capa, arg1, arg2, arg3, 0, 0)
+//         .map(|(left, _, _, _, _, _, _)| left)
+// }
+
+pub fn send(target: usize, capa: usize) -> Result<(), ErrorCode> {
+    do_vmcall(VmCalls::Send, target, capa, 0, 0, 0, 0, 0).map(|_| ())
+}
+
+pub fn segment_region(
     capa: usize,
-    arg1: usize,
-    arg2: usize,
-    arg3: usize,
-) -> Result<usize, ErrorCode> {
-    do_vmcall(VmCalls::Share, target, capa, arg1, arg2, arg3, 0, 0)
-        .map(|(left, _, _, _, _, _, _)| left)
-}
-
-pub fn grant(target: usize, capa: usize) -> Result<(), ErrorCode> {
-    do_vmcall(VmCalls::Grant, target, capa, 0, 0, 0, 0, 0).map(|_| ())
-}
-
-pub fn give(target: usize, capa: usize) -> Result<(), ErrorCode> {
-    do_vmcall(VmCalls::Give, target, capa, 0, 0, 0, 0, 0).map(|(_, _, _, _, _, _, _)| ())
+    start_1: usize,
+    end_1: usize,
+    prot_1: usize,
+    start_2: usize,
+    end_2: usize,
+    prot_2: usize,
+) -> Result<(usize, usize), ErrorCode> {
+    do_vmcall(
+        VmCalls::SegmentRegion,
+        capa,
+        start_1,
+        end_1,
+        prot_1,
+        start_2,
+        end_2,
+        prot_2,
+    )
+    .map(|(left, right, _, _, _, _, _)| (left, right))
 }
 
 pub fn revoke(capa: usize) -> Result<(), ErrorCode> {
     do_vmcall(VmCalls::Revoke, capa, 0, 0, 0, 0, 0, 0).map(|(_, _, _, _, _, _, _)| ())
 }
 
-pub fn duplicate(
-    capa: usize,
-    arg_1_1: usize,
-    arg_1_2: usize,
-    arg_1_3: usize,
-    arg_2_1: usize,
-    arg_2_2: usize,
-    arg_2_3: usize,
-) -> Result<(usize, usize), ErrorCode> {
-    do_vmcall(
-        VmCalls::Duplicate,
-        capa,
-        arg_1_1,
-        arg_1_2,
-        arg_1_3,
-        arg_2_1,
-        arg_2_2,
-        arg_2_3,
-    )
-    .map(|(left, right, _, _, _, _, _)| (left, right))
+pub fn duplicate(capa: usize) -> Result<usize, ErrorCode> {
+    do_vmcall(VmCalls::Duplicate, capa, 0, 0, 0, 0, 0, 0).map(|(capa, _, _, _, _, _, _)| capa)
 }
 
 pub fn enumerate(next_token: usize) -> Result<Option<(CapaInfo, usize)>, ErrorCode> {

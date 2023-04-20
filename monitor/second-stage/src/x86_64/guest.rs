@@ -111,12 +111,14 @@ fn handle_exit(
                     .expect("TODO");
                     vcpu.set(Register::Rdi, left.as_u64());
                     vcpu.set(Register::Rsi, right.as_u64());
+                    vcpu.set(Register::Rax, 0);
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
                 calls::REVOKE => {
                     println!("Revoke");
                     monitor::do_revoke(domain, LocalCapa::new(arg_1)).expect("TODO");
+                    vcpu.set(Register::Rax, 0);
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
@@ -124,6 +126,7 @@ fn handle_exit(
                     println!("Duplicate");
                     let capa = monitor::do_duplicate(domain, LocalCapa::new(arg_1)).expect("TODO");
                     vcpu.set(Register::Rdi, capa.as_u64());
+                    vcpu.set(Register::Rax, 0);
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
