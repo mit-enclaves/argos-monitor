@@ -11,7 +11,7 @@ use stage_two_abi::entry_point;
 
 entry_point!(second_stage_entry_point);
 
-const LOG_LEVEL: LevelFilter = LevelFilter::Trace;
+const LOG_LEVEL: LevelFilter = LevelFilter::Info;
 
 #[cfg(target_arch = "x86_64")]
 fn second_stage_entry_point() -> ! {

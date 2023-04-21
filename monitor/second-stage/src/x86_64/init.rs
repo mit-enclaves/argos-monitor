@@ -10,9 +10,9 @@ pub use vmx::{ActiveVmcs, VmxError as BackendError};
 
 use super::vmx_helper::init_vcpu;
 use super::{arch, cpuid, launch_guest, monitor};
+use crate::allocator;
 use crate::debug::qemu;
 use crate::statics::get_manifest;
-use crate::{allocator, println};
 
 // ————————————————————————————— Entry Barrier —————————————————————————————— //
 
@@ -32,7 +32,7 @@ pub fn arch_entry_point() -> ! {
     let cpuid = cpuid();
 
     if cpuid == 0 {
-        println!("CPU{}: Hello from second stage!", cpuid);
+        log::info!("CPU{}: Hello from second stage!", cpuid);
         // SAFETY: The BSP is responsible for retrieving the manifest
         let manifest = unsafe {
             MANIFEST = Some(get_manifest());
@@ -43,11 +43,11 @@ pub fn arch_entry_point() -> ! {
         allocator::init(manifest);
         monitor::init(manifest);
 
-        println!("Waiting for {} cores", manifest.smp);
+        log::info!("Waiting for {} cores", manifest.smp);
         while NB_BOOTED_CORES.load(Ordering::SeqCst) + 1 < manifest.smp {
             core::hint::spin_loop();
         }
-        println!("Stage 2 initialized");
+        log::info!("Stage 2 initialized");
 
         // Mark the BSP as ready to launch guest on all APs.
         BSP_READY.store(true, Ordering::SeqCst);
@@ -61,7 +61,7 @@ pub fn arch_entry_point() -> ! {
     }
     // The APs spin until the manifest is fetched, and then initialize the second stage
     else {
-        println!("CPU{}: Hello from second stage!", cpuid);
+        log::info!("CPU{}: Hello from second stage!", cpuid);
 
         // SAFETY: we only perform read accesses and we ensure the BSP initialized the manifest.
         let manifest = unsafe {
@@ -77,7 +77,7 @@ pub fn arch_entry_point() -> ! {
             core::hint::spin_loop();
         }
 
-        println!("CPU{}: Waiting on mailbox", cpuid);
+        log::info!("CPU{}: Waiting on mailbox", cpuid);
 
         // SAFETY: only called once on the BSP
         let (vcpu, domain) = unsafe {
@@ -143,9 +143,10 @@ unsafe fn wait_on_mailbox(manifest: &Manifest, vcpu: &mut ActiveVmcs<'static>, c
     }
 
     let wakeup_vector = (mp_mailbox + 8) as *const u64;
-    println!(
+    log::info!(
         "Launching CPU {} on wakeup_vector {:#?}",
-        cpuid, wakeup_vector
+        cpuid,
+        wakeup_vector
     );
 
     // Set RIP entry point

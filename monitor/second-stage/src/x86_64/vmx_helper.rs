@@ -13,7 +13,6 @@ use vmx::{fields, secondary_controls_capabilities, ActiveVmcs, Register, VmxErro
 
 use super::arch;
 use crate::allocator::{allocator, FrameAllocator};
-use crate::println;
 
 pub unsafe fn init_vcpu<'vmx>(vcpu: &mut ActiveVmcs<'vmx>, info: &GuestInfo) {
     let allocator = allocator();
@@ -63,9 +62,9 @@ fn default_vmcs_config(vmcs: &mut ActiveVmcs, info: &GuestInfo, switching: bool)
         .and_then(|_| vmcs.set_exception_bitmap(ExceptionBitmap::INVALID_OPCODE))
         .and_then(|_| save_host_state(vmcs, info))
         .and_then(|_| setup_guest(vmcs, info));
-    println!("Config: {:?}", err);
-    println!("MSRs:   {:?}", configure_msr());
-    println!(
+    log::info!("Config: {:?}", err);
+    log::info!("MSRs:   {:?}", configure_msr());
+    log::info!(
         "1'Ctrl: {:?}",
         vmcs.set_primary_ctrls(
             PrimaryControls::SECONDARY_CONTROLS | PrimaryControls::USE_MSR_BITMAPS
@@ -80,7 +79,7 @@ fn default_vmcs_config(vmcs: &mut ActiveVmcs, info: &GuestInfo, switching: bool)
         secondary_ctrls |= SecondaryControls::ENABLE_XSAVES_XRSTORS;
     }
     secondary_ctrls |= cpuid_secondary_controls();
-    println!("2'Ctrl: {:?}", vmcs.set_secondary_ctrls(secondary_ctrls));
+    log::info!("2'Ctrl: {:?}", vmcs.set_secondary_ctrls(secondary_ctrls));
 }
 
 fn configure_msr() -> Result<(), VmxError> {
@@ -152,7 +151,7 @@ fn setup_guest(vcpu: &mut ActiveVmcs, info: &GuestInfo) -> Result<(), VmxError> 
 
     // MSRs
     if fields::GuestState64::Ia32Efer.is_unsupported() {
-        println!("Ia32Efer field is not supported");
+        log::warn!("Ia32Efer field is not supported");
     }
     vcpu.set64(fields::GuestState64::Ia32Efer, info.efer)?;
     vcpu.set_nat(fields::GuestStateNat::Rflags, 0x2)?;

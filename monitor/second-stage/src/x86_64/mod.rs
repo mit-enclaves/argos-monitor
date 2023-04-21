@@ -16,7 +16,6 @@ pub use vmx::{ActiveVmcs, VmxError as BackendError};
 
 use crate::debug::qemu;
 use crate::debug::qemu::ExitCode;
-use crate::println;
 
 // —————————————————————————————— x86_64 Arch ——————————————————————————————— //
 
@@ -26,11 +25,11 @@ pub fn launch_guest(
     domain: Handle<Domain>,
 ) {
     if !manifest.info.loaded {
-        println!("No guest found, exiting");
+        log::warn!("No guest found, exiting");
         return;
     }
 
-    println!("Starting main loop");
+    log::info!("Starting main loop");
     guest::main_loop(vcpu, domain);
 
     qemu::exit(qemu::ExitCode::Success);
