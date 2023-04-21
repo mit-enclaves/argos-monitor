@@ -4,4 +4,23 @@
 
 ## Creating Enclave binaries
 
+```
+Usage: tychools <COMMAND>
+
+Commands:
+  tychefy-binary
+  help            Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+
+```
+
+```
+Usage: tychools tychefy-binary --src <SRC> --dst <DST>
+
+For more information, try '--help'.
+```
+
 

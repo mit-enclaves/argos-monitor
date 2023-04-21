@@ -1,16 +1,12 @@
 mod allocator;
-mod debug;
-mod instr;
+mod elf_modifier;
 mod instrument;
-mod objcopy;
 mod page_table_mapper;
 
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
-use debug::{print_elf_segments, print_page_tables, printf_elf_with_obj};
-use instrument::{dump_page_tables, modify_binary};
-use objcopy::copy_binary;
+use instrument::modify_binary;
 use simple_logger;
 
 #[derive(Parser)]
@@ -23,18 +19,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    PrintELFSegments(FileArg),
-    PrintELFWithObj(SrcDestArgs),
-    CopyBinary(SrcDestArgs),
-    DumpPageTables(SrcDestArgs),
-    PrintPageTables(FileArg),
-    ModifyBinary(SrcDestArgs),
-}
-
-#[derive(Args)]
-struct FileArg {
-    #[arg(short, long, value_name = "FILE")]
-    path: PathBuf,
+    TychefyBinary(SrcDestArgs),
 }
 
 #[derive(Args)]
@@ -49,22 +34,7 @@ fn main() {
     simple_logger::init().unwrap();
     let cli = Cli::parse();
     match &cli.command {
-        Commands::PrintELFSegments(args) => {
-            print_elf_segments(&args.path);
-        }
-        Commands::PrintELFWithObj(args) => {
-            printf_elf_with_obj(&args.src, &args.dst);
-        }
-        Commands::CopyBinary(args) => {
-            copy_binary(&args.src, &args.dst);
-        }
-        Commands::DumpPageTables(args) => {
-            dump_page_tables(&args.src, &args.dst);
-        }
-        Commands::PrintPageTables(args) => {
-            print_page_tables(&args.path);
-        }
-        Commands::ModifyBinary(args) => {
+        Commands::TychefyBinary(args) => {
             modify_binary(&args.src, &args.dst);
         }
     }

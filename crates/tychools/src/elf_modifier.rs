@@ -2,6 +2,8 @@ use object::elf::PT_LOAD;
 use object::read::elf::{FileHeader, ProgramHeader, SectionHeader};
 use object::{elf, Endianness, U16Bytes, U32Bytes, U64Bytes};
 
+use crate::allocator::PAGE_SIZE;
+
 #[allow(dead_code)]
 #[derive(Debug)]
 pub enum ErrorBin {
@@ -9,8 +11,6 @@ pub enum ErrorBin {
     SegmentMissing = 2,
     UnalignedAddress = 3,
 }
-
-pub const PAGE_SIZE: u64 = 0x1000;
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -244,7 +244,7 @@ impl ModifiedELF {
         }
 
         //Create header.
-        let phdr = Self::construct_phdr(seg_type, flags, 0, 0, addr, size as u64, PAGE_SIZE);
+        let phdr = Self::construct_phdr(seg_type, flags, 0, 0, addr, size as u64, PAGE_SIZE as u64);
 
         // Simply add it to the segments.
         self.add_segment_header(&phdr);
@@ -275,7 +275,15 @@ impl ModifiedELF {
         self.header.e_shoff = U64Bytes::new(Endianness::Little, shoff);
 
         // Create a header.
-        let phdr = Self::construct_phdr(seg_type, flags, foff, fsize, addr, size as u64, PAGE_SIZE);
+        let phdr = Self::construct_phdr(
+            seg_type,
+            flags,
+            foff,
+            fsize,
+            addr,
+            size as u64,
+            PAGE_SIZE as u64,
+        );
 
         self.add_segment_header(&phdr);
     }
@@ -321,7 +329,7 @@ impl ModifiedELF {
 
             // Get virtual boundaries.
             let (sec_start, sec_end) = sec_to_move.get_vaddr_bounds();
-            if sec_start % PAGE_SIZE != 0 || sec_end % PAGE_SIZE != 0 {
+            if sec_start % PAGE_SIZE as u64 != 0 || sec_end % PAGE_SIZE as u64 != 0 {
                 log::error!(
                     "Section {} has unaligned start {:x} or end {:x}",
                     sec_to_move.name,

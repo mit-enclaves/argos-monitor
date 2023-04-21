@@ -6,7 +6,7 @@ use object::{elf, Endianness};
 use utils::{HostPhysAddr, HostVirtAddr};
 
 use crate::allocator::{Allocator, BumpAllocator, DEFAULT_BUMP_SIZE, PAGE_SIZE};
-use crate::instr::{ModifiedELF, TychePhdrTypes};
+use crate::elf_modifier::{ModifiedELF, TychePhdrTypes};
 
 fn align_address(addr: usize) -> usize {
     if addr % PAGE_SIZE == 0 {
