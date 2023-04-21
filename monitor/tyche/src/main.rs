@@ -4,9 +4,9 @@
 use core::panic::PanicInfo;
 
 use log::LevelFilter;
+use stage_two_abi::entry_point;
 use tyche::debug::qemu;
 use tyche::{arch, println};
-use stage_two_abi::entry_point;
 use {logger, tyche};
 
 entry_point!(tyche_entry_point);

@@ -11,13 +11,13 @@ use core::sync::atomic::Ordering;
 
 use acpi::AcpiTables;
 use bootloader::{entry_point, BootInfo};
+use log::LevelFilter;
+use mmu::{PtMapper, RangeAllocator};
 use s1::acpi::AcpiInfo;
 use s1::acpi_handler::TycheACPIHandler;
 use s1::guests::Guest;
 use s1::mmu::MemoryMap;
 use s1::{guests, println, second_stage, smp, HostPhysAddr, HostVirtAddr};
-use log::LevelFilter;
-use mmu::{PtMapper, RangeAllocator};
 use stage_two_abi::VgaInfo;
 use x86_64::registers::control::Cr4;
 
@@ -103,8 +103,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         Err(err) => panic!("Unable to get platform info from the ACPI table: {:?}", err),
     };
 
-    let mut acpi_info =
-        unsafe { s1::acpi::AcpiInfo::from_rsdp(rsdp, physical_memory_offset) };
+    let mut acpi_info = unsafe { s1::acpi::AcpiInfo::from_rsdp(rsdp, physical_memory_offset) };
     let mailbox = unsafe {
         acpi_info.add_mp_wakeup_entry(
             rsdp,
