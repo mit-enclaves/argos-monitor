@@ -150,6 +150,13 @@ impl Capa {
         }
     }
 
+    pub fn as_switch(self) -> Result<(Handle<Domain>, Handle<Context>), CapaError> {
+        match self {
+            Capa::Switch { to, ctx } => Ok((to, ctx)),
+            _ => Err(CapaError::WrongCapabilityType),
+        }
+    }
+
     pub(crate) fn info(self, regions: &RegionPool, domains: &DomainPool) -> Option<CapaInfo> {
         match self {
             Capa::None => None,

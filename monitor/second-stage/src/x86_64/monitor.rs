@@ -33,9 +33,9 @@ pub struct CoreData {
 }
 
 pub struct ContextData {
-    cr3: usize,
-    rip: usize,
-    rsp: usize,
+    pub cr3: usize,
+    pub rip: usize,
+    pub rsp: usize,
 }
 
 const EMPTY_DOMAIN: Mutex<DomainData> = Mutex::new(DomainData { ept: None });
@@ -175,6 +175,18 @@ pub fn do_duplicate(current: Handle<Domain>, capa: LocalCapa) -> Result<LocalCap
     let new_capa = engine.duplicate(current, capa)?;
     apply_updates(&mut engine);
     Ok(new_capa)
+}
+
+pub fn do_switch(
+    current: Handle<Domain>,
+    capa: LocalCapa,
+    cpuid: usize,
+) -> Result<(Handle<Domain>, MutexGuard<'static, ContextData>), CapaError> {
+    let mut engine = CAPA_ENGINE.lock();
+    let (next_domain, context) = engine.switch(current, capa)?;
+    get_core(cpuid).domain = next_domain;
+    apply_updates(&mut engine);
+    Ok((next_domain, get_context(context)))
 }
 
 // ———————————————————————————————— Updates ————————————————————————————————— //

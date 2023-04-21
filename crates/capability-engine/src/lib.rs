@@ -277,6 +277,17 @@ impl CapaEngine {
         domain::create_switch(domain, &mut self.domains, &mut self.contexts)
     }
 
+    /// Returns the new domain if the switch succeeds
+    pub fn switch(
+        &mut self,
+        domain: Handle<Domain>,
+        capa: LocalCapa,
+    ) -> Result<(Handle<Domain>, Handle<Context>), CapaError> {
+        let domain = &self.domains[domain];
+        let (dom, ctx) = domain.get(capa)?.as_switch()?;
+        Ok((dom, ctx))
+    }
+
     pub fn enumerate(
         &mut self,
         domain: Handle<Domain>,

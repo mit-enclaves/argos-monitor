@@ -105,7 +105,7 @@ fn list_all_capas() {
             break;
         }
 
-        println!("{}: {}", next -1, capa);
+        println!("{}: {}", next - 1, capa);
         token = next;
     }
 }

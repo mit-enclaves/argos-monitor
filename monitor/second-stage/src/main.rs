@@ -6,7 +6,7 @@ use core::panic::PanicInfo;
 use log::LevelFilter;
 use second_stage;
 use second_stage::debug::qemu;
-use second_stage::{arch, println, logging};
+use second_stage::{arch, logging, println};
 use stage_two_abi::entry_point;
 
 entry_point!(second_stage_entry_point);

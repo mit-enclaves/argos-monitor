@@ -6,7 +6,7 @@ use capa_engine::{Domain, Handle, LocalCapa, NextCapaToken};
 use vmx::bitmaps::exit_qualification;
 use vmx::{ActiveVmcs, ControlRegister, Register, VmxExitReason};
 
-use super::monitor;
+use super::{cpuid, monitor};
 use crate::calls;
 use crate::error::TycheError;
 
@@ -17,12 +17,12 @@ pub enum HandlerResult {
     Crash,
 }
 
-pub fn main_loop(mut vcpu: ActiveVmcs<'static>, domain: Handle<Domain>) {
+pub fn main_loop(mut vcpu: ActiveVmcs<'static>, mut domain: Handle<Domain>) {
     let mut result = unsafe { vcpu.launch() };
     loop {
         let exit_reason = match result {
             Ok(exit_reason) => {
-                handle_exit(&mut vcpu, exit_reason, domain).expect("Failed to handle VM exit")
+                handle_exit(&mut vcpu, exit_reason, &mut domain).expect("Failed to handle VM exit")
             }
             Err(err) => {
                 log::error!("Guest crash: {:?}", err);
@@ -42,7 +42,7 @@ pub fn main_loop(mut vcpu: ActiveVmcs<'static>, domain: Handle<Domain>) {
 fn handle_exit(
     vcpu: &mut ActiveVmcs<'static>,
     reason: vmx::VmxExitReason,
-    domain: Handle<Domain>,
+    domain: &mut Handle<Domain>,
 ) -> Result<HandlerResult, TycheError> {
     let dump = |vcpu: &mut ActiveVmcs| {
         let rip = vcpu.get(Register::Rip);
@@ -72,7 +72,7 @@ fn handle_exit(
             match vmcall {
                 calls::CREATE_DOMAIN => {
                     log::trace!("Create Domain");
-                    let capa = monitor::do_create_domain(domain).expect("TODO");
+                    let capa = monitor::do_create_domain(*domain).expect("TODO");
                     vcpu.set(Register::Rdi, capa.as_u64());
                     vcpu.set(Register::Rax, 0);
                     vcpu.next_instruction()?;
@@ -80,8 +80,9 @@ fn handle_exit(
                 }
                 calls::SEAL_DOMAIN => {
                     log::trace!("Seal Domain");
-                    let capa = monitor::do_seal(domain, LocalCapa::new(arg_1), arg_2, arg_3, arg_4)
-                        .expect("TODO");
+                    let capa =
+                        monitor::do_seal(*domain, LocalCapa::new(arg_1), arg_2, arg_3, arg_4)
+                            .expect("TODO");
                     vcpu.set(Register::Rdi, capa.as_u64());
                     vcpu.set(Register::Rax, 0);
                     vcpu.next_instruction()?;
@@ -89,12 +90,13 @@ fn handle_exit(
                 }
                 calls::SHARE => {
                     log::trace!("Share");
+                    log::warn!("Share is NOT IMPLEMENTED in v3");
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
                 calls::SEND => {
                     log::trace!("Send");
-                    monitor::do_send(domain, LocalCapa::new(arg_1), LocalCapa::new(arg_2))
+                    monitor::do_send(*domain, LocalCapa::new(arg_1), LocalCapa::new(arg_2))
                         .expect("TODO");
                     vcpu.set(Register::Rax, 0);
                     vcpu.next_instruction()?;
@@ -103,7 +105,7 @@ fn handle_exit(
                 calls::SEGMENT_REGION => {
                     log::trace!("Segment region");
                     let (left, right) = monitor::do_segment_region(
-                        domain,
+                        *domain,
                         LocalCapa::new(arg_1),
                         arg_2,
                         arg_3,
@@ -121,14 +123,14 @@ fn handle_exit(
                 }
                 calls::REVOKE => {
                     log::trace!("Revoke");
-                    monitor::do_revoke(domain, LocalCapa::new(arg_1)).expect("TODO");
+                    monitor::do_revoke(*domain, LocalCapa::new(arg_1)).expect("TODO");
                     vcpu.set(Register::Rax, 0);
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
                 calls::DUPLICATE => {
                     log::trace!("Duplicate");
-                    let capa = monitor::do_duplicate(domain, LocalCapa::new(arg_1)).expect("TODO");
+                    let capa = monitor::do_duplicate(*domain, LocalCapa::new(arg_1)).expect("TODO");
                     vcpu.set(Register::Rdi, capa.as_u64());
                     vcpu.set(Register::Rax, 0);
                     vcpu.next_instruction()?;
@@ -137,7 +139,7 @@ fn handle_exit(
                 calls::ENUMERATE => {
                     log::trace!("Enumerate");
                     if let Some((info, next)) =
-                        monitor::do_enumerate(domain, NextCapaToken::from_usize(arg_1))
+                        monitor::do_enumerate(*domain, NextCapaToken::from_usize(arg_1))
                     {
                         let (v1, v2, v3) = info.serialize();
                         vcpu.set(Register::Rdi, v1 as u64);
@@ -154,7 +156,16 @@ fn handle_exit(
                 }
                 calls::SWITCH => {
                     log::trace!("Switch");
+                    let (next_domain, context) =
+                        monitor::do_switch(*domain, LocalCapa::new(arg_1), cpuid()).expect("TODO");
                     vcpu.next_instruction()?;
+
+                    // Switch domain
+                    vcpu.set_cr(ControlRegister::Cr3, context.cr3);
+                    vcpu.set(Register::Rip, context.rip as u64);
+                    vcpu.set(Register::Rsp, context.rsp as u64);
+                    *domain = next_domain;
+
                     Ok(HandlerResult::Resume)
                 }
                 calls::EXIT => {
