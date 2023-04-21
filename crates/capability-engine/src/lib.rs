@@ -262,14 +262,24 @@ impl CapaEngine {
     }
 
     pub fn revoke(&mut self, domain: Handle<Domain>, capa: LocalCapa) -> Result<(), CapaError> {
-        domain::revoke_capa(
-            domain,
-            capa,
-            &mut self.regions,
-            &mut self.domains,
-            &mut self.contexts,
-            &mut self.updates,
-        )
+        match self.domains[domain].get(capa)? {
+            // Region are nor revoked, but restored.
+            Capa::Region(region) => region_capa::restore(
+                region,
+                &mut self.regions,
+                &mut self.domains,
+                &mut self.updates,
+            ),
+            // All other are simply revoked
+            _ => domain::revoke_capa(
+                domain,
+                capa,
+                &mut self.regions,
+                &mut self.domains,
+                &mut self.contexts,
+                &mut self.updates,
+            ),
+        }
     }
 
     /// Creates a new switch handle for the current domain.
