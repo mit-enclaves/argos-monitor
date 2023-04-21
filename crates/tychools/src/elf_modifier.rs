@@ -16,25 +16,32 @@ pub enum ErrorBin {
 #[allow(dead_code)]
 #[repr(u32)]
 pub enum TychePhdrTypes {
-    PtPageTables = 0x60000000,
-    PtStack = 0x60000001,
-    PtShared = 0x60000002,
-    PtCondidential = 0x60000003,
+    PageTables = 0x60000000,
+    EnclStack = 0x60000001,
+    Shared = 0x60000002,
+    Condidential = 0x60000003,
 }
 
+// ———————————————————————————— Shorthand types ————————————————————————————— //
+pub type Shdr64 = elf::SectionHeader64<Endianness>;
+pub type Phdr64 = elf::ProgramHeader64<Endianness>;
+pub type Ehdr64 = elf::FileHeader64<Endianness>;
+pub const DENDIAN: Endianness = Endianness::Little;
+
+// ———————————————————————————— Wrapper Structs ————————————————————————————— //
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct ModifiedSection {
     pub idx: usize,
     pub name: String,
-    pub section_header: elf::SectionHeader64<Endianness>,
+    pub section_header: Shdr64,
 }
 
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct ModifiedSegment {
     pub idx: usize,
-    pub program_header: elf::ProgramHeader64<Endianness>,
+    pub program_header: Phdr64,
 }
 
 #[derive(Debug)]
@@ -45,7 +52,7 @@ pub struct MemoryLayout {
 
 #[derive(Debug)]
 pub struct ModifiedELF {
-    pub header: elf::FileHeader64<Endianness>,
+    pub header: Ehdr64,
     pub segments: Vec<ModifiedSegment>,
     pub sections: Vec<ModifiedSection>,
     pub layout: MemoryLayout,
@@ -61,7 +68,7 @@ fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
 impl ModifiedELF {
     pub fn new(data: &[u8]) -> Box<ModifiedELF> {
         // Parse the header.
-        let hdr = elf::FileHeader64::<Endianness>::parse(data).expect("Unable to parse the data");
+        let hdr = Ehdr64::parse(data).expect("Unable to parse the data");
 
         let mut melf = Box::new(ModifiedELF {
             header: hdr.clone(),
@@ -76,7 +83,7 @@ impl ModifiedELF {
 
         // Parse the segments.
         let segs = hdr
-            .program_headers(Endianness::Little, data)
+            .program_headers(DENDIAN, data)
             .expect("Unable to parse segments");
 
         for (idx, seg) in segs.iter().enumerate() {
@@ -86,9 +93,9 @@ impl ModifiedELF {
             });
 
             // Find the virtual memory boundaries.
-            if seg.p_type(Endianness::Little) == PT_LOAD {
-                let start = seg.p_vaddr(Endianness::Little);
-                let end = start + seg.p_memsz(Endianness::Little);
+            if seg.p_type(DENDIAN) == PT_LOAD {
+                let start = seg.p_vaddr(DENDIAN);
+                let end = start + seg.p_memsz(DENDIAN);
                 if start < melf.layout.min_addr {
                     melf.layout.min_addr = start;
                 }
@@ -100,15 +107,15 @@ impl ModifiedELF {
 
         // Parse the sections.
         let secs = hdr
-            .section_headers(Endianness::Little, data)
+            .section_headers(DENDIAN, data)
             .expect("Unable to parse sections");
         let strings = hdr
-            .section_strings(Endianness::Little, data, secs)
+            .section_strings(DENDIAN, data, secs)
             .expect("Unable to get the strings");
 
         for (idx, sec) in secs.iter().enumerate() {
             let name = String::from_utf8(
-                sec.name(Endianness::Little, strings)
+                sec.name(DENDIAN, strings)
                     .expect("Unable to get section name")
                     .to_vec(),
             )
@@ -121,10 +128,9 @@ impl ModifiedELF {
             });
         }
         // Set the data, compute from what is parsed.
-        let data_start: usize = hdr.e_ehsize(Endianness::Little) as usize
-            + hdr.e_phentsize(Endianness::Little) as usize
-                * hdr.e_phnum(Endianness::Little) as usize;
-        let data_end = hdr.e_shoff(Endianness::Little) as usize;
+        let data_start: usize = hdr.e_ehsize(DENDIAN) as usize
+            + hdr.e_phentsize(DENDIAN) as usize * hdr.e_phnum(DENDIAN) as usize;
+        let data_end = hdr.e_shoff(DENDIAN) as usize;
 
         melf.data = data[data_start..data_end].to_vec();
 
@@ -143,8 +149,8 @@ impl ModifiedELF {
 
         // Do some cleaning, sort segments by vaddr.
         self.segments.sort_by(|a, b| {
-            let a_addr = a.program_header.p_vaddr(Endianness::Little);
-            let b_addr = b.program_header.p_vaddr(Endianness::Little);
+            let a_addr = a.program_header.p_vaddr(DENDIAN);
+            let b_addr = b.program_header.p_vaddr(DENDIAN);
             a_addr.cmp(&b_addr)
         });
 
@@ -167,7 +173,7 @@ impl ModifiedELF {
     }
 
     pub fn len_hdr(&self) -> usize {
-        std::mem::size_of::<elf::FileHeader64<Endianness>>()
+        std::mem::size_of::<Ehdr64>()
     }
 
     pub fn len_phdrs(&self) -> usize {
@@ -191,16 +197,16 @@ impl ModifiedELF {
         vaddr: u64,
         memsz: u64,
         align: u64,
-    ) -> elf::ProgramHeader64<Endianness> {
-        elf::ProgramHeader64::<Endianness> {
-            p_type: U32Bytes::new(Endianness::Little, seg_type),
-            p_flags: U32Bytes::new(Endianness::Little, flags),
-            p_offset: U64Bytes::new(Endianness::Little, offset),
-            p_vaddr: U64Bytes::new(Endianness::Little, vaddr),
-            p_paddr: U64Bytes::new(Endianness::Little, 0),
-            p_filesz: U64Bytes::new(Endianness::Little, filesz),
-            p_memsz: U64Bytes::new(Endianness::Little, memsz),
-            p_align: U64Bytes::new(Endianness::Little, align),
+    ) -> Phdr64 {
+        Phdr64 {
+            p_type: U32Bytes::new(DENDIAN, seg_type),
+            p_flags: U32Bytes::new(DENDIAN, flags),
+            p_offset: U64Bytes::new(DENDIAN, offset),
+            p_vaddr: U64Bytes::new(DENDIAN, vaddr),
+            p_paddr: U64Bytes::new(DENDIAN, 0),
+            p_filesz: U64Bytes::new(DENDIAN, filesz),
+            p_memsz: U64Bytes::new(DENDIAN, memsz),
+            p_align: U64Bytes::new(DENDIAN, align),
         }
     }
 
@@ -214,18 +220,18 @@ impl ModifiedELF {
         vaddr: u64,
         memsz: u64,
         align: u64,
-    ) -> elf::SectionHeader64<Endianness> {
-        elf::SectionHeader64::<Endianness> {
-            sh_name: U32Bytes::new(Endianness::Little, name),
-            sh_type: U32Bytes::new(Endianness::Little, sec_type),
-            sh_flags: U64Bytes::new(Endianness::Little, flags),
-            sh_addr: U64Bytes::new(Endianness::Little, vaddr),
-            sh_offset: U64Bytes::new(Endianness::Little, offset),
-            sh_size: U64Bytes::new(Endianness::Little, memsz),
-            sh_info: U32Bytes::new(Endianness::Little, 0),
-            sh_addralign: U64Bytes::new(Endianness::Little, align),
-            sh_entsize: U64Bytes::new(Endianness::Little, filesz),
-            sh_link: U32Bytes::new(Endianness::Little, 0),
+    ) -> Shdr64 {
+        Shdr64 {
+            sh_name: U32Bytes::new(DENDIAN, name),
+            sh_type: U32Bytes::new(DENDIAN, sec_type),
+            sh_flags: U64Bytes::new(DENDIAN, flags),
+            sh_addr: U64Bytes::new(DENDIAN, vaddr),
+            sh_offset: U64Bytes::new(DENDIAN, offset),
+            sh_size: U64Bytes::new(DENDIAN, memsz),
+            sh_info: U32Bytes::new(DENDIAN, 0),
+            sh_addralign: U64Bytes::new(DENDIAN, align),
+            sh_entsize: U64Bytes::new(DENDIAN, filesz),
+            sh_link: U32Bytes::new(DENDIAN, 0),
         }
     }
 
@@ -271,8 +277,8 @@ impl ModifiedELF {
         }
 
         // Fix the header.
-        let shoff = self.header.e_shoff(Endianness::Little) + fsize;
-        self.header.e_shoff = U64Bytes::new(Endianness::Little, shoff);
+        let shoff = self.header.e_shoff(DENDIAN) + fsize;
+        self.header.e_shoff = U64Bytes::new(DENDIAN, shoff);
 
         // Create a header.
         let phdr = Self::construct_phdr(
@@ -288,7 +294,7 @@ impl ModifiedELF {
         self.add_segment_header(&phdr);
     }
 
-    pub fn add_segment_header(&mut self, phdr: &elf::ProgramHeader64<Endianness>) {
+    pub fn add_segment_header(&mut self, phdr: &Phdr64) {
         let delta = ModifiedSegment::len() as u64;
         let affected = (self.len_hdr() + self.len_phdrs()) as u64;
         self.segments.push(ModifiedSegment {
@@ -304,9 +310,9 @@ impl ModifiedELF {
         }
 
         // Patch the header.
-        self.header.e_phnum = U16Bytes::new(Endianness::Little, self.segments.len() as u16);
-        let shoff = self.header.e_shoff(Endianness::Little);
-        self.header.e_shoff = U64Bytes::new(Endianness::Little, shoff + delta);
+        self.header.e_phnum = U16Bytes::new(DENDIAN, self.segments.len() as u16);
+        let shoff = self.header.e_shoff(DENDIAN);
+        self.header.e_shoff = U64Bytes::new(DENDIAN, shoff + delta);
 
         // All done!
     }
@@ -357,12 +363,12 @@ impl ModifiedELF {
             let (seg_fstart, seg_fend) = seg.get_file_bounds();
             let copy = seg.program_header.clone();
             // middle, change in place.
-            seg.program_header.p_type = U32Bytes::new(Endianness::Little, seg_type);
-            seg.program_header.p_offset = U64Bytes::new(Endianness::Little, sec_fstart);
-            seg.program_header.p_filesz = U64Bytes::new(Endianness::Little, sec_fend - sec_fstart);
+            seg.program_header.p_type = U32Bytes::new(DENDIAN, seg_type);
+            seg.program_header.p_offset = U64Bytes::new(DENDIAN, sec_fstart);
+            seg.program_header.p_filesz = U64Bytes::new(DENDIAN, sec_fend - sec_fstart);
             // Fix addresses.
-            seg.program_header.p_vaddr = U64Bytes::new(Endianness::Little, sec_start);
-            seg.program_header.p_memsz = U64Bytes::new(Endianness::Little, sec_end - sec_start);
+            seg.program_header.p_vaddr = U64Bytes::new(DENDIAN, sec_start);
+            seg.program_header.p_memsz = U64Bytes::new(DENDIAN, sec_end - sec_start);
 
             (seg_start, seg_end, seg_fstart, seg_fend, copy)
         };
@@ -373,10 +379,10 @@ impl ModifiedELF {
             let mut phdr = seg_template.clone();
             // Fix the file size.
             let left_fsize = u64::min(sec_start - seg_start, seg_fend - seg_fstart);
-            phdr.p_filesz = U64Bytes::new(Endianness::Little, left_fsize);
+            phdr.p_filesz = U64Bytes::new(DENDIAN, left_fsize);
             // Patch addresses
-            phdr.p_vaddr = U64Bytes::new(Endianness::Little, seg_start);
-            phdr.p_memsz = U64Bytes::new(Endianness::Little, sec_start - seg_start);
+            phdr.p_vaddr = U64Bytes::new(DENDIAN, seg_start);
+            phdr.p_memsz = U64Bytes::new(DENDIAN, sec_start - seg_start);
             // Add the header, don't worry about sorting for now.
             self.add_segment_header(&phdr);
         }
@@ -386,11 +392,11 @@ impl ModifiedELF {
             let mut phdr = seg_template.clone();
             // Fix the fileoff
             let right_off = sec_fend;
-            phdr.p_offset = U64Bytes::new(Endianness::Little, right_off);
-            phdr.p_filesz = U64Bytes::new(Endianness::Little, seg_fend - right_off);
+            phdr.p_offset = U64Bytes::new(DENDIAN, right_off);
+            phdr.p_filesz = U64Bytes::new(DENDIAN, seg_fend - right_off);
             // Patch addresses
-            phdr.p_vaddr = U64Bytes::new(Endianness::Little, sec_end);
-            phdr.p_memsz = U64Bytes::new(Endianness::Little, seg_end - sec_end);
+            phdr.p_vaddr = U64Bytes::new(DENDIAN, sec_end);
+            phdr.p_memsz = U64Bytes::new(DENDIAN, seg_end - sec_end);
             // Add the header, don't worry about sorting for now.
             self.add_segment_header(&phdr);
         }
@@ -401,58 +407,58 @@ impl ModifiedELF {
 
 impl ModifiedSegment {
     pub fn patch_offset(&mut self, delta: u64, affected: u64) {
-        let offset = self.program_header.p_offset(Endianness::Little);
+        let offset = self.program_header.p_offset(DENDIAN);
         if offset >= affected {
-            self.program_header.p_offset = U64Bytes::new(Endianness::Little, offset + delta);
+            self.program_header.p_offset = U64Bytes::new(DENDIAN, offset + delta);
         }
     }
 
     #[allow(dead_code)]
     pub fn get_vaddr_bounds(&self) -> (u64, u64) {
-        let start = self.program_header.p_vaddr(Endianness::Little);
-        let end = start + self.program_header.p_memsz(Endianness::Little);
+        let start = self.program_header.p_vaddr(DENDIAN);
+        let end = start + self.program_header.p_memsz(DENDIAN);
         (start, end)
     }
 
     #[allow(dead_code)]
     pub fn get_file_bounds(&self) -> (u64, u64) {
-        let fstart = self.program_header.p_offset(Endianness::Little);
-        let fsize = self.program_header.p_filesz(Endianness::Little);
+        let fstart = self.program_header.p_offset(DENDIAN);
+        let fsize = self.program_header.p_filesz(DENDIAN);
         (fstart, fstart + fsize)
     }
 
     pub fn len() -> usize {
-        std::mem::size_of::<elf::ProgramHeader64<Endianness>>()
+        std::mem::size_of::<Phdr64>()
     }
 }
 
 impl ModifiedSection {
     #[allow(dead_code)]
     pub fn patch_offset(&mut self, delta: u64, affected: u64) {
-        let offset = self.section_header.sh_offset(Endianness::Little);
+        let offset = self.section_header.sh_offset(DENDIAN);
         if offset >= affected {
-            self.section_header.sh_offset = U64Bytes::new(Endianness::Little, offset + delta);
+            self.section_header.sh_offset = U64Bytes::new(DENDIAN, offset + delta);
         }
     }
 
     #[allow(dead_code)]
     pub fn get_vaddr_bounds(&self) -> (u64, u64) {
-        let start = self.section_header.sh_addr(Endianness::Little);
-        let end = start + self.section_header.sh_size(Endianness::Little);
+        let start = self.section_header.sh_addr(DENDIAN);
+        let end = start + self.section_header.sh_size(DENDIAN);
         (start, end)
     }
 
     #[allow(dead_code)]
     pub fn get_file_bounds(&self) -> (u64, u64) {
-        if self.section_header.sh_type(Endianness::Little) == elf::SHT_NOBITS {
+        if self.section_header.sh_type(DENDIAN) == elf::SHT_NOBITS {
             return (0, 0);
         }
-        let fstart = self.section_header.sh_offset(Endianness::Little);
-        let fsize = self.section_header.sh_size(Endianness::Little);
+        let fstart = self.section_header.sh_offset(DENDIAN);
+        let fsize = self.section_header.sh_size(DENDIAN);
         (fstart, fstart + fsize)
     }
 
     pub fn len() -> usize {
-        std::mem::size_of::<elf::SectionHeader64<Endianness>>()
+        std::mem::size_of::<Shdr64>()
     }
 }

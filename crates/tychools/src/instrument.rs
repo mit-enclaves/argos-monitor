@@ -16,14 +16,14 @@ pub fn modify_binary(src: &PathBuf, dst: &PathBuf) {
 
     elf.split_segment_at_section(
         ".tyche_shared_default_buffer",
-        TychePhdrTypes::PtShared as u32,
+        TychePhdrTypes::Shared as u32,
     )
     .expect("Failed to split section into segment");
 
     let (pts, nb_pages) = generate_page_tables(&*elf);
     elf.append_data_segment(
         Some(0),
-        TychePhdrTypes::PtPageTables as u32,
+        TychePhdrTypes::PageTables as u32,
         object::elf::PF_R | object::elf::PF_W,
         nb_pages * PAGE_SIZE,
         &pts,

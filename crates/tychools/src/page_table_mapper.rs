@@ -33,7 +33,7 @@ pub fn generate_page_tables(melf: &ModifiedELF) -> (Vec<u8>, usize) {
     let mut memsz: usize = 0;
     for ph in &melf.segments {
         let segtype = ph.program_header.p_type(Endianness::Little);
-        if segtype != elf::PT_LOAD && segtype != TychePhdrTypes::PtShared as u32 {
+        if segtype != elf::PT_LOAD && segtype != TychePhdrTypes::Shared as u32 {
             continue;
         }
         let mem = ph.program_header.p_memsz(Endianness::Little) as usize;
@@ -59,7 +59,7 @@ pub fn generate_page_tables(melf: &ModifiedELF) -> (Vec<u8>, usize) {
     let mut curr_phys: usize = 0;
     for ph in &melf.segments {
         let segtype = ph.program_header.p_type(Endianness::Little);
-        if segtype != elf::PT_LOAD && segtype != TychePhdrTypes::PtShared as u32 {
+        if segtype != elf::PT_LOAD && segtype != TychePhdrTypes::Shared as u32 {
             continue;
         }
         let mem_size = ph.program_header.p_memsz(Endianness::Little) as usize;
