@@ -719,32 +719,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "second-stage"
-version = "0.1.0"
-dependencies = [
- "arena",
- "capa-engine",
- "capabilities",
- "debug",
- "log",
- "logger",
- "mmu",
- "monitor",
- "qemu",
- "riscv_csrs",
- "riscv_pmp",
- "riscv_sbi",
- "riscv_tyche",
- "riscv_utils",
- "spin 0.9.4",
- "stage_two_abi",
- "utils",
- "vga",
- "vmx",
- "vtd",
-]
-
-[[package]]
 name = "serde"
 version = "1.0.159"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -873,6 +847,32 @@ checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
  "static_assertions",
+]
+
+[[package]]
+name = "tyche"
+version = "0.1.0"
+dependencies = [
+ "arena",
+ "capa-engine",
+ "capabilities",
+ "debug",
+ "log",
+ "logger",
+ "mmu",
+ "monitor",
+ "qemu",
+ "riscv_csrs",
+ "riscv_pmp",
+ "riscv_sbi",
+ "riscv_tyche",
+ "riscv_utils",
+ "spin 0.9.4",
+ "stage_two_abi",
+ "utils",
+ "vga",
+ "vmx",
+ "vtd",
 ]
 
 [[package]]

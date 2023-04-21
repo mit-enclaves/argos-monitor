@@ -4,25 +4,25 @@
 use core::panic::PanicInfo;
 
 use log::LevelFilter;
-use second_stage::debug::qemu;
-use second_stage::{arch, println};
+use tyche::debug::qemu;
+use tyche::{arch, println};
 use stage_two_abi::entry_point;
-use {logger, second_stage};
+use {logger, tyche};
 
-entry_point!(second_stage_entry_point);
+entry_point!(tyche_entry_point);
 
 const LOG_LEVEL: LevelFilter = LevelFilter::Info;
 
 #[cfg(target_arch = "x86_64")]
-fn second_stage_entry_point() -> ! {
+fn tyche_entry_point() -> ! {
     logger::init(LOG_LEVEL);
     arch::arch_entry_point();
 }
 
 #[cfg(target_arch = "riscv64")]
-fn second_stage_entry_point(hartid: u64, arg1: u64, next_addr: u64, next_mode: u64) -> ! {
+fn tyche_entry_point(hartid: u64, arg1: u64, next_addr: u64, next_mode: u64) -> ! {
     logger::init(LOG_LEVEL);
-    second_stage::init();
+    tyche::init();
 
     println!("============= Second Stage =============");
     println!("Hello from second stage!");

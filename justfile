@@ -10,13 +10,13 @@ cargo_args          := build_std + " " + build_features
 x86-linker-script   := "RUSTFLAGS='-C link-arg=-Tconfigs/x86-linker-script.x'"
 riscv-linker-script := "RUSTFLAGS='-C link-arg=-Tconfigs/riscv-linker-script.x'"
 first-stage         := "--package s1 --features=s1/second-stage"
-second-stage        := "--package second-stage"
+tyche               := "--package tyche"
 fake-acm            := "--package fake-acm"
 rawc                := "--features=s1/guest_rawc"
 linux               := "--features=s1/guest_linux"
 no-guest            := "--features=s1/no_guest"
 vga-s1              := "--features=s1/vga"
-vga-s2              := "--features=second-stage/vga"
+vga-s2              := "--features=tyche/vga"
 bare-metal          := "--features=s1/bare_metal"
 build_path          := justfile_directory() + "/builds"
 tpm_path            := "/tmp/tpm-dev-" + env_var('USER')
@@ -32,13 +32,13 @@ help:
 check:
 	@# Create an empty file if no second-stage has been compiled yet
 	@mkdir -p target/x86_64-unknown-kernel/release
-	@touch target/x86_64-unknown-kernel/release/second-stage
+	@touch target/x86_64-unknown-kernel/release/tyche
 
 	# Checking code...
 	cargo check {{cargo_args}} {{x86_64}} {{first-stage}}
-	cargo check {{cargo_args}} {{x86_64}} {{second-stage}}
+	cargo check {{cargo_args}} {{x86_64}} {{tyche}}
 	cargo check {{cargo_args}} {{x86_64}} {{fake-acm}}
-	cargo check {{cargo_args}} {{riscv}}  {{second-stage}}
+	cargo check {{cargo_args}} {{riscv}}  {{tyche}}
 
 	# Checking formatting...
 	cargo fmt --all -- --check
@@ -116,12 +116,12 @@ gdb DBG=default_dbg:
 
 # Build the monitor for x86_64
 build:
-	{{x86-linker-script}} cargo build {{cargo_args}} {{x86_64}} {{second-stage}} --release
+	{{x86-linker-script}} cargo build {{cargo_args}} {{x86_64}} {{tyche}} --release
 	cargo build {{cargo_args}} {{x86_64}} {{first-stage}}
 
 # Build the monitor for RISC-V64
 build-riscv:
-	{{riscv-linker-script}} cargo build {{cargo_args}} {{riscv}} {{second-stage}} --release
+	{{riscv-linker-script}} cargo build {{cargo_args}} {{riscv}} {{tyche}} --release
 
 ## ——————————————————————————— Linux Kernel Build ——————————————————————————— ##
 
@@ -220,7 +220,7 @@ build-metal-linux:
 	@just _common-metal {{linux}}
 
 _common-metal TARGET:
-	{{x86-linker-script}} cargo build {{cargo_args}} {{x86_64}} {{second-stage}} --release
+	{{x86-linker-script}} cargo build {{cargo_args}} {{x86_64}} {{tyche}} --release
 	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{TARGET}} {{bare-metal}} -- --uefi --no-run
 
 # Build user-space programs

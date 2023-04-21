@@ -1,5 +1,5 @@
 [package]
-name = "second-stage"
+name = "tyche"
 version = "0.1.0"
 edition = "2021"
 

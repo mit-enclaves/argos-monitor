@@ -16,7 +16,7 @@ use crate::{cpu, HostPhysAddr, HostVirtAddr};
 
 #[cfg(feature = "second-stage")]
 const SECOND_STAGE: &'static [u8] =
-    include_bytes!("../../../target/x86_64-unknown-kernel/release/second-stage");
+    include_bytes!("../../../target/x86_64-unknown-kernel/release/tyche");
 #[cfg(not(feature = "second-stage"))]
 const SECOND_STAGE: &'static [u8] = &[0; 10];
 
