@@ -25,31 +25,31 @@ pub enum TychePhdrTypes {
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct ModifiedSection {
-    idx: usize,
-    name: String,
-    section_header: elf::SectionHeader64<Endianness>,
+    pub idx: usize,
+    pub name: String,
+    pub section_header: elf::SectionHeader64<Endianness>,
 }
 
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct ModifiedSegment {
-    idx: usize,
-    program_header: elf::ProgramHeader64<Endianness>,
+    pub idx: usize,
+    pub program_header: elf::ProgramHeader64<Endianness>,
 }
 
 #[derive(Debug)]
 pub struct MemoryLayout {
-    min_addr: u64,
-    max_addr: u64,
+    pub min_addr: u64,
+    pub max_addr: u64,
 }
 
 #[derive(Debug)]
 pub struct ModifiedELF {
-    header: elf::FileHeader64<Endianness>,
-    segments: Vec<ModifiedSegment>,
-    sections: Vec<ModifiedSection>,
-    layout: MemoryLayout,
-    data: Vec<u8>,
+    pub header: elf::FileHeader64<Endianness>,
+    pub segments: Vec<ModifiedSegment>,
+    pub sections: Vec<ModifiedSection>,
+    pub layout: MemoryLayout,
+    pub data: Vec<u8>,
 }
 
 fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {

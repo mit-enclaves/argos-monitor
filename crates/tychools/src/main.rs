@@ -3,6 +3,7 @@ mod debug;
 mod instr;
 mod instrument;
 mod objcopy;
+mod page_table_mapper;
 
 use std::path::PathBuf;
 

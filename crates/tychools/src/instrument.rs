@@ -11,6 +11,7 @@ use xmas_elf::program::Type;
 
 use crate::allocator::{Allocator, BumpAllocator, DEFAULT_BUMP_SIZE, PAGE_SIZE};
 use crate::instr::{ModifiedELF, TychePhdrTypes};
+use crate::page_table_mapper::generate_page_tables;
 
 fn align_address(addr: usize) -> usize {
     if addr % PAGE_SIZE == 0 {
@@ -148,6 +149,15 @@ pub fn modify_binary(src: &PathBuf, dst: &PathBuf) {
         TychePhdrTypes::PtShared as u32,
     )
     .expect("Oups we failed");
+
+    let (pts, nb_pages) = generate_page_tables(&*elf);
+    elf.append_data_segment(
+        Some(0),
+        TychePhdrTypes::PtPageTables as u32,
+        object::elf::PF_R | object::elf::PF_W,
+        nb_pages * PAGE_SIZE,
+        &pts,
+    );
 
     // Let's write that thing out.
     let mut out: Vec<u8> = Vec::with_capacity(elf.len());
