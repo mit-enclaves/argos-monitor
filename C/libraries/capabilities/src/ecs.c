@@ -1,59 +1,48 @@
 #include "ecs.h"
 #include "tyche_api.h"
 
-int enumerate_capa(capa_index_t idx, capability_t* capa)
-{
+int enumerate_capa(capa_index_t *idx, capability_t *capa) {
   vmcall_frame_t frame;
   if (capa == NULL) {
     goto fail;
   }
   frame.vmcall = TYCHE_ENUMERATE;
-  frame.arg_1 = idx;
+  frame.arg_1 = *idx;
   if (tyche_call(&frame) != 0) {
     goto fail;
   }
+
+  // Next token
+  *idx = frame.value_4;
+  if (*idx == 0) {
+    // No more capa
+    goto fail;
+  }
+
   // Setup the capability with the values in the registers.
-  capa->local_id = frame.value_1; 
-  capa->capa_type = ((frame.value_2 & Revocation) != 0)? Revocation : Resource;
-  capa->resource_type = (frame.value_2 & ~(Revocation));
-  capa->last_read_ref_count = frame.value_6;
+  capa->local_id = frame.value_4 - 1; // value_4 is the **next** token
+  capa->capa_type = frame.value_3 & 0xFF;
 
   // Parse the information encoded from AccessRights.as_bits().
-  switch(capa->resource_type) {
-    case Domain:
-      capa->access.domain.status = frame.value_3;
-      switch(capa->access.domain.status) {
-        case None:
-          goto fail;
-          break;
-        case Unsealed:
-        case Sealed:
-          capa->access.domain.info.capas.spawn = frame.value_4;
-          capa->access.domain.info.capas.comm = frame.value_5;
-          break;
-        case Channel:
-          //TODO should have info about the domain id.
-          break;
-        case Transition:
-          capa->access.domain.info.transition = frame.value_4;
-          break;
-        default:
-          goto fail;
-      } 
-      break;
-    case Region:
-      capa->access.region.start = frame.value_3;
-      capa->access.region.end = frame.value_4;
-      capa->access.region.flags = frame.value_5;
-      break;
-    case CPU:
-      capa->access.cpu.flags = frame.value_5; 
-      break;
-    default:
-      goto fail;
+  switch (capa->capa_type) {
+  case Region:
+    capa->info.region.start = frame.value_1;
+    capa->info.region.end = frame.value_2;
+    capa->info.region.flags = frame.value_3 << 8;
+    break;
+  case Management:
+    capa->info.management.id = frame.value_1;
+    break;
+  case Channel:
+    capa->info.channel.id = frame.value_1;
+    break;
+  case Switch:
+    capa->info.transition.id = frame.value_1;
+    break;
   }
+
   // Everything went well.
-  return 0; 
+  return 0;
 fail:
   return -1;
 }

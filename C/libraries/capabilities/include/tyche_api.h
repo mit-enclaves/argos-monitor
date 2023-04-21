@@ -8,8 +8,8 @@ typedef enum tyche_monitor_call_t {
   TYCHE_CREATE_DOMAIN = 1,
   TYCHE_SEAL_DOMAIN = 2,
   TYCHE_SHARE = 3,
-  TYCHE_GRANT = 4,
-  TYCHE_GIVE = 5,
+  TYCHE_SEND = 4,
+  TYCHE_SEGMENT_REGION = 5,
   TYCHE_REVOKE = 6,
   TYCHE_DUPLICATE = 7,
   TYCHE_ENUMERATE = 8,
@@ -46,23 +46,19 @@ typedef struct vmcall_frame_t {
 } vmcall_frame_t;
 
 // —————————————————————————————————— API ——————————————————————————————————— //
+
 int tyche_call(vmcall_frame_t* frame);
-int tyche_create_domain(
-    capa_index_t* self,
-    capa_index_t* child,
-    capa_index_t* revocation,
-    usize spawn,
-    usize comm);
+
+int tyche_create_domain(capa_index_t* management);
 
 int tyche_seal(
     capa_index_t* transition,
-    capa_index_t unsealed,
-    usize core_map,
+    capa_index_t management,
     usize cr3,
     usize rip,
     usize rsp);
 
-int tyche_duplicate(
+int tyche_segment_region(
     capa_index_t* left,
     capa_index_t* right,
     capa_index_t capa,
@@ -73,13 +69,9 @@ int tyche_duplicate(
     usize a2_2,
     usize a2_3);
 
-int tyche_grant(
-    capa_index_t dest,
-    capa_index_t capa,
-    usize a1,
-    usize a2,
-    usize a3);
+int tyche_send(capa_index_t dest, capa_index_t capa);
 
+// TODO: this was removed
 int tyche_share(
     capa_index_t* left,
     capa_index_t dest,
@@ -90,6 +82,8 @@ int tyche_share(
 
 int tyche_revoke(capa_index_t id);
 
-int tyche_switch(capa_index_t transition_handle, usize cpu, void* args);
+int tyche_switch(capa_index_t transition_handle, void* args);
+
+int tyche_duplicate(capa_index_t* new_capa, capa_index_t capa);
 
 #endif

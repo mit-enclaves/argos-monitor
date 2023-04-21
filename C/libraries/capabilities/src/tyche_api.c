@@ -33,26 +33,16 @@ int tyche_call(vmcall_frame_t* frame)
   return (int)result;
 } 
 
-int tyche_create_domain(
-    capa_index_t* self,
-    capa_index_t* child,
-    capa_index_t* revocation,
-    usize spawn,
-    usize comm)
-{
+int tyche_create_domain(capa_index_t* management) {
   vmcall_frame_t frame;
-  if (self == NULL || child == NULL || revocation == NULL) {
+  if (management == NULL) {
     goto fail;
   }
   frame.vmcall = TYCHE_CREATE_DOMAIN;
-  frame.arg_1 = spawn;
-  frame.arg_2 = comm;
   if (tyche_call(&frame) != SUCCESS) {
     goto fail;
   }
-  *self = frame.value_1;
-  *child = frame.value_2;
-  *revocation = frame.value_3;
+  *management = frame.value_1;
   return SUCCESS;
 fail:
   return FAILURE;
@@ -60,19 +50,17 @@ fail:
 
 int tyche_seal(
     capa_index_t* transition, 
-    capa_index_t unsealed,
-    usize core_map,
+    capa_index_t management,
     usize cr3,
     usize rip, 
     usize rsp)
 {
   vmcall_frame_t frame = {
     .vmcall = TYCHE_SEAL_DOMAIN,
-    .arg_1 = unsealed,
-    .arg_2 = core_map,
-    .arg_3 = cr3, 
-    .arg_4 = rip,
-    .arg_5 = rsp,
+    .arg_1 = management,
+    .arg_2 = cr3, 
+    .arg_3 = rip,
+    .arg_4 = rsp,
   };
   if (transition == NULL) {
     goto failure;
@@ -87,7 +75,7 @@ failure:
   return FAILURE;
 }
 
-int tyche_duplicate(
+int tyche_segment_region(
     capa_index_t* left,
     capa_index_t* right,
     capa_index_t capa,
@@ -99,7 +87,7 @@ int tyche_duplicate(
     usize a2_3)
 {
   vmcall_frame_t frame = {
-    TYCHE_DUPLICATE,
+    TYCHE_SEGMENT_REGION,
     capa,
     a1_1,
     a1_2,
@@ -121,20 +109,11 @@ failure:
   return FAILURE;
 }
 
-int tyche_grant(
-    capa_index_t dest,
-    capa_index_t capa,
-    usize a1,
-    usize a2,
-    usize a3)
-{
+int tyche_send(capa_index_t dest, capa_index_t capa) {
   vmcall_frame_t frame = {
-    .vmcall = TYCHE_GRANT,
-    .arg_1 = dest,
-    .arg_2 = capa,
-    .arg_3 = a1,
-    .arg_4 = a2,
-    .arg_5 = a3,
+    .vmcall = TYCHE_SEND,
+    .arg_1 = capa,
+    .arg_2 = dest,
   };
   if (tyche_call(&frame) != SUCCESS) {
     goto failure;
@@ -148,6 +127,7 @@ failure:
   return FAILURE;
 }
 
+// TODO: do not exist anymore in v3!
 int tyche_share(
     capa_index_t* left,
     capa_index_t dest,
@@ -173,6 +153,20 @@ failure:
   return FAILURE;
 }
 
+int tyche_duplicate(capa_index_t* new_capa, capa_index_t capa) {
+  vmcall_frame_t frame = {
+   .vmcall = TYCHE_DUPLICATE, 
+  };
+  if (new_capa == NULL || tyche_call(&frame) != SUCCESS) {
+    goto failure;
+  }
+  *new_capa = frame.arg_1;
+
+  return SUCCESS;
+failure:
+  return FAILURE;
+}
+
 int tyche_revoke(capa_index_t id)
 {
   vmcall_frame_t frame = {
@@ -187,14 +181,13 @@ failure:
   return FAILURE;
 }
 
-int tyche_switch(capa_index_t transition_handle, usize cpu, void* args)
+int tyche_switch(capa_index_t transition_handle, void* args)
 {
   usize result = FAILURE;
   vmcall_frame_t frame = {
     .vmcall = TYCHE_SWITCH,
     .arg_1 = transition_handle,
-    .arg_2 = cpu,
-    .arg_3 = (usize) args,
+    .arg_3 = (usize) args, // TODO: not yet handled by v3
   };
   DEBUG("About to switch from the capability lib: handle %lld", transition_handle);
 

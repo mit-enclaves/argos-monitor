@@ -2,7 +2,7 @@
 #define __INCLUDE_TYCHE_CAPABILITIES_TYPES_H__
 
 #ifndef NULL
-#define NULL ((void*)0)
+#define NULL ((void *)0)
 #endif
 
 #include "dll.h"
@@ -23,38 +23,29 @@ typedef unsigned long long domain_id_t;
 /// Internal definition of index.
 typedef unsigned long long capa_index_t;
 
-/// Mirrors the types defined in crates/capabilities/src/lib.rs.
+/// Type of a capability
 typedef enum capa_type_t {
-  Resource = 0,
-  Revocation = 1 << 3,
+  Region = 0,
+  Management = 1,
+  Channel = 2,
+  Switch = 3,
 } capa_type_t;
-
-/// Mirrors the various types of resources handled by the capabilities.
-typedef enum capa_rtype_t {
-  Domain = 1 << 0,
-  Region = 1 << 1,
-  CPU = 1 << 2,
-} capa_rtype_t;
 
 /// Status of a domain capability.
 typedef enum domain_status_t {
   None = 0,
-  Unsealed = 1 << 0,
-  Sealed = 1 << 1,
-  Channel = 1 << 2,
-  Transition = 1 << 3,
-  // These are used for the ABI calls
-  Spawn = 1 << 4,
-  Comm = 1 << 5,
+  Unsealed = 1,
+  Sealed = 2,
 } domain_status_t;
 
 /// Region Access Rights
 typedef enum memory_access_right_t {
-  MEM_READ = 1 << 0,
-  MEM_WRITE = 1 << 1,
-  MEM_EXEC = 1 << 2,
-  MEM_SUPER = 1 << 3,
-  MEM_SHARE = 1 << 4,
+  MEM_ACTIVE = 1 << 0,
+  MEM_CONFIDENTIAL = 1 << 1,
+  MEM_READ = 1 << 2,
+  MEM_WRITE = 1 << 3,
+  MEM_EXEC = 1 << 4,
+  MEM_SUPER = 1 << 5,
 } memory_access_right_t;
 
 /// Access right information for a region capability.
@@ -64,30 +55,27 @@ typedef struct capa_region_t {
   paddr_t flags;
 } capa_region_t;
 
-/// Access right information for a cpu capability.
-typedef struct capa_cpu_t {
-  paddr_t flags;
-} capa_cpu_t;
-
-/// Access right information for a domain capability.
-typedef struct capa_domain_t {
+/// Information about a domain management capability.
+typedef struct capa_management_t {
   domain_status_t status;
-  union {
-    // If the status is Sealed or Unsealed.
-    struct {
-      char spawn;
-      char comm;
-    } capas;
-    // If the status is Transition.
-    int transition;
-  } info;
-} capa_domain_t;
+  capa_index_t id;
+} capa_management_t;
+
+typedef struct capa_channel_t {
+  capa_index_t id;
+} capa_channel_t;
+
+typedef struct capa_switch_t {
+  capa_index_t id;
+  // TODO: add reference about the domain?
+} capa_switch_t;
 
 /// A capability can be any of these three types.
 typedef union capa_descriptor_t {
-  capa_domain_t domain;
   capa_region_t region;
-  capa_cpu_t cpu;
+  capa_management_t management;
+  capa_channel_t channel;
+  capa_switch_t transition;
 } capa_descriptor_t;
 
 /// Capability that confers access to a memory region.
@@ -95,32 +83,27 @@ typedef struct capability_t {
   // General capability information.
   capa_index_t local_id;
   capa_type_t capa_type;
-  capa_rtype_t resource_type;
-  capa_descriptor_t access;
-
-  // This is stored for convenience but might not be up-to-date.
-  usize last_read_ref_count;
+  capa_descriptor_t info;
 
   // Tree structure.
-  struct capability_t* parent;
-  struct capability_t* left;
-  struct capability_t* right;
+  // TODO: do we still need this?
+  struct capability_t *parent;
+  struct capability_t *left;
+  struct capability_t *right;
 
   // This structure can be put in a double-linked list
   dll_elem(struct capability_t, list);
 } capability_t;
 
-typedef void* (*capa_alloc_t)(unsigned long size);
-typedef void (*capa_dealloc_t)(void* ptr);
-typedef void (*capa_dbg_print_t)(const char* msg);
+typedef void *(*capa_alloc_t)(unsigned long size);
+typedef void (*capa_dealloc_t)(void *ptr);
+typedef void (*capa_dbg_print_t)(const char *msg);
 
 /// Represents the current domain's metadata.
 typedef struct domain_t {
   // Allocate ids from this counter for children domains.
   domain_id_t id_counter;
-
-  // reference to ourselves.
-  capability_t* self;
+  domain_id_t id;
 
   // The allocator to use whenever we need a new structure.
   capa_alloc_t alloc;
@@ -143,7 +126,7 @@ typedef enum transition_lock_t {
 /// This allows to add a lock.
 typedef struct transition_t {
   transition_lock_t lock;
-  capability_t* transition;
+  capability_t *transition;
   dll_elem(struct transition_t, list);
 } transition_t;
 
@@ -156,11 +139,8 @@ typedef struct child_domain_t {
   // The domain's local id.
   domain_id_t id;
 
-  // Handle to the domain, this would be first an unsealed than a channel.
-  capability_t* manipulate;
-
-  // Handle to revoke the domain after a seal.
-  capability_t* revoke;
+  // Handle to the domain
+  capability_t *management;
 
   // All the revocations for resources passed to the domain.
   dll_list(struct capability_t, revocations);
