@@ -5,7 +5,6 @@ use stage_two_abi::{GuestInfo, VgaInfo};
 
 use crate::acpi::AcpiInfo;
 use crate::mmu::MemoryMap;
-use crate::println;
 use crate::vmx::bitmaps::{exit_qualification, ExceptionBitmap};
 use crate::vmx::{ActiveVmcs, ControlRegister, Register, VmxError, VmxExitReason};
 
@@ -117,7 +116,7 @@ pub trait Guest {
             }
             VmxExitReason::EptViolation => {
                 let addr = vcpu.guest_linear_addr()?;
-                println!("EPT Violation: 0x{:x}", addr.as_u64());
+                log::info!("EPT Violation: 0x{:x}", addr.as_u64());
                 Ok(HandlerResult::Crash)
             }
             VmxExitReason::Xsetbv => {
@@ -127,7 +126,7 @@ pub trait Guest {
 
                 let xrc_id = ecx & 0xFFFFFFFF; // Ignore 32 high-order bits
                 if xrc_id != 0 {
-                    println!("Xsetbv: invalid rcx 0x{:x}", ecx);
+                    log::info!("Xsetbv: invalid rcx 0x{:x}", ecx);
                     return Ok(HandlerResult::Crash);
                 }
 
@@ -152,32 +151,32 @@ pub trait Guest {
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 } else {
-                    println!("Unknown MSR: 0x{:x}", ecx);
+                    log::info!("Unknown MSR: 0x{:x}", ecx);
                     Ok(HandlerResult::Crash)
                 }
             }
             VmxExitReason::Exception => {
                 match vcpu.interrupt_info() {
                     Ok(Some(exit)) => {
-                        println!("Exception: {:?}", vcpu.interrupt_info());
+                        log::info!("Exception: {:?}", vcpu.interrupt_info());
                         // Inject the fault back into the guest.
                         let injection = exit.as_injectable_u32();
                         vcpu.set_vm_entry_interruption_information(injection)?;
                         Ok(HandlerResult::Resume)
                     }
                     _ => {
-                        println!("VM received an exception");
-                        println!("{:?}", vcpu);
+                        log::info!("VM received an exception");
+                        log::info!("{:?}", vcpu);
                         Ok(HandlerResult::Crash)
                     }
                 }
             }
             _ => {
-                println!(
+                log::info!(
                     "Emulation is not yet implemented for exit reason: {:?}",
                     reason
                 );
-                println!("{:?}", vcpu);
+                log::info!("{:?}", vcpu);
                 Ok(HandlerResult::Crash)
             }
         }

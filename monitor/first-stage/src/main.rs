@@ -16,10 +16,12 @@ use first_stage::acpi_handler::TycheACPIHandler;
 use first_stage::guests::Guest;
 use first_stage::mmu::MemoryMap;
 use first_stage::{guests, println, second_stage, smp, HostPhysAddr, HostVirtAddr};
+use log::LevelFilter;
 use mmu::{PtMapper, RangeAllocator};
 use stage_two_abi::VgaInfo;
 use x86_64::registers::control::Cr4;
-use {qemu, vtd};
+
+const LOG_LEVEL: LevelFilter = LevelFilter::Info;
 
 entry_point!(kernel_main);
 
@@ -29,6 +31,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     if let Some(buffer) = boot_info.framebuffer.as_mut().take() {
         vga_info = first_stage::init_display(buffer);
     }
+    logger::init(LOG_LEVEL);
     println!("============= First Stage =============");
 
     // Initialize memory management
@@ -47,8 +50,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // Initialize kernel structures
     first_stage::init();
 
-    println!("CR4: {:?}", Cr4::read());
-    println!("SMX support: {:?}", first_stage::smx::smx_is_available());
+    log::info!("CR4: {:?}", Cr4::read());
+    log::info!("SMX support: {:?}", first_stage::smx::smx_is_available());
     unsafe {
         let rax: u64;
         let rbx: u64;
@@ -70,7 +73,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             out("rdx") rdx,
         };
 
-        println!(
+        log::info!(
             "GETSEC  rax: 0x{:x} - rbx: 0x{:x} - rcx: 0x{:x} - rdx: 0x{:x}",
             rax, rbx, rcx, rdx
         );
@@ -114,10 +117,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             iommus[0].base_address.as_usize() + physical_memory_offset.as_usize(),
         );
         let iommu = unsafe { vtd::Iommu::new(iommu_addr) };
-        println!("IO MMU: capabilities {:?}", iommu.get_capability(),);
-        println!("        extended {:?}", iommu.get_extended_capability());
+        log::info!("IO MMU: capabilities {:?}", iommu.get_capability(),);
+        log::info!("        extended {:?}", iommu.get_extended_capability());
     } else {
-        println!("IO MMU: None");
+        log::info!("IO MMU: None");
     }
 
     // Initiates the SMP boot process
@@ -183,7 +186,7 @@ fn launch_guest(
 ) -> ! {
     let mut stage2_allocator = second_stage::second_stage_allocator(stage1_allocator);
     unsafe {
-        println!("Loading guest");
+        log::info!("Loading guest");
         let mut info = guest.instantiate(
             acpi,
             &mut stage2_allocator,
@@ -192,9 +195,9 @@ fn launch_guest(
             rsdp,
         );
         info.vga_info = vga_info;
-        println!("Saving host state");
+        log::info!("Saving host state");
         guests::vmx::save_host_info(&mut info.guest_info);
-        println!("Loading stage 2");
+        log::info!("Loading stage 2");
         second_stage::load(
             &info,
             stage1_allocator,
@@ -206,7 +209,7 @@ fn launch_guest(
         second_stage::enter();
     }
 
-    println!("Failed to jump into stage 2");
+    log::error!("Failed to jump into stage 2");
     qemu::exit(qemu::ExitCode::Failure);
     first_stage::hlt_loop();
 }
@@ -220,7 +223,7 @@ fn run_tests() {
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    println!("{}", info);
+    log::error!("{}", info);
 
     qemu::exit(qemu::ExitCode::Failure);
     first_stage::hlt_loop();

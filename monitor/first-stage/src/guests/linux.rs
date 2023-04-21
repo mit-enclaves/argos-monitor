@@ -16,8 +16,8 @@ use crate::guests::boot_params::{
 use crate::guests::common::setup_iommu_context;
 use crate::guests::ManifestInfo;
 use crate::mmu::MemoryMap;
+use crate::vmx;
 use crate::vmx::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
-use crate::{println, vmx};
 
 #[cfg(feature = "guest_linux")]
 const LINUXBYTES: &'static [u8] = include_bytes!("../../../../builds/linux-x86/vmlinux");
@@ -88,8 +88,8 @@ impl Guest for Linux {
                 iommu.update_root_table_addr();
                 iommu.enable_translation();
                 manifest.iommu = iommus[0].base_address.as_u64();
-                println!("I/O MMU: {:?}", iommu.get_global_status());
-                println!("I/O MMU Fault: {:?}", iommu.get_fault_status());
+                log::info!("I/O MMU: {:?}", iommu.get_global_status());
+                log::warn!("I/O MMU Fault: {:?}", iommu.get_fault_status());
             }
         }
 
@@ -119,7 +119,7 @@ impl Guest for Linux {
         &self,
         _vcpu: &mut vmx::ActiveVmcs,
     ) -> Result<HandlerResult, vmx::VmxError> {
-        crate::println!("Linux: VMCall - exiting...");
+        log::info!("Linux: VMCall - exiting...");
         Ok(HandlerResult::Exit)
     }
 }

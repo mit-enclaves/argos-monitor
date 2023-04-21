@@ -2,7 +2,7 @@ use lazy_static::lazy_static;
 use x86_64::registers::control::Cr2;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
-use crate::{gdt, getsec, println};
+use crate::{gdt, getsec};
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -52,7 +52,7 @@ extern "x86-interrupt" fn divide_by_zero_handler(stack_frame: InterruptStackFram
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
-    println!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
+    log::error!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
 }
 
 extern "x86-interrupt" fn general_protection_fault_handler(
@@ -111,11 +111,11 @@ extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
-    println!("EXCEPTION: PAGE FAULT");
-    println!("Accessed Address: {:?}", Cr2::read());
-    println!("Error code:       {:?}", error_code);
-    println!("Error code (raw): 0x{:x}", error_code.bits());
-    println!("{:#?}", stack_frame);
+    log::error!("EXCEPTION: PAGE FAULT");
+    log::error!("Accessed Address: {:?}", Cr2::read());
+    log::error!("Error code:       {:?}", error_code);
+    log::error!("Error code (raw): 0x{:x}", error_code.bits());
+    log::error!("{:#?}", stack_frame);
     panic!();
 }
 

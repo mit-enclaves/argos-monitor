@@ -3,8 +3,8 @@ use core::sync::atomic::*;
 use x86::apic::xapic;
 use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
 
+use crate::apic;
 use crate::gdt::Gdt;
-use crate::{apic, println};
 
 pub const MAX_CPU_NUM: usize = 256;
 const FALSE: AtomicBool = AtomicBool::new(false);
@@ -58,9 +58,9 @@ fn initialize_cpu() {
 }
 
 fn print_vmx_info() {
-    println!("VMX:    {:?}", vmx::vmx_available());
-    println!("EPT:    {:?}", vmx::ept_capabilities());
-    println!("VMFunc: {:?}", vmx::available_vmfuncs());
+    log::info!("VMX:    {:?}", vmx::vmx_available());
+    log::info!("EPT:    {:?}", vmx::ept_capabilities());
+    log::info!("VMFunc: {:?}", vmx::available_vmfuncs());
 }
 
 pub unsafe fn current() -> &'static mut Option<Cpu> {

@@ -10,7 +10,7 @@ use crate::guests::common::setup_iommu_context;
 use crate::guests::ManifestInfo;
 use crate::mmu::MemoryMap;
 use crate::vmx::Register;
-use crate::{println, vmx, GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
+use crate::{vmx, GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 
 #[cfg(feature = "guest_rawc")]
 const RAWCBYTES: &'static [u8] = include_bytes!("../../../../guest/rawc");
@@ -83,7 +83,7 @@ impl Guest for RawcBytes {
             iommu.update_root_table_addr();
             iommu.enable_translation();
             manifest.iommu = iommus[0].base_address.as_u64();
-            println!("I/O MMU: {:?}", iommu.get_global_status());
+            log::info!("I/O MMU: {:?}", iommu.get_global_status());
         }
 
         let entry_point = rawc_prog.entry;

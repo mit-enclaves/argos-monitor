@@ -8,7 +8,6 @@ use core::{mem, ptr};
 use mmu::{PtFlag, PtMapper, RangeAllocator};
 use tables::{dmar, McfgItem, Rsdp, SdtHeader};
 
-use crate::println;
 use crate::vmx::{HostPhysAddr, HostVirtAddr};
 
 /// Hardware configuration info collected from ACPI tables.
@@ -63,7 +62,7 @@ impl AcpiInfo {
         let rsdp = &*((rsdp_ptr + physical_memory_offset.as_u64()) as *const Rsdp);
         rsdp.check().expect("Invalid RSDP checksum");
         if rsdp.revision == 0 {
-            println!("Missing XSDT");
+            log::warn!("Missing XSDT");
             return AcpiInfo::default();
         }
 
@@ -90,7 +89,7 @@ impl AcpiInfo {
             b"MCFG" => self.handle_mcfg_table(header),
             b"DMAR" => self.handle_dmar_table(header),
             _ => {
-                println!(
+                log::info!(
                     "ACPI: unknown table '{}'",
                     core::str::from_utf8(&header.signature)
                         .expect("Failed to parse table signature")
@@ -100,7 +99,7 @@ impl AcpiInfo {
     }
 
     unsafe fn handle_mcfg_table(&mut self, header: &SdtHeader) {
-        println!("ACPI: parsing 'MCFG' table");
+        log::info!("ACPI: parsing 'MCFG' table");
         header.verify_checksum().expect("Invalid MCFG checksum");
 
         // Table items start at offset 44.
@@ -121,7 +120,7 @@ impl AcpiInfo {
     }
 
     unsafe fn handle_dmar_table(&mut self, header: &SdtHeader) {
-        println!("ACPI: parsing 'DMAR' table");
+        log::info!("ACPI: parsing 'DMAR' table");
         header.verify_checksum().expect("Invalid DMAR checksum");
 
         let table_ptr = (header as *const _) as *const u8;
@@ -137,7 +136,7 @@ impl AcpiInfo {
                     iommus.push(iommu);
                 }
                 _ => {
-                    println!("  Unknown DMAR type: {}", remap_header.typ);
+                    log::info!("  Unknown DMAR type: {}", remap_header.typ);
                 }
             }
 
@@ -164,7 +163,7 @@ impl AcpiInfo {
                 // We assume a single path here
                 let path = &*(device_scope_ptr.offset(mem::size_of::<dmar::DeviceScope>() as isize)
                     as *const dmar::Path);
-                println!(
+                log::info!(
                     "  PCI: {:02x}:{:02x}.{} - len: {} - type: {}",
                     device_scope.start_bus,
                     path.device_number,
@@ -232,7 +231,7 @@ impl AcpiInfo {
             match &header.signature {
                 b"APIC" => {
                     mailbox = self.allocate_mailbox(allocator, pt_mapper);
-                    println!("MP Wakeup Mailbox Address: {:#x}", mailbox);
+                    log::info!("MP Wakeup Mailbox Address: {:#x}", mailbox);
                     let entry =
                         self.add_madt_mp_wakeup_entry(header, mailbox, allocator, pt_mapper);
                     (table_ptr as *mut u64).write_unaligned(entry);
@@ -261,15 +260,17 @@ impl AcpiInfo {
         allocator: &impl RangeAllocator,
         mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
     ) -> u64 {
-        println!("Adding the MP Wakeup Entry to MADT Table");
+        log::info!("Adding the MP Wakeup Entry to MADT Table");
 
         let table_ptr = (header as *const _) as *const u8;
         let table_end = table_ptr.offset(header.length as isize);
         let old_table_len = table_end as usize - table_ptr as usize;
 
-        println!(
+        log::info!(
             "MADT Table Pointer={:p}, MADT Table End={:p}, MADT Table Length={}",
-            table_ptr, table_end, old_table_len
+            table_ptr,
+            table_end,
+            old_table_len
         );
         // Allocate a new memory range for MADT Table
         let madt_range = allocator

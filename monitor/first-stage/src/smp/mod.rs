@@ -11,7 +11,7 @@ use x86_64::instructions::tlb;
 
 use crate::mmu::PAGE_SIZE;
 use crate::vmx::{HostPhysAddr, HostVirtAddr};
-use crate::{apic, cpu, idt, println, second_stage};
+use crate::{apic, cpu, idt, second_stage};
 
 global_asm!(include_str!("trampoline.S"));
 
@@ -50,9 +50,9 @@ unsafe fn ap_entry() {
     // Setup IDT on the core
     idt::init();
     // Signal the AP is ready
-    println!("CPU {}: vmx {:?}", cpu::id(), vmx::vmx_available());
+    log::info!("CPU {}: vmx {:?}", cpu::id(), vmx::vmx_available());
     CPU_STATUS[cpu::id()].store(true, Ordering::SeqCst);
-    println!("Hello World from cpu {}", cpu::id());
+    log::info!("Hello World from cpu {}", cpu::id());
     // Wait until all cores has been initialized
     while !BSP_READY.load(Ordering::SeqCst) {
         core::hint::spin_loop();
@@ -166,7 +166,7 @@ pub unsafe fn boot(
     assert!(!bsp.is_ap);
     assert!(lapic.id() == bsp.local_apic_id);
 
-    println!("Setting up AP trampoline");
+    log::info!("Setting up AP trampoline");
     let backup_frame = allocate_code_section(stage1_allocator, pt_mapper);
 
     // Intel MP Spec B.4: Universal Start-up Algorithm
@@ -200,5 +200,5 @@ pub unsafe fn boot(
 
     restore_code_section(backup_frame);
     cpu::set_cores(ap.len() + 1);
-    println!("Booted {} AP.", ap.len());
+    log::info!("Booted {} AP.", ap.len());
 }

@@ -10,8 +10,8 @@
 use alloc::vec::Vec;
 use core::arch::asm;
 
+use crate::cpu;
 use crate::second_stage::Stage2;
-use crate::{cpu, println};
 
 const GETSEC_OPCODE: u16 = 0x370F;
 const CAPABILITIES_CHIPSET: u64 = 1;
@@ -121,7 +121,7 @@ fn getsec_capabilities(registers: &mut GetsecRegisters) {
     if registers.rbx == 0 {
         registers.rax = CAPABILITIES_CHIPSET | CAPABILITIES_PARAMETERS | CAPABILITIES_SENTER;
     } else {
-        println!("INVALID RBX VALUE: 0x{:x} ", registers.rbx);
+        log::info!("INVALID RBX VALUE: 0x{:x} ", registers.rbx);
     }
 }
 
@@ -129,13 +129,13 @@ fn getsec_senter(registers: &mut GetsecRegisters) {
     // ————————————————— CONDITIONS FOR SENTER LEAF TO BE LAUNCH ————————————————— //
     // TPM.ACCESS_0.activeLocality needs to be clear
     if TPM_ACCESS_0_ACTIVELOCALITY != 0 {
-        println!("CANNOT LAUNCH GETSEC[SENTER] => TPM.ACCESS.0.ACTIVELOCALITY BIT IS SET");
+        log::info!("CANNOT LAUNCH GETSEC[SENTER] => TPM.ACCESS.0.ACTIVELOCALITY BIT IS SET");
     }
 
     // Unless enumeration by the GETSEC[PARAMETERS] leaf reports otherwise,
     // only a value of zero is supported
     if registers.rdx != 0 {
-        println!(
+        log::info!(
             "CANNOT LAUNCH GETSEC[SENTER] => RDX SHOULD BE 0 BUT IS: 0x{:x} ",
             registers.rdx
         );
@@ -143,14 +143,16 @@ fn getsec_senter(registers: &mut GetsecRegisters) {
     // ————————————————— SENTER LEAF EXECUTION ————————————————— //
     // Verify if loaded SINIT BASE and SIZE are ok
     else if registers.rbx != SINIT_BASE {
-        println!(
+        log::info!(
             "ERROR GETSEC[SENTER] => RBX SHOULD BE EQUAL TO: 0x{:x}, BUT IS: 0x{:x}",
-            SINIT_BASE, registers.rbx
+            SINIT_BASE,
+            registers.rbx
         );
     } else if registers.rcx != SINIT_SIZE {
-        println!(
+        log::info!(
             "ERROR GETSEC[SENTER] => RCX SHOULD BE EQUAL TO: 0x{:x}, BUT IS: 0x{:x}",
-            SINIT_SIZE, registers.rcx
+            SINIT_SIZE,
+            registers.rcx
         );
     }
 

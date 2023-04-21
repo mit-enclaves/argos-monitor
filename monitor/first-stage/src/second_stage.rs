@@ -12,7 +12,7 @@ use crate::cpu::MAX_CPU_NUM;
 use crate::elf::{Elf64PhdrType, ElfProgram};
 use crate::guests::ManifestInfo;
 use crate::mmu::frames::RangeFrameAllocator;
-use crate::{cpu, println, HostPhysAddr, HostVirtAddr};
+use crate::{cpu, HostPhysAddr, HostVirtAddr};
 
 #[cfg(feature = "second-stage")]
 const SECOND_STAGE: &'static [u8] =
@@ -140,7 +140,7 @@ pub fn load(
     if info.iommu != 0 {
         // Map I/O MMU page, using one to one mapping
         // TODO: unmap from guest EPT
-        println!("Setup I/O MMU");
+        log::info!("Setup I/O MMU");
         let virt_addr = HostVirtAddr::new(info.iommu as usize);
         let phys_addr = HostPhysAddr::new(info.iommu as usize);
         let size = 0x1000;
@@ -159,7 +159,7 @@ pub fn load(
         let vga_phys = pt_mapper
             .translate(vga_virt)
             .expect("Failed to translate VGA virt addr");
-        println!(
+        log::info!(
             "VGA virt: 0x{:x} - phys: 0x{:x}",
             vga_virt.as_usize(),
             vga_phys.as_usize()

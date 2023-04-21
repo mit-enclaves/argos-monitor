@@ -17,22 +17,24 @@ second-stage = []
 [dependencies]
 # Internal
 stage_two_abi = { path = "../../crates/stage_two_abi" }
-vmx = { path = "../../crates/vmx" }
-vtd = { path = "../../crates/vtd" }
-mmu = { path = "../../crates/mmu" }
+vmx = { path = "../../crates/vmx/" }
+vtd = { path = "../../crates/vtd/" }
+mmu = { path = "../../crates/mmu/" }
 qemu = { path = "../../crates/qemu/" }
-debug = { path = "../../crates/debug" }
+debug = { path = "../../crates/debug/" }
+logger = { path = "../../crates/logger/" }
 vga = { path = "../../crates/vga/", optional = true }
 
 # External
 bootloader = { version = "0.10.13" }
 volatile = "0.2.6"
-spin = "0.5.2"
 x86_64 = "0.14.9"
 bitflags = "1.3.2"
 x2apic = "0.4.1"
 acpi = "4.1.1"
 x86 = "0.52.0"
+spin = { workspace = true }
+log = { workspace = true }
 
 [dependencies.lazy_static]
 version = "1.0"
