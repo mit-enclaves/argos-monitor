@@ -11,7 +11,6 @@ x86-linker-script   := "RUSTFLAGS='-C link-arg=-Tconfigs/x86-linker-script.x'"
 riscv-linker-script := "RUSTFLAGS='-C link-arg=-Tconfigs/riscv-linker-script.x'"
 first-stage         := "--package s1 --features=s1/second-stage"
 tyche               := "--package tyche"
-fake-acm            := "--package fake-acm"
 rawc                := "--features=s1/guest_rawc"
 linux               := "--features=s1/guest_linux"
 no-guest            := "--features=s1/no_guest"
@@ -37,7 +36,6 @@ check:
 	# Checking code...
 	cargo check {{cargo_args}} {{x86_64}} {{first-stage}}
 	cargo check {{cargo_args}} {{x86_64}} {{tyche}}
-	cargo check {{cargo_args}} {{x86_64}} {{fake-acm}}
 	cargo check {{cargo_args}} {{riscv}}  {{tyche}}
 
 	# Checking formatting...

@@ -8,8 +8,7 @@ edition = "2021"
 resolver = "2"
 members = [
     "monitor/first-stage",
-    "monitor/second-stage",
-    "monitor/fake-acm",
+    "monitor/tyche",
     "crates/stage_two_abi",
     "crates/vmx",
     "crates/vtd",
