@@ -18,6 +18,7 @@ pub enum VmCalls {
     Enumerate         = 0x8,
     Switch            = 0x9,
     Exit              = 0xA,
+    Debug             = 0xB,
 }
 
 // —————————————————————————————— Error Codes ——————————————————————————————— //
@@ -97,7 +98,7 @@ pub fn seal_domain(
 // }
 
 pub fn send(target: usize, capa: usize) -> Result<(), ErrorCode> {
-    do_vmcall(VmCalls::Send, target, capa, 0, 0, 0, 0, 0).map(|_| ())
+    do_vmcall(VmCalls::Send, capa, target, 0, 0, 0, 0, 0).map(|_| ())
 }
 
 pub fn segment_region(
@@ -143,6 +144,10 @@ pub fn switch(handle: usize, cpu: usize) -> Result<usize, ErrorCode> {
 
 pub fn exit() -> Result<(), ErrorCode> {
     do_vmcall(VmCalls::Exit, 0, 0, 0, 0, 0, 0, 0).map(|_| ())
+}
+
+pub fn debug() -> Result<(), ErrorCode> {
+    do_vmcall(VmCalls::Debug, 0, 0, 0, 0, 0, 0, 0).map(|_| ())
 }
 
 fn do_vmcall(

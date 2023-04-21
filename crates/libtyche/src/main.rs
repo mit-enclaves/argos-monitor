@@ -1,6 +1,8 @@
 use clap::Parser;
+use clap_num::maybe_hex;
 use libtyche::{
-    domain_create, duplicate, enumerate, exit, revoke, seal_domain, segment_region, send, switch,
+    debug, domain_create, duplicate, enumerate, exit, revoke, seal_domain, segment_region, send,
+    switch,
 };
 
 #[derive(clap::Parser)]
@@ -20,16 +22,22 @@ enum Subcommand {
         arg3: usize,
     },
     Send {
-        target: usize,
         capa: usize,
+        target: usize,
     },
     SegmentRegion {
         capa: usize,
+        #[clap(value_parser=maybe_hex::<usize>)]
         start_1: usize,
+        #[clap(value_parser=maybe_hex::<usize>)]
         end_1: usize,
+        #[clap(value_parser=maybe_hex::<usize>)]
         prot_1: usize,
+        #[clap(value_parser=maybe_hex::<usize>)]
         start_2: usize,
+        #[clap(value_parser=maybe_hex::<usize>)]
         end_2: usize,
+        #[clap(value_parser=maybe_hex::<usize>)]
         prot_2: usize,
     },
     Revoke {
@@ -47,6 +55,7 @@ enum Subcommand {
     },
     Exit,
     List,
+    Debug,
 }
 
 pub fn main() {
@@ -94,6 +103,7 @@ pub fn main() {
         Subcommand::Exit => {
             exit().unwrap();
         }
+        Subcommand::Debug => debug().unwrap(),
         Subcommand::List => list_all_capas(),
     };
 }

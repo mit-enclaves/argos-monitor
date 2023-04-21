@@ -148,16 +148,20 @@ pub(crate) struct ArenaIterator<'a, T, const N: usize> {
 }
 
 impl<'a, T, const N: usize> Iterator for ArenaIterator<'a, T, N> {
-    type Item = &'a T;
+    type Item = Handle<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.iterator.next()?;
-        Some(&self.arena.store[next])
+        Some(Handle {
+            idx: next,
+            gen: self.arena.gen[next],
+            _type: PhantomData,
+        })
     }
 }
 
 impl<'a, T, const N: usize> IntoIterator for &'a GenArena<T, N> {
-    type Item = &'a T;
+    type Item = Handle<T>;
     type IntoIter = ArenaIterator<'a, T, N>;
 
     fn into_iter(self) -> Self::IntoIter {

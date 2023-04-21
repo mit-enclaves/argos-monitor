@@ -189,6 +189,21 @@ pub fn do_switch(
     Ok((next_domain, get_context(context)))
 }
 
+pub fn do_debug() {
+    let mut engine = CAPA_ENGINE.lock();
+    let mut next = NextCapaToken::new();
+    while let Some((domain, next_next)) = engine.enumerate_domains(next) {
+        next = next_next;
+
+        log::info!("Domain");
+        let mut next_capa = NextCapaToken::new();
+        while let Some((info, next_next_capa)) = engine.enumerate(domain, next_capa) {
+            next_capa = next_next_capa;
+            log::info!(" - {}", info);
+        }
+    }
+}
+
 // ———————————————————————————————— Updates ————————————————————————————————— //
 
 fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {

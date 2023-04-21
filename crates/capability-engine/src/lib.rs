@@ -315,6 +315,15 @@ impl CapaEngine {
         Some((info, next_token))
     }
 
+    /// Enumerate all existing domains.
+    ///
+    /// NOTE: This function is intended for debug only, and is not (yet) implemented efficiently.
+    pub fn enumerate_domains(&self, token: NextCapaToken) -> Option<(Handle<Domain>, NextCapaToken)> {
+        let domain = self.domains.into_iter().skip(token.as_usize()).next()?;
+        let next = NextCapaToken::from_usize(token.as_usize() + 1);
+        Some((domain, next))
+    }
+
     pub fn get_domain_capa(
         &self,
         domain: Handle<Domain>,

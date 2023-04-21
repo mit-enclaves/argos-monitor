@@ -46,6 +46,7 @@ impl LocalCapa {
 }
 
 /// A token used to iterate capabilites of a domain.
+#[derive(Clone, Copy)]
 pub struct NextCapaToken {
     idx: usize,
 }

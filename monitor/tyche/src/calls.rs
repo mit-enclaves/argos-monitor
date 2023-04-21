@@ -9,3 +9,4 @@ pub const DUPLICATE: usize = 7;
 pub const ENUMERATE: usize = 8;
 pub const SWITCH: usize = 9;
 pub const EXIT: usize = 10;
+pub const DEBUG: usize = 11;

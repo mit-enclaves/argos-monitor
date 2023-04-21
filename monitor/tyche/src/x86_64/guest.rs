@@ -168,6 +168,13 @@ fn handle_exit(
 
                     Ok(HandlerResult::Resume)
                 }
+                calls::DEBUG => {
+                    log::trace!("Debug");
+                    monitor::do_debug();
+                    vcpu.set(Register::Rax, 0);
+                    vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
                 calls::EXIT => {
                     log::info!("MonCall: exit");
                     dump(vcpu);
