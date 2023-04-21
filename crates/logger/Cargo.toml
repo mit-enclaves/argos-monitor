@@ -1,0 +1,9 @@
+[package]
+name = "logger"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = { workspace = true }
+spin = { workspace = true }
+qemu = { path = "../qemu/" }

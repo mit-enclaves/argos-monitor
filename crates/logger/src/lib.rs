@@ -1,9 +1,9 @@
-//! Logging implementation
+#![no_std]
 
 use log::{LevelFilter, Metadata, Record};
 use spin::Mutex;
 
-use crate::debug::serial;
+use qemu::_print;
 
 static LOGGER: LockedLogger = LockedLogger(Mutex::new(Logger {}));
 
@@ -30,7 +30,7 @@ impl Logger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
-            serial::_print(core::format_args!(
+            _print(core::format_args!(
                 "[{} | {}] {}\n",
                 record.level(),
                 record.target(),

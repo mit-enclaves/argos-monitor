@@ -9,8 +9,10 @@ vga = ["dep:vga"]
 
 [dependencies]
 log = { workspace = true }
+spin = { workspace = true }
 utils = { path = "../../crates/utils/" }
 debug = { version = "0.1.0", path = "../../crates/debug" }
+logger = { path = "../../crates/logger/" }
 mmu = { version = "0.1.0", path = "../../crates/mmu" }
 stage_two_abi = { path = "../../crates/stage_two_abi" }
 vga = { path = "../../crates/vga/", optional = true }
@@ -21,7 +23,6 @@ monitor = {path = "../../crates/monitor"}
 
 # TODO: move the untrusted dependencies behing a feature flag
 qemu = { path = "../../crates/qemu/" }
-spin = "0.9.4"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 vtd = { path = "../../crates/vtd" }

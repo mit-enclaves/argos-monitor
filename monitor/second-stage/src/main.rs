@@ -6,7 +6,8 @@ use core::panic::PanicInfo;
 use log::LevelFilter;
 use second_stage;
 use second_stage::debug::qemu;
-use second_stage::{arch, logging, println};
+use logger;
+use second_stage::{arch, println};
 use stage_two_abi::entry_point;
 
 entry_point!(second_stage_entry_point);
@@ -15,13 +16,13 @@ const LOG_LEVEL: LevelFilter = LevelFilter::Info;
 
 #[cfg(target_arch = "x86_64")]
 fn second_stage_entry_point() -> ! {
-    logging::init(LOG_LEVEL);
+    logger::init(LOG_LEVEL);
     arch::arch_entry_point();
 }
 
 #[cfg(target_arch = "riscv64")]
 fn second_stage_entry_point(hartid: u64, arg1: u64, next_addr: u64, next_mode: u64) -> ! {
-    logging::init(LOG_LEVEL);
+    logger::init(LOG_LEVEL);
     second_stage::init();
 
     println!("============= Second Stage =============");
