@@ -9,15 +9,15 @@ build_features      := "-Zbuild-std-features=compiler-builtins-mem"
 cargo_args          := build_std + " " + build_features
 x86-linker-script   := "RUSTFLAGS='-C link-arg=-Tconfigs/x86-linker-script.x'"
 riscv-linker-script := "RUSTFLAGS='-C link-arg=-Tconfigs/riscv-linker-script.x'"
-first-stage         := "--package first-stage --features=first-stage/second-stage"
+first-stage         := "--package s1 --features=s1/second-stage"
 second-stage        := "--package second-stage"
 fake-acm            := "--package fake-acm"
-rawc                := "--features=first-stage/guest_rawc"
-linux               := "--features=first-stage/guest_linux"
-no-guest            := "--features=first-stage/no_guest"
-vga-s1              := "--features=first-stage/vga"
+rawc                := "--features=s1/guest_rawc"
+linux               := "--features=s1/guest_linux"
+no-guest            := "--features=s1/no_guest"
+vga-s1              := "--features=s1/vga"
 vga-s2              := "--features=second-stage/vga"
-bare-metal          := "--features=first-stage/bare_metal"
+bare-metal          := "--features=s1/bare_metal"
 build_path          := justfile_directory() + "/builds"
 tpm_path            := "/tmp/tpm-dev-" + env_var('USER')
 default_dbg         := "/tmp/dbg-" + env_var('USER')
@@ -112,7 +112,7 @@ linux-dbg SMP=default_smp:
 
 # Start a GDB session
 gdb DBG=default_dbg:
-	rust-gdb -q -ex "file target/x86_64-unknown-kernel/debug/first-stage" -ex "target remote {{DBG}}" -ex "source scripts/tyche-gdb.gdb"
+	rust-gdb -q -ex "file target/x86_64-unknown-kernel/debug/s1" -ex "target remote {{DBG}}" -ex "source scripts/tyche-gdb.gdb"
 
 # Build the monitor for x86_64
 build:

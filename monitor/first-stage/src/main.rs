@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(custom_test_frameworks)]
-#![test_runner(first_stage::test_runner)]
+#![test_runner(s1::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
 extern crate alloc;
@@ -11,11 +11,11 @@ use core::sync::atomic::Ordering;
 
 use acpi::AcpiTables;
 use bootloader::{entry_point, BootInfo};
-use first_stage::acpi::AcpiInfo;
-use first_stage::acpi_handler::TycheACPIHandler;
-use first_stage::guests::Guest;
-use first_stage::mmu::MemoryMap;
-use first_stage::{guests, println, second_stage, smp, HostPhysAddr, HostVirtAddr};
+use s1::acpi::AcpiInfo;
+use s1::acpi_handler::TycheACPIHandler;
+use s1::guests::Guest;
+use s1::mmu::MemoryMap;
+use s1::{guests, println, second_stage, smp, HostPhysAddr, HostVirtAddr};
 use log::LevelFilter;
 use mmu::{PtMapper, RangeAllocator};
 use stage_two_abi::VgaInfo;
@@ -29,7 +29,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // Initialize display, if any
     let mut vga_info = VgaInfo::no_vga();
     if let Some(buffer) = boot_info.framebuffer.as_mut().take() {
-        vga_info = first_stage::init_display(buffer);
+        vga_info = s1::init_display(buffer);
     }
     logger::init(LOG_LEVEL);
     println!("============= First Stage =============");
@@ -43,15 +43,15 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             as usize,
     );
     let (host_allocator, guest_allocator, memory_map, mut pt_mapper) = unsafe {
-        first_stage::init_memory(physical_memory_offset, &mut boot_info.memory_regions)
+        s1::init_memory(physical_memory_offset, &mut boot_info.memory_regions)
             .expect("Failed to initialize memory")
     };
 
     // Initialize kernel structures
-    first_stage::init();
+    s1::init();
 
     log::info!("CR4: {:?}", Cr4::read());
-    log::info!("SMX support: {:?}", first_stage::smx::smx_is_available());
+    log::info!("SMX support: {:?}", s1::smx::smx_is_available());
     unsafe {
         let rax: u64;
         let rbx: u64;
@@ -104,7 +104,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     };
 
     let mut acpi_info =
-        unsafe { first_stage::acpi::AcpiInfo::from_rsdp(rsdp, physical_memory_offset) };
+        unsafe { s1::acpi::AcpiInfo::from_rsdp(rsdp, physical_memory_offset) };
     let mailbox = unsafe {
         acpi_info.add_mp_wakeup_entry(
             rsdp,
@@ -214,7 +214,7 @@ fn launch_guest(
 
     log::error!("Failed to jump into stage 2");
     qemu::exit(qemu::ExitCode::Failure);
-    first_stage::hlt_loop();
+    s1::hlt_loop();
 }
 
 fn run_tests() {
@@ -229,12 +229,12 @@ fn panic(info: &PanicInfo) -> ! {
     log::error!("{}", info);
 
     qemu::exit(qemu::ExitCode::Failure);
-    first_stage::hlt_loop();
+    s1::hlt_loop();
 }
 
 #[cfg(test)]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    first_stage::test_panic_handler(info);
-    first_stage::hlt_loop();
+    s1::test_panic_handler(info);
+    s1::hlt_loop();
 }

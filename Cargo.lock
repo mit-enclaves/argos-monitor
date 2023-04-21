@@ -292,30 +292,6 @@ name = "fake-acm"
 version = "0.1.0"
 
 [[package]]
-name = "first-stage"
-version = "0.1.0"
-dependencies = [
- "acpi",
- "bitflags",
- "bootloader",
- "debug",
- "lazy_static",
- "log",
- "logger",
- "mmu",
- "qemu",
- "spin 0.9.4",
- "stage_two_abi",
- "vga",
- "vmx",
- "volatile 0.2.7",
- "vtd",
- "x2apic",
- "x86",
- "x86_64",
-]
-
-[[package]]
 name = "flate2"
 version = "1.0.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -690,6 +666,30 @@ dependencies = [
  "byteorder",
  "thiserror",
  "twox-hash",
+]
+
+[[package]]
+name = "s1"
+version = "0.1.0"
+dependencies = [
+ "acpi",
+ "bitflags",
+ "bootloader",
+ "debug",
+ "lazy_static",
+ "log",
+ "logger",
+ "mmu",
+ "qemu",
+ "spin 0.9.4",
+ "stage_two_abi",
+ "vga",
+ "vmx",
+ "volatile 0.2.7",
+ "vtd",
+ "x2apic",
+ "x86",
+ "x86_64",
 ]
 
 [[package]]
