@@ -4,6 +4,8 @@ use object::{elf, Endianness, U16Bytes, U32Bytes, U64Bytes};
 
 use crate::allocator::PAGE_SIZE;
 
+// —————————————————————————————— Local Enums ——————————————————————————————— //
+
 #[allow(dead_code)]
 #[derive(Debug)]
 pub enum ErrorBin {
@@ -12,6 +14,8 @@ pub enum ErrorBin {
     UnalignedAddress = 3,
 }
 
+/// OS-specific segment types.
+/// Shared/Confidential can be combined with segment.p_flags for RWX.
 #[derive(Debug)]
 #[allow(dead_code)]
 #[repr(u32)]
@@ -29,6 +33,9 @@ pub type Ehdr64 = elf::FileHeader64<Endianness>;
 pub const DENDIAN: Endianness = Endianness::Little;
 
 // ———————————————————————————— Wrapper Structs ————————————————————————————— //
+
+/// Holds sections for the binary.
+/// To ease finding special sections, we make the name directly available.
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct ModifiedSection {
@@ -37,6 +44,7 @@ pub struct ModifiedSection {
     pub section_header: Shdr64,
 }
 
+/// Holds segments for the binary.
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct ModifiedSegment {
@@ -44,12 +52,16 @@ pub struct ModifiedSegment {
     pub program_header: Phdr64,
 }
 
+/// Maintains the minimal and largest virt addr for the bifnary.
+/// This allows to pack new segments tight when we don't care about the addr.
 #[derive(Debug)]
 pub struct MemoryLayout {
     pub min_addr: u64,
     pub max_addr: u64,
 }
 
+/// Holds the ELF we are working on.
+/// Has a the binary header, the segments, sections, and raw content.
 #[derive(Debug)]
 pub struct ModifiedELF {
     pub header: Ehdr64,
@@ -59,13 +71,19 @@ pub struct ModifiedELF {
     pub data: Vec<u8>,
 }
 
+/// Helper function to convert a T into raw bytes.
+/// We use this to more easily parse/write headers.
 fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     unsafe {
         ::core::slice::from_raw_parts((p as *const T) as *const u8, ::core::mem::size_of::<T>())
     }
 }
 
+// ————————————————————————————— Implementation ————————————————————————————— //
+
 impl ModifiedELF {
+    /// Creates a new boxed ModifiedELF from raw bytes of a binary.
+    /// The bytes must include the entire ELF, i.e., headers.
     pub fn new(data: &[u8]) -> Box<ModifiedELF> {
         // Parse the header.
         let hdr = Ehdr64::parse(data).expect("Unable to parse the data");
@@ -143,7 +161,7 @@ impl ModifiedELF {
         melf
     }
 
-    /// Dump this object into the provided vector.
+    /// Writes a ModifiedELF into the provided writer.
     pub fn dump(&mut self, out: &mut object::write::elf::Writer) {
         log::info!("The computed size is {}", self.len());
 
@@ -172,15 +190,17 @@ impl ModifiedELF {
         log::debug!("Done writting the binary");
     }
 
+    /// Returns the length of an ELF header.
     pub fn len_hdr(&self) -> usize {
         std::mem::size_of::<Ehdr64>()
     }
 
+    /// Returns the length of of all the binary's program headers (segments).
     pub fn len_phdrs(&self) -> usize {
         ModifiedSegment::len() * self.segments.len()
     }
 
-    /// Compute the length required in bytes.
+    /// Computes and returns the length of the ELF binary.
     pub fn len(&mut self) -> usize {
         let header = self.len_hdr();
         let prog_headers: usize = self.len_phdrs();
@@ -189,6 +209,7 @@ impl ModifiedELF {
         return header + prog_headers + data + secs;
     }
 
+    /// Helper to construct a new program header (segment).
     fn construct_phdr(
         seg_type: u32,
         flags: u32,
@@ -210,6 +231,7 @@ impl ModifiedELF {
         }
     }
 
+    /// Helper to construct a new section header.
     #[allow(dead_code)]
     fn construct_shdr(
         name: u32,
@@ -235,6 +257,9 @@ impl ModifiedELF {
         }
     }
 
+    /// Creates and inserts a new segment without file data.
+    /// If no vaddr is provided, the segment is added a the max vaddr so far
+    /// in the binary.
     #[allow(dead_code)]
     pub fn append_nodata_segment(
         &mut self,
@@ -256,6 +281,9 @@ impl ModifiedELF {
         self.add_segment_header(&phdr);
     }
 
+    /// Appends a data segment to the binary.
+    /// If no vaddr is provided, the segment is added at the max vaddr so far
+    /// in the binary.
     #[allow(dead_code)]
     pub fn append_data_segment(
         &mut self,
@@ -294,6 +322,7 @@ impl ModifiedELF {
         self.add_segment_header(&phdr);
     }
 
+    /// Adds a segment header to the binary and patches offsets.
     pub fn add_segment_header(&mut self, phdr: &Phdr64) {
         let delta = ModifiedSegment::len() as u64;
         let affected = (self.len_hdr() + self.len_phdrs()) as u64;
@@ -317,7 +346,8 @@ impl ModifiedELF {
         // All done!
     }
 
-    /// This function relocates a section into its own segment.
+    /// Relocates a section into its own segment.
+    /// The section needs to be aligned (start and end).
     #[allow(dead_code)]
     pub fn split_segment_at_section(
         &mut self,
@@ -406,6 +436,8 @@ impl ModifiedELF {
 }
 
 impl ModifiedSegment {
+    /// Patches the offset inside a segment with delta if the offset
+    /// is greater than the affected address.
     pub fn patch_offset(&mut self, delta: u64, affected: u64) {
         let offset = self.program_header.p_offset(DENDIAN);
         if offset >= affected {
@@ -413,6 +445,7 @@ impl ModifiedSegment {
         }
     }
 
+    /// Returns vaddr - vend for the segment.
     #[allow(dead_code)]
     pub fn get_vaddr_bounds(&self) -> (u64, u64) {
         let start = self.program_header.p_vaddr(DENDIAN);
@@ -420,6 +453,7 @@ impl ModifiedSegment {
         (start, end)
     }
 
+    /// Returns foffset - foffset + fsize.
     #[allow(dead_code)]
     pub fn get_file_bounds(&self) -> (u64, u64) {
         let fstart = self.program_header.p_offset(DENDIAN);
@@ -427,12 +461,15 @@ impl ModifiedSegment {
         (fstart, fstart + fsize)
     }
 
+    /// Returns the length of a program header (segment).
     pub fn len() -> usize {
         std::mem::size_of::<Phdr64>()
     }
 }
 
 impl ModifiedSection {
+    /// Patches the offset inside a section with delta if the offset
+    /// is greater than the affected address.
     #[allow(dead_code)]
     pub fn patch_offset(&mut self, delta: u64, affected: u64) {
         let offset = self.section_header.sh_offset(DENDIAN);
@@ -441,6 +478,7 @@ impl ModifiedSection {
         }
     }
 
+    /// Returns vaddr - vend for the section.
     #[allow(dead_code)]
     pub fn get_vaddr_bounds(&self) -> (u64, u64) {
         let start = self.section_header.sh_addr(DENDIAN);
@@ -448,6 +486,7 @@ impl ModifiedSection {
         (start, end)
     }
 
+    /// Returns foffset - foffset + fsize.
     #[allow(dead_code)]
     pub fn get_file_bounds(&self) -> (u64, u64) {
         if self.section_header.sh_type(DENDIAN) == elf::SHT_NOBITS {
@@ -458,6 +497,7 @@ impl ModifiedSection {
         (fstart, fstart + fsize)
     }
 
+    /// Returns the length of a section header.
     pub fn len() -> usize {
         std::mem::size_of::<Shdr64>()
     }
