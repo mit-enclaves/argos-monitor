@@ -51,9 +51,9 @@ impl RegionCapa {
 }
 
 pub type RegionHandle = Handle<RegionCapa>;
-pub type RegionPool = GenArena<RegionCapa, N>;
+pub(crate) type RegionPool = GenArena<RegionCapa, N>;
 
-pub fn restore(
+pub(crate) fn restore(
     handle: Handle<RegionCapa>,
     regions: &mut RegionPool,
     domains: &mut DomainPool,
@@ -109,7 +109,7 @@ pub(crate) fn revoke(
     Ok(())
 }
 
-pub fn duplicate(
+pub(crate) fn duplicate(
     handle: Handle<RegionCapa>,
     regions: &mut RegionPool,
     domains: &mut DomainPool,
@@ -185,7 +185,7 @@ pub fn duplicate(
     Ok((capa_left, capa_right))
 }
 
-pub fn send(
+pub(crate) fn send(
     handle: Handle<RegionCapa>,
     regions: &mut RegionPool,
     domains: &mut DomainPool,
@@ -204,7 +204,7 @@ pub fn send(
     Ok(())
 }
 
-pub fn install(
+pub(crate) fn install(
     handle: RegionHandle,
     domain: Handle<Domain>,
     regions: &mut RegionPool,

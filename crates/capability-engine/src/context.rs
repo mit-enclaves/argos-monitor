@@ -1,7 +1,7 @@
 use crate::gen_arena::GenArena;
 use crate::N;
 
-pub type ContextPool = GenArena<Context, N>;
+pub(crate) type ContextPool = GenArena<Context, N>;
 
 pub struct Context {}
 

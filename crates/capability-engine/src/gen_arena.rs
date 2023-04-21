@@ -3,12 +3,12 @@
 use core::marker::PhantomData;
 use core::ops::{Index, IndexMut};
 
-use super::free_list::FreeList;
+use super::free_list::{FreeList, FreeListIterator};
 
 // ——————————————————————————— Generational Arena ——————————————————————————— //
 
 /// A generational arena.
-pub struct GenArena<T, const N: usize> {
+pub(crate) struct GenArena<T, const N: usize> {
     /// The baking store from which objects are allocated.
     store: [T; N],
 
@@ -139,6 +139,34 @@ impl<T> PartialEq for Handle<T> {
 }
 
 impl<T> Eq for Handle<T> {}
+
+// ———————————————————————————————— Iterator ———————————————————————————————— //
+
+pub(crate) struct ArenaIterator<'a, T, const N: usize> {
+    arena: &'a GenArena<T, N>,
+    iterator: FreeListIterator<'a, N>,
+}
+
+impl<'a, T, const N: usize> Iterator for ArenaIterator<'a, T, N> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.iterator.next()?;
+        Some(&self.arena.store[next])
+    }
+}
+
+impl<'a, T, const N: usize> IntoIterator for &'a GenArena<T, N> {
+    type Item = &'a T;
+    type IntoIter = ArenaIterator<'a, T, N>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        ArenaIterator {
+            arena: self,
+            iterator: self.free_list.into_iter(),
+        }
+    }
+}
 
 // ———————————————————————————————— Display ————————————————————————————————— //
 

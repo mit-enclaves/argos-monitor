@@ -11,7 +11,7 @@ enum NextFree {
 }
 
 /// A typed arena, from which objects can be dynamically allocated and freed.
-pub struct FreeList<const N: usize> {
+pub(crate) struct FreeList<const N: usize> {
     /// The free list, where free_list[n] returns the index of the next free object.
     free_list: [NextFree; N],
 
@@ -56,5 +56,45 @@ impl<const N: usize> FreeList<N> {
 
     pub fn is_free(&self, idx: usize) -> bool {
         self.free_list[idx] != NextFree::NotFree
+    }
+}
+
+// ———————————————————————————————— Iterator ———————————————————————————————— //
+
+pub(crate) struct FreeListIterator<'a, const N: usize> {
+    free_list: &'a FreeList<N>,
+    next: usize,
+}
+
+impl<'a, const N: usize> Iterator for FreeListIterator<'a, N> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let list = &self.free_list.free_list;
+        while self.next < list.len() {
+            if list[self.next] == NextFree::NotFree {
+                // Not free, increment next and return current index
+                let idx = self.next;
+                self.next += 1;
+                return Some(idx);
+            } else {
+                // Free, continue
+                self.next += 1;
+            }
+        }
+
+        None
+    }
+}
+
+impl<'a, const N: usize> IntoIterator for &'a FreeList<N> {
+    type Item = usize;
+    type IntoIter = FreeListIterator<'a, N>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        FreeListIterator {
+            free_list: self,
+            next: 0,
+        }
     }
 }

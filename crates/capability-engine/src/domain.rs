@@ -7,7 +7,7 @@ use crate::update::{Update, UpdateBuffer};
 use crate::{region_capa, AccessRights, CapaError, Handle, RegionPool, N};
 
 pub type DomainHandle = Handle<Domain>;
-pub type DomainPool = GenArena<Domain, N>;
+pub(crate) type DomainPool = GenArena<Domain, N>;
 
 // —————————————————————————————— Permissions ——————————————————————————————— //
 
@@ -212,7 +212,7 @@ impl Domain {
 // —————————————————————————————— Permissions ——————————————————————————————— //
 
 /// Check wether a given domain has the expected subset of permissions.
-pub fn has_permission(
+pub(crate) fn has_permission(
     domain: Handle<Domain>,
     domains: &DomainPool,
     permission: u64,
@@ -229,7 +229,7 @@ pub fn has_permission(
     }
 }
 
-pub fn set_permissions(
+pub(crate) fn set_permissions(
     domain: Handle<Domain>,
     domains: &mut DomainPool,
     permissions: u64,
@@ -249,7 +249,7 @@ pub fn set_permissions(
 
 // —————————————————————————————————— Send —————————————————————————————————— //
 
-pub fn send_management(
+pub(crate) fn send_management(
     capa: Handle<Domain>,
     domains: &mut DomainPool,
     to: Handle<Domain>,
@@ -261,7 +261,7 @@ pub fn send_management(
 
 // ——————————————————————————————— Duplicate ———————————————————————————————— //
 
-pub fn duplicate_capa(
+pub(crate) fn duplicate_capa(
     domain: Handle<Domain>,
     capa: LocalCapa,
     domains: &mut DomainPool,
