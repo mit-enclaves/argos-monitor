@@ -75,7 +75,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
         log::info!(
             "GETSEC  rax: 0x{:x} - rbx: 0x{:x} - rcx: 0x{:x} - rdx: 0x{:x}",
-            rax, rbx, rcx, rdx
+            rax,
+            rbx,
+            rcx,
+            rdx
         );
     }
 

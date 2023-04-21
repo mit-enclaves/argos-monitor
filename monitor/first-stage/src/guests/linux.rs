@@ -6,7 +6,7 @@ use stage_two_abi::GuestInfo;
 use vmx::HostPhysAddr;
 use vtd::Iommu;
 
-use super::{Guest, HandlerResult};
+use super::Guest;
 use crate::acpi::AcpiInfo;
 use crate::elf::{ElfMapping, ElfProgram};
 use crate::guests::boot_params::{
@@ -113,14 +113,6 @@ impl Guest for Linux {
         manifest.guest_info = info;
 
         manifest
-    }
-
-    unsafe fn vmcall_handler(
-        &self,
-        _vcpu: &mut vmx::ActiveVmcs,
-    ) -> Result<HandlerResult, vmx::VmxError> {
-        log::info!("Linux: VMCall - exiting...");
-        Ok(HandlerResult::Exit)
     }
 }
 

@@ -2,10 +2,9 @@
 
 use mmu::FrameAllocator;
 
-use super::{Guest, HandlerResult, ManifestInfo};
+use super::{Guest, ManifestInfo};
 use crate::acpi::AcpiInfo;
 use crate::mmu::MemoryMap;
-use crate::vmx;
 
 pub struct VoidGuest {}
 
@@ -21,12 +20,5 @@ impl Guest for VoidGuest {
         _rsdp: u64,
     ) -> ManifestInfo {
         ManifestInfo::default()
-    }
-
-    unsafe fn vmcall_handler(
-        &self,
-        _vcpu: &mut vmx::ActiveVmcs,
-    ) -> Result<HandlerResult, vmx::VmxError> {
-        Ok(HandlerResult::Crash)
     }
 }

@@ -3,14 +3,13 @@ use stage_two_abi::GuestInfo;
 use vmx::HostPhysAddr;
 use vtd::Iommu;
 
-use super::{Guest, HandlerResult};
+use super::Guest;
 use crate::acpi::AcpiInfo;
 use crate::elf::ElfProgram;
 use crate::guests::common::setup_iommu_context;
 use crate::guests::ManifestInfo;
 use crate::mmu::MemoryMap;
-use crate::vmx::Register;
-use crate::{vmx, GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
+use crate::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 
 #[cfg(feature = "guest_rawc")]
 const RAWCBYTES: &'static [u8] = include_bytes!("../../../../guest/rawc");
@@ -96,25 +95,5 @@ impl Guest for RawcBytes {
         manifest.guest_info = info;
 
         manifest
-    }
-
-    unsafe fn vmcall_handler(
-        &self,
-        vcpu: &mut vmx::ActiveVmcs,
-    ) -> Result<HandlerResult, vmx::VmxError> {
-        let rip = vcpu.get(Register::Rip);
-        let rax = vcpu.get(Register::Rax);
-
-        // Move to next instruction
-        vcpu.set(Register::Rip, rip + 3);
-
-        // Interpret VMCall
-        if rax == 0x777 {
-            return Ok(HandlerResult::Exit);
-        }
-        if rax == 0x888 {
-            return Ok(HandlerResult::Resume);
-        }
-        Ok(HandlerResult::Crash)
     }
 }

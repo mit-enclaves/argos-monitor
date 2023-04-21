@@ -1,9 +1,8 @@
 #![no_std]
 
 use log::{LevelFilter, Metadata, Record};
-use spin::Mutex;
-
 use qemu::_print;
+use spin::Mutex;
 
 static LOGGER: LockedLogger = LockedLogger(Mutex::new(Logger {}));
 
