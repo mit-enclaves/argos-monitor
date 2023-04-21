@@ -67,7 +67,7 @@ fn handle_exit(
             let arg_7 = vcpu.get(Register::R10) as usize;
             match vmcall {
                 calls::CREATE_DOMAIN => {
-                    println!("Create Domain");
+                    log::trace!("Create Domain");
                     let capa = monitor::do_create_domain(domain).expect("TODO");
                     vcpu.set(Register::Rdi, capa.as_u64());
                     vcpu.set(Register::Rax, 0);
@@ -75,7 +75,7 @@ fn handle_exit(
                     Ok(HandlerResult::Resume)
                 }
                 calls::SEAL_DOMAIN => {
-                    println!("Seal Domain");
+                    log::trace!("Seal Domain");
                     let capa = monitor::do_seal(domain, LocalCapa::new(arg_1), arg_2, arg_3, arg_4)
                         .expect("TODO");
                     vcpu.set(Register::Rdi, capa.as_u64());
@@ -84,12 +84,12 @@ fn handle_exit(
                     Ok(HandlerResult::Resume)
                 }
                 calls::SHARE => {
-                    println!("Share");
+                    log::trace!("Share");
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
                 calls::SEND => {
-                    println!("Send");
+                    log::trace!("Send");
                     monitor::do_send(domain, LocalCapa::new(arg_1), LocalCapa::new(arg_2))
                         .expect("TODO");
                     vcpu.set(Register::Rax, 0);
@@ -97,7 +97,7 @@ fn handle_exit(
                     Ok(HandlerResult::Resume)
                 }
                 calls::SEGMENT_REGION => {
-                    println!("Segment region");
+                    log::trace!("Segment region");
                     let (left, right) = monitor::do_segment_region(
                         domain,
                         LocalCapa::new(arg_1),
@@ -116,14 +116,14 @@ fn handle_exit(
                     Ok(HandlerResult::Resume)
                 }
                 calls::REVOKE => {
-                    println!("Revoke");
+                    log::trace!("Revoke");
                     monitor::do_revoke(domain, LocalCapa::new(arg_1)).expect("TODO");
                     vcpu.set(Register::Rax, 0);
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
                 calls::DUPLICATE => {
-                    println!("Duplicate");
+                    log::trace!("Duplicate");
                     let capa = monitor::do_duplicate(domain, LocalCapa::new(arg_1)).expect("TODO");
                     vcpu.set(Register::Rdi, capa.as_u64());
                     vcpu.set(Register::Rax, 0);
@@ -131,7 +131,7 @@ fn handle_exit(
                     Ok(HandlerResult::Resume)
                 }
                 calls::ENUMERATE => {
-                    println!("Enumerate");
+                    log::trace!("Enumerate");
                     if let Some((info, next)) =
                         monitor::do_enumerate(domain, NextCapaToken::from_usize(arg_1))
                     {
@@ -149,11 +149,12 @@ fn handle_exit(
                     Ok(HandlerResult::Resume)
                 }
                 calls::SWITCH => {
-                    println!("Switch");
+                    log::trace!("Switch");
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
                 calls::EXIT => {
+                    log::info!("MonCall: exit");
                     dump(vcpu);
                     Ok(HandlerResult::Exit)
                 }

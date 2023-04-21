@@ -28,6 +28,9 @@ members = [
     "boot_toolchain",
 ]
 
+[workspace.dependencies]
+log = "0.4.17"
+
 [features]
 # Print to VGA text mode
 vga = ["font8x8"]

@@ -715,6 +715,7 @@ dependencies = [
  "capa-engine",
  "capabilities",
  "debug",
+ "log",
  "mmu",
  "monitor",
  "qemu",
