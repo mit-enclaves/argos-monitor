@@ -135,7 +135,34 @@ normal_page:
   return WALK; 
 #elif defined(CONFIG_RISCV) || defined(__riscv)
   //TODO(neelu)
-  TEST(0);
+  switch(lvl) {
+      //Neelu: Why this specific order? 
+    case LVL2:
+      // Normal mapping.
+      goto normal_page;
+      break;
+    case LVL1:
+      goto normal_page;
+      break;
+    case LVL3:
+      goto normal_page;
+    case LVL0:
+      goto entry_page;
+      break;
+  }
+entry_page:
+  *entry = ((info->segment_offset + offset) & PT_PHYS_PAGE_MASK) |
+    translate_flags(info->segment->p_flags) | PT_BIT_D | PT_BIT_A; 
+  DEBUG("entry: lvl: %d, curr_va: %llx, entry: %llx, pa: %llx",
+      lvl, profile->curr_va, *entry, profile->va_to_pa((addr_t)entry, profile));
+  return WALK;
+normal_page:
+  new_page = profile->allocate((void*)(info->bump));
+  *entry = ((entry_t)new_page) | info->intermed_flags;
+  DEBUG("map: lvl: %d, curr_va: %llx, entry: %llx", lvl, profile->curr_va, *entry);
+  return WALK; 
+ 
+  //TEST(0);
 #endif
 failure:
   return FAILURE;
@@ -267,7 +294,24 @@ int create_page_tables(uint64_t phys_offset, page_tables_t* bump, Elf64_Ehdr* he
   profile.mappers[PT_PML4] = default_mapper;
 #elif defined(__riscv) || defined(CONFIG_RISCV)
   //TODO(neelu)
-  TEST(0);
+  info.bump = bump; 
+  info.intermed_flags = PT_BIT_V | PT_BIT_R | PT_BIT_W | PT_BIT_X | PT_BIT_U | PT_BIT_D;
+
+  // Set up the profile. 
+  profile = riscv64_sv48_profile;
+  profile.allocate  = allocate;
+  profile.pa_to_va = pa_to_va;
+  profile.va_to_pa = va_to_pa;
+  profile.extras = (void*) &info;
+  profile.how = riscv48_how_map;
+
+  // Set the mappers.
+  profile.mappers[LVL0] = default_mapper;
+  profile.mappers[LVL1] = default_mapper;
+  profile.mappers[LVL2] = default_mapper;
+  profile.mappers[LVL3] = default_mapper;
+ 
+  //TEST(0);
 #endif
 
   // Allocate the root.
@@ -292,7 +336,13 @@ int create_page_tables(uint64_t phys_offset, page_tables_t* bump, Elf64_Ehdr* he
     }
 #elif defined(__riscv) || defined(CONFIG_RISCV)
     //TODO(neelu)
-    TEST(0);
+#ifdef RISCV64_RV48 
+    if (pt_walk_page_range(root, LVL3, start, end, &profile)) { 
+        ERROR("Unable to map the region %llx -- %llx ", start, end);
+        goto unmap_failure;
+    }
+#endif
+    //TEST(0);
 #endif
     mem_size += align_up(seg.p_memsz);
   }
@@ -329,7 +379,13 @@ int fix_page_tables(usize offset, page_tables_t * tables)
       DEBUG("fixed: entry: %llx @(%d, %d)", *entry, i, j);
 #elif defined(__riscv) || defined(CONFIG_RISCV)
       //TODO(neelu) 
-      TEST(0);
+      if ((*entry & PT_BIT_V) != PT_BIT_V) {
+        continue;
+      }
+      uint64_t addr = offset + (*entry & PT_PHYS_PAGE_MASK);
+      *entry = (*entry & ~PT_PHYS_PAGE_MASK) | addr;
+      DEBUG("fixed: entry: %llx @(%d, %d)", *entry, i, j);
+      //TEST(0);
 #endif
     }
   } 

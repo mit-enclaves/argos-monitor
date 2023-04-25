@@ -29,7 +29,27 @@ int tyche_call(vmcall_frame_t* frame)
     : "rax", "rdi", "rsi", "rdx", "rcx", "r8", "r9", "memory");
 #elif defined(CONFIG_RISCV) || defined(__riscv)
   //TODO(neelu)
-  TEST(0);
+  //TEST(0);
+    asm volatile(
+        "mv a0, %[sa0]",
+        "mv a1, %[sa1]",
+        "mv a2, %[sa2]",
+        "mv a3, %[sa3]",
+        "mv a4, %[sa4]",
+        "mv a5, %[sa5]", 
+        "mv a6, %[sa6]",
+        "mv a7, %[sa7]",
+	    "wfi",	//TODO: Update this to be usable by both U-mode and S-mode. 
+        "mv %[da0], a0",
+        "mv %[da1], a1",
+        "mv %[da2], a2",
+        "mv %[da3], a3",
+        "mv %[da4], a4", 
+        "mv %[da5], a5",
+        "mv %[da6], a6",
+        : [da0]"=r" (result), [da1]"=r" (frame->value_1), [da2]"=r" (frame->value_2), [da3]"=r" (frame->value_3), [da4]"=r" (frame->value_4), [da5]"=r" (frame->value_5), [da6]"=r" (frame->value_6)
+        : [sa0]"r" (frame->vmcall), [sa1]"r" (frame->arg_1), [sa2]"r" (frame->arg_2), [sa3]"r" (frame->arg_3), [sa4]"r" (frame->arg_4), [sa5]"r" (frame->arg_5), [sa6]"r" (frame->arg_6), [sa7]"r" (frame->arg_7)
+	);
 #endif
   return (int)result;
 } 
@@ -240,7 +260,18 @@ int tyche_switch(capa_index_t* transition_handle, void* args)
   *transition_handle = frame.value_1;
 #elif defined(CONFIG_RISCV) || defined(__riscv)
   //TODO(neelu)
-  TEST(0);
+  asm volatile(
+        "mv a0, %[sa0]",
+        "mv a1, %[sa1]",
+        "mv a2, %[sa2]",
+        "mv a3, %[sa3]",
+	    "wfi",	//TODO: Update this to be usable by both U-mode and S-mode. 
+        "mv %[da0], a0",
+        "mv %[da1], a1",
+        : [da0]"=r" (result), [da1]"=r" (frame->value_1) 
+        : [sa0]"r" (frame->vmcall), [sa1]"r" (frame->arg_1), [sa2]"r" (frame->arg_2), [sa3]"r" (frame->arg_3)
+	);
+
 #endif
   return result;
 }
