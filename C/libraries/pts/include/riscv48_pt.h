@@ -3,6 +3,8 @@
 
 #include "pts_api.h"
 
+#define RISCV64_SV48
+
 #define RISCV48_LEVELS 4
 
 // ——————————————————————————— Page Configuration ——————————————————————————— //
@@ -72,7 +74,7 @@
 #define PT_D (1ULL << PT_BIT_D)
 
 // ———————————————————————————— Default profile ————————————————————————————— //
-extern const pt_profile_t riscv48_profile;
+extern const pt_profile_t riscv64_sv48_profile;
 // ——————————————————————————————— Functions ———————————————————————————————— //
 
 callback_action_t riscv48_how_visit_leaves(entry_t* entry, level_t level, pt_profile_t* profile);
