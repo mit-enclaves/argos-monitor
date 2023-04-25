@@ -2,7 +2,7 @@
 
 /// Default profile for riscv48.
 /// @warn It is incomplete.
-const pt_profile_t riscv48_profile = {
+const pt_profile_t riscv64_sv48_profile = {
   .nb_levels = RISCV48_LEVELS,
   .nb_entries = PT_NB_ENTRIES,
   .masks = {PT_LVL0_PAGE_MASK, PT_LVL1_PAGE_MASK, PT_LVL2_PAGE_MASK, PT_LVL3_PAGE_MASK},
