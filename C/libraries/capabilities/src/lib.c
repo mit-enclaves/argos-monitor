@@ -144,11 +144,9 @@ fail:
 int seal_domain(domain_id_t id, usize core_map, usize cr3, usize rip,
                 usize rsp) {
   child_domain_t *child = NULL;
-  capability_t *new_unsealed = NULL;
-  capability_t *channel = NULL, *transition = NULL;
-  capa_index_t to_seal = 0;
-  usize tpe = 0;
+  capability_t *transition = NULL;
   transition_t *trans_wrapper = NULL;
+  capa_index_t handle_idx = 0;
 
   DEBUG("start");
   // Find the target domain.
@@ -178,68 +176,38 @@ int seal_domain(domain_id_t id, usize core_map, usize cr3, usize rip,
   }
 
   // Create the transfer.
-  if (child->manipulate->access.domain.status != Unsealed) {
-    ERROR("we do not have an unsealed capa.");
+  if (child->management == NULL ||
+      child->management->capa_type != Management ||
+      child->management->info.management.status != Unsealed ) {
+    ERROR("we do not have a valid unsealed capa.");
     goto failure_dealloc;
   }
-  tpe = Unsealed;
-  if (child->manipulate->access.domain.info.capas.spawn != 0) {
-    tpe |= Spawn;
-  }
-  if (child->manipulate->access.domain.info.capas.comm != 0) {
-    tpe |= Comm;
-  }
-  if (duplicate_capa(&new_unsealed, &channel, child->manipulate, tpe, 0, 0,
-                     Channel, 0, 0) != SUCCESS) {
+
+  if (tyche_seal(&handle_idx, child->management->local_id, cr3, rip, rsp) != SUCCESS) {
     ERROR("Unable to create a channel.");
     goto failure_dealloc;
   }
 
-  // Cleanup phase:
-  // We can get rid of:
-  // 1. Manipulate -> it was an unsealed, it will get destroyed by
-  // revoke_domain.
-  // 2. new_unsealed -> it will get revoked as well.
-  // Then we have to fix all the tree pointers.
-  dll_remove(&(local_domain.capabilities), new_unsealed, list);
-  to_seal = new_unsealed->local_id;
-  local_domain.dealloc(new_unsealed);
-  local_domain.dealloc(child->manipulate);
-
-  // Fix the child's manipulate.
-  dll_remove(&(local_domain.capabilities), channel, list);
-  child->manipulate = channel;
-  child->manipulate->parent = NULL;
-
-  // Now seal.
-  if (tyche_seal(&(transition->local_id), to_seal, core_map, cr3, rip, rsp) !=
-      SUCCESS) {
-    ERROR("Error sealing domain.");
+  // Enumerate the transition capability.
+  if (enumerate_capa(&handle_idx, transition) != SUCCESS) {
+    ERROR("Unable to read the transition capability.");
     goto failure_dealloc;
   }
 
-  if (enumerate_capa(transition->local_id, transition) != SUCCESS) {
-    ERROR("Error enumerating transition.");
+  // Update the management capability.
+  handle_idx = child->management->local_id;
+  if (enumerate_capa(&handle_idx, child->management) != SUCCESS) {
+    ERROR("Unable to update the management capa.");
     goto failure_dealloc;
   }
 
-  trans_wrapper->lock = TRANSITION_UNLOCKED;
+  // Initialize the transition wrapper.
   trans_wrapper->transition = transition;
+  trans_wrapper->lock = TRANSITION_UNLOCKED;
   dll_init_elem(trans_wrapper, list);
-  if (!dll_is_empty(&(child->transitions))) {
-    ERROR("The transitions is not empty?!");
-  }
+
+  // Add the transition wrapper to the child.
   dll_add(&(child->transitions), trans_wrapper, list);
-  DEBUG("trans_wrapper address %p, idx: %lld, type: %d for child  %p",
-        (void *)trans_wrapper, trans_wrapper->transition->local_id,
-        transition->capa_type, (void *)child);
-  if (transition->capa_type != Resource ||
-      transition->resource_type != Domain ||
-      transition->access.domain.status != Transition) {
-    ERROR("Something is wrong with the capa %d %d %d", transition->capa_type,
-          transition->resource_type, transition->access.domain.status);
-    goto failure_dealloc;
-  }
 
   // All done !
   DEBUG("Success");
@@ -252,6 +220,8 @@ failure:
   return FAILURE;
 }
 
+//TODO not sure yet, this will be used below.
+/*
 int duplicate_capa(capability_t **left, capability_t **right,
                    capability_t *capa, usize a1_1, usize a1_2, usize a1_3,
                    usize a2_1, usize a2_2, usize a2_3) {
@@ -320,6 +290,7 @@ fail_left:
 failure:
   return FAILURE;
 }
+*/
 
 // TODO: for the moment only handle the case where the region is fully contained
 // within one capability.
