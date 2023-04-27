@@ -96,18 +96,26 @@ int create_domain(domain_id_t *id) {
   child_capa = (capability_t *)local_domain.alloc(sizeof(capability_t));
   if (child_capa == NULL) {
     ERROR("Failed to allocate child_capa.");
-    goto fail_child_capa;
+    goto fail_child;
   }
 
   // Create the domain.
-  if (tyche_create_domain(&child_idx) != 0) {
+  if (tyche_create_domain(&child_idx) != SUCCESS) {
     ERROR("Failed to create domain.");
-    goto fail;
+    goto fail_child_capa;
   }
 
   // Populate the capability.
-  child_capa->local_id = child_idx;
-  child_capa->capa_type = Management;
+  if (enumerate_capa(&child_idx, child_capa) != SUCCESS) {
+    ERROR("Failed to enumerate the newly created child.");
+    goto fail_child_capa;
+  }
+
+  // Initialize the other capa fields.
+  child_capa->parent = NULL;
+  child_capa->left = NULL;
+  child_capa->right = NULL;
+  dll_init_elem(child_capa, list); 
 
   // Initialize the child domain.
   child->id = local_domain.id_counter++;
@@ -115,17 +123,9 @@ int create_domain(domain_id_t *id) {
   dll_init_list(&(child->revocations));
   dll_init_list(&(child->transitions));
   dll_init_elem(child, list);
-  // child_capa->parent = revocation_capa;
-  // local_domain.self->parent = revocation_capa;
 
   // Add the child to the local_domain.
   dll_add(&(local_domain.children), child, list);
-
-  // TODO not sure about that.
-  //  Add the capabilities to the local domain.
-  dll_init_elem(child_capa, list);
-  // dll_add(&(local_domain.capabilities), revocation_capa, list);
-  // dll_add(&(local_domain.capabilities), child_capa, list);
 
   // All done!
   *id = child->id;

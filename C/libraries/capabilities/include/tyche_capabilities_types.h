@@ -2,7 +2,7 @@
 #define __INCLUDE_TYCHE_CAPABILITIES_TYPES_H__
 
 #ifndef NULL
-#define NULL ((void *)0)
+#define NULL ((void*)0)
 #endif
 
 #include "dll.h"
@@ -62,10 +62,12 @@ typedef struct capa_management_t {
 } capa_management_t;
 
 typedef struct capa_channel_t {
+  //TODO what id is this?
   capa_index_t id;
 } capa_channel_t;
 
 typedef struct capa_switch_t {
+  //TODO what id is this?
   capa_index_t id;
   // TODO: add reference about the domain?
 } capa_switch_t;
@@ -87,17 +89,17 @@ typedef struct capability_t {
 
   // Tree structure.
   // TODO: do we still need this?
-  struct capability_t *parent;
-  struct capability_t *left;
-  struct capability_t *right;
+  struct capability_t* parent;
+  struct capability_t* left;
+  struct capability_t* right;
 
   // This structure can be put in a double-linked list
   dll_elem(struct capability_t, list);
 } capability_t;
 
-typedef void *(*capa_alloc_t)(unsigned long size);
-typedef void (*capa_dealloc_t)(void *ptr);
-typedef void (*capa_dbg_print_t)(const char *msg);
+typedef void* (*capa_alloc_t)(unsigned long size);
+typedef void (*capa_dealloc_t)(void* ptr);
+typedef void (*capa_dbg_print_t)(const char* msg);
 
 /// Represents the current domain's metadata.
 typedef struct domain_t {
@@ -126,7 +128,7 @@ typedef enum transition_lock_t {
 /// This allows to add a lock.
 typedef struct transition_t {
   transition_lock_t lock;
-  capability_t *transition;
+  capability_t* transition;
   dll_elem(struct transition_t, list);
 } transition_t;
 
@@ -140,7 +142,7 @@ typedef struct child_domain_t {
   domain_id_t id;
 
   // Handle to the domain
-  capability_t *management;
+  capability_t* management;
 
   // All the revocations for resources passed to the domain.
   dll_list(struct capability_t, revocations);
