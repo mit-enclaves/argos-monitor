@@ -27,6 +27,19 @@ void local_memset(void *dest, unsigned long n) {
   }
 }
 
+child_domain_t* find_child(domain_id_t id)
+{
+  child_domain_t *child = NULL;
+  // Find the target domain.
+  dll_foreach(&(local_domain.children), child, list) {
+    if (child->id == id) {
+      // Found the right one.
+      break;
+    }
+  }
+  return child;
+}
+
 // —————————————————————————————— Public APIs ——————————————————————————————— //
 
 int init(capa_alloc_t allocator, capa_dealloc_t deallocator) {
@@ -149,12 +162,7 @@ int seal_domain(domain_id_t id, usize core_map, usize cr3, usize rip,
 
   DEBUG("start");
   // Find the target domain.
-  dll_foreach(&(local_domain.children), child, list) {
-    if (child->id == id) {
-      // Found the right one.
-      break;
-    }
-  }
+  child = find_child(id); 
 
   // We were not able to find the child.
   if (child == NULL) {
@@ -350,9 +358,8 @@ static capability_t* trick_segment_null_copy(capability_t* capa)
   right->left = NULL;
   right->right = NULL;
   return right;
-
 failure:
-  return FAILURE;
+  return NULL;
 }
 
 // TODO: for the moment only handle the case where the region is fully contained
@@ -370,12 +377,7 @@ int grant_region(domain_id_t id, paddr_t start, paddr_t end,
   }
 
   // Find the target domain.
-  dll_foreach(&(local_domain.children), child, list) {
-    if (child->id == id) {
-      // Found the right one.
-      break;
-    }
-  }
+  child = find_child(id); 
 
   // We were not able to find the child.
   if (child == NULL) {
@@ -385,7 +387,7 @@ int grant_region(domain_id_t id, paddr_t start, paddr_t end,
 
   // Now attempt to find the capability.
   dll_foreach(&(local_domain.capabilities), capa, list) {
-    if (capa->capa_type != Region) {
+    if (capa->capa_type != Region || (capa->info.region.flags & MEM_ACTIVE) == 0) {
       continue;
     }
     if ((dll_contains(
@@ -518,12 +520,7 @@ int share_region(domain_id_t id, paddr_t start, paddr_t end,
   }
 
   // Find the target domain.
-  dll_foreach(&(local_domain.children), child, list) {
-    if (child->id == id) {
-      // Found the right one.
-      break;
-    }
-  }
+  child = find_child(id); 
 
   // We were not able to find the child.
   if (child == NULL) {
@@ -533,7 +530,7 @@ int share_region(domain_id_t id, paddr_t start, paddr_t end,
 
   // Now attempt to find the capability.
   dll_foreach(&(local_domain.capabilities), capa, list) {
-    if (capa->capa_type != Resource || capa->resource_type != Region) {
+    if (capa->capa_type != Region || (capa->info.region.flags & MEM_ACTIVE) == 0) {
       continue;
     }
     // TODO check dll_contains, might fail on end.
@@ -556,48 +553,42 @@ int share_region(domain_id_t id, paddr_t start, paddr_t end,
   // shares.
   if (segment_region_capa(
         capa, &left, &right,
-        capa->info.region.start, capa->access.region.end, capa->access.region.flags,
-        start, end, capa->access.region.flags) != SUCCESS) {
+        capa->info.region.start, capa->info.region.end, capa->info.region.flags,
+        start, end, capa->info.region.flags) != SUCCESS) {
     ERROR("First segment region call failed.");
     goto failure;
   }
 
+  // We care about the right capability.
+  capa = right;
+
   // We do the magic segment_region_capa to have a single revoke.
+  // One last duplicate to have a revocation {NULL, to_send}.
   do {
-    capability_t *fake_l = NULL; capability_t* to_send = NULL;
-    if (segment_region_capa(
-          right, &fake_l, &to_send,
-          right->info.region.start, right->info.region.start, right->info.region.flags,
-          right->info.region.start, right->info.region.end, right->info.region.flags
-          ) != SUCCESS) {
-      ERROR("Unable to perform the segmentations with null left");
+    capability_t *to_send = trick_segment_null_copy(capa);
+    if (to_send == NULL) {
+      ERROR("To send is null.");
       goto failure;
     }
 
-    // Discard the left.
-    if (fake_l == NULL) {
-      ERROR("Left is null.");
+    // Check we have a revocation capa.
+    if (capa->capa_type != Region || (capa->info.region.flags & MEM_ACTIVE) != 0) {
+      ERROR("This should be a revocation capability.");
       goto failure;
     }
+
+    // Send the capa to the target.
+    if (tyche_send(child->management->local_id, to_send->local_id) != SUCCESS) {
+      ERROR("Unable to send the capability!");
+      goto failure;
+    } 
+
+    // Cleanup to send.
+    local_domain.dealloc(to_send);
   } while(0);
 
-  // We implement the share as a grant of the cut out region.
-  if (tyche_send(child->manipulate->local_id, right->local_id, start, end,
-                  (usize)access) != SUCCESS) {
-    ERROR("Failed sharing the region with the domain.");
-    goto failure;
-  }
-
-  // Now we update the capabilities.
-  if (enumerate_capa(right->local_id, right) != SUCCESS) {
-    ERROR("We failed enumerating the revocation after share.");
-    goto failure;
-  }
-  dll_remove(&(local_domain.capabilities), right, list);
-  if (right->capa_type != Revocation) {
-    DEBUG("[DBG] not a revocation 3");
-    goto failure;
-  }
+  // Just remove the capability now. 
+  dll_remove(&(local_domain.capabilities), capa, list);
   dll_add(&(child->revocations), right, list);
 
   // All done!
@@ -614,7 +605,7 @@ int internal_revoke(child_domain_t *child, capability_t *capa) {
     goto failure;
   }
 
-  if (capa->capa_type != Revocation) {
+  if (capa->capa_type != Region) {
     ERROR("Error[internal revoke] supplied capability is not a revocation");
     goto failure;
   }
@@ -623,7 +614,7 @@ int internal_revoke(child_domain_t *child, capability_t *capa) {
     goto failure;
   }
 
-  if (enumerate_capa(capa->local_id, capa) != SUCCESS) {
+  if (enumerate_capa(capa->local_id, NULL, capa) != SUCCESS) {
     ERROR("Error[internal_revoke]: unable to enumerate the revoked capa");
     goto failure;
   }
@@ -635,9 +626,11 @@ int internal_revoke(child_domain_t *child, capability_t *capa) {
   // Check if we can merge everything back.
   while (capa->parent != NULL &&
          ((capa->parent->right == capa && capa->parent->left != NULL &&
-           capa->parent->left->capa_type == Resource) ||
+           capa->parent->left->capa_type == Region &&
+           (capa->parent->left->info.region.flags & MEM_ACTIVE) == MEM_ACTIVE) ||
           (capa->parent->left == capa && capa->parent->right != NULL &&
-           capa->parent->right->capa_type == Resource))) {
+           capa->parent->right->capa_type == Region && 
+           (capa->parent->right->info.region.flags & MEM_ACTIVE) == MEM_ACTIVE))) {
     capability_t *parent = capa->parent;
     if (tyche_revoke(parent->local_id) != SUCCESS) {
       goto failure;
@@ -648,7 +641,7 @@ int internal_revoke(child_domain_t *child, capability_t *capa) {
     local_domain.dealloc(parent->right);
     parent->left = NULL;
     parent->right = NULL;
-    if (enumerate_capa(parent->local_id, parent) != SUCCESS) {
+    if (enumerate_capa(parent->local_id, NULL, parent) != SUCCESS) {
       ERROR("Error[internal_revoke]: unable to enumerate after the merge.");
       goto failure;
     }
@@ -669,12 +662,7 @@ int revoke_region(domain_id_t id, paddr_t start, paddr_t end) {
 
   DEBUG("start");
   // Find the target domain.
-  dll_foreach(&(local_domain.children), child, list) {
-    if (child->id == id) {
-      // Found the right one.
-      break;
-    }
-  }
+  child = find_child(id); 
 
   // We were not able to find the child.
   if (child == NULL) {
@@ -684,8 +672,8 @@ int revoke_region(domain_id_t id, paddr_t start, paddr_t end) {
 
   // Try to find the region.
   dll_foreach(&(child->revocations), capa, list) {
-    if (capa->resource_type == Region && capa->access.region.start == start &&
-        capa->access.region.end == end) {
+    if (capa->capa_type == Region && capa->info.region.start == start &&
+        capa->info.region.end == end) {
       // Found it!
       break;
     }
@@ -742,7 +730,7 @@ int switch_domain(domain_id_t id, void *args) {
   DEBUG("Found a handle for domain %lld, id %lld", id,
         wrapper->transition->local_id);
 
-  if (tyche_switch(wrapper->transition->local_id, NO_CPU_SWITCH, args) !=
+  if (tyche_switch(wrapper->transition->local_id, args) !=
       SUCCESS) {
     ERROR("failed to perform a switch on capa %lld",
           wrapper->transition->local_id);
@@ -756,6 +744,7 @@ failure:
   return FAILURE;
 }
 
+//TODO revoke domain is probably gonna be shit.
 int revoke_domain(domain_id_t id) {
   child_domain_t *child = NULL;
   capability_t *capa = NULL;
@@ -804,17 +793,14 @@ int revoke_domain(domain_id_t id) {
     local_domain.dealloc(capa);
     local_domain.dealloc(wrapper);
   }
-  // Remove the manipulate too.
-  local_domain.dealloc(child->manipulate);
 
-  if (tyche_revoke(child->revoke->local_id) != SUCCESS) {
+  // Kill the domain.
+  if (tyche_revoke(child->management->local_id) != SUCCESS) {
     goto failure;
   }
-  if (enumerate_capa(child->revoke->local_id, local_domain.self) != SUCCESS) {
-    ERROR("Unable to enumerate self");
-    goto failure;
-  }
-  local_domain.dealloc(child->revoke);
+  local_domain.dealloc(child->management);
+
+  // Dealloc the domain.
   dll_remove(&(local_domain.children), child, list);
   local_domain.dealloc(child);
 
