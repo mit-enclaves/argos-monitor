@@ -29,7 +29,7 @@ COMMON_INCLUDES = -Iinclude -I$(CAPA_LIB)/include -I$(COMMON_LIB)/include -I$(DL
 APP_INCLUDES = $(COMMON_INCLUDES) -I$(ELF64)/include -I$(PTS)/include -I$(DRIVER)/include
 
 # Dynamic libraries
-DYNS= -l:enclave_loader.so -lelf64 -lpts
+DYNS= -Wl,-R ./libs  -L./libs/ -l:enclave_loader.so -lpts
 
 # Installation configuration.
 DISK_PATH ?= /tmp/mount/tyche/programs 
@@ -41,10 +41,9 @@ app: $(CODE_APP) $(HDRS_APP)
 	make -C $(SDK)
 	make -C $(ELF64)
 	make -C $(PTS)
-	cp $(ELF64)/libelf64.so libs/
 	cp $(SDK)/enclave_loader.so libs/
 	cp $(PTS)/libpts.a libs/
-	gcc -DTYCHE_USER_SPACE=1 -g $(APP_INCLUDES) -Wl,-R ./libs  -L./libs/ -o $@ $(CODE_APP) $(DYNS)
+	gcc -DTYCHE_USER_SPACE=1 -g $(APP_INCLUDES) -o $@ $(CODE_APP) $(DYNS)
 
 
 
