@@ -472,50 +472,27 @@ int grant_region(domain_id_t id, paddr_t start, paddr_t end,
 
   // One last duplicate to have a revocation {NULL, to_send}.
   do {
-    // We will discard both as left is NULL and right is sent.
-    capability_t* left = NULL, *right = NULL;
-    if (segment_region_capa(capa, &left, &right,
-          capa->info.region.start,
-          capa->info.region.start,
-          capa->info.region.flags,
-          capa->info.region.start,
-          capa->info.region.end,
-          capa->info.region.flags) != SUCCESS) {
-          ERROR("Unable to produce a NULL segment"); 
-          goto failure;
-        }
-    // We can discard the left capability.
-    if (left == NULL) {
-      ERROR("The left capability is null.");
+    capability_t *to_send = trick_segment_null_copy(capa);
+    if (to_send == NULL) {
+      ERROR("To send is null.");
       goto failure;
     }
-    dll_remove(&(local_domain.capabilities), left, list);
-    local_domain.dealloc((void*) left);
-    capa->left = NULL;
 
-    // We send the right.
-    if (right == NULL) {
-      ERROR("The right is null.");
+    // Check we have a revocation capa.
+    if (capa->capa_type != Region || (capa->info.region.flags & MEM_ACTIVE) != 0) {
+      ERROR("This should be a revocation capability.");
       goto failure;
     }
-    dll_remove(&(local_domain.capabilities), right, list);
-    if (tyche_send(child->management->local_id, right->local_id) != SUCCESS) {
-      ERROR("Unable to send the capability to the target.");
-      goto failure;
-    }
-    local_domain.dealloc(right);
-    capa->right = NULL;
 
+    // Send the capa to the target.
+    if (tyche_send(child->management->local_id, to_send->local_id) != SUCCESS) {
+      ERROR("Unable to send the capability!");
+      goto failure;
+    } 
+
+    // Cleanup to send.
+    local_domain.dealloc(to_send);
   } while(0);
-
-  // Update the revocation capa & check it is a revocation one.
-  if (enumerate_capa(capa->local_id, NULL, capa) != SUCCESS) {
-    goto failure;
-  }
-  if (capa->capa_type != Region || (capa->info.region.flags & MEM_ACTIVE) != 0) {
-    ERROR("The capability is not a revocation.");
-    goto failure;
-  }
 
   // Remove it from the capabilities and put it in the revocation list..
   dll_remove(&(local_domain.capabilities), capa, list);
