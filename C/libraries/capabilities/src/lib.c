@@ -123,6 +123,15 @@ int create_domain(domain_id_t *id) {
     goto fail_child_capa;
   }
 
+  // Check that the child capa is a management one.
+  if (child_capa->capa_type != Management ||
+      child_capa->info.management.status != Unsealed) {
+    ERROR("The created domain capa is invalid: type: 0x%x status 0x%x",
+        child_capa->capa_type,
+        child_capa->info.management.status);
+    goto fail_child_capa;
+  }
+
   // Initialize the other capa fields.
   child_capa->parent = NULL;
   child_capa->left = NULL;
@@ -182,10 +191,16 @@ int seal_domain(domain_id_t id, usize core_map, usize cr3, usize rip,
   }
 
   // Create the transfer.
-  if (child->management == NULL ||
-      child->management->capa_type != Management ||
+  if (child->management == NULL) {
+    ERROR("The child's management is null");
+    goto failure_dealloc;
+  }
+  if (child->management->capa_type != Management ||
       child->management->info.management.status != Unsealed ) {
     ERROR("we do not have a valid unsealed capa.");
+    ERROR("management capa: type: 0x%x  -- status 0x%x",
+        child->management->info.management.status,
+        child->management->info.management.status);
     goto failure_dealloc;
   }
 

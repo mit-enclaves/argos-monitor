@@ -38,6 +38,7 @@ int enumerate_capa(capa_index_t idx, capa_index_t *next, capability_t *capa) {
     break;
   case Management:
     capa->info.management.id = frame.value_1;
+    capa->info.management.status = frame.value_2;
     break;
   case Channel:
     capa->info.channel.id = frame.value_1;

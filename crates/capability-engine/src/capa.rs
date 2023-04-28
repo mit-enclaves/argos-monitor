@@ -31,6 +31,7 @@ pub enum CapaInfo {
     },
     Management {
         domain_id: usize,
+        sealed: bool,
     },
     Channel {
         domain_id: usize,
@@ -64,8 +65,13 @@ impl CapaInfo {
                 }
                 capa_type = capa_type::REGION;
             }
-            CapaInfo::Management { domain_id } => {
+            CapaInfo::Management { domain_id, sealed } => {
                 v1 = *domain_id;
+                if *sealed {
+                    v2 = 1 << 1;
+                } else {
+                    v2 = 1 << 0;
+                }
                 capa_type = capa_type::MANAGEMENT;
             }
             CapaInfo::Channel { domain_id } => {
@@ -97,7 +103,10 @@ impl CapaInfo {
                     confidential,
                 }
             }
-            capa_type::MANAGEMENT => Self::Management { domain_id: v1 },
+            capa_type::MANAGEMENT => Self::Management {
+                domain_id: v1,
+                sealed: v2 == 2,
+            },
             capa_type::CHANNEL => Self::Channel { domain_id: v1 },
             capa_type::SWITCH => Self::Switch { domain_id: v1 },
             _ => {
@@ -174,6 +183,7 @@ impl Capa {
                 let domain = &domains[h];
                 Some(CapaInfo::Management {
                     domain_id: domain.id(),
+                    sealed: domain.is_sealed(),
                 })
             }
             Capa::Channel(h) => {
@@ -224,7 +234,7 @@ impl fmt::Display for CapaInfo {
                 let c = if *confidential { 'C' } else { '_' };
                 write!(f, "Region([0x{:x}, 0x{:x} | {}{}])", start, end, a, c)
             }
-            CapaInfo::Management { domain_id } => {
+            CapaInfo::Management { domain_id, sealed } => {
                 write!(f, "Management({})", domain_id)
             }
             CapaInfo::Channel { domain_id } => {

@@ -193,6 +193,10 @@ impl Domain {
         }
     }
 
+    pub fn is_sealed(&self) -> bool {
+        self.is_sealed
+    }
+
     fn is_valid(
         &self,
         idx: usize,
