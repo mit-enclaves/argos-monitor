@@ -62,6 +62,7 @@ impl CapaInfo {
                 if *confidential {
                     flags |= 1 << 1;
                 }
+                capa_type = capa_type::REGION;
             }
             CapaInfo::Management { domain_id } => {
                 v1 = *domain_id;

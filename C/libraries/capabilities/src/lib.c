@@ -322,7 +322,8 @@ static capability_t* trick_segment_null_copy(capability_t* capa)
   }
 
   // This function only makes sense on region capabilities that are active.
-  if (capa->capa_type != Region || (capa->info.region.flags & MEM_ACTIVE) != 0) {
+  if (capa->capa_type != Region ||
+      (capa->info.region.flags & MEM_ACTIVE) != MEM_ACTIVE) {
     ERROR("Wrong type of capability");
     goto failure;
   }

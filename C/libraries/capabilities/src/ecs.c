@@ -1,5 +1,6 @@
 #include "ecs.h"
 #include "tyche_api.h"
+#include "common.h"
 
 int enumerate_capa(capa_index_t idx, capa_index_t *next, capability_t *capa) {
   vmcall_frame_t frame;
@@ -29,7 +30,11 @@ int enumerate_capa(capa_index_t idx, capa_index_t *next, capability_t *capa) {
   case Region:
     capa->info.region.start = frame.value_1;
     capa->info.region.end = frame.value_2;
-    capa->info.region.flags = frame.value_3 << 8;
+    capa->info.region.flags = frame.value_3 >> 8;
+    DEBUG("Enum region: %llx -- %llx [%x]",
+        capa->info.region.start,
+        capa->info.region.end,
+        capa->info.region.flags);
     break;
   case Management:
     capa->info.management.id = frame.value_1;
