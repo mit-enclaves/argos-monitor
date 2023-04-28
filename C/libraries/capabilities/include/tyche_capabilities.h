@@ -17,7 +17,7 @@ int init(capa_alloc_t allocator, capa_dealloc_t deallocator);
 
 /// Creates a new domain.
 /// Sets the result inside the provided id handle.
-int create_domain(domain_id_t *id);
+int create_domain(domain_id_t* id);
 
 /// Seal the domain.
 /// This function first creates a channel for the child domain and then seals it.
@@ -29,10 +29,10 @@ int seal_domain(
     usize rsp);
 
 /// Duplicate capability.
-int duplicate_capa(
+int segment_region_capa(
+    capability_t* capa,
     capability_t** left,
     capability_t** right,
-    capability_t* capa,
     usize a1_1,
     usize a1_2,
     usize a1_3,

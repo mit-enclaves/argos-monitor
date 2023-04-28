@@ -1,20 +1,21 @@
 #include "ecs.h"
 #include "tyche_api.h"
 
-int enumerate_capa(capa_index_t *idx, capability_t *capa) {
+int enumerate_capa(capa_index_t idx, capa_index_t *next, capability_t *capa) {
   vmcall_frame_t frame;
+  capa_index_t token = 0;
   if (capa == NULL) {
     goto fail;
   }
   frame.vmcall = TYCHE_ENUMERATE;
-  frame.arg_1 = *idx;
-  if (tyche_call(&frame) != 0) {
+  frame.arg_1 = idx;
+  if (tyche_call(&frame) != SUCCESS) {
     goto fail;
   }
 
   // Next token
-  *idx = frame.value_4;
-  if (*idx == 0) {
+  token = frame.value_4;
+  if (token == 0) {
     // No more capa
     goto fail;
   }
@@ -40,9 +41,12 @@ int enumerate_capa(capa_index_t *idx, capability_t *capa) {
     capa->info.transition.id = frame.value_1;
     break;
   }
-
+  
+  if (next != NULL) {
+    *next = token;
+  }
   // Everything went well.
-  return 0;
+  return SUCCESS;
 fail:
-  return -1;
+  return FAILURE;
 }

@@ -45,7 +45,7 @@ int init(capa_alloc_t allocator, capa_dealloc_t deallocator) {
   while (1) {
     capability_t tmp_capa;
     capability_t *capa = NULL;
-    if (enumerate_capa(&next, &tmp_capa) != 0 || next == 0) {
+    if (enumerate_capa(next, &next, &tmp_capa) != SUCCESS || next == 0) {
       // Failed to read or no more capa
       break;
     }
@@ -106,7 +106,7 @@ int create_domain(domain_id_t *id) {
   }
 
   // Populate the capability.
-  if (enumerate_capa(&child_idx, child_capa) != SUCCESS) {
+  if (enumerate_capa(child_idx, NULL, child_capa) != SUCCESS) {
     ERROR("Failed to enumerate the newly created child.");
     goto fail_child_capa;
   }
@@ -146,7 +146,6 @@ int seal_domain(domain_id_t id, usize core_map, usize cr3, usize rip,
   child_domain_t *child = NULL;
   capability_t *transition = NULL;
   transition_t *trans_wrapper = NULL;
-  capa_index_t handle_idx = 0;
 
   DEBUG("start");
   // Find the target domain.
@@ -183,20 +182,19 @@ int seal_domain(domain_id_t id, usize core_map, usize cr3, usize rip,
     goto failure_dealloc;
   }
 
-  if (tyche_seal(&handle_idx, child->management->local_id, cr3, rip, rsp) != SUCCESS) {
+  if (tyche_seal(&(transition->local_id), child->management->local_id, cr3, rip, rsp) != SUCCESS) {
     ERROR("Unable to create a channel.");
     goto failure_dealloc;
   }
 
   // Enumerate the transition capability.
-  if (enumerate_capa(&handle_idx, transition) != SUCCESS) {
+  if (enumerate_capa(transition->local_id, NULL, transition) != SUCCESS) {
     ERROR("Unable to read the transition capability.");
     goto failure_dealloc;
   }
 
   // Update the management capability.
-  handle_idx = child->management->local_id;
-  if (enumerate_capa(&handle_idx, child->management) != SUCCESS) {
+  if (enumerate_capa(child->management->local_id, NULL, child->management) != SUCCESS) {
     ERROR("Unable to update the management capa.");
     goto failure_dealloc;
   }
@@ -220,11 +218,16 @@ failure:
   return FAILURE;
 }
 
-//TODO not sure yet, this will be used below.
-/*
-int duplicate_capa(capability_t **left, capability_t **right,
-                   capability_t *capa, usize a1_1, usize a1_2, usize a1_3,
-                   usize a2_1, usize a2_2, usize a2_3) {
+int segment_region_capa(
+    capability_t *capa,
+    capability_t **left,
+    capability_t **right,
+    usize start1,
+    usize end1,
+    usize prot1,
+    usize start2,
+    usize end2,
+    usize prot2) {
   if (left == NULL || right == NULL || capa == NULL) {
     goto failure;
   }
@@ -242,15 +245,18 @@ int duplicate_capa(capability_t **left, capability_t **right,
   }
 
   // Call duplicate.
-  if (tyche_segment_region(&((*left)->local_id), &((*right)->local_id),
-                      capa->local_id, a1_1, a1_2, a1_3, a2_1, a2_2,
-                      a2_3) != SUCCESS) {
+  if (tyche_segment_region(
+        capa->local_id,
+        &((*left)->local_id),
+        &((*right)->local_id),
+        start1, end1, prot1,
+        start2, end2, prot2) != SUCCESS) {
     ERROR("Duplicate rejected.");
     goto fail_right;
   }
 
   // Update the capability.
-  if (enumerate_capa(capa->local_id, capa) != SUCCESS) {
+  if (enumerate_capa(capa->local_id, NULL, capa) != SUCCESS) {
     ERROR("We failed to enumerate the root of a duplicate!");
     goto fail_right;
   }
@@ -258,7 +264,7 @@ int duplicate_capa(capability_t **left, capability_t **right,
   capa->right = *right;
 
   // Initialize the left.
-  if (enumerate_capa((*left)->local_id, *left) != SUCCESS) {
+  if (enumerate_capa((*left)->local_id, NULL, *left) != SUCCESS) {
     ERROR("We failed to enumerate the left of duplicate!");
     goto fail_right;
   }
@@ -269,7 +275,7 @@ int duplicate_capa(capability_t **left, capability_t **right,
   (*left)->right = NULL;
 
   // Initialize the right.
-  if (enumerate_capa((*right)->local_id, (*right)) != SUCCESS) {
+  if (enumerate_capa((*right)->local_id, NULL, (*right)) != SUCCESS) {
     ERROR("We failed to enumerate the right of duplicate!");
     goto fail_right;
   }
@@ -290,7 +296,64 @@ fail_left:
 failure:
   return FAILURE;
 }
-*/
+
+
+/// This function takes a capability and performs a split such that:
+///       capa
+///       / \
+///   NULL    copy(capa)
+/// This is used to facilitate revocation in share and grant.
+/// It returns the copy(capa) and makes sure to update capa to be a revocation.
+/// The returned value is not part of any list and can be freed with local_domain.dealloc.
+static capability_t* trick_segment_null_copy(capability_t* capa)
+{
+  capability_t *left = NULL, *right = NULL;
+  if (capa == NULL) {
+    ERROR("Provided capability is NULL.");
+    goto failure;
+  }
+
+  // This function only makes sense on region capabilities that are active.
+  if (capa->capa_type != Region || (capa->info.region.flags & MEM_ACTIVE) != 0) {
+    ERROR("Wrong type of capability");
+    goto failure;
+  }
+
+  // Perform the split.
+  if (segment_region_capa(
+        capa, &left, &right,
+        // This is NULL
+        capa->info.region.start, capa->info.region.start, capa->info.region.flags,
+        // This is copy(capa)
+        capa->info.region.start, capa->info.region.end, capa->info.region.flags
+        ) != SUCCESS) {
+    ERROR("Unable to perform the duplicate");
+    goto failure;
+  }
+
+  // Delete the left.
+  if (left == NULL) {
+    ERROR("Left is null.");
+    goto failure;
+  }
+  dll_remove(&(local_domain.capabilities), left, list);
+  capa->left = NULL;
+  local_domain.dealloc(left);
+  left = NULL;
+
+  // Remove the right.
+  dll_remove(&(local_domain.capabilities), right, list);
+  capa->right = NULL;
+
+  // We're done.
+  right->parent = NULL;
+  right->left = NULL;
+  right->right = NULL;
+  return right;
+
+failure:
+  return FAILURE;
+}
 
 // TODO: for the moment only handle the case where the region is fully contained
 // within one capability.
@@ -322,12 +385,14 @@ int grant_region(domain_id_t id, paddr_t start, paddr_t end,
 
   // Now attempt to find the capability.
   dll_foreach(&(local_domain.capabilities), capa, list) {
-    if (capa->capa_type != Resource || capa->resource_type != Region) {
+    if (capa->capa_type != Region) {
       continue;
     }
-    if ((dll_contains(capa->access.region.start, capa->access.region.end,
-                      start)) &&
-        capa->access.region.start <= end && capa->access.region.end >= end) {
+    if ((dll_contains(
+            capa->info.region.start,
+            capa->info.region.end, start)) &&
+        capa->info.region.start <= end && capa->info.region.end >= end
+        /*&& TODO(aghosn) check access rights once charly supports them*/) {
       // Found the capability.
       break;
     }
@@ -340,17 +405,17 @@ int grant_region(domain_id_t id, paddr_t start, paddr_t end,
   }
 
   // The region is in the middle, requires two splits.
-  if (capa->access.region.start < start && capa->access.region.end > end) {
+  if (capa->info.region.start < start && capa->info.region.end > end) {
     // Middle case.
     // capa: [s.......................e]
     // grant:     [m.....me]
     // Duplicate such that we have [s..m] [m..me..e]
     // And then update capa to be equal to the right
     capability_t *left = NULL, *right = NULL;
-    if (duplicate_capa(&left, &right, capa, capa->access.region.start, start,
-                       capa->access.region.flags, start,
-                       capa->access.region.end,
-                       capa->access.region.flags) != SUCCESS) {
+    if (segment_region_capa(
+          capa, &left, &right,
+          capa->info.region.start, start, capa->info.region.flags,
+          start, capa->info.region.end, capa->info.region.flags) != SUCCESS) {
       ERROR("Middle case duplicate failed.");
       goto failure;
     }
@@ -359,21 +424,21 @@ int grant_region(domain_id_t id, paddr_t start, paddr_t end,
   }
 
   // Requires a duplicate.
-  if ((capa->access.region.start == start && capa->access.region.end > end) ||
-      (capa->access.region.start < start && capa->access.region.end == end)) {
+  if ((capa->info.region.start == start && capa->info.region.end > end) ||
+      (capa->info.region.start < start && capa->info.region.end == end)) {
     paddr_t s = 0, m = 0, e = 0;
     capability_t *left = NULL, *right = NULL;
     capability_t **to_grant = NULL;
 
-    if (capa->access.region.start == start && capa->access.region.end > end) {
+    if (capa->info.region.start == start && capa->info.region.end > end) {
       // Left case.
       // capa: [s ............e].
       // grant:[s.......m].
       // duplicate: [s..m] - [m..e]
       // Grant the first portion.
-      s = capa->access.region.start;
+      s = capa->info.region.start;
       m = end;
-      e = capa->access.region.end;
+      e = capa->info.region.end;
       to_grant = &left;
     } else {
       // Right case.
@@ -381,15 +446,16 @@ int grant_region(domain_id_t id, paddr_t start, paddr_t end,
       // grant:      [m.......e].
       // duplicate: [s..m] - [m..e]
       // Grant the second portion.
-      s = capa->access.region.start;
+      s = capa->info.region.start;
       m = start;
-      e = capa->access.region.end;
+      e = capa->info.region.end;
       to_grant = &right;
     }
 
     // Do the duplicate.
-    if (duplicate_capa(&left, &right, capa, s, m, capa->access.region.flags, m,
-                       e, capa->access.region.flags) != SUCCESS) {
+    if (segment_region_capa(capa, &left, &right,
+          s, m, capa->info.region.flags,
+          m, e, capa->info.region.flags) != SUCCESS) {
       ERROR("Left or right duplicate case failed.");
       goto failure;
     }
@@ -400,25 +466,59 @@ int grant_region(domain_id_t id, paddr_t start, paddr_t end,
 
   // At this point, capa should be a perfect overlap.
   if (capa == NULL ||
-      !(capa->access.region.start == start && capa->access.region.end == end)) {
+      !(capa->info.region.start == start && capa->info.region.end == end)) {
     goto failure;
   }
 
-  if (tyche_send(child->manipulate->local_id, capa->local_id, start, end,
-                  (usize)access) != SUCCESS) {
+  // One last duplicate to have a revocation {NULL, to_send}.
+  do {
+    // We will discard both as left is NULL and right is sent.
+    capability_t* left = NULL, *right = NULL;
+    if (segment_region_capa(capa, &left, &right,
+          capa->info.region.start,
+          capa->info.region.start,
+          capa->info.region.flags,
+          capa->info.region.start,
+          capa->info.region.end,
+          capa->info.region.flags) != SUCCESS) {
+          ERROR("Unable to produce a NULL segment"); 
+          goto failure;
+        }
+    // We can discard the left capability.
+    if (left == NULL) {
+      ERROR("The left capability is null.");
+      goto failure;
+    }
+    dll_remove(&(local_domain.capabilities), left, list);
+    local_domain.dealloc((void*) left);
+    capa->left = NULL;
+
+    // We send the right.
+    if (right == NULL) {
+      ERROR("The right is null.");
+      goto failure;
+    }
+    dll_remove(&(local_domain.capabilities), right, list);
+    if (tyche_send(child->management->local_id, right->local_id) != SUCCESS) {
+      ERROR("Unable to send the capability to the target.");
+      goto failure;
+    }
+    local_domain.dealloc(right);
+    capa->right = NULL;
+
+  } while(0);
+
+  // Update the revocation capa & check it is a revocation one.
+  if (enumerate_capa(capa->local_id, NULL, capa) != SUCCESS) {
+    goto failure;
+  }
+  if (capa->capa_type != Region || (capa->info.region.flags & MEM_ACTIVE) != 0) {
+    ERROR("The capability is not a revocation.");
     goto failure;
   }
 
-  if (enumerate_capa(capa->local_id, capa) != SUCCESS) {
-    goto failure;
-  }
-
-  // Now we update the capabilities.
+  // Remove it from the capabilities and put it in the revocation list..
   dll_remove(&(local_domain.capabilities), capa, list);
-  if (capa->capa_type != Revocation) {
-    ERROR("not a revocation 2");
-    goto failure;
-  }
   dll_add(&(child->revocations), capa, list);
 
   // We are done!
@@ -460,9 +560,9 @@ int share_region(domain_id_t id, paddr_t start, paddr_t end,
       continue;
     }
     // TODO check dll_contains, might fail on end.
-    if (dll_contains(capa->access.region.start, capa->access.region.end,
+    if (dll_contains(capa->info.region.start, capa->info.region.end,
                      start) &&
-        capa->access.region.start <= end && capa->access.region.end >= end) {
+        capa->info.region.start <= end && capa->info.region.end >= end) {
       // Found the capability.
       break;
     }
@@ -477,11 +577,32 @@ int share_region(domain_id_t id, paddr_t start, paddr_t end,
   // out. We still create a capability that matches exactly the desired
   // interval. This allows to revoke that region independently of subsequent
   // shares.
-  if (duplicate_capa(&left, &right, capa, capa->access.region.start,
-                     capa->access.region.end, capa->access.region.flags, start,
-                     end, (usize)capa->access.region.flags) != SUCCESS) {
+  if (segment_region_capa(
+        capa, &left, &right,
+        capa->info.region.start, capa->access.region.end, capa->access.region.flags,
+        start, end, capa->access.region.flags) != SUCCESS) {
+    ERROR("First segment region call failed.");
     goto failure;
   }
+
+  // We do the magic segment_region_capa to have a single revoke.
+  do {
+    capability_t *fake_l = NULL; capability_t* to_send = NULL;
+    if (segment_region_capa(
+          right, &fake_l, &to_send,
+          right->info.region.start, right->info.region.start, right->info.region.flags,
+          right->info.region.start, right->info.region.end, right->info.region.flags
+          ) != SUCCESS) {
+      ERROR("Unable to perform the segmentations with null left");
+      goto failure;
+    }
+
+    // Discard the left.
+    if (fake_l == NULL) {
+      ERROR("Left is null.");
+      goto failure;
+    }
+  } while(0);
 
   // We implement the share as a grant of the cut out region.
   if (tyche_send(child->manipulate->local_id, right->local_id, start, end,

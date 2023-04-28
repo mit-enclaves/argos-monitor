@@ -76,9 +76,9 @@ failure:
 }
 
 int tyche_segment_region(
+    capa_index_t capa,
     capa_index_t* left,
     capa_index_t* right,
-    capa_index_t capa,
     usize a1_1,
     usize a1_2,
     usize a1_3,

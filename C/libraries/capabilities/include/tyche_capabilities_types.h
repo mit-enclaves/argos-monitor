@@ -52,7 +52,7 @@ typedef enum memory_access_right_t {
 typedef struct capa_region_t {
   paddr_t start;
   paddr_t end;
-  paddr_t flags;
+  memory_access_right_t flags;
 } capa_region_t;
 
 /// Information about a domain management capability.
