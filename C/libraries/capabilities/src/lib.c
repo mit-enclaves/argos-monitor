@@ -43,7 +43,7 @@ child_domain_t* find_child(domain_id_t id)
 // —————————————————————————————— Public APIs ——————————————————————————————— //
 
 int init(capa_alloc_t allocator, capa_dealloc_t deallocator) {
-  capa_index_t i = 0;
+  capa_index_t next = 0;
   if (allocator == 0 || deallocator == 0) {
     goto fail;
   }
@@ -54,7 +54,6 @@ int init(capa_alloc_t allocator, capa_dealloc_t deallocator) {
   dll_init_list(&(local_domain.children));
 
   // Start enumerating the domain's capabilities.
-  capa_index_t next = 0;
   while (1) {
     capability_t tmp_capa;
     capability_t *capa = NULL;
@@ -306,13 +305,14 @@ failure:
 }
 
 
-/// This function takes a capability and performs a split such that:
-///       capa
-///       / \
-///   NULL    copy(capa)
-/// This is used to facilitate revocation in share and grant.
-/// It returns the copy(capa) and makes sure to update capa to be a revocation.
-/// The returned value is not part of any list and can be freed with local_domain.dealloc.
+/* This function takes a capability and performs a split such that:
+*       capa
+*       / \
+*   NULL    copy(capa)
+* This is used to facilitate revocation in share and grant.
+* It returns the copy(capa) and makes sure to update capa to be a revocation.
+* The returned value is not part of any list and can be freed with local_domain.dealloc.
+*/
 static capability_t* trick_segment_null_copy(capability_t* capa)
 {
   capability_t *left = NULL, *right = NULL;

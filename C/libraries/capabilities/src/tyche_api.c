@@ -14,7 +14,6 @@ int tyche_call(vmcall_frame_t* frame)
     "movq %11, %%rcx\n\t"
     "movq %12, %%r8\n\t"
     "movq %13, %%r9\n\t"
-    "movq %14, %%r10\n\t"
     "vmcall\n\t"
     "movq %%rax, %0\n\t"
     "movq %%rdi, %1\n\t"
@@ -24,8 +23,8 @@ int tyche_call(vmcall_frame_t* frame)
     "movq %%r8,  %5\n\t"
     "movq %%r9,  %6\n\t"
     : "=rm" (result), "=rm" (frame->value_1), "=rm" (frame->value_2), "=rm" (frame->value_3), "=rm" (frame->value_4), "=rm" (frame->value_5), "=rm" (frame->value_6)
-    : "rm" (frame->vmcall), "rm" (frame->arg_1), "rm" (frame->arg_2), "rm" (frame->arg_3), "rm" (frame->arg_4), "rm" (frame->arg_5), "rm" (frame->arg_6), "rm" (frame->arg_7) 
-    : "rax", "rdi", "rsi", "rdx", "rcx", "r8", "r9", "r10", "memory");
+    : "rm" (frame->vmcall), "rm" (frame->arg_1), "rm" (frame->arg_2), "rm" (frame->arg_3), "rm" (frame->arg_4), "rm" (frame->arg_5), "rm" (frame->arg_6) 
+    : "rax", "rdi", "rsi", "rdx", "rcx", "r8", "r9", "memory");
 #elif defined(CONFIG_RISCV) || defined(__riscv)
   //TODO(neelu)
   TEST(0);
@@ -79,22 +78,21 @@ int tyche_segment_region(
     capa_index_t capa,
     capa_index_t* left,
     capa_index_t* right,
-    usize a1_1,
-    usize a1_2,
-    usize a1_3,
-    usize a2_1,
-    usize a2_2,
-    usize a2_3)
+    usize start1,
+    usize end1,
+    usize prot1,
+    usize start2,
+    usize end2,
+    usize prot2)
 {
   vmcall_frame_t frame = {
     TYCHE_SEGMENT_REGION,
     capa,
-    a1_1,
-    a1_2,
-    a1_3,
-    a2_1,
-    a2_2,
-    a2_3,
+    start1,
+    end1,
+    start2,
+    end2,
+    (prot1 << 32 | prot2),
   };
   if (left == NULL || right == NULL) {
     goto failure;

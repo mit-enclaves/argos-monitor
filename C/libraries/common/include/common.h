@@ -8,6 +8,10 @@
 #include <linux/kernel.h>
 #endif
 
+// ————————————————— Unify success and failure return codes ————————————————— //
+#define SUCCESS (0)
+#define FAILURE (-1)
+
 // ————————————————————————————————— Macros ————————————————————————————————— //
 #ifdef TYCHE_USER_SPACE
 #define TEST(cond)                                                   \

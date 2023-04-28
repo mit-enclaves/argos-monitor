@@ -34,7 +34,6 @@ typedef struct vmcall_frame_t {
   usize arg_4;
   usize arg_5;
   usize arg_6;
-  usize arg_7;
 
   // Results.
   usize value_1;

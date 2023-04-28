@@ -68,7 +68,6 @@ fn handle_exit(
             let arg_4 = vcpu.get(Register::Rcx) as usize;
             let arg_5 = vcpu.get(Register::R8) as usize;
             let arg_6 = vcpu.get(Register::R9) as usize;
-            let arg_7 = vcpu.get(Register::R10) as usize;
             match vmcall {
                 calls::CREATE_DOMAIN => {
                     log::trace!("Create Domain");
@@ -107,12 +106,12 @@ fn handle_exit(
                     let (left, right) = monitor::do_segment_region(
                         *domain,
                         LocalCapa::new(arg_1),
-                        arg_2,
-                        arg_3,
-                        arg_4,
-                        arg_5,
-                        arg_6,
-                        arg_7,
+                        arg_2,               // start
+                        arg_3,               // end
+                        arg_6 >> 32,         // prot1
+                        arg_4,               // start
+                        arg_5,               // end
+                        (arg_6 << 32) >> 32, // prot2
                     )
                     .expect("TODO");
                     vcpu.set(Register::Rdi, left.as_u64());

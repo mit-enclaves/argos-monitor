@@ -5,10 +5,8 @@
 #define NULL ((void*)0)
 #endif
 
+#include "common.h"
 #include "dll.h"
-
-#define SUCCESS (0)
-#define FAILURE (-1)
 
 typedef unsigned long long usize;
 

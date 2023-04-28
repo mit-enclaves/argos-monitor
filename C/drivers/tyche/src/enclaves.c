@@ -302,7 +302,7 @@ int commit_enclave(enclave_handle_t handle, usize cr3, usize rip, usize rsp)
   }
 
   // All checks are done, call into the capability library.
-  if (create_domain(&(encl->domain_id), 1, 1) != SUCCESS) {
+  if (create_domain(&(encl->domain_id)) != SUCCESS) {
     ERROR("Monitor rejected the creation of a domain for enclave %lld", handle);
     goto failure;
   }
