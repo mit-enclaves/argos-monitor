@@ -28,10 +28,11 @@ static BSP_READY: AtomicBool = FALSE;
 static NB_BOOTED_CORES: AtomicUsize = AtomicUsize::new(0);
 static mut MANIFEST: Option<&'static Manifest> = None;
 
-pub fn arch_entry_point() -> ! {
+pub fn arch_entry_point(log_level: log::LevelFilter) -> ! {
     let cpuid = cpuid();
 
     if cpuid == 0 {
+        logger::init(log_level);
         log::info!("CPU{}: Hello from second stage!", cpuid);
         // SAFETY: The BSP is responsible for retrieving the manifest
         let manifest = unsafe {

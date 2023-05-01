@@ -5,9 +5,9 @@ use core::panic::PanicInfo;
 
 use log::LevelFilter;
 use stage_two_abi::entry_point;
+use tyche;
 use tyche::debug::qemu;
 use tyche::{arch, println};
-use {logger, tyche};
 
 entry_point!(tyche_entry_point);
 
@@ -15,8 +15,7 @@ const LOG_LEVEL: LevelFilter = LevelFilter::Info;
 
 #[cfg(target_arch = "x86_64")]
 fn tyche_entry_point() -> ! {
-    logger::init(LOG_LEVEL);
-    arch::arch_entry_point();
+    arch::arch_entry_point(LOG_LEVEL);
 }
 
 #[cfg(target_arch = "riscv64")]
