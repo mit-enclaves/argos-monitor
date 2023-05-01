@@ -155,6 +155,8 @@ fn handle_exit(
                 }
                 calls::SWITCH => {
                     log::trace!("Switch");
+                    //TODO(aghosn) there is no saving of the current domain,
+                    //and no creation of the return handle.
                     let (next_domain, context) =
                         monitor::do_switch(*domain, LocalCapa::new(arg_1), cpuid()).expect("TODO");
                     vcpu.next_instruction()?;
