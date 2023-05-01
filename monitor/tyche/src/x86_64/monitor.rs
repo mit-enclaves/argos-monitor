@@ -70,10 +70,14 @@ pub fn init(manifest: &'static Manifest) {
     *initial_domain = Some(domain);
 }
 
-pub fn init_vcpu(vcpu: &mut ActiveVmcs<'static>) -> Handle<Domain> {
+pub fn init_vcpu(vcpu: &mut ActiveVmcs<'static>) -> (Handle<Domain>, Handle<Context>) {
+    let mut engine = CAPA_ENGINE.lock();
     let initial_domain = INITIAL_DOMAIN
         .lock()
         .expect("CapaEngine is not initialized yet");
+    let ctx = engine
+        .start_cpu_on_domain(initial_domain)
+        .expect("Failed to allocate initial domain");
     let domain = get_domain(initial_domain);
     vcpu.set_ept_ptr(HostPhysAddr::new(
         domain.ept.unwrap().as_usize() | EPT_ROOT_FLAGS,
@@ -81,7 +85,7 @@ pub fn init_vcpu(vcpu: &mut ActiveVmcs<'static>) -> Handle<Domain> {
     .expect("Failed to set initial EPT PTR");
     let mut core = get_core(cpuid());
     core.domain = initial_domain;
-    initial_domain
+    (initial_domain, ctx)
 }
 
 // ———————————————————————————————— Helpers ————————————————————————————————— //
@@ -179,14 +183,31 @@ pub fn do_duplicate(current: Handle<Domain>, capa: LocalCapa) -> Result<LocalCap
 
 pub fn do_switch(
     current: Handle<Domain>,
+    current_ctx: Handle<Context>,
     capa: LocalCapa,
     cpuid: usize,
-) -> Result<(Handle<Domain>, MutexGuard<'static, ContextData>), CapaError> {
+) -> Result<
+    (
+        MutexGuard<'static, ContextData>,
+        Handle<Domain>,
+        Handle<Context>,
+        MutexGuard<'static, ContextData>,
+        LocalCapa,
+    ),
+    CapaError,
+> {
+    // TODO: check that the domain is not already running! Maybe this should be done in the engine?
     let mut engine = CAPA_ENGINE.lock();
-    let (next_domain, context) = engine.switch(current, capa)?;
+    let (next_domain, next_context, return_capa) = engine.switch(current, current_ctx, capa)?;
     get_core(cpuid).domain = next_domain;
     apply_updates(&mut engine);
-    Ok((next_domain, get_context(context)))
+    Ok((
+        get_context(current_ctx),
+        next_domain,
+        next_context,
+        get_context(next_context),
+        return_capa,
+    ))
 }
 
 pub fn do_debug() {

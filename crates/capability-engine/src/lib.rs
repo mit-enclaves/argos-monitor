@@ -83,6 +83,17 @@ impl CapaEngine {
         }
     }
 
+    pub fn start_cpu_on_domain(
+        &mut self,
+        _domain: Handle<Domain>,
+    ) -> Result<Handle<Context>, CapaError> {
+        log::trace!("Start CPU");
+
+        self.contexts
+            .allocate(Context::new())
+            .ok_or(CapaError::OutOfMemory)
+    }
+
     pub fn create_domain(&mut self, manager: Handle<Domain>) -> Result<LocalCapa, CapaError> {
         log::trace!("Create new domain");
 
@@ -291,11 +302,14 @@ impl CapaEngine {
     pub fn switch(
         &mut self,
         domain: Handle<Domain>,
+        ctx: Handle<Context>,
         capa: LocalCapa,
-    ) -> Result<(Handle<Domain>, Handle<Context>), CapaError> {
-        let domain = &self.domains[domain];
-        let (dom, ctx) = domain.get(capa)?.as_switch()?;
-        Ok((dom, ctx))
+    ) -> Result<(Handle<Domain>, Handle<Context>, LocalCapa), CapaError> {
+        let (next_dom, next_ctx) = self.domains[domain].get(capa)?.as_switch()?;
+        let return_capa = self.domains[next_dom].insert_capa(Capa::Switch { to: domain, ctx })?;
+        self.domains[domain].remove(capa)?;
+
+        Ok((next_dom, next_ctx, return_capa))
     }
 
     pub fn enumerate(
