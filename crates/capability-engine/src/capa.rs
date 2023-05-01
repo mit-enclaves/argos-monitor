@@ -45,7 +45,7 @@ impl CapaInfo {
     pub fn serialize(&self) -> (usize, usize, u16) {
         let v1;
         let mut v2 = 0;
-        let mut capa_type: u8 = 0;
+        let capa_type: u8;
         let mut flags: u8 = 0;
 
         match self {
@@ -235,7 +235,8 @@ impl fmt::Display for CapaInfo {
                 write!(f, "Region([0x{:x}, 0x{:x} | {}{}])", start, end, a, c)
             }
             CapaInfo::Management { domain_id, sealed } => {
-                write!(f, "Management({})", domain_id)
+                let s = if *sealed { 'S' } else { '_' };
+                write!(f, "Management({}| {})", domain_id, s)
             }
             CapaInfo::Channel { domain_id } => {
                 write!(f, "Channel({})", domain_id)
