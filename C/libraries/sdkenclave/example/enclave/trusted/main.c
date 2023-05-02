@@ -2,6 +2,7 @@
 #include "enclave_app.h"
 
 const char* message = "Hello World!\n\t\0";
+const char* message2= "Bye Bye! :)!\n\t\0";
 
 void my_memcpy(void* dest, void* src, int size)
 {
@@ -12,14 +13,14 @@ void my_memcpy(void* dest, void* src, int size)
   } 
 }
 
-void print_message(void* args)
+void print_message(void* input)
 {
   my_encl_message_t* msg = (my_encl_message_t*) get_default_shared_buffer();
   if (msg == 0) {
     int* ptr = (int*) 0xdeadbeef;
     *ptr = 0xdeadbabe;
   }
-  my_memcpy(msg->reply, (void*) message, 15);
+  my_memcpy(msg->reply, input, 15);
 }
 
 void trusted_entry(frame_t* frame)
@@ -28,5 +29,11 @@ void trusted_entry(frame_t* frame)
   if (frame == NULL) {
     return;
   }
-  print_message(frame->args);
+  print_message((void*) message);
+  
+  // Do a return.
+  gate_call(frame);
+
+  // We're back, print the second message.
+  print_message((void*) message2);
 }

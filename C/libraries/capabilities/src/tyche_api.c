@@ -205,6 +205,7 @@ int tyche_switch(capa_index_t* transition_handle, void* args)
     "pushq %%rcx\n\t"
     "pushq %%rdx\n\t"
     "pushq %%r10\n\t"
+    "pushq %%r11\n\t"
     "pushq %%r12\n\t"
     "pushq %%r13\n\t"
     "pushq %%r14\n\t"
@@ -216,26 +217,27 @@ int tyche_switch(capa_index_t* transition_handle, void* args)
     "movq %4, %%rsi\n\t"
     "movq %5, %%r11\n\t"
     "vmcall\n\t"
-    "movq %%rax, %0\n\t"
-    "movq %%rdi, %1\n\t"
-    // Restoring registers.
+    // Restoring registers first, otherwise gcc uses them.
     "popfq\n\t"
     "popq %%r15\n\t"
     "popq %%r14\n\t"
     "popq %%r13\n\t"
     "popq %%r12\n\t"
+    "popq %%r11\n\t"
     "popq %%r10\n\t"
     "popq %%rdx\n\t"
     "popq %%rcx\n\t"
     "popq %%rbx\n\t"
     "popq %%rbp\n\t"
+    // Get the result from the call.
+    "movq %%rax, %0\n\t"
+    "movq %%rdi, %1\n\t"
     : "=rm" (result), "=rm" (frame.value_1)
     : "rm" (frame.vmcall), "rm" (frame.arg_1), "rm" (frame.arg_2), "rm" (frame.arg_3)
     : "rax", "rdi", "rsi", "r11", "memory");
 
   // Set the return handle as the one used to do the switch got consummed.
   *transition_handle = frame.value_1;
-  ERROR("This is the return value!");
 #elif defined(CONFIG_RISCV) || defined(__riscv)
   //TODO(neelu)
   TEST(0);

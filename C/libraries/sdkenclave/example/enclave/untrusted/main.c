@@ -54,7 +54,15 @@ int main(void) {
     ERROR("Unable to call the enclave %lld!", enclave.handle);
     goto failure;
   }
-  LOG("Here is the message from the enclave %s", msg->reply);
+  LOG("Here is the first message from the enclave:\n%s", msg->reply);
+
+  // Call the enclave again.
+  if (call_enclave(&enclave, NULL) != SUCCESS) {
+    ERROR("Unable to call the enclave a second time %lld!", enclave.handle);
+    goto failure;
+  }
+
+  LOG("Here is the second message from the enclave:\n%s", msg->reply);
 
   // Clean up.
   if (delete_enclave(&enclave) != SUCCESS) {
