@@ -18,8 +18,6 @@ stage_two_abi = { path = "../../crates/stage_two_abi" }
 vga = { path = "../../crates/vga/", optional = true }
 arena = {path = "../../crates/arena"}
 capa-engine = {path = "../../crates/capability-engine/"}
-capabilities = {path = "../../crates/capabilities/"}
-monitor = {path = "../../crates/monitor"}
 
 # TODO: move the untrusted dependencies behing a feature flag
 qemu = { path = "../../crates/qemu/" }

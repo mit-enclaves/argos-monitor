@@ -294,6 +294,6 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
 }
 
 unsafe fn free_ept(ept: HostPhysAddr, allocator: &impl FrameAllocator) {
-    let mapper = EptMapper::new(allocator.get_physical_offset().as_usize(), ept);
-    mapper.free_all(allocator);
+    //let mapper = EptMapper::new(allocator.get_physical_offset().as_usize(), ept);
+    //mapper.free_all(allocator);
 }

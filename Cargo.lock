@@ -148,15 +148,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "capabilities"
-version = "0.1.0"
-dependencies = [
- "arena",
- "bitflags",
- "utils",
-]
-
-[[package]]
 name = "cc"
 version = "1.0.79"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -514,16 +505,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "monitor"
-version = "0.1.0"
-dependencies = [
- "arena",
- "bitflags",
- "capabilities",
- "utils",
-]
-
-[[package]]
 name = "num-traits"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -871,12 +852,10 @@ version = "0.1.0"
 dependencies = [
  "arena",
  "capa-engine",
- "capabilities",
  "debug",
  "log",
  "logger",
  "mmu",
- "monitor",
  "qemu",
  "riscv_csrs",
  "riscv_pmp",

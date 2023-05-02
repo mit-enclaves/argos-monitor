@@ -21,9 +21,7 @@ members = [
     "crates/riscv_utils",
     "crates/libtyche",
     "crates/arena",
-    "crates/capabilities",
     "crates/capability-engine",
-    "crates/monitor",
     "crates/tychools",
     "boot_toolchain",
 ]
