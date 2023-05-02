@@ -746,7 +746,7 @@ int switch_domain(domain_id_t id, void *args) {
   DEBUG("Found a handle for domain %lld, id %lld", id,
         wrapper->transition->local_id);
 
-  if (tyche_switch(wrapper->transition->local_id, args) !=
+  if (tyche_switch(&(wrapper->transition->local_id), args) !=
       SUCCESS) {
     ERROR("failed to perform a switch on capa %lld",
           wrapper->transition->local_id);

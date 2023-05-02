@@ -179,17 +179,23 @@ failure:
   return FAILURE;
 }
 
-int tyche_switch(capa_index_t transition_handle, void* args)
+int tyche_switch(capa_index_t* transition_handle, void* args)
 {
   usize result = FAILURE;
   vmcall_frame_t frame = {
     .vmcall = TYCHE_SWITCH,
-    .arg_1 = transition_handle,
+    .arg_1 = 0,
     .arg_3 = (usize) args, // TODO: not yet handled by v3
   };
+  if (transition_handle == NULL) {
+    ERROR("Received null handle");
+    return FAILURE;
+  }
+  frame.arg_1 = *transition_handle;
   DEBUG("About to switch from the capability lib: handle %lld", transition_handle);
 
 #if defined(CONFIG_X86) || defined(__x86_64__)
+  // TODO We must save some registers on the stack.
   asm volatile(
     "cli \n\t"
     "movq %2, %%rax\n\t"
@@ -201,7 +207,10 @@ int tyche_switch(capa_index_t transition_handle, void* args)
     "movq %%rdi, %1\n\t"
     : "=rm" (result), "=rm" (frame.value_1)
     : "rm" (frame.vmcall), "rm" (frame.arg_1), "rm" (frame.arg_2), "rm" (frame.arg_3)
-    : "rax", "rdi", "rsi", "r11", "memory");
+    : "rax", "rdi", "rsi", "rdx", "rcx", "r11", "memory");
+
+  // Set the return handle as the one used to do the switch got consummed.
+  *transition_handle = frame.value_1;
 #elif defined(CONFIG_RISCV) || defined(__riscv)
   //TODO(neelu)
   TEST(0);

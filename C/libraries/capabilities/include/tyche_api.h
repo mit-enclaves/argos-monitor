@@ -81,7 +81,7 @@ int tyche_share(
 
 int tyche_revoke(capa_index_t id);
 
-int tyche_switch(capa_index_t transition_handle, void* args);
+int tyche_switch(capa_index_t* transition_handle, void* args);
 
 int tyche_duplicate(capa_index_t* new_capa, capa_index_t capa);
 
