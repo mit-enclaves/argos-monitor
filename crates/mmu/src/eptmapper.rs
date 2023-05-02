@@ -138,7 +138,6 @@ impl EptMapper {
         let host_offset = self.host_offset;
         let mut cleanup = |page_virt_addr: HostVirtAddr| unsafe {
             let page_phys = HostPhysAddr::new(page_virt_addr.as_usize() - host_offset);
-            log::info!("Free 0x{:x}", page_phys.as_usize());
             allocator
                 .free_frame(page_phys)
                 .expect("failed to free EPT page");

@@ -243,7 +243,7 @@ fn create_domain(domain: Handle<Domain>) {
     let mut domain = get_domain(domain);
     let allocator = allocator();
     if let Some(ept) = domain.ept {
-        free_ept(ept, allocator);
+        unsafe { free_ept(ept, allocator) };
     }
 
     let ept_root = allocator
