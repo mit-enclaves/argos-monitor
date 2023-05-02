@@ -46,6 +46,7 @@
   } while (0);
 #endif
 
+#ifdef TYCHE_DEBUG
 #ifdef TYCHE_USER_SPACE
 #define DEBUG(...)                                              \
   do {                                                          \
@@ -54,11 +55,16 @@
     printf("\n");                                               \
   } while (0);
 #else
-#define DEBUG(...)                                                 \
-  do {                                                             \
-    printk(KERN_ERR "[@%s:%d %s] ", __FILE__, __LINE__, __func__); \
-    printk(KERN_ERR __VA_ARGS__);                                  \
-    printk("\n");                                                  \
+#define DEBUG(...)                                                   \
+  do {                                                               \
+    printk(KERN_DEBUG "[@%s:%d %s] ", __FILE__, __LINE__, __func__); \
+    printk(KERN_DEBUG __VA_ARGS__);                                  \
+    printk("\n");                                                    \
+  } while (0);
+#endif
+#else
+#define DEBUG(...) \
+  do {             \
   } while (0);
 #endif
 
