@@ -55,36 +55,18 @@ impl EptMapper {
         }
     }
 
-    pub fn debug_range(
-        &mut self,
-        gpa: GuestPhysAddr,
-        size: usize,
-        print: impl Fn(core::fmt::Arguments),
-    ) {
-        /*unsafe {
-            let (phys_addr, _) = self.root();
-            let page = self.as_page(self.translate(phys_addr));
-            for i in 0..512 {
-                print(core::format_args!("Entry: {:x?}", page[i]));
-            }
-        }*/
+    pub fn debug_range(&mut self, gpa: GuestPhysAddr, size: usize) {
         let (phys_addr, _) = self.root();
-        print(core::format_args!("The root {:x?}\n", phys_addr));
+        log::info!("EPT root: 0x{:x}", phys_addr.as_usize());
         unsafe {
             self.walk_range(
                 gpa,
                 GuestPhysAddr::new(gpa.as_usize() + size),
                 &mut |addr, entry, level| {
                     if (*entry & EPT_PRESENT.bits()) == 0 {
-                        print(core::format_args!("no entry\n"));
                         return WalkNext::Leaf;
                     }
-                    print(core::format_args!(
-                        "{:?} -- {:x?} -- {:x?}\n",
-                        level,
-                        addr,
-                        entry
-                    ));
+                    log::info!("{:?} -> 0x{:x} | {:x?}", level, addr.as_usize(), entry);
                     return WalkNext::Continue;
                 },
             )
@@ -148,6 +130,39 @@ impl EptMapper {
                 },
             )
             .expect("Failed to map EPTs");
+        }
+    }
+
+    pub fn free_all(mut self, allocator: &impl FrameAllocator) {
+        let (root, _) = self.root();
+        let host_offset = self.host_offset;
+        let mut cleanup = |page_virt_addr: HostVirtAddr| unsafe {
+            let page_phys = HostPhysAddr::new(page_virt_addr.as_usize() - host_offset);
+            log::info!("Free 0x{:x}", page_phys.as_usize());
+            allocator
+                .free_frame(page_phys)
+                .expect("failed to free EPT page");
+        };
+        let mut callback = |_: GuestPhysAddr, entry: &mut u64, level: Level| {
+            if (*entry & EPT_PRESENT.bits()) == 0 {
+                // No entry
+                return WalkNext::Leaf;
+            } else if level == Level::L1 || (*entry & EptEntryFlags::PAGE.bits()) != 0 {
+                // This is a leaf
+                return WalkNext::Leaf;
+            } else {
+                WalkNext::Continue
+            }
+        };
+        unsafe {
+            self.cleanup_range(
+                GuestPhysAddr::new(0),
+                GuestPhysAddr::new(usize::MAX),
+                &mut callback,
+                &mut cleanup,
+            )
+            .expect("Failed to free EPTs");
+            allocator.free_frame(root).expect("Failed to free root");
         }
     }
 

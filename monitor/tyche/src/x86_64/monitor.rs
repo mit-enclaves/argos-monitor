@@ -5,6 +5,7 @@ use capa_engine::{
     NextCapaToken, N,
 };
 use mmu::eptmapper::EPT_ROOT_FLAGS;
+use mmu::walker::Walker;
 use mmu::{EptMapper, FrameAllocator};
 use spin::{Mutex, MutexGuard};
 use stage_two_abi::Manifest;
@@ -241,11 +242,8 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
 fn create_domain(domain: Handle<Domain>) {
     let mut domain = get_domain(domain);
     let allocator = allocator();
-    if let Some(_ept) = domain.ept {
-        // TODO: free all frames.
-        // unsafe {
-        //     allocator.free_frame(ept).unwrap();
-        // }
+    if let Some(ept) = domain.ept {
+        free_ept(ept, allocator);
     }
 
     let ept_root = allocator
@@ -269,11 +267,8 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
 
     let mut domain = get_domain(domain_handle);
     let allocator = allocator();
-    if let Some(_ept) = domain.ept {
-        // TODO: free all frames.
-        // unsafe {
-        //     allocator.free_frame(ept).unwrap();
-        // }
+    if let Some(ept) = domain.ept {
+        unsafe { free_ept(ept, allocator) };
     }
 
     let ept_root = allocator
@@ -296,4 +291,9 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
     }
 
     domain.ept = Some(ept_root.phys_addr);
+}
+
+unsafe fn free_ept(ept: HostPhysAddr, allocator: &impl FrameAllocator) {
+    let mapper = EptMapper::new(allocator.get_physical_offset().as_usize(), ept);
+    mapper.free_all(allocator);
 }

@@ -8,8 +8,7 @@ use capa_engine::{Context, Domain, Handle};
 use stage_two_abi::{GuestInfo, Manifest};
 pub use vmx::{ActiveVmcs, VmxError as BackendError};
 
-use super::vmx_helper::init_vcpu;
-use super::{arch, cpuid, launch_guest, monitor};
+use super::{arch, cpuid, launch_guest, monitor, vmx_helper};
 use crate::allocator;
 use crate::debug::qemu;
 use crate::statics::get_manifest;
@@ -178,7 +177,7 @@ unsafe fn create_vcpu(
         .expect("Failed to create VMCS");
     let mut vcpu = vmcs.set_as_active().expect("Failed to set VMCS as active");
     drop(allocator);
-    init_vcpu(&mut vcpu, info);
+    vmx_helper::init_vcpu(&mut vcpu, info);
     let (domain, ctx) = monitor::init_vcpu(&mut vcpu);
     (vcpu, domain, ctx)
 }

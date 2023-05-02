@@ -82,7 +82,7 @@ impl<const N: usize> FreeListAllocator<N> {
     /// The caller must give ownership of the physical frame: it must no longer be read or written
     /// by any of the code that got access to the frame.
     unsafe fn free_frame(&mut self, frame: HostPhysAddr) {
-        let phys_addr = frame.as_usize() & PAGE_SIZE as usize; // Align address
+        let phys_addr = frame.as_usize() & PAGE_MASK as usize; // Align address
         let virt_addr = phys_addr + self.virt_offset;
         let pages_start = self.pages.as_ptr() as usize;
         let page_idx = (virt_addr - pages_start) / PAGE_SIZE as usize;
