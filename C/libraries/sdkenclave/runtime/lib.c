@@ -29,56 +29,56 @@ void trusted_main(capa_index_t ret_handle, void *args)
   // Should never return, if we do, an exit call happens.
 }
 
-//extern int asm_call_gate(capa_index_t* capa, void** args);
+extern int asm_call_gate(capa_index_t* capa, void** args);
 
 int gate_call(frame_t* frame)
 {
   usize result = FAILURE;
-  usize vmcall = TYCHE_SWITCH;
-  frame_t ret_frame = {0, 0};
+  //usize vmcall = TYCHE_SWITCH;
+  //frame_t ret_frame = {0, 0};
 
 
-  //result = asm_call_gate(&(frame->ret_handle), &(frame->args));
+  result = asm_call_gate(&(frame->ret_handle), &(frame->args));
 
+  /*
   asm volatile(
     // Saving registers.
     "pushq %%rbp\n\t"
-    "pushq %%rbx\n\t"
-    "pushq %%rcx\n\t"
-    "pushq %%rdx\n\t"
-    "pushq %%r10\n\t"
-    "pushq %%r11\n\t"
-    "pushq %%r12\n\t"
-    "pushq %%r13\n\t"
-    "pushq %%r14\n\t"
-    "pushq %%r15\n\t"
+    //"pushq %%rbx\n\t"
+    //"pushq %%rcx\n\t"
+    //"pushq %%rdx\n\t"
+    //"pushq %%r10\n\t"
+    //"pushq %%r11\n\t"
+    //"pushq %%r12\n\t"
+    //"pushq %%r13\n\t"
+    //"pushq %%r14\n\t"
+    //"pushq %%r15\n\t"
     "pushfq\n\t"
     // Setting arguments for the call.
     "movq %3, %%rax\n\t"
     "movq %4, %%rdi\n\t"
     "movq %5, %%r11\n\t"
     "vmcall\n\t"
-    // Restoring registers, needs to be done before reading the results.
-    "popfq\n\t"
-    "popq %%r15\n\t"
-    "popq %%r14\n\t"
-    "popq %%r13\n\t"
-    "popq %%r12\n\t"
-    "popq %%r11\n\t"
-    "popq %%r10\n\t"
-    "popq %%rdx\n\t"
-    "popq %%rcx\n\t"
-    "popq %%rbx\n\t"
-    "popq %%rbp\n\t"
-    // Now get the results.
     "movq %%rax, %0\n\t"
     "movq %%rdi, %1\n\t"
     "movq %%r11, %2\n\t"
+    // Restoring registers.
+    "popfq\n\t"
+    //"popq %%r15\n\t"
+    //"popq %%r14\n\t"
+    //"popq %%r13\n\t"
+    //"popq %%r12\n\t"
+    //"popq %%r11\n\t"
+    //"popq %%r10\n\t"
+    //"popq %%rdx\n\t"
+    //"popq %%rcx\n\t"
+    //"popq %%rbx\n\t"
+    "popq %%rbp\n\t"
     : "=rm" (result), "=rm" (ret_frame.ret_handle), "=rm" (ret_frame.args)
     : "rm" (vmcall), "rm" (frame->ret_handle), "rm" (frame->args)
     : "rax", "rdi", "r11", "memory");
   frame->ret_handle = ret_frame.ret_handle;
-  frame->args = ret_frame.args;
+  frame->args = ret_frame.args;*/
   return result;
 }
 
