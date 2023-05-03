@@ -5,7 +5,6 @@ use capa_engine::{
     NextCapaToken, N,
 };
 use mmu::eptmapper::EPT_ROOT_FLAGS;
-use mmu::walker::Walker;
 use mmu::{EptMapper, FrameAllocator};
 use spin::{Mutex, MutexGuard};
 use stage_two_abi::Manifest;
