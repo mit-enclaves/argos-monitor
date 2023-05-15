@@ -1,4 +1,9 @@
-/// List of valid monitor calls.
+//! List of valid monitor calls.
+
+// TODO: Because Risc-V is not implemented yet we allow dead code on that platform.
+// Remove this once the Risc-V version is implemented.
+#![cfg_attr(target_arch = "riscv64", allow(dead_code))]
+
 pub const CREATE_DOMAIN: usize = 1;
 pub const SEAL_DOMAIN: usize = 2;
 pub const SHARE: usize = 3;
