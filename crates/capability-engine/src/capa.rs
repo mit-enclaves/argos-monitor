@@ -236,7 +236,7 @@ impl fmt::Display for CapaInfo {
             }
             CapaInfo::Management { domain_id, sealed } => {
                 let s = if *sealed { 'S' } else { '_' };
-                write!(f, "Management({}| {})", domain_id, s)
+                write!(f, "Management({} | {})", domain_id, s)
             }
             CapaInfo::Channel { domain_id } => {
                 write!(f, "Channel({})", domain_id)

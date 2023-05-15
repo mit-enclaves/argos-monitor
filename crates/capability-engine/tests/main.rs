@@ -99,7 +99,7 @@ fn scenario_1() {
     );
     snap!("{}", regions(domain2, &engine));
     snap!(
-        "{Region([0x0, 0x1000 | _C]), Region([0x300, 0x1000 | AC]), Region([0x0, 0x50 | AC]), Region([0x50, 0x200 | AC]), Management(2)}",
+        "{Region([0x0, 0x1000 | _C]), Region([0x300, 0x1000 | AC]), Region([0x0, 0x50 | AC]), Region([0x50, 0x200 | AC]), Management(2 | _)}",
         capas(domain, &mut engine)
     );
     snap!("{Region([0x0, 0x200 | _C])}", capas(domain2, &mut engine));
@@ -136,6 +136,7 @@ fn scenario_2() {
 
     // Create an initial domain with range 0x0 to 0x1000
     let domain = engine.create_manager_domain(permission::ALL).unwrap();
+    let ctx = engine.start_cpu_on_domain(domain).unwrap();
     let region = engine
         .create_root_region(
             domain,
@@ -187,7 +188,7 @@ fn scenario_2() {
     );
     snap!("{[0x0, 0x200 | 1]}", regions(domain2, &engine));
     snap!(
-        "{Region([0x0, 0x1000 | _C]), Region([0x300, 0x1000 | AC]), Management(2)}",
+        "{Region([0x0, 0x1000 | _C]), Region([0x300, 0x1000 | AC]), Management(2 | _)}",
         capas(domain, &mut engine)
     );
     snap!("{Region([0x0, 0x200 | AC])}", capas(domain2, &mut engine));
@@ -202,7 +203,7 @@ fn scenario_2() {
     assert!(engine.seal(domain, dom2).is_err());
 
     // Swirtch
-    engine.switch(domain, switch).unwrap();
+    engine.switch(domain, ctx, switch).unwrap();
 }
 
 // ————————————————————————————————— Utils —————————————————————————————————— //

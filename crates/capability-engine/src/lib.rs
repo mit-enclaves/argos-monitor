@@ -24,7 +24,7 @@ use region_capa::{RegionCapa, RegionPool};
 pub use update::Update;
 use update::UpdateBuffer;
 
-pub const N: usize = 100;
+pub const N: usize = 64;
 
 #[derive(Clone, Copy, Debug)]
 pub enum CapaError {
