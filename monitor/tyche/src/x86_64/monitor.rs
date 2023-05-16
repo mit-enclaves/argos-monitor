@@ -1,8 +1,9 @@
 //! Architecture specific monitor state, independant of the CapaEngine.
 
+use capa_engine::config::{NB_CONTEXTS, NB_DOMAINS};
 use capa_engine::{
     permission, AccessRights, CapaEngine, CapaError, CapaInfo, Context, Domain, Handle, LocalCapa,
-    NextCapaToken, N,
+    NextCapaToken,
 };
 use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator};
@@ -20,9 +21,9 @@ use crate::statics::NB_CORES;
 
 static CAPA_ENGINE: Mutex<CapaEngine> = Mutex::new(CapaEngine::new());
 static INITIAL_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
-static DOMAINS: [Mutex<DomainData>; N] = [EMPTY_DOMAIN; N];
+static DOMAINS: [Mutex<DomainData>; NB_DOMAINS] = [EMPTY_DOMAIN; NB_DOMAINS];
 static CORES: [Mutex<CoreData>; NB_CORES] = [EMPTY_CORE; NB_CORES];
-static CONTEXTS: [Mutex<ContextData>; N] = [EMPTY_CONTEXT; N];
+static CONTEXTS: [Mutex<ContextData>; NB_CONTEXTS] = [EMPTY_CONTEXT; NB_CONTEXTS];
 
 pub struct DomainData {
     ept: Option<HostPhysAddr>,

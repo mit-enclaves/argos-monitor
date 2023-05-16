@@ -1,7 +1,8 @@
 use core::fmt;
 
+use crate::config::NB_REGIONS_PER_DOMAIN;
 use crate::gen_arena::{GenArena, Handle};
-use crate::{CapaError, N};
+use crate::CapaError;
 
 #[derive(Clone, Copy, Debug)]
 pub struct AccessRights {
@@ -63,7 +64,7 @@ impl Region {
 // ————————————————————————————— RegionTracker —————————————————————————————— //
 
 pub struct RegionTracker {
-    regions: GenArena<Region, N>,
+    regions: GenArena<Region, NB_REGIONS_PER_DOMAIN>,
     head: Option<Handle<Region>>,
 }
 
@@ -77,7 +78,7 @@ impl RegionTracker {
         };
 
         Self {
-            regions: GenArena::new([EMPTY_REGIION; N]),
+            regions: GenArena::new([EMPTY_REGIION; NB_REGIONS_PER_DOMAIN]),
             head: None,
         }
     }

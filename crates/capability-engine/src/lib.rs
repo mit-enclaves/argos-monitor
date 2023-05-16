@@ -24,7 +24,15 @@ use region_capa::{RegionCapa, RegionPool};
 pub use update::Update;
 use update::UpdateBuffer;
 
-pub const N: usize = 64;
+/// Configuration for the static Capa Engine size.
+pub mod config {
+    pub const NB_DOMAINS: usize = 32;
+    pub const NB_CAPAS_PER_DOMAIN: usize = 128;
+    pub const NB_REGIONS_PER_DOMAIN: usize = 64;
+    pub const NB_REGIONS: usize = 256;
+    pub const NB_UPDATES: usize = 128;
+    pub const NB_CONTEXTS: usize = 128;
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum CapaError {
@@ -57,10 +65,10 @@ impl CapaEngine {
         const EMPTY_CONTEXT: Context = Context::new();
 
         Self {
-            domains: GenArena::new([EMPTY_DOMAIN; N]),
-            regions: GenArena::new([EMPTY_CAPA; N]),
+            domains: GenArena::new([EMPTY_DOMAIN; config::NB_DOMAINS]),
+            regions: GenArena::new([EMPTY_CAPA; config::NB_REGIONS]),
             updates: UpdateBuffer::new(),
-            contexts: GenArena::new([EMPTY_CONTEXT; N]),
+            contexts: GenArena::new([EMPTY_CONTEXT; config::NB_UPDATES]),
             id_counter: 0,
         }
     }

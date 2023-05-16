@@ -2,7 +2,8 @@
 
 use core::{fmt, mem};
 
-use crate::{Domain, Handle, N};
+use crate::config::NB_UPDATES;
+use crate::{Domain, Handle};
 
 #[derive(Debug)]
 pub enum Update {
@@ -13,7 +14,7 @@ pub enum Update {
 }
 
 pub struct UpdateBuffer {
-    buff: [Update; N],
+    buff: [Update; NB_UPDATES],
     head: usize,
 }
 
@@ -21,7 +22,7 @@ impl UpdateBuffer {
     pub const fn new() -> Self {
         const NOOP: Update = Update::None;
         UpdateBuffer {
-            buff: [NOOP; N],
+            buff: [NOOP; NB_UPDATES],
             head: 0,
         }
     }

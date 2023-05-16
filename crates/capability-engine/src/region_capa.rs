@@ -1,8 +1,9 @@
+use crate::config::NB_REGIONS;
 use crate::domain::{Domain, DomainPool, LocalCapa};
 use crate::gen_arena::{GenArena, Handle};
 use crate::region::{AccessRights, PermissionChange};
 use crate::update::{Update, UpdateBuffer};
-use crate::{CapaError, N};
+use crate::CapaError;
 
 pub struct RegionCapa {
     domain: Handle<Domain>,
@@ -51,7 +52,7 @@ impl RegionCapa {
 }
 
 pub type RegionHandle = Handle<RegionCapa>;
-pub(crate) type RegionPool = GenArena<RegionCapa, N>;
+pub(crate) type RegionPool = GenArena<RegionCapa, NB_REGIONS>;
 
 pub(crate) fn restore(
     handle: Handle<RegionCapa>,

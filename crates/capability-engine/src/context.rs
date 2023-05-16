@@ -1,7 +1,7 @@
+use crate::config::NB_CONTEXTS;
 use crate::gen_arena::GenArena;
-use crate::N;
 
-pub(crate) type ContextPool = GenArena<Context, N>;
+pub(crate) type ContextPool = GenArena<Context, NB_CONTEXTS>;
 
 pub struct Context {}
 

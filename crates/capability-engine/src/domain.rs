@@ -1,13 +1,14 @@
 use crate::capa::{Capa, IntoCapa};
+use crate::config::{NB_CAPAS_PER_DOMAIN, NB_DOMAINS};
 use crate::context::{Context, ContextPool};
 use crate::free_list::FreeList;
 use crate::gen_arena::GenArena;
 use crate::region::{PermissionChange, RegionTracker};
 use crate::update::{Update, UpdateBuffer};
-use crate::{region_capa, AccessRights, CapaError, Handle, RegionPool, N};
+use crate::{region_capa, AccessRights, CapaError, Handle, RegionPool};
 
 pub type DomainHandle = Handle<Domain>;
-pub(crate) type DomainPool = GenArena<Domain, N>;
+pub(crate) type DomainPool = GenArena<Domain, NB_DOMAINS>;
 
 // —————————————————————————————— Permissions ——————————————————————————————— //
 
@@ -73,8 +74,8 @@ impl NextCapaToken {
 
 pub struct Domain {
     id: usize,
-    capas: [Capa; N],
-    free_list: FreeList<N>,
+    capas: [Capa; NB_CAPAS_PER_DOMAIN],
+    free_list: FreeList<NB_CAPAS_PER_DOMAIN>,
     regions: RegionTracker,
     manager: Option<Handle<Domain>>,
     permissions: u64,
@@ -88,7 +89,7 @@ impl Domain {
 
         Self {
             id,
-            capas: [INVALID_CAPA; N],
+            capas: [INVALID_CAPA; NB_CAPAS_PER_DOMAIN],
             free_list: FreeList::new(),
             regions: RegionTracker::new(),
             manager: None,
