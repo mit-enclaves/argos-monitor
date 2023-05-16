@@ -45,8 +45,6 @@ check:
 test:
 	cargo test --package vmx
 	cargo test --package capa-engine
-	cargo test --package capabilities
-	cargo test --package monitor
 
 # Format all rust code
 format:
