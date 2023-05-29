@@ -132,7 +132,7 @@ build-linux-riscv:
 
 _build-linux-common ARCH CROSS_COMPILE=extra_arg:
 	@just _setup-linux-config {{ARCH}}
-	make -C ./linux ARCH={{ARCH}} O=../builds/linux-{{ARCH}} {{CROSS_COMPILE}} -j `nproc`
+	make -C ./linux ARCH={{ARCH}} O=../builds/linux-{{ARCH}} {{CROSS_COMPILE}} -j `nproc` CC=clang
 	@just _clean-linux-config {{ARCH}}
 
 _build-linux-header-common ARCH CROSS_COMPILE=extra_arg:
