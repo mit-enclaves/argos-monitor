@@ -120,7 +120,6 @@ build-riscv:
 	{{riscv-linker-script}} cargo build {{cargo_args}} {{riscv}} {{tyche}} --release
 
 ## ——————————————————————————— Linux Kernel Build ——————————————————————————— ##
-
 # Build linux image.
 build-linux:
 	make -C linux-image/
@@ -149,6 +148,15 @@ _setup-linux-config ARCH:
 
 _clean-linux-config ARCH:
 	rm ./linux/arch/{{ARCH}}/configs/linux-{{ARCH}}_defconfig
+
+## —————————————————————————————— Rust Config ——————————————————————————————— ##
+
+# override the toolchain to be the one described in min-tool-version.sh (see https://www.kernel.org/doc/html/latest/rust/quick-start.html)
+setup-rust-tools:
+	rustup override set $(./linux/scripts/min-tool-version.sh rustc)
+	rustup component add rust-src
+	cargo install --locked --version $(./linux/scripts/min-tool-version.sh bindgen) bindgen
+	make -C ./linux LLVM=1 rustavailable
 
 ## —————————————————————————————— RamFS Build ——————————————————————————————— ##
 
