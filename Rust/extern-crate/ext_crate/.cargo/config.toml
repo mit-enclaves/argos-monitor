@@ -1,10 +1,10 @@
 [build]
-target = "../../../../builds/linux-x86/rust/target.json"
+target = "../../../builds/linux-x86/scripts/target.json"
 rustflags = [
     "-Ctarget-cpu=native",
     "--emit=obj",
     "--extern", "kernel",
     "--extern", "alloc",
-    "-L", "../../../../builds/linux-x86/rust",
+    "-L", "../../../builds/linux-x86/rust",
     "-Cpanic=abort"
 ]
