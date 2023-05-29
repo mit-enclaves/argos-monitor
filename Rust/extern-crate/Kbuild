@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0
+
+obj-m := driver.o
+rustflags-y := --extern ext_crate -L $(src)/ext_crate/target/target/debug/deps
+driver-y := driver_main.o ext_crate.o
