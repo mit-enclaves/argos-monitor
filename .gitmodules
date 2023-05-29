@@ -7,3 +7,6 @@
 [submodule "busybox"]
 	path = busybox
 	url = git://busybox.net/busybox.git
+[submodule "linux"]
+	path = linux
+	url = https://github.com/Rust-for-Linux/linux.git
