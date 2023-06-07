@@ -2,8 +2,15 @@
 
 KDIR ?= ../../builds/linux-x86
 
-default:
-	$(MAKE) -C $(KDIR) M=$$PWD CC=clang
+APP_TARGET=app/ioctl_app
+
+all: build-ko app
+
+build-ko:
+	make -C $(KDIR) M=$(PWD) modules CC=clang
+
+app: $(APP_TARGET)
 
 clean:
-	@rm -f *.mod *.c *.ko *.o *.order *.symvers *.d .*.cmd app/ioctl_app
+	make -C $(KDIR) M=$(PWD) clean
+	@rm $(APP_TARGET)

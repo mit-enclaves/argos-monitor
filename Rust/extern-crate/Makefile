@@ -5,8 +5,8 @@ KDIR ?= ../../builds/linux-x86
 build-ko:
 	cd ext_crate && cargo build -v
 	cp ext_crate/target/target/debug/deps/ext_crate-*.o ext_crate.o_shipped
-	$(MAKE) -C $(KDIR) M=$$PWD CC=clang
+	make -C $(KDIR) M=$(PWD) CC=clang
 
 clean:
-	@rm -rf \
-		.*.cmd *.o *_shipped *.mod *.mod.c *.ko Module.symvers modules.order ext_crate/target
+	make -C $(KDIR) M=$(PWD) clean
+	@rm -rf ext_crate/target *.o_shipped

@@ -2,12 +2,15 @@
 
 KDIR ?= ../../builds/linux-x86
 
-all: default app
+APP_TARGET=app/memory_allocation_app
 
-default:
-	$(MAKE) -C $(KDIR) M=$$PWD CC=clang
+all: build-ko app
 
-app: app/memory_allocation_app
+build-ko:
+	make -C $(KDIR) M=$(PWD) modules CC=clang
+
+app: $(APP_TARGET)
 
 clean:
-	@rm -f *.mod *.c *.ko *.o *.order *.symvers *.d .*.cmd app/memory_allocation_app
+	make -C $(KDIR) M=$(PWD) clean
+	@rm $(APP_TARGET)

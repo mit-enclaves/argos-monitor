@@ -1,0 +1,2 @@
+obj-m := hello_world.o
+rustflags-y := -C opt-level=z
