@@ -20,6 +20,7 @@ pub mod sbi {
     pub const EXT_RFENCE: usize = 0x52464E43;
     pub const EXT_SRST: usize = 0x53525354;
     pub const EXT_HSM: usize = 0x48534D;
+    pub const EXT_PMU: usize = 0x504d55;
     pub const EXT_BASE_GET_SPEC_VERSION: usize = 0;
     pub const EXT_BASE_GET_IMP_ID: usize = 1;
     pub const EXT_BASE_GET_IMP_VERSION: usize = 2;

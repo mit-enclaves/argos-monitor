@@ -45,11 +45,15 @@ pub fn probe(a0: usize) -> usize {
 
     match a0 {
         sbi::EXT_TIME | sbi::EXT_IPI | sbi::EXT_HSM => {
+            //NOTE: sbi::EXT_PMU (performance monitoring unit) is not supported for now. 
+            //NOTE: None of these extensions have the probe method defined in openSBI.
             ret = 1;
-            println!("PROBING sbi::EXT_TIME/IPI/HSM.")
+            println!("PROBING sbi::EXT_TIME/IPI/HSM")
         }
         //Handlers for the corresponding ecall are not yet implemented.
         sbi::EXT_RFENCE => {
+            //NOTE: Rfence also doesn't have the probe method defined in openSBI - todo: should it
+            //be merged with the first case? 
             ret = 1;
             println!("PROBING sbi::EXT_RFENCE")
         }
@@ -81,12 +85,15 @@ pub fn get_m_x_id(a6: usize) -> usize {
 }
 
 pub fn sbi_ext_srst_probe(_a0: usize) -> usize {
+    //The task of this function is to check whether system reset is supported by the platform (any
+    //one of the standard reset types - IDK what these types are, at least one must be supported.)
     //TODO For now this function pretends that srst extension probe works as expected.
-    //If needed in the future, this must be implemented fully - refer to openSBI for this.
+    //If needed in the future, this must be implemented fully - refer to the method
+    //"sbi_ecall_srst_probe" in openSBI for this.
     return 1;
 }
 
 pub fn ecall_handler_failed() {
     //TODO: Print information about requested ecall.
-    println!("Cannot service SBI ecall - invalid ecall.");
+    println!("Cannot service SBI ecall - invalid ecall or ecall not implemented.");
 }
