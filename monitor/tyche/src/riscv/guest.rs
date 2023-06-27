@@ -4,7 +4,7 @@ use qemu::println;
 use riscv_csrs::*;
 use riscv_sbi::ecall::ecall_handler;
 use riscv_utils::RegisterState;
-
+use crate::calls;
 // M-mode trap handler
 // Saves register state - calls trap_handler - restores register state - mret to intended mode.
 
@@ -144,7 +144,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         _ => exit_handler_failed(),
         //Default - just print whatever information you can about the trap.
     }
-    println!("Ecall handler complete: returning {:x}", ret);
+    println!("Trap handler complete: returning {:x}", ret);
 
     // Return to the next instruction after the trap.
     // i.e. mepc += 4
@@ -159,7 +159,8 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     reg_state.a1 = ret;
 }
 
-pub fn illegal_instruction_handler(mepc: usize, mstatus: usize) {
+//TODO: Need to provide all trap-related registers
+pub fn illegal_instruction_handler(mepc: usize, mstatus: usize, TODO_REGS) {
     let mut mepc_instr_opcode: usize = 0;
 
     // Read the instruction which caused the trap. (mepc points to the VA of this instruction).
@@ -181,4 +182,23 @@ pub fn illegal_instruction_handler(mepc: usize, mstatus: usize) {
         ((mstatus >> mstatus::MPP_LOW) & mstatus::MPP_MASK),
         mepc_instr_opcode
     );
+
+    //IF TYCHE_CALL i.e. wfi and match some other args. 
+    {
+       match calls {
+           calls::CREATE_DOMAIN => { },
+           calls::SEAL_DOMAIN => { }, 
+           calls::SHARE => { },
+           calls::SEND => { },
+           calls::SEGMENT_REGION => { },
+           calls::REVOKE => { }, 
+           calls::DUPLICATE => { },
+           calls::ENUMERATE => { }, 
+           calls::SWITCH => { }, 
+           calls::DEBUG => { },
+           calls::EXIT => { }
+       }
+    }
+    //ELSE NOT TYCHE CALL 
+    //Handle Illegal Instruction Trap 
 }

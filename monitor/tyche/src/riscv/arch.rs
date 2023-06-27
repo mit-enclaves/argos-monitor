@@ -17,7 +17,7 @@ pub fn init() {
     //addressing mode. TODO: Update this to pmp_set once it is implemented.
     println!(
         "Protecting Tyche Region in PMP with pmpaddr value: {:x}",
-        pmpaddr_write(TYCHE_START_ADDRESS, TYCHE_SIZE_NAPOT)
+        tbdeprecated_pmpaddr_write(TYCHE_START_ADDRESS, TYCHE_SIZE_NAPOT)
     );
 
     //Making sure that ecalls from user mode trap into Tyche.
