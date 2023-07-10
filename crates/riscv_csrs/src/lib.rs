@@ -12,6 +12,7 @@ pub mod mstatus {
 //MEDELEG register fields or mcause register valid values.
 pub mod mcause {
     pub const ILLEGAL_INSTRUCTION: usize = 2;
+    pub const LOAD_ADDRESS_MISALIGNED: usize = 4;
     pub const ECALL_FROM_UMODE: usize = 8;
     pub const ECALL_FROM_SMODE: usize = 9;
 }

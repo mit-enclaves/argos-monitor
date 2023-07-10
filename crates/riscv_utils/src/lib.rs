@@ -3,6 +3,8 @@
 //uart base address
 pub const SERIAL_PORT_BASE_ADDRESS: usize = 0x1000_0000;
 
+pub const PAGING_MODE_SV48: usize = 0x9;
+
 pub struct RegisterState {
     pub ra: usize,
     pub a0: usize,
