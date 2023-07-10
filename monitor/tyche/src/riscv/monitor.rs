@@ -63,6 +63,7 @@ pub fn init() {
 }
 
 pub fn start_initial_domain_on_cpu() -> (Handle<Domain>, Handle<Context>) { 
+    log::info!("Creating initial domain.");
     let mut engine = CAPA_ENGINE.lock();
     let initial_domain = INITIAL_DOMAIN
         .lock()
@@ -73,6 +74,7 @@ pub fn start_initial_domain_on_cpu() -> (Handle<Domain>, Handle<Context>) {
    //let domain = get_domain(initial_domain);
    
    //update PMP permissions.
+   log::info!("Updating permissions for initial domain.");
    update_permission(initial_domain, &mut engine); 
 
    (initial_domain, ctx)
