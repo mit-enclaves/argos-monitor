@@ -1,10 +1,13 @@
 #![no_std]
 
+use core::arch::asm; 
+
 //uart base address
 pub const SERIAL_PORT_BASE_ADDRESS: usize = 0x1000_0000;
 
 pub const PAGING_MODE_SV48: usize = 0x9;
 
+#[derive(Copy, Clone)]
 pub struct RegisterState {
     pub ra: usize,
     pub a0: usize,
@@ -76,5 +79,43 @@ impl RegisterState {
             s10: 0,
             s11: 0,
         }
+    }
+}
+
+pub fn read_mscratch() -> usize {
+    let mut mscratch: usize = 0; 
+
+    unsafe { 
+        asm!("csrr {}, mscratch", out(reg) mscratch);
+    }
+
+    return mscratch; 
+}
+
+pub fn read_satp() -> usize {
+    let mut satp: usize = 0; 
+
+    unsafe { 
+        asm!("csrr {}, satp", out(reg) satp); 
+    }
+
+    return satp; 
+}
+
+pub fn write_satp(satp: usize) {
+    unsafe { 
+        asm!("csrw satp, {}", in(reg) satp);
+    }
+}
+
+pub fn write_ra(ra: usize) {
+    unsafe {
+        asm!("mv ra, {}", in(reg) ra);
+    }
+}
+
+pub fn write_sp(sp: usize) {
+    unsafe {
+        asm!("mv sp, {}", in(reg) sp);
     }
 }
