@@ -15,10 +15,10 @@ pub fn init() {
     //Configuring PMP to protect the monitor's memory.
     //Writing only pmpaddr for now, pmpcfg is already configured with the correct permissions and
     //addressing mode. TODO: Update this to pmp_set once it is implemented.
-    println!(
+    /* println!(
         "Protecting Tyche Region in PMP with pmpaddr value: {:x}",
         tbdeprecated_pmpaddr_write(TYCHE_START_ADDRESS, TYCHE_SIZE_NAPOT)
-    );
+    ); */
 
     //Making sure that ecalls from user mode trap into Tyche.
     //println!("Updating medeleg");
