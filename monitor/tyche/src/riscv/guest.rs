@@ -1,10 +1,15 @@
 use core::arch::asm;
 
+use capa_engine::{LocalCapa, NextCapaToken, Domain, Handle, Context};
 use qemu::println;
 use riscv_csrs::*;
 use riscv_sbi::ecall::ecall_handler;
 use riscv_utils::RegisterState;
+use crate::calls;
+use super::monitor;
 
+static mut ACTIVE_DOMAIN: Option<Handle<Domain>> = None; 
+static mut ACTIVE_CONTEXT: Option<Handle<Context>> = None;
 // M-mode trap handler
 // Saves register state - calls trap_handler - restores register state - mret to intended mode.
 
@@ -141,6 +146,9 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         mcause::ECALL_FROM_SMODE => {
             ecall_handler(&mut ret, &mut err, reg_state.a0, reg_state.a6, reg_state.a7)
         }
+        mcause::LOAD_ADDRESS_MISALIGNED => {
+            misaligned_load_handler(reg_state);
+        }
         _ => exit_handler_failed(),
         //Default - just print whatever information you can about the trap.
     }
@@ -181,4 +189,19 @@ pub fn illegal_instruction_handler(mepc: usize, mstatus: usize) {
         ((mstatus >> mstatus::MPP_LOW) & mstatus::MPP_MASK),
         mepc_instr_opcode
     );
+}
+
+pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
+
+    println!("Misaligned_load!");
+
+}
+
+pub unsafe fn get_active_dom_ctx() -> (Handle<Domain>, Handle<Context>) { 
+    return (ACTIVE_DOMAIN.unwrap(), ACTIVE_CONTEXT.unwrap()); 
+}
+
+pub unsafe fn set_active_dom_ctx(domain: Handle<Domain>, ctx: Handle<Context>) {
+    ACTIVE_DOMAIN = Some(domain);
+    ACTIVE_CONTEXT = Some(ctx); 
 }
