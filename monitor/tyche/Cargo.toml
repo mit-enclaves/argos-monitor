@@ -27,6 +27,7 @@ vtd = { path = "../../crates/vtd" }
 vmx = { version = "0.1.0", path = "../../crates/vmx" }
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
+#lazy_static = { version = "1.4.0", features = ["spin_no_std"] } 
 riscv_utils = { path = "../../crates/riscv_utils/" }
 riscv_tyche = { path = "../../crates/riscv_tyche/" }
 riscv_csrs = { path = "../../crates/riscv_csrs/" }

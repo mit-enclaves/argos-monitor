@@ -5,8 +5,9 @@ use capa_engine::{
     permission, AccessRights, CapaEngine, CapaError, CapaInfo, Context, Domain, Handle, LocalCapa,
     NextCapaToken,
 };
+use riscv_utils::{RegisterState, PAGING_MODE_SV48};
 use spin::{Mutex, MutexGuard};
-use riscv_pmp::{pmp_write, PMPAddressingMode, PMPErrorCode};
+use riscv_pmp::{pmp_write, clear_pmp, PMPAddressingMode, PMPErrorCode, FROZEN_PMP_ENTRIES, PMP_ENTRIES};
 
 static CAPA_ENGINE: Mutex<CapaEngine> = Mutex::new(CapaEngine::new());
 static INITIAL_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
@@ -22,17 +23,24 @@ pub struct DomainData {
 } 
 
 pub struct ContextData {
-    //Todo 
+    pub reg_state: RegisterState, 
+    pub satp: usize,
+    pub ra: usize,
+    pub sp: usize,
 }
 
-const EMPTY_DOMAIN: Mutex<DomainData> = Mutex::new(DomainData { //Todo });
+const EMPTY_DOMAIN: Mutex<DomainData> = Mutex::new(DomainData { }); //Todo Init the domain data
+                                                                    //once done. 
 const EMPTY_CONTEXT: Mutex<ContextData> = Mutex::new(ContextData {
-    //Todo
+    reg_state: RegisterState::const_default(),
+    satp: 0,
+    ra: 0,  //TODO: Is ra the one or should it be mepc?  
+    sp: 0,
 });
 
 // ————————————————————————————— Initialization ————————————————————————————— //
 
-pub fn init(manifest: &'static Manifest) {
+pub fn init() {
     let mut engine = CAPA_ENGINE.lock();
     let domain = engine.create_manager_domain(permission::ALL).unwrap();
     apply_updates(&mut engine);
@@ -40,8 +48,10 @@ pub fn init(manifest: &'static Manifest) {
         .create_root_region(
             domain,
             AccessRights {
-                start: , //Todo
-                end: ,  //Todo 
+                start: 0x80200000, //Linux Starting Address
+                end: 0x9fffffff,   //Todo: double check this - it's currently based on early
+                                   //memory node range detected by linux. 
+                                   //Todo: It should be a part of the manifest. 
             },
         )
         .unwrap();
@@ -50,6 +60,22 @@ pub fn init(manifest: &'static Manifest) {
     // Save the initial domain
     let mut initial_domain = INITIAL_DOMAIN.lock();
     *initial_domain = Some(domain);
+}
+
+pub fn start_initial_domain_on_cpu() -> (Handle<Domain>, Handle<Context>) { 
+    let mut engine = CAPA_ENGINE.lock();
+    let initial_domain = INITIAL_DOMAIN
+        .lock()
+        .expect("CapaEngine is not initialized yet");
+   let ctx = engine
+        .start_cpu_on_domain(initial_domain)
+        .expect("Failed to allocate initial domain");
+   //let domain = get_domain(initial_domain);
+   
+   //update PMP permissions.
+   update_permission(initial_domain, &mut engine); 
+
+   (initial_domain, ctx)
 }
 
 // ———————————————————————————————— Helpers ————————————————————————————————— //
@@ -74,12 +100,19 @@ pub fn do_create_domain(current: Handle<Domain>) -> Result<LocalCapa, CapaError>
 pub fn do_seal(
     current: Handle<Domain>,
     domain: LocalCapa,
-    //,   //Todo: add context 
+    satp: usize, 
+    ra: usize,
+    sp: usize,
 ) -> Result<LocalCapa, CapaError> {
     let mut engine = CAPA_ENGINE.lock();
     let (capa, context) = engine.seal(current, domain)?;
-    //let mut context = get_context(context);
-    //Todo: Populate context with the input context 
+    let mut context = get_context(context);
+    //Todo: Populate context with the input context
+    context.satp = (satp | PAGING_MODE_SV48);  
+    context.ra = ra;
+    context.sp = sp;
+    let temp_reg_state = RegisterState::const_default(); 
+    context.reg_state = temp_reg_state; 
     apply_updates(&mut engine);
     Ok(capa)
 }
@@ -141,7 +174,7 @@ pub fn do_switch(
     current: Handle<Domain>,
     current_ctx: Handle<Context>,
     capa: LocalCapa,
-    cpuid: usize,
+    //cpuid: usize,
 ) -> Result<
     (
         MutexGuard<'static, ContextData>,
@@ -155,7 +188,7 @@ pub fn do_switch(
     // TODO: check that the domain is not already running! Maybe this should be done in the engine?
     let mut engine = CAPA_ENGINE.lock();
     let (next_domain, next_context, return_capa) = engine.switch(current, current_ctx, capa)?;
-    get_core(cpuid).domain = next_domain;
+    //get_core(cpuid).domain = next_domain;
     apply_updates(&mut engine);
     Ok((
         get_context(current_ctx),
@@ -215,26 +248,28 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
     //First clean current PMP settings - this should internally cause the appropriate flushes 
     clear_pmp();
     //Currently assuming that the number of regions are less than number of PMP entries. 
-    let mut addressing_mode: PMPAddressingMode;
-    let mut pmp_error: PMPErrorCode; 
-    let mut pmp_index = 0; 
+    let mut pmp_write_result: Result<PMPAddressingMode, PMPErrorCode>;
+    let mut pmp_index = FROZEN_PMP_ENTRIES; 
     for range in engine[domain_handle].regions().permissions() {
-        
-        addressing_mode, pmp_error = pmp_write(pmp_index, range.start, range.size(), XWR_PERM);
+       
+        log::info!("Protecting Domain: {:x} {:x}", range.start, range.size());
+ 
+        pmp_write_result = pmp_write(pmp_index, range.start, range.size(), XWR_PERM);
         //Check the PMP addressing mode so the index can be advanced by 1
         //(NAPOT) or 2 (TOR). 
-        if pmp_error == PMPErrorCode::Success { 
+        if pmp_write_result.is_ok() { 
         
-            if addressing_mode == PMPAddressingMode::NAPOT {
+            if pmp_write_result.unwrap() == PMPAddressingMode::NAPOT {
                 pmp_index = pmp_index + 1; 
             }
-            else if addressing_mode == PMPAddressingMode::TOR {
+            else if pmp_write_result.unwrap() == PMPAddressingMode::TOR {
                 pmp_index = pmp_index + 2; 
             }
 
-            if pmp_index > NUM_PMP_ENTRIES {
-                //Exception .... quit/fail
-                //TODO: PMPOverflowException 
+            if pmp_index > PMP_ENTRIES {
+                // TODO: PMPOverflow Handling 
+                // Panic for now. 
+                panic!("Cannot continue running this domain: PMPOverflow");
             }
         }
         else {

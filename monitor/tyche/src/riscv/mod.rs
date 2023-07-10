@@ -6,10 +6,15 @@
 
 mod arch;
 pub mod guest;
+mod monitor;
+mod init; 
 
 use core::arch::asm;
 
 use mmu::FrameAllocator;
+
+pub use init::arch_entry_point;
+
 use riscv_csrs::mstatus;
 
 use crate::debug::qemu::ExitCode;
@@ -24,6 +29,7 @@ pub fn launch_guest(hartid: u64, arg1: u64, next_addr: u64, next_mode: u64) {
     // 0. TODO: Sanity check for next_mode and misa-extension.
 
     println!("============= Launching Linux from Tyche =============");
+    println!("========= ARGS to Linux: {:x} {:x} {:x} {:x} ========", hartid, arg1, next_addr, next_mode);
 
     // 1. Update MSTATUS - MPP=01 (S-mode), and MPIE = 0.
     let mut mstatus: usize;

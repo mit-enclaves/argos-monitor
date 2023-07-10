@@ -1,12 +1,18 @@
 use core::arch::asm;
+//use lazy_static::lazy_static; 
 
+use capa_engine::{LocalCapa, NextCapaToken, Domain, Handle, Context};
 use qemu::println;
 use riscv_csrs::*;
 use riscv_sbi::ecall::ecall_handler;
-use riscv_utils::RegisterState;
+use riscv_utils::{RegisterState, read_mscratch, read_satp, write_satp, write_ra, write_sp};
 use crate::calls;
+use super::monitor;
 // M-mode trap handler
 // Saves register state - calls trap_handler - restores register state - mret to intended mode.
+
+static mut ACTIVE_DOMAIN: Option<Handle<Domain>> = None; 
+static mut ACTIVE_CONTEXT: Option<Handle<Context>> = None;
 
 #[repr(align(4))]
 #[naked]
@@ -120,6 +126,18 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     println!("mstatus: {:x}", mstatus);
     println!("mtval: {:x}", mtval);
 
+    /* let mut mprv_index: usize = 1 << mstatus::MPRV;
+    let mut mtval_phy: usize; 
+    unsafe {
+        asm!("csrs mstatus, {}", in(reg) mprv_index);
+        asm!("csrr a0, mtval");
+        asm!("lw a1, (a0)");
+        asm!("csrc mstatus, {}", in(reg) mprv_index);
+        asm!("mv {}, a1", out(reg) mtval_phy);
+    } 
+
+    println!("mtval_phy: {:x}", mtval_phy);
+*/
     println!(
         "Trap arguments: a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x} ",
         reg_state.a0,
@@ -139,7 +157,10 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             illegal_instruction_handler(mepc, mstatus);
         }
         mcause::ECALL_FROM_SMODE => {
-            ecall_handler(&mut ret, &mut err, reg_state.a0, reg_state.a6, reg_state.a7)
+            ecall_handler(&mut ret, &mut err, reg_state.a0, reg_state.a6, reg_state.a7);
+        }
+        mcause::LOAD_ADDRESS_MISALIGNED => {
+            misaligned_load_handler(reg_state);
         }
         _ => exit_handler_failed(),
         //Default - just print whatever information you can about the trap.
@@ -160,7 +181,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
 }
 
 //TODO: Need to provide all trap-related registers
-pub fn illegal_instruction_handler(mepc: usize, mstatus: usize, TODO_REGS) {
+pub fn illegal_instruction_handler(mepc: usize, mstatus: usize) {
     let mut mepc_instr_opcode: usize = 0;
 
     // Read the instruction which caused the trap. (mepc points to the VA of this instruction).
@@ -183,22 +204,123 @@ pub fn illegal_instruction_handler(mepc: usize, mstatus: usize, TODO_REGS) {
         mepc_instr_opcode
     );
 
-    //IF TYCHE_CALL i.e. wfi and match some other args. 
-    {
-       match calls {
-           calls::CREATE_DOMAIN => { },
-           calls::SEAL_DOMAIN => { }, 
-           calls::SHARE => { },
-           calls::SEND => { },
-           calls::SEGMENT_REGION => { },
-           calls::REVOKE => { }, 
-           calls::DUPLICATE => { },
-           calls::ENUMERATE => { }, 
-           calls::SWITCH => { }, 
-           calls::DEBUG => { },
-           calls::EXIT => { }
+    //TODO: Handle the exception. 
+}
+
+pub fn misaligned_load_handler(reg_state: &mut RegisterState) { 
+    
+    if reg_state.a7 == 0x78ac5b {   //It's a Tyche Call
+        let tyche_call: usize = reg_state.a0;
+        let arg_1: usize = reg_state.a1; 
+        let arg_2: usize = reg_state.a2; 
+        let arg_3: usize = reg_state.a3; 
+        let arg_4: usize = reg_state.a4; 
+        let arg_5: usize = reg_state.a5; 
+        let arg_6: usize = reg_state.a6; 
+
+        let active_dom: Handle<Domain>;
+        let active_ctx: Handle<Context>;
+
+        unsafe { 
+            (active_dom, active_ctx) = get_active_dom_ctx();
+        //    active_domain.unwrap();
+        //    active_ctx = active_context.unwrap(); 
+        }
+
+        match tyche_call {
+           calls::CREATE_DOMAIN => 
+           { 
+                let capa = monitor::do_create_domain(active_dom).expect("TODO");
+                reg_state.a0 = 0x0;
+                reg_state.a1 = capa.as_usize();
+                //TODO: Ok(HandlerResult::Resume) There is no main loop to check what happened
+                //here, do we need a wrapper to determine when we crash?  
+           },
+           calls::SEAL_DOMAIN => { 
+                let capa = monitor::do_seal(active_dom, LocalCapa::new(arg_1), arg_2, arg_3, arg_4).expect("TODO");
+                reg_state.a0 = 0x0;
+                reg_state.a1 = capa.as_usize();
+           }, 
+           calls::SHARE => { 
+                //let capa = monitor::.do_().expect("TODO");
+                reg_state.a0 = 0x0;
+                reg_state.a1 = 0x0;
+           },
+           calls::SEND => {
+                monitor::do_send(active_dom, LocalCapa::new(arg_1), LocalCapa::new(arg_2)).expect("TODO");
+                reg_state.a0 = 0x0;
+           },
+           calls::SEGMENT_REGION => {    
+                let (left, right) = monitor::do_segment_region(
+                        active_dom,
+                        LocalCapa::new(arg_1),
+                        arg_2, 
+                        arg_3,
+                        arg_6 >> 32, 
+                        arg_4, 
+                        arg_5, 
+                        (arg_6 << 32) >> 32, 
+                    ).expect("TODO");
+                reg_state.a0 = 0x0;
+                reg_state.a1 = left.as_usize();
+                reg_state.a2 = right.as_usize(); 
+           },
+           calls::REVOKE => { 
+                monitor::do_revoke(active_dom, LocalCapa::new(arg_1)).expect("TODO");
+                reg_state.a0 = 0x0;
+           }, 
+           calls::DUPLICATE => { 
+                let capa = monitor::do_duplicate(active_dom, LocalCapa::new(arg_1)).expect("TODO");
+                reg_state.a0 = 0x0;
+                reg_state.a1 = capa.as_usize();
+           },
+           calls::ENUMERATE => { 
+                //TODO: Implement! 
+               //monitor::do_enumerate(*active_domain, NextCapaToken::from_usize(arg_1)).expect("TODO");
+                reg_state.a0 = 0x0;
+           }, 
+           calls::SWITCH => { 
+                //Adding register state to context now? (not doing it at sealing, initialized to
+                //zero then). 
+                let (mut current_ctx, next_domain, next_ctx, next_context, return_capa) = monitor::do_switch(active_dom, active_ctx, LocalCapa::new(arg_1)).expect("TODO");
+                //TODO: Do we need ra explicitly? It's already stored in reg_state, right?  
+                current_ctx.reg_state = *reg_state;
+                current_ctx.ra = reg_state.ra;
+                current_ctx.sp = read_mscratch();   //Recall: Saved the previous SP there first thing in
+                                                    //the trap handler.
+                current_ctx.satp = read_satp();
+
+                write_satp(next_context.satp);
+                write_ra(next_context.ra);
+                write_sp(next_context.sp);
+                *reg_state = next_context.reg_state;
+
+                reg_state.a0 = 0x0;
+                reg_state.a1 = return_capa.as_usize();
+                unsafe { set_active_dom_ctx(next_domain, next_ctx); } 
+           }, 
+           calls::DEBUG => { 
+                monitor::do_debug();
+                reg_state.a0 = 0x0;
+           },
+           calls::EXIT => { 
+                //TODO 
+                //let capa = monitor::.do_().expect("TODO");
+                reg_state.a0 = 0x0;
+                //reg_state.a1 = capa.as_usize();
+           }
+           _ => { /*TODO: Invalid Tyche Call*/ },
        }
     }
-    //ELSE NOT TYCHE CALL 
+    //TODO: ELSE NOT TYCHE CALL 
     //Handle Illegal Instruction Trap 
+}
+
+pub unsafe fn get_active_dom_ctx() -> (Handle<Domain>, Handle<Context>) { 
+    return (ACTIVE_DOMAIN.unwrap(), ACTIVE_CONTEXT.unwrap()); 
+}
+
+pub unsafe fn set_active_dom_ctx(domain: Handle<Domain>, ctx: Handle<Context>) {
+    ACTIVE_DOMAIN = Some(domain);
+    ACTIVE_CONTEXT = Some(ctx); 
 }

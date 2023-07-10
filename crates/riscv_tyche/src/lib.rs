@@ -9,4 +9,4 @@ pub const TYCHE_SIZE_NAPOT: usize = 14;
 //TODO: Need to protect it. Perhaps protect entire 1 MB memory region?
 pub static TYCHE_STACK_POINTER: usize = 0x80150000;
 
-pub static mut SMIDE_STACK_POINTER: usize = 0;
+pub static mut SMODE_STACK_POINTER: usize = 0;
