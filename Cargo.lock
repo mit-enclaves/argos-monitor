@@ -782,6 +782,9 @@ version = "0.1.0"
 [[package]]
 name = "riscv_pmp"
 version = "0.1.0"
+dependencies = [
+ "log",
+]
 
 [[package]]
 name = "riscv_sbi"
