@@ -213,6 +213,7 @@ fn launch_guest(
             &mut stage2_allocator,
             &mut pt_mapper,
             smp,
+            // memory_map
         );
         smp::BSP_READY.store(true, Ordering::SeqCst);
         second_stage::enter();
