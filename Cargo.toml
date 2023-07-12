@@ -23,6 +23,7 @@ members = [
     "crates/arena",
     "crates/capability-engine",
     "crates/tychools",
+    "crates/attestation",
     "boot_toolchain",
 ]
 
