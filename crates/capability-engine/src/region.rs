@@ -121,6 +121,7 @@ impl Region {
         self.start <= addr && addr < self.end
     }
 
+<<<<<<< HEAD
     pub fn same_counts(&self, other: &Self) -> bool {
         self.ref_count == other.ref_count
             && self.read_count == other.read_count
@@ -144,6 +145,14 @@ impl Region {
             ops |= MemOps::SUPER;
         }
         ops
+=======
+    pub fn get_start(&self) -> usize {
+        self.start
+    }
+
+    pub fn get_end(&self) -> usize {
+        self.end
+>>>>>>> Added mapping guest to Tyche addr space in stage 1 (support it in stage 2 ?) and initial measurement during sealing of domain. Problems: ubuntu_mount - fix the nbd problem
     }
 }
 
