@@ -40,7 +40,7 @@ impl Guest for RawcBytes {
         acpi: &AcpiInfo,
         host_allocator: &impl RangeAllocator,
         guest_allocator: &impl RangeAllocator,
-        memory_map: MemoryMap,
+        memory_map: &MemoryMap,
         _rsdp: u64,
     ) -> ManifestInfo {
         let mut manifest = ManifestInfo::default();
