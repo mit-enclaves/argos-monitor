@@ -2,10 +2,11 @@ use crate::capa::{Capa, IntoCapa};
 use crate::config::{NB_CAPAS_PER_DOMAIN, NB_DOMAINS};
 use crate::free_list::FreeList;
 use crate::gen_arena::GenArena;
-use crate::region::{PermissionChange, RegionTracker};
+use crate::region::{PermissionChange, RegionTracker, RegionIterator};
 use crate::update::{Update, UpdateBuffer};
 use crate::utils::BitmapIterator;
 use crate::{region_capa, AccessRights, CapaError, Handle, RegionPool};
+use attestation::attestation_hash;
 
 pub type DomainHandle = Handle<Domain>;
 pub(crate) type DomainPool = GenArena<Domain, NB_DOMAINS>;
@@ -164,6 +165,8 @@ pub struct Domain {
     is_being_revoked: bool,
     /// Is the domain sealed?
     is_sealed: bool,
+    /// attestation hash (type of it ?)
+    attestation_hash : u64,
 }
 
 impl Domain {
@@ -194,6 +197,7 @@ impl Domain {
             cores: core_bits::NONE,
             is_being_revoked: false,
             is_sealed: false,
+            attestation_hash : 0,
         }
     }
 
@@ -291,6 +295,7 @@ impl Domain {
         } else if !self.config.is_inited() {
             Err(CapaError::InvalidOperation)
         } else {
+            self.calculate_attestation_hash();
             self.is_sealed = true;
             Ok(())
         }
@@ -308,6 +313,29 @@ impl Domain {
             Capa::Channel(handle) => domains.get(handle).is_some(),
             Capa::Switch { to, .. } => domains.get(to).is_some(),
         }
+    }
+
+    //TODO does there need to be offset to address
+    fn calculate_attestation_hash(&mut self) {
+        let mut hasher = attestation_hash::get_hasher();
+        for (_, region) in self.regions().iter() {
+            let mut addr = region.get_start();
+            let addr_end = region.get_end();
+            log::trace!("Hashing region of enclave start addr: {:#x}", addr);
+            log::trace!("Hashing region of enclave end addr: {:#x}", addr_end);
+            log::trace!("Hashing region of enclave sz: {:#x}", addr_end - addr);
+            while addr < addr_end {
+                let mut byte_data : u8= 0;
+                unsafe {
+                    byte_data = *(addr as * const u8);
+                }
+                let byte_arr : [u8;1] = [byte_data];
+                attestation_hash::hash_segment(& mut hasher, &byte_arr);
+                addr = addr + 1;
+            }
+        }
+        log::trace!("Finished calculating the hash!");
+        self.attestation_hash = attestation_hash::get_hash(& mut hasher);
     }
 }
 

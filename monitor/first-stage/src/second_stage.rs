@@ -115,7 +115,7 @@ pub fn load(
     stage2_allocator: &impl RangeAllocator,
     pt_mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
     smp: Smp,
-    // memory_map: MemoryMap,
+    memory_map: MemoryMap,
 ) {
     // Read elf and allocate second stage memory
     let mut second_stage = ElfProgram::new(SECOND_STAGE);
@@ -155,17 +155,20 @@ pub fn load(
         );
     }
 
-    // let guest_regions = memory_map.guest;
-    // for mem_region in guest_regions {
-    //     let region_size = mem_region.end - mem_region.start;
-    //     loaded_elf.pt_mapper.map_range(
-    //         stage2_allocator, 
-    //         HostVirtAddr::new(mem_region.start as usize),
-    //         HostPhysAddr::new(mem_region.end as usize),
-    //         region_size as usize,
-    //         PtFlag::PRESENT | PtFlag::WRITE,
-    //     );
-    // }
+    let guest_regions = memory_map.guest;
+    for mem_region in guest_regions {
+        let region_size = mem_region.end - mem_region.start;
+        log::trace!("Mapping the guest region start addr: {:#x}", mem_region.start);
+        log::trace!("Mapping the guest region end addr: {:#x}", mem_region.end);
+        log::trace!("Mappint the geust region size: {:#x}", region_size);
+        loaded_elf.pt_mapper.map_range(
+            stage2_allocator, 
+            HostVirtAddr::new(mem_region.start as usize),
+            HostPhysAddr::new(mem_region.start as usize),
+            region_size as usize,
+            PtFlag::PRESENT,
+        );
+    }
 
     // If we setup VGA support
     if info.vga_info.is_valid {

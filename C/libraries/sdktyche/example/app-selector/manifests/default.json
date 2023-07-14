@@ -1,7 +1,4 @@
 {
-  "untrusted_bin": {
-    "path": "app"
-  },
   "kern_bin": {
     "path":"enclave",
     "ops":[

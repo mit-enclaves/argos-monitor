@@ -48,7 +48,7 @@ impl Guest for Linux {
         acpi: &AcpiInfo,
         host_allocator: &impl RangeAllocator,
         guest_allocator: &impl RangeAllocator,
-        memory_map: MemoryMap,
+        memory_map: &MemoryMap,
         rsdp: u64,
     ) -> ManifestInfo {
         let mut manifest = ManifestInfo::default();
