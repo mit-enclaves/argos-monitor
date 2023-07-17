@@ -318,6 +318,8 @@ impl Domain {
     //TODO does there need to be offset to address
     fn calculate_attestation_hash(&mut self) {
         let mut hasher = attestation_hash::get_hasher();
+        let mut cnt = 0;
+        let mut cnt_nz = 0;
         for (_, region) in self.regions().iter() {
             let mut addr = region.get_start();
             let addr_end = region.get_end();
@@ -329,11 +331,20 @@ impl Domain {
                 unsafe {
                     byte_data = *(addr as * const u8);
                 }
+                if byte_data == 0 {
+                    cnt+=1;
+                }
+                else {
+                    log::trace!("{:#x}", byte_data);
+                    cnt_nz+=1;
+                }
                 let byte_arr : [u8;1] = [byte_data];
                 attestation_hash::hash_segment(& mut hasher, &byte_arr);
                 addr = addr + 1;
             }
         }
+        log::trace!("Zero counter {:#x}", cnt);
+        log::trace!("Non zero counter {:#x}", cnt_nz);
         log::trace!("Finished calculating the hash!");
         self.attestation_hash = attestation_hash::get_hash(& mut hasher);
     }
