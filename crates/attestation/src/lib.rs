@@ -1,5 +1,7 @@
 #![no_std]
 use sha2::Sha256;
+use ed25519::signature::{Signer,Verifier};
+use ed25519::Signature;
 
 pub type TycheHasher = Sha256;
 
@@ -33,7 +35,45 @@ pub mod attestation_hash {
 }
 
 pub mod attestation_keys {
-    pub fn get_keys(){
-        todo!("Find crate for enc/dec that is no_std");
+
+    // use ed25519::signature::{Signer,Verifier};
+    // use ed25519::Signature;
+
+    pub fn get_keys()  { 
+        // -> (Signer<ed25519::Signature>, Verifier<ed25519::Signature>) {
+        // todo!("Find crate for enc/dec that is no_std");
     }
 }
+
+// pub struct HelloSigner<S>
+// where
+//     S: Signer<ed25519::Signature>
+// {
+//     pub signing_key: S
+// }
+
+// impl<S> HelloSigner<S>
+// where
+//     S: Signer<ed25519::Signature>
+// {
+//     pub fn sign(&self, person: &str) -> ed25519::Signature {
+//         self.signing_key.sign(person.as_bytes())
+//     }
+// }
+
+// pub struct HelloVerifier<V> {
+//     pub verifying_key: V
+// }
+
+// impl<V> HelloVerifier<V>
+// where
+//     V: Verifier<ed25519::Signature>
+// {
+//     pub fn verify(
+//         &self,
+//         person: &str,
+//         signature: &ed25519::Signature
+//     ) -> Result<(), ed25519::Error> {
+//         self.verifying_key.verify(person.as_bytes(), signature)
+//     }
+// }

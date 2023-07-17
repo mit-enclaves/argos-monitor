@@ -19,12 +19,7 @@ pub const CONFIGURE: usize = 12;
 pub const SET_ENTRY_ON_CORE: usize = 13;
 
 //remote attestation calls
-<<<<<<< HEAD
 pub const GET_ATTESTATION : usize = 14;
 pub const GET_RSA_KEY : usize = 15;
 pub const CHALLENGE : usize = 16;
-=======
-pub const _GET_ATTESTATION : usize = 14;
-pub const _GET_RSA_KEY : usize = 15;
-pub const _CHALLENGE : usize = 16;
->>>>>>> Added mapping guest to Tyche addr space in stage 1 (support it in stage 2 ?) and initial measurement during sealing of domain. Problems: ubuntu_mount - fix the nbd problem
+

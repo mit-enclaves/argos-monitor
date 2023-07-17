@@ -281,6 +281,21 @@ pub fn do_set_entry(
 pub fn do_seal(current: Handle<Domain>, domain: LocalCapa) -> Result<LocalCapa, CapaError> {
     let core = cpuid();
     let mut engine = CAPA_ENGINE.lock();
+    
+    //similar to debug, testing purpose
+    let mut next = NextCapaToken::new();
+    while let Some((domain, next_next)) = engine.enumerate_domains(next) {
+        next = next_next;
+
+        log::trace!("Domain");
+        let mut next_capa = NextCapaToken::new();
+        while let Some((info, next_next_capa)) = engine.enumerate(domain, next_capa) {
+            next_capa = next_next_capa;
+            log::trace!(" - {}", info);
+        }
+        log::trace!("{}", engine[domain].regions());
+    }
+
     let capa = engine.seal(current, core, domain)?;
     apply_updates(&mut engine);
     Ok(capa)
@@ -356,13 +371,13 @@ pub fn do_debug() {
     while let Some((domain, next_next)) = engine.enumerate_domains(next) {
         next = next_next;
 
-        log::info!("Domain");
+        log::trace!("Domain");
         let mut next_capa = NextCapaToken::new();
         while let Some((info, next_next_capa)) = engine.enumerate(domain, next_capa) {
             next_capa = next_next_capa;
-            log::info!(" - {}", info);
+            log::trace!(" - {}", info);
         }
-        log::info!("{}", engine[domain].regions());
+        log::trace!("{}", engine[domain].regions());
     }
 }
 // —————————————————————— Interrupt Handling functions —————————————————————— //

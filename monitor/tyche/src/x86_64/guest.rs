@@ -250,6 +250,24 @@ fn handle_exit(
                     dump(&mut vs.vcpu);
                     Ok(HandlerResult::Exit)
                 }
+                calls::GET_ATTESTATION => {
+                    log::trace!("Get attestation!");
+                    log::warn!("Not implemented!");
+                    vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
+                calls::GET_RSA_KEY=> {
+                    log::trace!("Get rsa key!");
+                    log::warn!("Not implemented!");
+                    vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
+                calls::CHALLENGE => {
+                    log::trace!("Challenge!");
+                    log::warn!("Not implemented!");
+                    vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
                 _ => {
                     log::info!("Unknown MonCall: 0x{:x}", vmcall);
                     todo!("Unknown VMCall");
