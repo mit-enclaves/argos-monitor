@@ -325,7 +325,9 @@ impl ModifiedELF {
         // TODO(aghosn) I am lazy, is it correct to do a simple add?
         for entry in tables.iter_mut() {
             if *entry != 0 {
+                log::trace!("Before {:#x}", *entry);
                 *entry += offset;
+                log::trace!("After {:#x}", *entry);
             }
         }
     }
