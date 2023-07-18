@@ -36,8 +36,8 @@ pub mod attestation_hash {
 
 pub mod attestation_keys {
 
-    // use ed25519::signature::{Signer,Verifier};
-    // use ed25519::Signature;
+    use ed25519::signature::{Signer,Verifier};
+    use ed25519::Signature;
 
     pub fn get_keys()  { 
         // -> (Signer<ed25519::Signature>, Verifier<ed25519::Signature>) {

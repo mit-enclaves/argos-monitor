@@ -8,51 +8,53 @@ use crate::elf_modifier::{ModifiedELF, ModifiedSegment, TychePhdrTypes, DENDIAN}
 /// For the moment we only measure confidential segments.
 pub fn attest(src: &PathBuf, offset: u64) {
     let data = std::fs::read(src).expect("Unable to read source file");
-    // let mut hasher = Sha256::new();
     let mut hasher = Sha256::default();
     let mut enclave = ModifiedELF::new(&data);
     enclave.fix_page_tables(offset);
-    log::info!("Elf data size is {:#x}", enclave.data.len());
-    let mut cnt = 0;
-    let mut cnt_nz = 0;
-    for u8_data in &enclave.data {
-        if *u8_data != 0 {
-            log::info!("{:#x}", *u8_data);
-            cnt_nz+=1;
+    let mut real_size = 0;
+    let mut cnt_bytes = 0;
+    let bytes_limit = 0xd000;
+    for seg in &enclave.segments {
+        if ModifiedSegment::is_loadable(seg.program_header.p_type(DENDIAN)) {
+            if let Some(tpe) = TychePhdrTypes::from_u32(seg.program_header.p_type(DENDIAN)) {
+                let memsz = seg.program_header.p_memsz(DENDIAN);
+                let align = seg.program_header.p_align(DENDIAN);
+                log::info!("Sz from the header {:#x}", memsz);
+                log::info!("Align from the header {:#x}", align);
+                log::info!("Size of the region {:#x}", seg.data.len());
+                for u8_data in &seg.data {
+                    let arr_u8 : [u8;1] = [*u8_data];
+                    hasher.input(&arr_u8);
+                    cnt_bytes+=1;
+                    if bytes_limit != 0 && cnt_bytes == bytes_limit {
+                        break;
+                    }
+                }
+                if bytes_limit != 0 && cnt_bytes == bytes_limit {
+                    break;
+                }
+                let mut diff = (memsz + align - 1) / align * align;
+                real_size+=diff;
+                log::info!("Alligned address {:#x}", diff);
+                diff = diff - (seg.data.len() as u64);
+                log::info!("Diff - number of zeros to be added to the hash {:#x}", diff);
+                for _ in 0..diff {
+                    cnt_bytes+=1;
+                    let arr_u8 : [u8;1] = [0];
+                    hasher.input(&arr_u8);
+                    if bytes_limit != 0 && cnt_bytes == bytes_limit {
+                        break;
+                    }
+                }
+
+                if bytes_limit != 0 && cnt_bytes == bytes_limit {
+                    break;
+                }
+            }
         }
-        else {
-            cnt+=1;
-        }
-        let arr_u8 : [u8;1] = [*u8_data];   
-        hasher.input(&arr_u8);
     }
-    
-    // for seg in &enclave.segments {
-    //     if ModifiedSegment::is_loadable(seg.program_header.p_type(DENDIAN)) {
-    //         if let Some(tpe) = TychePhdrTypes::from_u32(seg.program_header.p_type(DENDIAN)) {
-    //             // if (!tpe.is_confidential()) || seg.data.is_empty() {
-    //             //     continue;
-    //             // }
-    //             // hasher.update(&seg.data);
-    //             log::info!("Size of the region {:#x}", seg.data.len());
-    //             log::info!("Updating hash");
-    //             for u8_data in &seg.data {
-    //                 if *u8_data != 0 {
-    //                     log::info!("{:#x}", *u8_data);
-    //                     cnt_nz+=1;
-    //                 }
-    //                 else {
-    //                     cnt+=1;
-    //                 }
-    //                 let arr_u8 : [u8;1] = [*u8_data];
-    //                 hasher.input(&arr_u8);
-    //             }
-    //         }
-    //     }
-    // }
-    // let result = hasher.finalize();
-    log::info!("Zero counter {:#x}", cnt);
-    log::info!("Non zero counter {:#x}", cnt_nz);
+    log::info!("Number of bytes {:#x}", cnt_bytes);
+    log::info!("Real size {:#x}", real_size);
     let result = hasher.result();
     log::info!("Computed hash:");
     log::info!("{}", format!("{:x}", result));
