@@ -169,10 +169,14 @@ name = "capa-engine"
 version = "0.1.0"
 dependencies = [
 <<<<<<< HEAD
+<<<<<<< HEAD
  "bitflags",
 =======
  "attestation",
 >>>>>>> Added mapping guest to Tyche addr space in stage 1 (support it in stage 2 ?) and initial measurement during sealing of domain. Problems: ubuntu_mount - fix the nbd problem
+=======
+ "bitflags",
+>>>>>>> Adding the notion of access rights
  "log",
  "simple_logger",
 ]

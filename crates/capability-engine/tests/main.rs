@@ -2,7 +2,10 @@ use std::fmt::Write;
 
 use capa_engine::{
     permission, AccessRights, CapaEngine, Domain, Handle, MemOps, NextCapaToken, RegionTracker,
+<<<<<<< HEAD
     MEMOPS_ALL,
+=======
+>>>>>>> Adding the notion of access rights
 };
 
 /// Snapshot testing
