@@ -7,7 +7,7 @@ pub const SERIAL_PORT_BASE_ADDRESS: usize = 0x1000_0000;
 
 pub const PAGING_MODE_SV48: usize = 0x9;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct RegisterState {
     pub ra: usize,
     pub a0: usize,
@@ -90,6 +90,28 @@ pub fn read_mscratch() -> usize {
     }
 
     return mscratch; 
+}
+
+pub fn write_mscratch(mscratch: usize) {
+    unsafe { 
+        asm!("csrw mscratch, {}", in(reg) mscratch);
+    }
+}
+
+pub fn read_mepc() -> usize {
+    let mut mepc: usize = 0; 
+
+    unsafe { 
+        asm!("csrr {}, mepc", out(reg) mepc); 
+    }
+
+    return mepc; 
+}
+
+pub fn write_mepc(mepc: usize) {
+    unsafe { 
+        asm!("csrw mepc, {}", in(reg) mepc);
+    }
 }
 
 pub fn read_satp() -> usize {
