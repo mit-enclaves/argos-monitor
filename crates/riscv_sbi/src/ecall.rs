@@ -88,5 +88,5 @@ pub fn sbi_ext_srst_probe(_a0: usize) -> usize {
 
 pub fn ecall_handler_failed() {
     //TODO: Print information about requested ecall.
-    println!("Cannot service SBI ecall - invalid ecall.");
+    //println!("Cannot service SBI ecall - invalid ecall/Not supported by Tyche.");
 }
