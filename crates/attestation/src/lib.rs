@@ -20,15 +20,15 @@ pub mod attestation_hash {
     }
 
     //todo return value of this function
-    pub fn get_hash(hasher : & mut TycheHasher) -> u64 {
+    pub fn get_hash(hasher : & mut TycheHasher) -> u128 {
         let result = hasher.result();
         //todo check the length of this result
         let result_arr = result.as_slice();
         log::trace!("Computed hash: ");
         log::trace!("{:x}", result);
-        let mut hash : u64 = 0;
+        let mut hash : u128 = 0;
         for element in result_arr {
-            hash = (hash << 8) + (*element as u64);
+            hash = (hash << 8) + (*element as u128);
         }
         hash
     }

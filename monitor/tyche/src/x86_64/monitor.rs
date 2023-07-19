@@ -22,6 +22,7 @@ use crate::allocator::allocator;
 use crate::rcframe::{drop_rc, RCFrame, RCFramePool, EMPTY_RCFRAME};
 
 use attestation::attestation_hash;
+use attestation::TycheHasher;
 
 // ————————————————————————— Statics & Backend Data ————————————————————————— //
 
@@ -290,7 +291,7 @@ pub fn do_seal(current: Handle<Domain>, domain: LocalCapa) -> Result<LocalCapa, 
     let capa = engine.seal(current, core, domain)?;
 
     if let Ok(domain_capa) = engine.get_domain_capa(current, domain) {
-        calculate_attestation_hash(&engine, domain_capa);
+        calculate_attestation_hash(& mut engine, domain_capa);
     }
 
 <<<<<<< HEAD
@@ -666,8 +667,7 @@ unsafe fn free_ept(ept: HostPhysAddr, allocator: &impl FrameAllocator) {
 
 // ———————————————————————————————— Attestation ————————————————————————————————— //
 
-fn calculate_attestation_hash(engine : &MutexGuard<'_, CapaEngine>, domain : Handle<Domain>) {
-    let mut hasher = attestation_hash::get_hasher();
+fn hash_segment_data(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, CapaEngine>, domain : Handle<Domain>) {
     let mut cnt_bytes = 0;
     for (_, region) in engine[domain].regions().iter() {
         let mut addr = region.get_start();
@@ -681,16 +681,45 @@ fn calculate_attestation_hash(engine : &MutexGuard<'_, CapaEngine>, domain : Han
                 byte_data = *(addr as * const u8);
             }
             let byte_arr : [u8;1] = [byte_data];
-            attestation_hash::hash_segment(& mut hasher, &byte_arr);
+            attestation_hash::hash_segment(hasher, &byte_arr);
             addr = addr + 1;
             cnt_bytes+=1;
         }
     }
     log::trace!("Number of bytes {:#x}", cnt_bytes);
+}
+
+fn hash_capa_info(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, CapaEngine>, domain : Handle<Domain>) {
+    let domain_id = engine[domain].id();
+    attestation_hash::hash_segment(hasher, &(usize::to_le_bytes(domain_id)));
+    log::trace!("Domain id {:#x}", domain_id);
+
+    let mut next_capa = NextCapaToken::new();
+    while let Some((info, next_next_capa)) = engine.enumerate(domain, next_capa) {
+        next_capa = next_next_capa;
+        match info {
+            CapaInfo::Region {start , end, active, confidential} => {
+                attestation_hash::hash_segment(hasher, &(usize::to_le_bytes(start)));
+                attestation_hash::hash_segment(hasher, &(usize::to_le_bytes(end)));
+                log::trace!("Capa info start {:#x}", start);
+                log::trace!("Capa info end {:#x}", end);
+                let conf_info = if confidential { 1 as u8}  else {0 as u8}; 
+                log::trace!("Conf info {:#x}", conf_info);
+                // attestation_hash::hash_segment(hasher, &(u8::to_le_bytes(conf_info)));
+            }
+            _ => {}
+        }
+    }
+}
+
+fn calculate_attestation_hash(engine : & mut MutexGuard<'_, CapaEngine>, domain : Handle<Domain>) {
+    let mut hasher = attestation_hash::get_hasher();
+    
+    hash_segment_data(&mut hasher, engine, domain);
+    hash_capa_info(&mut hasher, engine, domain);
+
     log::trace!("Finished calculating the hash!");
-
-
-    let x = attestation_hash::get_hash(& mut hasher);
+    engine.set_hash(domain, attestation_hash::get_hash(& mut hasher));
 }
 
 // ———————————————————————————————— Display ————————————————————————————————— //
