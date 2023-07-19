@@ -103,10 +103,17 @@ impl Region {
         Self {
             start,
             end,
+<<<<<<< HEAD
             read_count: r,
             write_count: w,
             exec_count: x,
             super_count: s,
+=======
+            read_count: 0,
+            write_count: 0,
+            exec_count: 0,
+            super_count: 0,
+>>>>>>> Adding counters per access right
             ref_count: 1,
             next: None,
         }
@@ -128,6 +135,7 @@ impl Region {
             && self.exec_count == other.exec_count
             && self.super_count == other.super_count
     }
+<<<<<<< HEAD
 
     pub fn get_ops(&self) -> MemOps {
         let mut ops = MemOps::NONE;
@@ -153,6 +161,8 @@ impl Region {
     pub fn get_end(&self) -> usize {
         self.end
     }
+=======
+>>>>>>> Adding counters per access right
 }
 
 // ————————————————————————————— RegionTracker —————————————————————————————— //
@@ -463,6 +473,7 @@ impl RegionTracker {
                 log::trace!("Unable to allocate new region!");
                 CapaError::OutOfMemory
             })?;
+        self.increase_ops(handle, ops);
         let region = &mut self.regions[after];
         region.next = Some(handle);
 
@@ -488,6 +499,7 @@ impl RegionTracker {
             log::trace!("Unable to allocate new region!");
             CapaError::OutOfMemory
         })?;
+        self.increase_ops(handle, ops);
         self.head = Some(handle);
         Ok(handle)
     }
@@ -548,25 +560,41 @@ impl RegionTracker {
         let region = &mut self.regions[handle];
         let mut change = PermissionChange::None;
         if ops.contains(MemOps::READ) {
+<<<<<<< HEAD
             region.read_count = region.read_count.checked_sub(1).unwrap();
+=======
+            region.read_count.checked_sub(1).unwrap();
+>>>>>>> Adding counters per access right
             if region.read_count == 0 {
                 change = PermissionChange::Some;
             }
         }
         if ops.contains(MemOps::WRITE) {
+<<<<<<< HEAD
             region.write_count = region.write_count.checked_sub(1).unwrap();
+=======
+            region.write_count.checked_sub(1).unwrap();
+>>>>>>> Adding counters per access right
             if region.write_count == 0 {
                 change = PermissionChange::Some;
             }
         }
         if ops.contains(MemOps::EXEC) {
+<<<<<<< HEAD
             region.exec_count = region.exec_count.checked_sub(1).unwrap();
+=======
+            region.exec_count.checked_sub(1).unwrap();
+>>>>>>> Adding counters per access right
             if region.exec_count == 0 {
                 change = PermissionChange::Some;
             }
         }
         if ops.contains(MemOps::SUPER) {
+<<<<<<< HEAD
             region.super_count = region.super_count.checked_sub(1).unwrap();
+=======
+            region.super_count.checked_sub(1).unwrap();
+>>>>>>> Adding counters per access right
             if region.super_count == 0 {
                 change = PermissionChange::Some;
             }
@@ -887,6 +915,32 @@ impl fmt::Display for RegionTracker {
 impl fmt::Display for MemoryPermission {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[0x{:x}, 0x{:x} | {}]", self.start, self.end, self.ops)
+    }
+}
+
+impl fmt::Display for MemOps {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.contains(Self::READ) {
+            write!(f, "R")?;
+        } else {
+            write!(f, "_")?;
+        }
+        if self.contains(Self::WRITE) {
+            write!(f, "W")?;
+        } else {
+            write!(f, "_")?;
+        }
+        if self.contains(Self::EXEC) {
+            write!(f, "X")?;
+        } else {
+            write!(f, "_")?;
+        }
+        if self.contains(Self::SUPER) {
+            write!(f, "S")?;
+        } else {
+            write!(f, "_")?;
+        }
+        write!(f, "")
     }
 }
 
