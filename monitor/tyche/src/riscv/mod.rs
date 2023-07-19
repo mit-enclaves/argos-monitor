@@ -107,5 +107,6 @@ pub fn init() {
 }
 
 pub fn cpuid() -> usize {
-    todo!();
+    return 0;   //Works only for 1 core implementation
+    //todo!();
 }

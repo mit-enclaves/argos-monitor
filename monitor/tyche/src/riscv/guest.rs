@@ -1,15 +1,19 @@
 use core::arch::asm;
 
-use capa_engine::{LocalCapa, NextCapaToken, Domain, Handle, Context};
+use capa_engine::{LocalCapa, NextCapaToken, Domain, Handle};
 use qemu::println;
 use riscv_csrs::*;
 use riscv_sbi::ecall::ecall_handler;
-use riscv_utils::{RegisterState, read_mscratch, read_satp, write_satp, write_ra, write_sp};
+use riscv_utils::RegisterState;
+    //, read_mscratch, read_satp, write_satp, write_ra, write_sp};
 use crate::calls;
 use super::monitor;
 
+use crate::arch::cpuid;
+
 static mut ACTIVE_DOMAIN: Option<Handle<Domain>> = None; 
-static mut ACTIVE_CONTEXT: Option<Handle<Context>> = None;
+//static mut ACTIVE_CONTEXT: Option<Handle<Context>> = None;
+
 // M-mode trap handler
 // Saves register state - calls trap_handler - restores register state - mret to intended mode.
 
@@ -120,7 +124,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     }
 
     // print trap related registers
-    println!("mcause: {:x}", mcause);
+    /* println!("mcause: {:x}", mcause);
     println!("mepc: {:x}", mepc);
     println!("mstatus: {:x}", mstatus);
     println!("mtval: {:x}", mtval);
@@ -135,7 +139,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         reg_state.a5,
         reg_state.a6,
         reg_state.a7
-    );
+    ); */
 
     // Check which trap it is
     // mcause register holds the cause of the machine mode trap
@@ -153,6 +157,8 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         //Default - just print whatever information you can about the trap.
     }
     println!("Trap handler complete: returning from ecall {:x}", ret);
+
+    //monitor::apply_core_updates(current_domain, core_id);
 
     // Return to the next instruction after the trap.
     // i.e. mepc += 4
@@ -204,11 +210,11 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
         let arg_5: usize = reg_state.a5; 
         let arg_6: usize = reg_state.a6; 
 
-        let active_dom: Handle<Domain>;
-        let active_ctx: Handle<Context>;
-
+        let mut active_dom: Handle<Domain>;
+        //let active_ctx: Handle<Context>;
+        let cpuid = cpuid(); 
         unsafe { 
-            (active_dom, active_ctx) = get_active_dom_ctx();
+            active_dom = get_active_dom();
         //    active_domain.unwrap();
         //    active_ctx = active_context.unwrap(); 
         }
@@ -277,7 +283,8 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                 log::info!("Switch");
                 //Adding register state to context now? (not doing it at sealing, initialized to
                 //zero then). 
-                let (mut current_ctx, next_domain, next_ctx, next_context, return_capa) = monitor::do_switch(active_dom, active_ctx, LocalCapa::new(arg_1)).expect("TODO");
+                monitor::do_switch(active_dom, LocalCapa::new(arg_1), cpuid, reg_state).expect("TODO");
+                /* let (mut current_ctx, next_domain, next_ctx, next_context, return_capa) = monitor::do_switch(active_dom, active_ctx, LocalCapa::new(arg_1)).expect("TODO");
                 //TODO: Do we need ra explicitly? It's already stored in reg_state, right?  
                 current_ctx.reg_state = *reg_state;
                 current_ctx.ra = reg_state.ra;
@@ -292,7 +299,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
 
                 reg_state.a0 = 0x0;
                 reg_state.a1 = return_capa.as_usize();
-                unsafe { set_active_dom_ctx(next_domain, next_ctx); } 
+                unsafe { set_active_dom_ctx(next_domain, next_ctx); } */ 
            }, 
            calls::DEBUG => { 
                 log::info!("Debug");
@@ -307,18 +314,22 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                 //reg_state.a1 = capa.as_usize();
            }
            _ => { /*TODO: Invalid Tyche Call*/ },
-       }
+        }
+        monitor::apply_core_updates(&mut active_dom, cpuid, reg_state);
+        //Updating the state
+        unsafe { 
+            set_active_dom(active_dom); 
+        }
     }
     //TODO: ELSE NOT TYCHE CALL 
     //Handle Illegal Instruction Trap
 
 }
 
-pub unsafe fn get_active_dom_ctx() -> (Handle<Domain>, Handle<Context>) { 
-    return (ACTIVE_DOMAIN.unwrap(), ACTIVE_CONTEXT.unwrap()); 
+pub unsafe fn get_active_dom() -> (Handle<Domain>) { 
+    return ACTIVE_DOMAIN.unwrap(); 
 }
 
-pub unsafe fn set_active_dom_ctx(domain: Handle<Domain>, ctx: Handle<Context>) {
+pub unsafe fn set_active_dom(domain: Handle<Domain>) {
     ACTIVE_DOMAIN = Some(domain);
-    ACTIVE_CONTEXT = Some(ctx); 
 }
