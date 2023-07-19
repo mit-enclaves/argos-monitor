@@ -1,5 +1,5 @@
 
-use capa_engine::{Context, Domain, Handle};
+use capa_engine::{Domain, Handle};
 use super::{arch, launch_guest, monitor, guest};
 use crate::debug::qemu; 
 
@@ -10,7 +10,7 @@ pub fn arch_entry_point(hartid: u64, arg1: u64, next_addr: u64, next_mode: u64, 
 
     monitor::init(); 
 
-    let (mut domain, ctx) = monitor::start_initial_domain_on_cpu(); 
+    let mut domain = monitor::start_initial_domain_on_cpu(); 
 
     log::info!("Initial domain is ready.");
 
@@ -18,7 +18,7 @@ pub fn arch_entry_point(hartid: u64, arg1: u64, next_addr: u64, next_mode: u64, 
 
     unsafe { 
         //Set the active domain. 
-        guest::set_active_dom_ctx(domain, ctx);
+        guest::set_active_dom(domain);
     }
 
     monitor::do_debug();

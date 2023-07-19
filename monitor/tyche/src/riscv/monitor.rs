@@ -1,18 +1,23 @@
 //! Architecture specific monitor state 
 
-use capa_engine::config::{NB_CONTEXTS, NB_DOMAINS};
+use capa_engine::config::{NB_DOMAINS};
 use capa_engine::{
-    permission, AccessRights, CapaEngine, CapaError, CapaInfo, Context, Domain, Handle, LocalCapa,
-    NextCapaToken,
+    permission, AccessRights, CapaEngine, CapaError, CapaInfo, Domain, Handle, LocalCapa,
+    NextCapaToken, Buffer
 };
-use riscv_utils::{RegisterState, PAGING_MODE_SV48};
+use riscv_utils::{RegisterState, PAGING_MODE_SV48, read_mscratch, read_satp, write_satp, write_mscratch, read_mepc, write_mepc};
 use spin::{Mutex, MutexGuard};
 use riscv_pmp::{pmp_write, clear_pmp, PMPAddressingMode, PMPErrorCode, FROZEN_PMP_ENTRIES, PMP_ENTRIES};
+
+use crate::statics::NB_CORES;
+
+use crate::arch::cpuid;
 
 static CAPA_ENGINE: Mutex<CapaEngine> = Mutex::new(CapaEngine::new());
 static INITIAL_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
 static DOMAINS: [Mutex<DomainData>; NB_DOMAINS] = [EMPTY_DOMAIN; NB_DOMAINS];
-static CONTEXTS: [Mutex<ContextData>; NB_CONTEXTS] = [EMPTY_CONTEXT; NB_CONTEXTS];
+static CONTEXTS: [[Mutex<ContextData>; NB_CORES]; NB_DOMAINS] = [EMPTY_CONTEXT_ARRAY; NB_DOMAINS];
+static CORE_UPDATES: [Mutex<Buffer<CoreUpdate>>; NB_CORES] = [EMPTY_UPDATE_BUFFER; NB_CORES]; 
 
 const XWR_PERM: usize = 7;
 
@@ -25,18 +30,19 @@ pub struct DomainData {
 pub struct ContextData {
     pub reg_state: RegisterState, 
     pub satp: usize,
-    pub ra: usize,
+    pub mepc: usize,
     pub sp: usize,
 }
 
 const EMPTY_DOMAIN: Mutex<DomainData> = Mutex::new(DomainData { }); //Todo Init the domain data
-                                                                    //once done. 
+const EMPTY_UPDATE_BUFFER: Mutex<Buffer<CoreUpdate>> = Mutex::new(Buffer::new());                                     //once done. 
 const EMPTY_CONTEXT: Mutex<ContextData> = Mutex::new(ContextData {
     reg_state: RegisterState::const_default(),
     satp: 0,
-    ra: 0,  //TODO: Is ra the one or should it be mepc?  
+    mepc: 0,   
     sp: 0,
 });
+const EMPTY_CONTEXT_ARRAY: [Mutex<ContextData>; NB_CORES] = [EMPTY_CONTEXT; NB_CORES];
 
 // ————————————————————————————— Initialization ————————————————————————————— //
 
@@ -62,14 +68,15 @@ pub fn init() {
     *initial_domain = Some(domain);
 }
 
-pub fn start_initial_domain_on_cpu() -> (Handle<Domain>, Handle<Context>) { 
+pub fn start_initial_domain_on_cpu() -> (Handle<Domain>) { 
+    let cpuid = cpuid(); 
     log::info!("Creating initial domain.");
     let mut engine = CAPA_ENGINE.lock();
     let initial_domain = INITIAL_DOMAIN
         .lock()
         .expect("CapaEngine is not initialized yet");
-   let ctx = engine
-        .start_cpu_on_domain(initial_domain)
+    engine
+        .start_domain_on_core(initial_domain, cpuid)
         .expect("Failed to allocate initial domain");
    //let domain = get_domain(initial_domain);
    
@@ -77,7 +84,7 @@ pub fn start_initial_domain_on_cpu() -> (Handle<Domain>, Handle<Context>) {
    log::info!("Updating permissions for initial domain.");
    update_permission(initial_domain, &mut engine); 
 
-   (initial_domain, ctx)
+   (initial_domain)
 }
 
 // ———————————————————————————————— Helpers ————————————————————————————————— //
@@ -86,8 +93,8 @@ fn get_domain(domain: Handle<Domain>) -> MutexGuard<'static, DomainData> {
     DOMAINS[domain.idx()].lock()
 }
 
-fn get_context(context: Handle<Context>) -> MutexGuard<'static, ContextData> {
-    CONTEXTS[context.idx()].lock()
+fn get_context(domain: Handle<Domain>, core: usize) -> MutexGuard<'static, ContextData> {
+    CONTEXTS[domain.idx()][core].lock()
 }
 
 // ————————————————————————————— Monitor Calls —————————————————————————————— //
@@ -99,19 +106,42 @@ pub fn do_create_domain(current: Handle<Domain>) -> Result<LocalCapa, CapaError>
     Ok(management_capa)
 }
 
+pub fn do_set_cores(
+    current: Handle<Domain>,
+    domain: LocalCapa,
+    core_map: usize,
+) -> Result<(), CapaError> {
+    let mut engine = CAPA_ENGINE.lock();
+    engine.set_domain_cores(current, domain, core_map)?;
+    return Ok(());
+}
+
+pub fn do_set_traps(
+    current: Handle<Domain>,
+    domain: LocalCapa,
+    traps: usize,
+) -> Result<(), CapaError> {
+    let mut engine = CAPA_ENGINE.lock();
+    engine.set_domain_traps(current, domain, traps)
+}
+
 pub fn do_seal(
     current: Handle<Domain>,
     domain: LocalCapa,
     satp: usize, 
-    ra: usize,
+    mepc: usize,
     sp: usize,
 ) -> Result<LocalCapa, CapaError> {
+    let cpuid = cpuid();
     let mut engine = CAPA_ENGINE.lock();
-    let (capa, context) = engine.seal(current, domain)?;
-    let mut context = get_context(context);
+    let capa = engine.seal(current, cpuid, domain)?;
+    let new_domain = engine
+        .get_domain_capa(current, domain)
+        .expect("Should be a domain capa");
+    let mut context = get_context(new_domain, cpuid);
     //Todo: Populate context with the input context
     context.satp = (satp | PAGING_MODE_SV48);  
-    context.ra = ra;
+    context.mepc = mepc;
     context.sp = sp;
     let temp_reg_state = RegisterState::const_default(); 
     context.reg_state = temp_reg_state; 
@@ -174,11 +204,12 @@ pub fn do_duplicate(current: Handle<Domain>, capa: LocalCapa) -> Result<LocalCap
 
 pub fn do_switch(
     current: Handle<Domain>,
-    current_ctx: Handle<Context>,
+    //current_ctx: Handle<Context>,
     capa: LocalCapa,
-    //cpuid: usize,
-) -> Result<
-    (
+    cpuid: usize, 
+    current_reg_state: &mut RegisterState,
+) -> Result<(), CapaError> { 
+    /* (   //MARK_TODO - Removed in the x86 version. 
         MutexGuard<'static, ContextData>,
         Handle<Domain>,
         Handle<Context>,
@@ -198,7 +229,11 @@ pub fn do_switch(
         next_context,
         get_context(next_context),
         return_capa,
-    ))
+    ))*/
+    let mut engine = CAPA_ENGINE.lock();
+    engine.switch(current, cpuid, capa)?;
+    apply_updates(&mut engine);
+    Ok(())
 }
 
 pub fn do_debug() {
@@ -219,15 +254,215 @@ pub fn do_debug() {
 
 // ———————————————————————————————— Updates ————————————————————————————————— //
 
+/// Per-core updates
+#[derive(Debug, Clone, Copy)]
+enum CoreUpdate {
+    TlbShootdown,
+    Switch {
+        domain: Handle<Domain>,
+        return_capa: LocalCapa,
+        //current_reg_state: RegisterState,
+    },
+    Trap {
+        manager: Handle<Domain>,
+        trap: u64,
+        info: u64,
+    },
+    UpdateTrap {
+        bitmap: u64,
+    },
+}
+
 fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
     while let Some(update) = engine.pop_update() {
         match update {
             capa_engine::Update::PermissionUpdate { domain } => update_permission(domain, engine),
             capa_engine::Update::RevokeDomain { domain } => revoke_domain(domain),
             capa_engine::Update::CreateDomain { domain } => create_domain(domain),
-            capa_engine::Update::None => todo!(),
+            //capa_engine::Update::None => todo!(),
+
+            // Updates that needs to be routed to some specific cores
+            capa_engine::Update::Switch {
+                domain,
+                return_capa,
+                core,
+                //current_reg_state,
+            } => {
+                let mut core_updates = CORE_UPDATES[core as usize].lock();
+                core_updates.push(CoreUpdate::Switch {
+                    domain,
+                    return_capa,
+                    //current_reg_state,
+                });
+            }
+            capa_engine::Update::Trap {
+                manager,
+                trap,
+                info,
+                core,
+            } => {
+                let mut core_updates = CORE_UPDATES[core as usize].lock();
+                core_updates.push(CoreUpdate::Trap {
+                    manager,
+                    trap,
+                    info,
+                });
+            }
+            capa_engine::Update::TlbShootdown { core } => {
+                let mut core_updates = CORE_UPDATES[core as usize].lock();
+                core_updates.push(CoreUpdate::TlbShootdown);
+            }
+            capa_engine::Update::UpdateTraps { trap, core } => {
+                let mut core_updates = CORE_UPDATES[core as usize].lock();
+                core_updates.push(CoreUpdate::UpdateTrap { bitmap: !trap });
+            }
         }
     }
+}
+
+/// Updates that must be applied to a given core.
+pub fn apply_core_updates(
+    //vcpu: &mut ActiveVmcs<'static>,
+    current_domain: &mut Handle<Domain>,
+    core_id: usize,
+    current_reg_state: &mut RegisterState,
+) {
+    let core = cpuid();
+    let mut update_queue = CORE_UPDATES[core_id].lock();
+    while let Some(update) = update_queue.pop() {
+        log::trace!("Core Update: {}", update);
+        match update {
+            CoreUpdate::TlbShootdown => {
+                log::trace!("TLB Shootdown on core {}", core_id);
+
+                // Reload the EPTs
+                /* let domain = get_domain(*current_domain);
+                vcpu.set_ept_ptr(HostPhysAddr::new(
+                    domain.ept.unwrap().as_usize() | EPT_ROOT_FLAGS,
+                ))
+                .expect("VMX error, failed to set EPT pointer"); */
+            }
+            CoreUpdate::Switch {
+                domain,
+                return_capa,
+                //current_reg_state, 
+            } => {
+                log::trace!("Domain Switch on core {}", core_id);
+
+                let current_ctx = get_context(*current_domain, core);
+                let next_ctx = get_context(domain, core);
+                let next_domain = get_domain(domain);
+                switch_domain(current_domain, current_ctx, current_reg_state, next_ctx, next_domain);
+
+                current_reg_state.a0 = 0x0;
+                current_reg_state.a1 = return_capa.as_usize();
+                *current_domain = domain; 
+                /* switch_domain(vcpu, current_ctx, next_ctx, next_domain);
+
+                // Set switch return values
+                vcpu.set(Register::Rax, 0);
+                vcpu.set(Register::Rdi, return_capa.as_u64());
+
+                // Update the current domain and context handle
+                *current_domain = domain; */
+            }
+            CoreUpdate::Trap {
+                manager,
+                trap,
+                info,
+            } => {
+                log::trace!("Trap {} on core {}", trap, core_id);
+                /* log::debug!(
+                    "Exception Bitmap is {:b}",
+                    vcpu.get_exception_bitmap().expect("Failed to read bitmpap")
+                );
+
+                let current_ctx = get_context(*current_domain, core);
+                let next_ctx = get_context(manager, core);
+                let next_domain = get_domain(manager);
+                switch_domain(vcpu, current_ctx, next_ctx, next_domain);
+
+                log::debug!(
+                    "Exception {} (bit shift {}) triggers switch from {:?} to {:?}",
+                    trap,
+                    Trapnr::from_u64(trap),
+                    current_domain,
+                    manager
+                );
+
+                // Inject exception now.
+                let interrupt = VmExitInterrupt::from_info(info);
+                log::debug!("The info to inject: {:b}", interrupt.as_u32(),);
+
+                // We rewrite the value because it is cleared on every VM exit.
+                vcpu.inject_interrupt(interrupt)
+                    .expect("Unable to inject an exception");
+
+                // Set parameters
+                // TODO this could be a way to signal an error.
+                //vcpu.set(Register::Rax, trap);
+
+                // Update the current domain
+                *current_domain = manager; */
+            }
+            CoreUpdate::UpdateTrap { bitmap } => {
+                log::trace!("Updating trap bitmap on core {} to {:b}", core_id, bitmap);
+                /* let value = bitmap as u32;
+                //TODO: for the moment we only offer interposition on the hardware cpu exception
+                //interrupts (first 32 values).
+                //By instrumenting APIC and virtualizing it, we might manage to do better in the
+                //future.
+                vcpu.set_exception_bitmap(ExceptionBitmap::from_bits_truncate(value))
+                    .expect("Error setting the exception bitmap"); */
+            }
+        }
+    }
+}
+
+fn switch_domain(
+    //vcpu: &mut ActiveVmcs<'static>,
+    current_domain: &mut Handle<Domain>,
+    mut current_ctx: MutexGuard<ContextData>,
+    current_reg_state: &mut RegisterState,
+    next_ctx: MutexGuard<ContextData>,
+    next_domain: MutexGuard<DomainData>,
+) {
+    //Save current context 
+    current_ctx.reg_state = *current_reg_state;
+    current_ctx.mepc = read_mepc();
+    current_ctx.sp = read_mscratch();   //Recall that this is where the sp is saved. 
+    current_ctx.satp = read_satp();
+
+    //Switch domain 
+    write_satp(next_ctx.satp);
+    //TODO: Is this needed? Should I write mepc instead? YES! write_ra(next_ctx.ra);
+    write_mscratch(next_ctx.sp);
+    write_mepc(next_ctx.mepc);
+    *current_reg_state = next_ctx.reg_state;
+
+    //TODO: Create a snapshot of the PMPCFG and PMPADDR values and store it as the DomainData 
+    //After that, instead of update_permission, something like apply_permission could be called to
+    //directly write the PMP - no need to reiterate through the domain's regions as happens in
+    //update_permission. 
+
+    let mut engine = CAPA_ENGINE.lock();
+    update_permission(*current_domain, &mut engine);
+
+    //TODO: update_permission(domain_handle, engine)??????? 
+    
+    // Save current context
+    /* current_ctx.cr3 = vcpu.get_cr(ControlRegister::Cr3);
+    current_ctx.rip = vcpu.get(Register::Rip) as usize;
+    current_ctx.rsp = vcpu.get(Register::Rsp) as usize;
+
+    // Switch domain
+    vcpu.set_cr(ControlRegister::Cr3, next_ctx.cr3);
+    vcpu.set(Register::Rip, next_ctx.rip as u64);
+    vcpu.set(Register::Rsp, next_ctx.rsp as u64);
+    vcpu.set_ept_ptr(HostPhysAddr::new(
+        next_domain.ept.unwrap().as_usize() | EPT_ROOT_FLAGS,
+    ))
+    .expect("Failed to update EPT"); */
 }
 
 fn create_domain(domain: Handle<Domain>) {
@@ -237,7 +472,8 @@ fn create_domain(domain: Handle<Domain>) {
     //For instance do a prior check on the number of memory regions for the domain? (I am not sure
     //if number of regions per domain is updated by this point - I think it happens after the send
     //call). 
-    //Also, in the x86 equivalent, what happens when EPT root fails to be allocated? 
+    //Also, in the x86 equivalent, what happens when EPT root fails to be allocated - Domain
+    //creation fails? How is this reflected in the capa engine?  
 }
 
 fn revoke_domain(_domain: Handle<Domain>) {
@@ -277,6 +513,27 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
         }
         else {
             //Todo: Check error codes and manage appropriately. 
+        }
+    }
+}
+
+// ———————————————————————————————— Display ————————————————————————————————— //
+
+impl core::fmt::Display for CoreUpdate {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            CoreUpdate::TlbShootdown => write!(f, "TLB Shootdown"),
+            CoreUpdate::Switch { domain, .. } => write!(f, "Switch({})", domain),
+            CoreUpdate::Trap {
+                manager,
+                trap: interrupt,
+                info: inf,
+            } => {
+                write!(f, "Trap({}, {} | {:b})", manager, interrupt, inf)
+            }
+            CoreUpdate::UpdateTrap { bitmap } => {
+                write!(f, "UpdateTrap({:b})", bitmap)
+            }
         }
     }
 }
