@@ -21,6 +21,8 @@ use super::init::NB_BOOTED_CORES;
 use crate::allocator::allocator;
 use crate::rcframe::{drop_rc, RCFrame, RCFramePool, EMPTY_RCFRAME};
 
+use attestation::attestation_hash;
+
 // ————————————————————————— Statics & Backend Data ————————————————————————— //
 
 static CAPA_ENGINE: Mutex<CapaEngine> = Mutex::new(CapaEngine::new());
@@ -283,20 +285,29 @@ pub fn do_seal(current: Handle<Domain>, domain: LocalCapa) -> Result<LocalCapa, 
     let mut engine = CAPA_ENGINE.lock();
     
     //similar to debug, testing purpose
-    let mut next = NextCapaToken::new();
-    while let Some((domain, next_next)) = engine.enumerate_domains(next) {
-        next = next_next;
-
-        log::trace!("Domain");
-        let mut next_capa = NextCapaToken::new();
-        while let Some((info, next_next_capa)) = engine.enumerate(domain, next_capa) {
-            next_capa = next_next_capa;
-            log::trace!(" - {}", info);
-        }
-        log::trace!("{}", engine[domain].regions());
-    }
+    dummy_debug(& mut engine);
 
     let capa = engine.seal(current, core, domain)?;
+
+    if let Ok(domain_capa) = engine.get_domain_capa(current, domain) {
+        calculate_attestation_hash(&engine, domain_capa);
+    }
+
+<<<<<<< HEAD
+    let capa = engine.seal(current, core, domain)?;
+=======
+    /*let new_domain = engine
+        .get_domain_capa(current, domain)
+        .expect("Should be a domain capa");
+    let mut context = get_context(new_domain, core);
+    //TODO do it on all the cores.
+    context.cr3 = cr3;
+    context.rip = rip;
+    context.rsp = rsp;
+    let mut guard = RC_VMCS.lock();
+    drop_rc(&mut guard, context.vmcs);
+    context.vmcs = Handle::new_invalid();*/
+>>>>>>> Refactored code to be in sync with Charly comments he made to move hashing outside of capa engine
     apply_updates(&mut engine);
     Ok(capa)
 }
@@ -653,6 +664,35 @@ unsafe fn free_ept(ept: HostPhysAddr, allocator: &impl FrameAllocator) {
     mapper.free_all(allocator);
 }
 
+// ———————————————————————————————— Attestation ————————————————————————————————— //
+
+fn calculate_attestation_hash(engine : &MutexGuard<'_, CapaEngine>, domain : Handle<Domain>) {
+    let mut hasher = attestation_hash::get_hasher();
+    let mut cnt_bytes = 0;
+    for (_, region) in engine[domain].regions().iter() {
+        let mut addr = region.get_start();
+        let addr_end = region.get_end();
+        log::trace!("Hashing region of enclave start addr: {:#x}", addr);
+        log::trace!("Hashing region of enclave end addr: {:#x}", addr_end);
+        log::trace!("Hashing region of enclave sz: {:#x}", addr_end - addr);
+        while addr< addr_end {
+            let mut byte_data : u8= 0;
+            unsafe {
+                byte_data = *(addr as * const u8);
+            }
+            let byte_arr : [u8;1] = [byte_data];
+            attestation_hash::hash_segment(& mut hasher, &byte_arr);
+            addr = addr + 1;
+            cnt_bytes+=1;
+        }
+    }
+    log::trace!("Number of bytes {:#x}", cnt_bytes);
+    log::trace!("Finished calculating the hash!");
+
+
+    let x = attestation_hash::get_hash(& mut hasher);
+}
+
 // ———————————————————————————————— Display ————————————————————————————————— //
 
 impl core::fmt::Display for CoreUpdate {
@@ -671,5 +711,22 @@ impl core::fmt::Display for CoreUpdate {
                 write!(f, "UpdateTrap({:b})", bitmap)
             }
         }
+    }
+}
+
+// ———————————————————————————————— Helper ————————————————————————————————— //
+
+fn dummy_debug(engine : & mut MutexGuard<'_, CapaEngine>) {
+    let mut next = NextCapaToken::new();
+    while let Some((domain, next_next)) = engine.enumerate_domains(next) {
+        next = next_next;
+
+        log::trace!("Domain");
+        let mut next_capa = NextCapaToken::new();
+        while let Some((info, next_next_capa)) = engine.enumerate(domain, next_capa) {
+            next_capa = next_next_capa;
+            log::trace!(" - {}", info);
+        }
+        log::trace!("{}", engine[domain].regions());
     }
 }
