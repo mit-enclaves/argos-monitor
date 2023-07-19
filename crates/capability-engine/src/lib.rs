@@ -24,8 +24,12 @@ pub use region::{AccessRights, MemOps, RegionTracker, MEMOPS_ALL};
 pub use domain::{permission, Domain, LocalCapa, NextCapaToken};
 use gen_arena::GenArena;
 pub use gen_arena::Handle;
+<<<<<<< HEAD
 pub use region::{AccessRights, MemOps, RegionTracker};
 >>>>>>> Adding the notion of access rights
+=======
+pub use region::{AccessRights, MemOps, RegionTracker, MEMOPS_ALL};
+>>>>>>> Adding counters per access right
 use region_capa::{RegionCapa, RegionPool};
 use update::UpdateBuffer;
 pub use update::{Buffer, Update};
