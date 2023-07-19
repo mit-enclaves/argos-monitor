@@ -166,7 +166,7 @@ pub struct Domain {
     /// Is the domain sealed?
     is_sealed: bool,
     /// attestation hash (type of it ?)
-    attestation_hash : u64,
+    attestation_hash : u128,
 }
 
 impl Domain {
@@ -314,7 +314,7 @@ impl Domain {
         }
     }
 
-    pub fn set_hash(& mut self, hash : u64) {
+    pub fn set_hash(& mut self, hash : u128) {
         self.attestation_hash = hash;
     }
 }

@@ -500,6 +500,15 @@ impl CapaEngine {
         self.updates.pop()
     }
 
+    pub fn set_hash(
+        & mut self,
+        domain : Handle<Domain>,
+        hash : u128
+    ) -> Result<(), CapaError> {
+        self.domains[domain].set_hash(hash);
+        Ok(())
+    }
+
     /// Returns a fresh domain ID.
     fn domain_id(&mut self) -> usize {
         self.id_counter += 1;
