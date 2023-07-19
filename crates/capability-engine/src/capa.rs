@@ -61,7 +61,7 @@ impl CapaInfo {
                 if *active {
                     flags |= 1 << 0;
                 }
-                if *confidential {
+                if *confidential { 
                     flags |= 1 << 1;
                 }
                 flags |= ops.bits() << 2;
