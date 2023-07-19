@@ -295,7 +295,6 @@ impl Domain {
         } else if !self.config.is_inited() {
             Err(CapaError::InvalidOperation)
         } else {
-            self.calculate_attestation_hash();
             self.is_sealed = true;
             Ok(())
         }
@@ -315,29 +314,8 @@ impl Domain {
         }
     }
 
-    //TODO does there need to be offset to address
-    fn calculate_attestation_hash(&mut self) {
-        let mut hasher = attestation_hash::get_hasher();
-        let mut cnt_bytes = 0;
-        for (_, region) in self.regions().iter() {
-            let mut addr = region.get_start();
-            let addr_end = region.get_end();
-            log::trace!("Hashing region of enclave start addr: {:#x}", addr);
-            log::trace!("Hashing region of enclave end addr: {:#x}", addr_end);
-            log::trace!("Hashing region of enclave sz: {:#x}", addr_end - addr);
-            while addr< addr_end {
-                let mut byte_data : u8= 0;
-                unsafe {
-                    byte_data = *(addr as * const u8);
-                }
-                let byte_arr : [u8;1] = [byte_data];
-                attestation_hash::hash_segment(& mut hasher, &byte_arr);
-                addr = addr + 1;
-            }
-        }
-        log::trace!("Number of bytes {:#x}", cnt_bytes);
-        log::trace!("Finished calculating the hash!");
-        self.attestation_hash = attestation_hash::get_hash(& mut hasher);
+    pub fn set_hash(& mut self, hash : u64) {
+        self.attestation_hash = hash;
     }
 }
 

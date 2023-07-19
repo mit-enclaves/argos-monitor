@@ -13,7 +13,7 @@ pub fn attest(src: &PathBuf, offset: u64) {
     enclave.fix_page_tables(offset);
     let mut real_size = 0;
     let mut cnt_bytes = 0;
-    let bytes_limit = 0xd000;
+    let _bytes_limit = 0xd000;
     for seg in &enclave.segments {
         if ModifiedSegment::is_loadable(seg.program_header.p_type(DENDIAN)) {
             if let Some(tpe) = TychePhdrTypes::from_u32(seg.program_header.p_type(DENDIAN)) {
@@ -26,12 +26,6 @@ pub fn attest(src: &PathBuf, offset: u64) {
                     let arr_u8 : [u8;1] = [*u8_data];
                     hasher.input(&arr_u8);
                     cnt_bytes+=1;
-                    if bytes_limit != 0 && cnt_bytes == bytes_limit {
-                        break;
-                    }
-                }
-                if bytes_limit != 0 && cnt_bytes == bytes_limit {
-                    break;
                 }
                 let mut diff = (memsz + align - 1) / align * align;
                 real_size+=diff;
@@ -42,13 +36,6 @@ pub fn attest(src: &PathBuf, offset: u64) {
                     cnt_bytes+=1;
                     let arr_u8 : [u8;1] = [0];
                     hasher.input(&arr_u8);
-                    if bytes_limit != 0 && cnt_bytes == bytes_limit {
-                        break;
-                    }
-                }
-
-                if bytes_limit != 0 && cnt_bytes == bytes_limit {
-                    break;
                 }
             }
         }
