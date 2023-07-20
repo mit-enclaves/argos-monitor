@@ -1,8 +1,12 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 use capa_engine::{permission, AccessRights, CapaEngine, Domain, Handle, MemOps, MEMOPS_ALL};
 =======
 use capa_engine::{permission, AccessRights, CapaEngine, Domain, Handle, MemOps};
 >>>>>>> Adding the notion of access rights
+=======
+use capa_engine::{permission, AccessRights, CapaEngine, Domain, Handle, MemOps, MEMOPS_ALL};
+>>>>>>> Fixing tests
 use simple_logger::SimpleLogger;
 
 fn main() {

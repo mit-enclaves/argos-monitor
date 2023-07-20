@@ -103,17 +103,10 @@ impl Region {
         Self {
             start,
             end,
-<<<<<<< HEAD
             read_count: r,
             write_count: w,
             exec_count: x,
             super_count: s,
-=======
-            read_count: 0,
-            write_count: 0,
-            exec_count: 0,
-            super_count: 0,
->>>>>>> Adding counters per access right
             ref_count: 1,
             next: None,
         }
@@ -473,7 +466,6 @@ impl RegionTracker {
                 log::trace!("Unable to allocate new region!");
                 CapaError::OutOfMemory
             })?;
-        self.increase_ops(handle, ops);
         let region = &mut self.regions[after];
         region.next = Some(handle);
 
@@ -499,7 +491,6 @@ impl RegionTracker {
             log::trace!("Unable to allocate new region!");
             CapaError::OutOfMemory
         })?;
-        self.increase_ops(handle, ops);
         self.head = Some(handle);
         Ok(handle)
     }
