@@ -705,7 +705,7 @@ fn hash_capa_info(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, Capa
                 log::trace!("Capa info end {:#x}", end);
                 let conf_info = if confidential { 1 as u8}  else {0 as u8}; 
                 log::trace!("Conf info {:#x}", conf_info);
-                // attestation_hash::hash_segment(hasher, &(u8::to_le_bytes(conf_info)));
+                attestation_hash::hash_segment(hasher, &(u8::to_le_bytes(conf_info)));
             }
             _ => {}
         }

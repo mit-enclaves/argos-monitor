@@ -53,11 +53,11 @@ fn hash_segments_info(enclave : & Box<ModifiedELF>, hasher : & mut Sha256, offse
 
                 if tpe.is_confidential() {
                     log::trace!("Conf = 1");
-                    // hasher.input(&u8::to_le_bytes(1 as u8));
+                    hasher.input(&u8::to_le_bytes(1 as u8));
                 }
                 else {
                     log::trace!("Conf = 0");
-                    // hasher.input(&u8::to_le_bytes(0 as u8));
+                    hasher.input(&u8::to_le_bytes(0 as u8));
                 }
 
                 segment_off+=sz;
