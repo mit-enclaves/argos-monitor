@@ -364,6 +364,7 @@ fn scenario_3() {
         "{Region([0x0, 0x10000 | AC____])}",
         capas(domain, &mut engine)
     );
+<<<<<<< HEAD
 }
 
 #[test]
@@ -522,6 +523,8 @@ fn access_rights_test() {
         "{Region([0x0, 0x100000 | ACRWXS])}",
         capas(domain, &mut engine)
     );
+=======
+>>>>>>> Fixing tests
 }
 
 // ————————————————————————————————— Utils —————————————————————————————————— //
