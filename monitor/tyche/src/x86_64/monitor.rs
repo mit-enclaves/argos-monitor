@@ -285,10 +285,10 @@ pub fn do_seal(current: Handle<Domain>, domain: LocalCapa) -> Result<LocalCapa, 
     let core = cpuid();
     let mut engine = CAPA_ENGINE.lock();
     
+    let capa = engine.seal(current, core, domain)?;
+
     //similar to debug, testing purpose
     dummy_debug(& mut engine);
-
-    let capa = engine.seal(current, core, domain)?;
 
     if let Ok(domain_capa) = engine.get_domain_capa(current, domain) {
         calculate_attestation_hash(& mut engine, domain_capa);
