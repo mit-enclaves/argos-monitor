@@ -34,6 +34,21 @@ fn hash_segment_data(enclave : & Box<ModifiedELF>, hasher : & mut Sha256) {
     log::info!("Real size {:#x}", real_size);
 }
 
+fn hash_acc_rights(hasher : & mut Sha256, flags : u32, mask : u32) {
+    if flags & mask != 0 {
+        log::trace!("1");
+        hasher.input(&u8::to_le_bytes(1 as u8));
+    }
+    else {
+        log::trace!("0");
+        hasher.input(&u8::to_le_bytes(0 as u8));
+    }
+}
+
+static PF_X : u32 = 1 << 0;
+static PF_W : u32 = 1 << 1;
+static PF_R : u32 = 1 << 2;
+
 //todo why are segments not in order
 fn hash_segments_info(enclave : & Box<ModifiedELF>, hasher : & mut Sha256, offset : u64) {
     let dom_id : u64=2;
@@ -59,6 +74,14 @@ fn hash_segments_info(enclave : & Box<ModifiedELF>, hasher : & mut Sha256, offse
                     log::trace!("Conf = 0");
                     hasher.input(&u8::to_le_bytes(0 as u8));
                 }
+
+                let flags = seg.program_header.p_flags(DENDIAN);
+                log::trace!("X right");
+                hash_acc_rights(hasher, flags, PF_X);
+                log::trace!("W right");
+                hash_acc_rights(hasher, flags, PF_W);
+                log::trace!("R right");
+                hash_acc_rights(hasher, flags, PF_R);
 
                 segment_off+=sz;
             }
