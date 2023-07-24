@@ -54,12 +54,13 @@ void breakpoint(frame_t* frame)
 {
   // Pray we hit that exception first.
   // If this doesn't work, we'll see something else than breakpoint.
-  asm volatile (
+ /* asm volatile (
       "sti\n\t"
       "int $3\n\t"
       :
       :
       :);
+    */
 }
 
 // ———————————————————————— Dispatcher configuration ———————————————————————— //

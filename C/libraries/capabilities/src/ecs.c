@@ -16,6 +16,7 @@ int enumerate_capa(capa_index_t idx, capa_index_t *next, capability_t *capa) {
 
   // Next token
   token = frame.value_4;
+  DEBUG("Enumerate_capa return: token: %llu\n", token);
   if (token == 0) {
     // No more capa
     goto fail;
@@ -24,6 +25,8 @@ int enumerate_capa(capa_index_t idx, capa_index_t *next, capability_t *capa) {
   // Setup the capability with the values in the registers.
   capa->local_id = frame.value_4 - 1; // value_4 is the **next** token
   capa->capa_type = frame.value_3 & 0xFF;
+
+  DEBUG("Enumerate_capa return: local_id: %llu, capa_type: %d\n", capa->local_id, capa->capa_type);
 
   // Parse the information encoded from AccessRights.as_bits().
   switch (capa->capa_type) {
