@@ -1,7 +1,11 @@
 TARGET_MODULE:=tyche
 
 ## ———————————————————————— Use Tyche's Linux build ————————————————————————— ##
-BUILDSYSTEM_DIR ?= ../../../builds/linux-x86/
+ifeq ($(ARCH), x86)
+	BUILDSYSTEM_DIR ?= ../../../builds/linux-x86/
+else ifeq ($(ARCH), riscv)
+	BUILDSYSTEM_DIR ?= ../../../builds/linux-riscv/
+endif
 
 LIB_PT=../../libraries/pts
 LIB_DLL=../../libraries/dll
@@ -39,7 +43,14 @@ PWD:=$(shell pwd)
 
 ## —————————————————————— Where to install the module ——————————————————————— ##
 INSTALL_PATH ?= /tyche/tyche
+
+ifeq ($(ARCH), x86)
 DISK_PATH ?= /tmp/mount/tyche/drivers/
+else ifeq ($(ARCH), riscv)
+DISK_PATH ?= /home/neelu/vmxvmm/builds/ramfs-riscv/tyche/drivers/  
+endif
+
+$(info MAKE="$(MAKE)")
 
 all :
 # run kernel build system to make module

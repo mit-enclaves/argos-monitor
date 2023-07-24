@@ -45,8 +45,9 @@ static void parse_env() {
 
 static entry_t translate_flags(Elf64_Word flags) {
   entry_t result = 0;
+#if defined(CONFIG_X86) || defined(__x86_64__)
   if ((flags & PF_R) == PF_R) {
-    result |= PT_PP;
+      result |= PT_PP;
   }
   if ((flags & PF_X) != PF_X) {
     result |= PT_NX;
@@ -54,6 +55,18 @@ static entry_t translate_flags(Elf64_Word flags) {
   if ((flags & PF_W) == PF_W) {
     result |= PT_RW;
   }
+#elif defined(CONFIG_RISCV) || defined(__riscv)
+ if ((flags & PF_R) == PF_R) {
+      result |= PT_V;
+      result |= PT_R;
+  }
+  //if ((flags & PF_X) != PF_X) {
+    //result |= PT_NX;
+  //}
+  if ((flags & PF_W) == PF_W) {
+    result |= PT_W;
+  }
+#endif
   return result;
 }
 

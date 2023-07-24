@@ -68,6 +68,7 @@ int tyche_register(void)
   }
 
   driver_init_domains();
+
   LOG("Tyche driver registered!\n");
   return SUCCESS; 
 

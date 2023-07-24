@@ -514,7 +514,7 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
         else {
             //Todo: Check error codes and manage appropriately. 
         }
-    }
+    } 
 }
 
 // ———————————————————————————————— Display ————————————————————————————————— //
