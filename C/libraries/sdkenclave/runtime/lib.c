@@ -35,7 +35,11 @@ void trusted_main(capa_index_t ret_handle, void *args)
   // Should never return, if we do, an exit call happens.
 }
 
+#if defined(CONFIG_X86)  || defined(__x86_64__)
 extern int asm_call_gate(capa_index_t* capa, void** args);
+#elif defined(CONFIG_RISCV) || defined(__riscv)
+extern int riscv_asm_call_gate(capa_index_t* capa, void** args);
+#endif
 
 int gate_call(frame_t* frame)
 {
@@ -43,9 +47,11 @@ int gate_call(frame_t* frame)
   //usize vmcall = TYCHE_SWITCH;
   //frame_t ret_frame = {0, 0};
 
-
+#if defined(CONFIG_X86)  || defined(__x86_64__)
   result = asm_call_gate(&(frame->ret_handle), &(frame->args));
-
+#elif defined(CONFIG_RISCV) || defined(__riscv)
+  result = riscv_asm_call_gate(&(frame->ret_handle), &(frame->args));
+#endif
   /*
   asm volatile(
     // Saving registers.

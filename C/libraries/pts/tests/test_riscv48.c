@@ -166,7 +166,7 @@ void test_constants(pt_profile_t* profile)
 int main(void) {
   LOG("TESTING RISCV48 PTs");
   init_allocator();
-  pt_profile_t my_profile = riscv48_profile;
+  pt_profile_t my_profile = riscv64_sv48_profile;
   extras_t extra = {0, PT_V | PT_U | PT_R | PT_W, 0};
   my_profile.extras = (void*) &extra;
   test_constants(&my_profile);

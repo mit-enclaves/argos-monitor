@@ -66,7 +66,7 @@ int tyche_register(void)
     ERROR("Cannot create the Device 1\n");
     goto r_device;
   }
-
+  LOG("Tyche driver: About to init_enclaves\n");
   init_enclaves();
   LOG("Tyche driver registered!\n");
   return SUCCESS; 

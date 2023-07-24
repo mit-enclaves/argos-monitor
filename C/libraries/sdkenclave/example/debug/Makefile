@@ -1,5 +1,11 @@
 all: poc-main dbg-main
 
+ifeq ($(ARCH), x86)
+        GCC = gcc
+else ifeq ($(ARCH), riscv)
+        GCC = riscv64-unknown-linux-gnu-gcc
+endif
+
 # Libraries
 LIB_PATH=../../../
 DRIVERS_PATH=../../../../drivers/
@@ -26,11 +32,15 @@ SRC_POC=$(wildcard poc/*.S) $(wildcard poc/*.c)
 SRC_DBG= $(wildcard src/*.S) $(wildcard src/*.c)
 
 # Installing
+ifeq ($(ARCH), x86)
 DISK_PATH = /tmp/mount/tyche/debug
+else ifeq ($(ARCH), riscv)
+DISK_PATH = /home/neelu/vmxvmm/builds/ramfs-riscv/tyche/debug/
+endif
 
 poc-main: $(SRC_POC)
 	echo $(SRC_POC)
-	gcc -g -o $@ $(SRC_POC)
+	$(GCC) -g -o $@ $(SRC_POC)
 
 dbg-main: $(SRC_DBG)
 	mkdir -p libs
@@ -40,7 +50,7 @@ dbg-main: $(SRC_DBG)
 	cp $(ELF64)/libelf64.so libs/
 	cp $(SDK)/enclave_loader.so libs/
 	cp $(PTS)/libpts.a libs/
-	gcc -DTYCHE_USER_SPACE=1 -g $(APP_INCLUDES) -Wl,-R ./libs  -L./libs/ -o $@ $(SRC_DBG) $(DYNS)
+	$(GCC) -DTYCHE_USER_SPACE=1 -g $(APP_INCLUDES) -Wl,-R ./libs  -L./libs/ -o $@ $(SRC_DBG) $(DYNS)
 
 install_disk: dbg-main 
 	mkdir -p $(DISK_PATH)

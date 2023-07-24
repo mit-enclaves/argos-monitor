@@ -24,6 +24,7 @@ typedef enum tyche_monitor_call_t {
 /// Defined in capabilities/src/domain.rs
 #define CAPAS_PER_DOMAIN ((capa_index_t)100)
 
+#if defined(CONFIG_X86) || defined(__x86_64__)
 /// A type to pass arguments and receive when calling tyche.
 typedef struct vmcall_frame_t {
   // Vmcall id.
@@ -45,6 +46,33 @@ typedef struct vmcall_frame_t {
   usize value_5;
   usize value_6;
 } vmcall_frame_t;
+
+#elif defined(CONFIG_RISCV) || defined(__riscv)
+
+typedef struct vmcall_frame_t {
+  // Vmcall id.
+  usize vmcall;
+
+  // Arguments.
+  usize arg_1;
+  usize arg_2;
+  usize arg_3;
+  usize arg_4;
+  usize arg_5;
+  usize arg_6;
+  usize arg_7;
+  // Results.
+  usize value_1;
+  usize value_2;
+  usize value_3;
+  usize value_4;
+  usize value_5;
+  usize value_6;
+} vmcall_frame_t;
+
+
+
+#endif
 
 // —————————————————————————————————— API ——————————————————————————————————— //
 

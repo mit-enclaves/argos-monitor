@@ -4,7 +4,11 @@
 #include <linux/mm.h>
 #include <linux/kprobes.h>
 #include <linux/slab.h>
+#if defined(__x86_64__) || defined(CONFIG_X86)
 #include <asm/pgtable_types.h>
+#elif defined(__riscv) || defined(CONFIG_RISCV)
+#include <asm/pgtable.h>
+#endif
 #include "dbg_addresses.h"
 #include "common.h"
 
@@ -36,7 +40,11 @@ static int pte_entry(pte_t *pte, unsigned long addr, unsigned long next, struct 
   }
 
   // Get the physical page.
+#if defined(__x86_64__) || defined(CONFIG_X86)
   phys_addr = (uint64_t) (pte->pte & PTE_PFN_MASK);
+#elif defined(__riscv) || defined(CONFIG_RISCV)
+  phys_addr = (uint64_t) (pte->pte & _PAGE_PFN_MASK);
+#endif
   info->phys_addr = phys_addr; 
   return 0;
 

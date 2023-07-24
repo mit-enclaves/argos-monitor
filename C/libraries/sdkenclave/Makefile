@@ -1,5 +1,15 @@
 all: enclave_loader.so enclave_runtime.so
 
+$(info ARCH="$(ARCH)")
+
+ifeq ($(ARCH), x86)
+	GCC = gcc
+else ifeq ($(ARCH), riscv)
+	GCC = riscv64-unknown-linux-gnu-gcc
+endif
+
+$(info GCC="$(GCC)")
+
 # Dependencies for the build.
 LIB_PT=../pts
 DLL_LIB= ../dll
@@ -17,8 +27,14 @@ CODE_ELF64 = $(wildcard $(ELF_LIB)/src/*.c)
 HDRS_ELF64 = $(wildcard $(ELF_LIB)/include/*.h)
 
 # Configuration for runtime.
-CODE_RUNTIME = $(wildcard runtime/*.c) $(wildcard runtime/*.S)
-HDRS_RUNTIME = $(wildcard runmtime/*.h) $(wildcard include/*.h)
+ifeq ($(ARCH), x86)
+CODE_RUNTIME = $(wildcard runtime/*.c) $(wildcard runtime/asm.S)
+HDRS_RUNTIME = $(wildcard include/*.h)
+else ifeq ($(ARCH), riscv)
+CODE_RUNTIME = $(wildcard runtime/*.c) $(wildcard runtime/riscv_asm.S)
+HDRS_RUNTIME = $(wildcard include/*.h)
+endif
+
 
 # Configure the includes.
 COMMON_INCLUDES = -Iinclude -I$(CAPA_LIB)/include -I$(COMMON_LIB)/include -I$(DLL_LIB)/include 
@@ -30,12 +46,12 @@ ELF_CONFIG= -Wl,-R $(ELF_LIB) -L$(ELF_LIB)
 
 enclave_loader.so: $(CODE_LOADER) $(HDRS_LOADER) $(CODE_ELF64) $(HDRS_ELF64)
 	make -B -C $(ELF_LIB)
-	gcc -DTYCHE_USER_SPACE=1 -g $(WITH_PTS_INCLUDES) -shared -o $@ -fPIC $(CODE_LOADER) $(CODE_ELF64)
+	$(GCC) -DTYCHE_USER_SPACE=1 -g $(WITH_PTS_INCLUDES) -shared -o $@ -fPIC $(CODE_LOADER) $(CODE_ELF64)
 
 # This is mostly to make sure the code compiles.
 # When used by an enclave, include the code directly as shown below.
 enclave_runtime.so: $(CODE_RUNTIME) $(HDRS_RUNTIME)
-	gcc -DTYCHE_USER_SPACE=1 -g $(COMMON_INCLUDES) -shared -o $@ -fPIC $(CODE_RUNTIME)
+	$(GCC) -DTYCHE_USER_SPACE=1 -g $(COMMON_INCLUDES) -shared -o $@ -fPIC $(CODE_RUNTIME)
 
 .PHONY: clean
 

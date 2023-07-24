@@ -1,5 +1,10 @@
 all: trt loader trt_relocated
 
+ifeq ($(ARCH), x86)
+        GCC = gcc
+else ifeq ($(ARCH), riscv)
+        GCC = riscv64-unknown-linux-gnu-gcc
+endif
 
 ## ————————————————————————————————— Paths —————————————————————————————————— ##
 LIB_PATH=../
@@ -22,8 +27,14 @@ HDRS_TRT=$(wildcard include/*.h)
 RELOC=linkers/custom.ld
 
 ## —————————————————————— External Sources and Headers —————————————————————— ##
-CODE_RUNTIME=$(wildcard $(SDK)/runtime/*.c) $(wildcard $(SDK)/runtime/*.S)
-HDRS_RUNTIME= $(wildcard $(SDK)/include/*.h)
+# Configuration for runtime.
+ifeq ($(ARCH), x86)
+CODE_RUNTIME = $(wildcard $(SDK)/runtime/*.c) $(wildcard $(SDK)/runtime/asm.S)
+HDRS_RUNTIME = $(wildcard $(SDK)/include/*.h)
+else ifeq ($(ARCH), riscv)
+CODE_RUNTIME = $(wildcard $(SDK)/runtime/*.c) $(wildcard $(SDK)/runtime/riscv_asm.S)
+HDRS_RUNTIME = $(wildcard $(SDK)/include/*.h)
+endif
 
 ## ————————————————————————— Load code and headers —————————————————————————— ##
 CODE_LOAD=$(wildcard load/*.c)
@@ -58,16 +69,16 @@ DISK_PATH ?= /tmp/mount/tyche/programs
 
 
 trt: $(CODE_TRT) $(CODE_RUNTIME) $(HDRS_TRT) $(HDRS_RUNTIME)
-	gcc -DTYCHE_USER_SPACE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_RUNTIME) $(CODE_TRT)
+	$(GCC) -DTYCHE_USER_SPACE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_RUNTIME) $(CODE_TRT)
 	#@rm $(ASO_TRT)
 
 trt_relocated: $(CODE_TRT) $(CODE_RUNTIME) $(HDRS_TRT) $(HDRS_RUNTIME) $(RELOC)
-	gcc -DTYCHE_USER_SPACE=1 -T $(RELOC) -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_RUNTIME) $(CODE_TRT)
+	$(GCC) -DTYCHE_USER_SPACE=1 -T $(RELOC) -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_RUNTIME) $(CODE_TRT)
 	#@rm $(ASO_TRT)
 
 
 loader: $(CODE_APP) $(HDRS_APP)
-	gcc -DTYCHE_USER_SPACE=1 -g $(APP_INCLUDES) -o $@ $(CODE_APP)
+	$(GCC) -DTYCHE_USER_SPACE=1 -g $(APP_INCLUDES) -o $@ $(CODE_APP)
 
 install_disk: all
 	mkdir -p $(DISK_PATH)
