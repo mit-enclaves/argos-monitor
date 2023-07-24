@@ -67,6 +67,8 @@ int init(capa_alloc_t allocator, capa_dealloc_t deallocator) {
       break;
     }
 
+    DEBUG("Done enumerating domain's capabilities");
+
     capa = (capability_t *)(local_domain.alloc(sizeof(capability_t)));
     if (capa == NULL) {
       ERROR("Unable to allocate a capability!\n");

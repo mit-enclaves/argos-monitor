@@ -1,5 +1,10 @@
 all: app_selector
 
+ifeq ($(ARCH), x86)
+        GCC = gcc
+else ifeq ($(ARCH), riscv)
+        GCC = riscv64-unknown-linux-gnu-gcc
+endif
 
 ## ————————————————————————————————— Paths —————————————————————————————————— ##
 LIB_PATH=../../../
@@ -22,9 +27,14 @@ HDRS_UNTRUSTED=$(wildcard include/*.h)
 CODE_TRUSTED=$(wildcard trusted/*.c)
 HDRS_TRUSTED=$(wildcard include/*.h)
 
-## ———————————————————————— Runtime code and headers ———————————————————————— ##
-CODE_RUNTIME=$(wildcard $(SDK)/runtime/*.c) $(wildcard $(SDK)/runtime/*.S)
-HDRS_RUNTIME= $(wildcard $(SDK)/include/*.h)
+# Configuration for runtime.
+ifeq ($(ARCH), x86)
+CODE_RUNTIME = $(wildcard $(SDK)/runtime/*.c) $(wildcard $(SDK)/runtime/asm.S)
+HDRS_RUNTIME = $(wildcard $(SDK)/include/*.h) 
+else ifeq ($(ARCH), riscv)
+CODE_RUNTIME = $(wildcard $(SDK)/runtime/*.c) $(wildcard $(SDK)/runtime/riscv_asm.S)
+HDRS_RUNTIME = $(wildcard $(SDK)/include/*.h)
+endif
 
 ## ———————————————————————— Loader code and headers ————————————————————————— ##
 CODE_LOADER=$(wildcard $(SDK)/loader/*.c) $(wildcard $(SDK)/loader/*.S)
@@ -51,17 +61,21 @@ COMMON_INCLUDES = -Iinclude -I$(CAPA_LIB)/include -I$(COMMON_LIB)/include -I$(DL
 APP_INCLUDES = $(COMMON_INCLUDES) -I$(ELF64)/include -I$(PTS)/include -I$(DRIVER)/include
 
 ## ————————————————————— Configuration for the install —————————————————————— ##
+ifeq ($(ARCH), x86)
 DISK_PATH ?= /tmp/mount/tyche/programs 
-
 TYCHOOLS_PATH ?= ../../../../../crates/tychools/ 
-
+else ifeq ($(ARCH), riscv)
+DISK_PATH ?= /home/neelu/vmxvmm/builds/ramfs-riscv/tyche/programs/
+endif
 ## ———————————————————————————————— Targets ————————————————————————————————— ##
 
 app: $(CODE_APP) $(HDRS_APP) 
-	gcc -DTYCHE_USER_SPACE=1 -g $(APP_INCLUDES) -o $@ $(CODE_APP)
+	$(GCC) -DTYCHE_USER_SPACE=1 -g $(APP_INCLUDES) -o $@ $(CODE_APP)
 
 enclave: $(CODE_ENCLAVE) $(HDRS_ENCLAVE)
-	gcc -DTYCHE_USER_SPACE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_ENCLAVE)
+	$(GCC) -DTYCHE_USER_SPACE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_ENCLAVE)
+
+ifeq ($(ARCH), x86)
 
 app_selector: app enclave
 	cargo -C $(TYCHOOLS_PATH) install --path . --locked
@@ -73,6 +87,15 @@ install_disk: all
 	mkdir -p $(DISK_PATH)
 	cp -t $(DISK_PATH) app_selector 
 
+else ifeq ($(ARCH), riscv)
+
+app_selector: 
+	# Blank 
+
+install_disk: all 
+	mkdir -p $(DISK_PATH)
+	cp -t $(DISK_PATH) app enclave
+endif
 
 .PHONY: clean
 
