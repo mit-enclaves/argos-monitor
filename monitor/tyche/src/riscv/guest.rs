@@ -127,10 +127,15 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     /* println!("mcause: {:x}", mcause);
     println!("mepc: {:x}", mepc);
     println!("mstatus: {:x}", mstatus);
-    println!("mtval: {:x}", mtval);
+    println!("mtval: {:x}", mtval); */
 
     println!(
-        "Trap arguments: a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x} ",
+        "Trap arguments: mcause {:x}, mepc {:x} mstatus {:x} mtval {:x} ra {:x} a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x} ",
+        mcause, 
+        mepc, 
+        mstatus,
+        mtval,
+        reg_state.ra,
         reg_state.a0,
         reg_state.a1,
         reg_state.a2,
@@ -139,7 +144,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         reg_state.a5,
         reg_state.a6,
         reg_state.a7
-    ); */
+    ); 
 
     // Check which trap it is
     // mcause register holds the cause of the machine mode trap
@@ -148,7 +153,12 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             illegal_instruction_handler(mepc, mstatus);
         }
         mcause::ECALL_FROM_SMODE => {
-            ecall_handler(&mut ret, &mut err, reg_state.a0, reg_state.a6, reg_state.a7)
+            if reg_state.a7 == 0x78ac5b {
+               //Tyche call 
+               misaligned_load_handler(reg_state);
+            } else {
+                ecall_handler(&mut ret, &mut err, reg_state.a0, reg_state.a6, reg_state.a7);
+            }
         }
         mcause::LOAD_ADDRESS_MISALIGNED => {
             misaligned_load_handler(reg_state);
@@ -156,7 +166,10 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         _ => exit_handler_failed(),
         //Default - just print whatever information you can about the trap.
     }
-    println!("Trap handler complete: returning from ecall {:x}", ret);
+    unsafe {
+        asm!("csrr {}, mepc", out(reg) mepc);
+    }
+    println!("Trap handler complete: returning from ecall {:x}, mepc: {:x} ", ret, mepc);
 
     //monitor::apply_core_updates(current_domain, core_id);
 
@@ -169,8 +182,8 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     }
 
     //Set appropriate return values
-    reg_state.a0 = 0x0;
-    reg_state.a1 = ret;
+    //reg_state.a0 = 0x0;
+    //reg_state.a1 = ret;
 }
 
 pub fn illegal_instruction_handler(mepc: usize, mstatus: usize) {
@@ -275,8 +288,20 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
            },
            calls::ENUMERATE => { 
                 log::info!("Enumerate");
-                //TODO: Implement! 
-               //monitor::do_enumerate(*active_domain, NextCapaToken::from_usize(arg_1)).expect("TODO");
+                if let Some((info, next)) =
+                    monitor::do_enumerate(active_dom, NextCapaToken::from_usize(arg_1))
+                {
+                    let (v1, v2, v3) = info.serialize();
+                    reg_state.a1 = v1 as usize;
+                    reg_state.a2 = v2 as usize;
+                    reg_state.a3 = v3 as usize;
+                    reg_state.a4 = next.as_usize();
+                    log::info!("do_enumerate response: {:x} {:x} {:x} {:x}", reg_state.a1, reg_state.a2, reg_state.a3, reg_state.a4);
+                } else {
+                    // For now, this marks the end
+                    reg_state.a4 = 0;
+                    log::info!("do_enumerate response: {:x}", reg_state.a4);
+                }
                 reg_state.a0 = 0x0;
            }, 
            calls::SWITCH => { 
