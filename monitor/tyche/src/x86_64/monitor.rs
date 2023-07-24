@@ -689,6 +689,17 @@ fn hash_segment_data(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, C
     log::trace!("Number of bytes {:#x}", cnt_bytes);
 }
 
+fn hash_access_right(hasher : & mut TycheHasher, access_rights : u8, mask : u8){
+    if access_rights & mask != 0 {
+        log::trace!("1");
+        attestation_hash::hash_segment(hasher, &u8::to_le_bytes(1 as u8));
+    }
+    else {
+        log::trace!("0");
+        attestation_hash::hash_segment(hasher, &u8::to_le_bytes(1 as u8));
+    }
+}
+
 fn hash_capa_info(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, CapaEngine>, domain : Handle<Domain>) {
     let domain_id = engine[domain].id();
     attestation_hash::hash_segment(hasher, &(usize::to_le_bytes(domain_id)));
@@ -698,7 +709,7 @@ fn hash_capa_info(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, Capa
     while let Some((info, next_next_capa)) = engine.enumerate(domain, next_capa) {
         next_capa = next_next_capa;
         match info {
-            CapaInfo::Region {start , end, active, confidential} => {
+            CapaInfo::Region {start , end, active, confidential,ops} => {
                 attestation_hash::hash_segment(hasher, &(usize::to_le_bytes(start)));
                 attestation_hash::hash_segment(hasher, &(usize::to_le_bytes(end)));
                 log::trace!("Capa info start {:#x}", start);
@@ -706,6 +717,14 @@ fn hash_capa_info(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, Capa
                 let conf_info = if confidential { 1 as u8}  else {0 as u8}; 
                 log::trace!("Conf info {:#x}", conf_info);
                 attestation_hash::hash_segment(hasher, &(u8::to_le_bytes(conf_info)));
+            
+                let access_rights = ops.bits();
+                log::trace!("X right");
+                hash_access_right(hasher, access_rights, MemOps::EXEC.bits());
+                log::trace!("W right");
+                hash_access_right(hasher, access_rights, MemOps::WRITE.bits());
+                log::trace!("R right");
+                hash_access_right(hasher, access_rights, MemOps::READ.bits());
             }
             _ => {}
         }
