@@ -593,10 +593,87 @@ int carve_region(domain_id_t id, paddr_t start, paddr_t end,
           to_send->info.region.start, to_send->info.region.end, to_send->info.region.flags >> 2) != SUCCESS) {
       ERROR("For shared, unable to duplicate capability.");
       goto failure;
+<<<<<<< HEAD
+=======
+    } 
+
+    // Cleanup to send.
+    local_domain.dealloc(to_send);
+  } while(0);
+
+  // Remove it from the capabilities and put it in the revocation list..
+  dll_remove(&(local_domain.capabilities), capa, list);
+  dll_add(&(child->revocations), capa, list);
+
+  // We are done!
+  DEBUG("Success");
+  return SUCCESS;
+failure:
+  return FAILURE;
+}
+
+int share_region(domain_id_t id, paddr_t start, paddr_t end,
+                 memory_access_right_t access) {
+  child_domain_t *child = NULL;
+  capability_t *capa = NULL, *left = NULL, *right = NULL;
+
+  DEBUG("start");
+  // Quick checks.
+  if (start >= end) {
+    ERROR("start is greater or equal to end.\n");
+    goto failure;
+  }
+
+  // Find the target domain.
+  child = find_child(id); 
+
+  // We were not able to find the child.
+  if (child == NULL) {
+    ERROR("child not found.");
+    goto failure;
+  }
+
+  // Now attempt to find the capability.
+  dll_foreach(&(local_domain.capabilities), capa, list) {
+    if (capa->capa_type != Region || (capa->info.region.flags & MEM_ACTIVE) == 0) {
+      continue;
+    }
+    // TODO check dll_contains, might fail on end.
+    if (dll_contains(capa->info.region.start, capa->info.region.end,
+                     start) &&
+        capa->info.region.start <= end && capa->info.region.end >= end) {
+      // Found the capability.
+      break;
+>>>>>>> Refactors
     }
     capa = right_copy;
   }
 
+<<<<<<< HEAD
+=======
+  // We were not able to find the capability.
+  if (capa == NULL) {
+    goto failure;
+  }
+
+  //TODO(aghosn) bug here, marks the entire region as non-confidential.
+  //Fix this.
+  // A share is less complex than a grant because it doesn't require carving
+  // out. We still create a capability that matches exactly the desired
+  // interval. This allows to revoke that region independently of subsequent
+  // shares.
+  if (segment_region_capa(
+        capa, &left, &right,
+        capa->info.region.start, capa->info.region.end, capa->info.region.flags >> 2,
+        start, end, capa->info.region.flags >> 2) != SUCCESS) {
+    ERROR("First segment region call failed.");
+    goto failure;
+  }
+
+  // We care about the right capability.
+  capa = right;
+
+>>>>>>> Refactors
   // We do the magic segment_region_capa to have a single revoke.
   // One last duplicate to have a revocation {NULL, to_send}.
   do {
