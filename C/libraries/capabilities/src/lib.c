@@ -597,6 +597,7 @@ int carve_region(domain_id_t id, paddr_t start, paddr_t end,
     capa = right_copy;
   }
 
+  // We do the magic segment_region_capa to have a single revoke.
   // One last duplicate to have a revocation {NULL, to_send}.
   do {
     capability_t *to_send = trick_segment_null_copy(capa);
@@ -621,11 +622,11 @@ int carve_region(domain_id_t id, paddr_t start, paddr_t end,
     local_domain.dealloc(to_send);
   } while(0);
 
-  // Remove it from the capabilities and put it in the revocation list..
+  // Just remove the capability now. 
   dll_remove(&(local_domain.capabilities), capa, list);
-  dll_add(&(child->revocations), capa, list);
+  dll_add(&(child->revocations), right, list);
 
-  // We are done!
+  // All done!
   DEBUG("Success");
   return SUCCESS;
 failure:
