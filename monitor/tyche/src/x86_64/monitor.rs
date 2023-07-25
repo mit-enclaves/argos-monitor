@@ -711,27 +711,44 @@ fn hash_capa_info(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, Capa
         next_capa = next_next_capa;
         match info {
             CapaInfo::Region {start , end, active : _, confidential,ops} => {
-                //hash region capa start-end
-                attestation_hash::hash_segment(hasher, &(usize::to_le_bytes(start)));
-                attestation_hash::hash_segment(hasher, &(usize::to_le_bytes(end)));
                 log::trace!("Capa info start {:#x}", start);
                 log::trace!("Capa info end {:#x}", end);
+                if ops.contains(MemOps::HASH) {
+                    log::trace!("Hashing it");
+                    attestation_hash::hash_segment(hasher, &(usize::to_le_bytes(start)));
+                    attestation_hash::hash_segment(hasher, &(usize::to_le_bytes(end)));
+                    let access_rights = ops.bits();
+                    log::trace!("Attestation right");
+                    hash_access_right(hasher, access_rights, MemOps::HASH.bits());
+                    log::trace!("X right");
+                    hash_access_right(hasher, access_rights, MemOps::EXEC.bits());
+                    log::trace!("W right");
+                    hash_access_right(hasher, access_rights, MemOps::WRITE.bits());
+                    log::trace!("R right");
+                    hash_access_right(hasher, access_rights, MemOps::READ.bits());
+                     
+                    //hash conf/shared info
+                    let conf_info = if confidential { 1 as u8}  else {0 as u8}; 
+                    log::trace!("Conf info {:#x}", conf_info);
+                    attestation_hash::hash_segment(hasher, &(u8::to_le_bytes(conf_info)));
                 
-                //hash conf/shared info
-                let conf_info = if confidential { 1 as u8}  else {0 as u8}; 
-                log::trace!("Conf info {:#x}", conf_info);
-                attestation_hash::hash_segment(hasher, &(u8::to_le_bytes(conf_info)));
-            
-                //hashing access rights
-                let access_rights = ops.bits();
-                log::trace!("X right");
-                hash_access_right(hasher, access_rights, MemOps::EXEC.bits());
-                log::trace!("W right");
-                hash_access_right(hasher, access_rights, MemOps::WRITE.bits());
-                log::trace!("R right");
-                hash_access_right(hasher, access_rights, MemOps::READ.bits());
-                log::trace!("Attestation right");
-                hash_access_right(hasher, access_rights, MemOps::HASH.bits());
+                    //hashing access rights
+                    let mut addr = start;
+                    let addr_end = end;
+                    log::trace!("Hashing region of enclave start addr: {:#x}", addr);
+                    log::trace!("Hashing region of enclave end addr: {:#x}", addr_end);
+                    log::trace!("Hashing region of enclave sz: {:#x}", addr_end - addr);
+                    while addr < addr_end {
+                        let mut byte_data : u8= 0;
+                        unsafe {
+                            byte_data = *(addr as * const u8);
+                        }
+                        let byte_arr : [u8;1] = [byte_data];
+                        attestation_hash::hash_segment(hasher, &byte_arr);
+                        addr = addr + 1;
+                    }
+                }
+                
             }
             _ => {}
         }
@@ -741,7 +758,7 @@ fn hash_capa_info(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, Capa
 fn calculate_attestation_hash(engine : & mut MutexGuard<'_, CapaEngine>, domain : Handle<Domain>) {
     let mut hasher = attestation_hash::get_hasher();
     
-    hash_segment_data(&mut hasher, engine, domain);
+    // hash_segment_data(&mut hasher, engine, domain);
     hash_capa_info(&mut hasher, engine, domain);
 
     log::trace!("Finished calculating the hash!");
