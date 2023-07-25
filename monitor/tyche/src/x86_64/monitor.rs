@@ -696,7 +696,7 @@ fn hash_access_right(hasher : & mut TycheHasher, access_rights : u8, mask : u8){
     }
     else {
         log::trace!("0");
-        attestation_hash::hash_segment(hasher, &u8::to_le_bytes(1 as u8));
+        attestation_hash::hash_segment(hasher, &u8::to_le_bytes(0 as u8));
     }
 }
 
