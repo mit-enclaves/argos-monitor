@@ -55,6 +55,14 @@ fn hash_segments_info(enclave : & Box<ModifiedELF>, hasher : & mut Sha256, offse
                     hash_acc_rights(hasher, flags, PF_W);
                     log::trace!("R right");
                     hash_acc_rights(hasher, flags, PF_R);
+                    if tpe.is_confidential() {
+                        log::trace!("Conf 1");
+                        hasher.input(&u8::to_le_bytes(1 as u8));
+                    }
+                    else {
+                        log::trace!("Conf 0");
+                        hasher.input(&u8::to_le_bytes(0 as u8));
+                    }
                     for u8_data in &seg.data {
                         let arr_u8 : [u8;1] = [*u8_data];
                         hasher.input(&arr_u8);
