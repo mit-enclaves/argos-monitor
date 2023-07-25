@@ -11,6 +11,8 @@ use crate::allocator::PAGE_SIZE;
 use crate::instrument::Security;
 use crate::page_table_mapper::{align_address, generate_page_tables};
 
+static PF_H : u32 = 1 << 3;
+
 // —————————————————————————————— Local Enums ——————————————————————————————— //
 
 #[allow(dead_code)]
@@ -666,6 +668,20 @@ impl ModifiedELF {
 
         Ok(())
     }
+
+    pub fn set_attestation_hash(& mut self) {
+        for seg in & mut self.segments {
+            if ModifiedSegment::is_loadable(seg.program_header.p_type(DENDIAN)) {
+                log::debug!("segment x");
+                if let Some(tpe) = TychePhdrTypes::from_u32(seg.program_header.p_type(DENDIAN)) {
+                    if seg.should_include_attestation() {
+                        seg.set_mask_flags(PF_H);
+                    }
+                }
+            }
+        }
+    }
+
 }
 
 impl ModifiedSegment {
@@ -709,6 +725,21 @@ impl ModifiedSegment {
             },
         }
     }
+
+    pub fn should_include_attestation(&mut self) -> bool {
+        if let Some(tpe) = TychePhdrTypes::from_u32(self.program_header.p_type(DENDIAN)) {
+            tpe.is_confidential()
+        }
+        else {
+            false
+        }
+    }
+
+    pub fn set_mask_flags(&mut self, mask : u32) {
+        let fl = self.program_header.p_flags(DENDIAN);
+        self.program_header.p_flags = U32Bytes::new(DENDIAN, fl | mask);
+    }
+
 }
 
 impl ModifiedSection {

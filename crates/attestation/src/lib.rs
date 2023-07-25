@@ -29,6 +29,7 @@ pub mod attestation_hash {
         for element in result_arr {
             hash = (hash << 8) + (*element as u128);
         }
+        log::trace!("{:x}", hash);
         hash
     }
 }

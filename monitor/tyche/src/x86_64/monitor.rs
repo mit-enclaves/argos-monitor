@@ -730,6 +730,8 @@ fn hash_capa_info(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, Capa
                 hash_access_right(hasher, access_rights, MemOps::WRITE.bits());
                 log::trace!("R right");
                 hash_access_right(hasher, access_rights, MemOps::READ.bits());
+                log::trace!("Attestation right");
+                hash_access_right(hasher, access_rights, MemOps::HASH.bits());
             }
             _ => {}
         }
