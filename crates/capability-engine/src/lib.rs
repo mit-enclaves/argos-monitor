@@ -16,20 +16,9 @@ use capa::Capa;
 pub use capa::{capa_type, CapaInfo};
 use cores::{Core, CoreList};
 use domain::{insert_capa, remove_capa, DomainHandle, DomainPool};
-<<<<<<< HEAD
 pub use domain::{permission, Bitmaps, Domain, LocalCapa, NextCapaToken};
 pub use gen_arena::{GenArena, Handle};
 pub use region::{AccessRights, MemOps, RegionTracker, MEMOPS_ALL};
-=======
-pub use domain::{permission, Domain, LocalCapa, NextCapaToken};
-use gen_arena::GenArena;
-pub use gen_arena::Handle;
-<<<<<<< HEAD
-pub use region::{AccessRights, MemOps, RegionTracker};
->>>>>>> Adding the notion of access rights
-=======
-pub use region::{AccessRights, MemOps, RegionTracker, MEMOPS_ALL};
->>>>>>> Adding counters per access right
 use region_capa::{RegionCapa, RegionPool};
 use update::UpdateBuffer;
 pub use update::{Buffer, Update};
@@ -63,13 +52,10 @@ pub enum CapaError {
     InvalidCore,
     CouldNotHandleTrap,
     ValidTrapCausedExit,
-<<<<<<< HEAD
     InvalidSwitch,
     InvalidVcpuType,
     InvalidOperation,
     InvalidValue,
-=======
->>>>>>> Adding the notion of access rights
     InvalidMemOps,
 }
 

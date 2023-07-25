@@ -128,7 +128,6 @@ impl Region {
             && self.exec_count == other.exec_count
             && self.super_count == other.super_count
     }
-<<<<<<< HEAD
 
     pub fn get_ops(&self) -> MemOps {
         let mut ops = MemOps::NONE;
@@ -154,8 +153,6 @@ impl Region {
     pub fn get_end(&self) -> usize {
         self.end
     }
-=======
->>>>>>> Adding counters per access right
 }
 
 // ————————————————————————————— RegionTracker —————————————————————————————— //
@@ -551,41 +548,25 @@ impl RegionTracker {
         let region = &mut self.regions[handle];
         let mut change = PermissionChange::None;
         if ops.contains(MemOps::READ) {
-<<<<<<< HEAD
             region.read_count = region.read_count.checked_sub(1).unwrap();
-=======
-            region.read_count.checked_sub(1).unwrap();
->>>>>>> Adding counters per access right
             if region.read_count == 0 {
                 change = PermissionChange::Some;
             }
         }
         if ops.contains(MemOps::WRITE) {
-<<<<<<< HEAD
             region.write_count = region.write_count.checked_sub(1).unwrap();
-=======
-            region.write_count.checked_sub(1).unwrap();
->>>>>>> Adding counters per access right
             if region.write_count == 0 {
                 change = PermissionChange::Some;
             }
         }
         if ops.contains(MemOps::EXEC) {
-<<<<<<< HEAD
             region.exec_count = region.exec_count.checked_sub(1).unwrap();
-=======
-            region.exec_count.checked_sub(1).unwrap();
->>>>>>> Adding counters per access right
             if region.exec_count == 0 {
                 change = PermissionChange::Some;
             }
         }
         if ops.contains(MemOps::SUPER) {
-<<<<<<< HEAD
             region.super_count = region.super_count.checked_sub(1).unwrap();
-=======
-            region.super_count.checked_sub(1).unwrap();
->>>>>>> Adding counters per access right
             if region.super_count == 0 {
                 change = PermissionChange::Some;
             }

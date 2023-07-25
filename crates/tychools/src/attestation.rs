@@ -83,6 +83,9 @@ fn hash_segments_info(enclave : & Box<ModifiedELF>, hasher : & mut Sha256, offse
                 log::trace!("R right");
                 hash_acc_rights(hasher, flags, PF_R);
 
+                log::trace!("Attestation right");
+                hash_acc_rights(hasher, flags, 1 << 3);
+
                 segment_off+=sz;
             }
         }
