@@ -2,11 +2,10 @@ use crate::capa::{Capa, IntoCapa};
 use crate::config::{NB_CAPAS_PER_DOMAIN, NB_DOMAINS};
 use crate::free_list::FreeList;
 use crate::gen_arena::GenArena;
-use crate::region::{PermissionChange, RegionTracker, RegionIterator};
+use crate::region::{PermissionChange, RegionTracker};
 use crate::update::{Update, UpdateBuffer};
 use crate::utils::BitmapIterator;
 use crate::{region_capa, AccessRights, CapaError, Handle, RegionPool};
-use attestation::attestation_hash;
 
 pub type DomainHandle = Handle<Domain>;
 pub(crate) type DomainPool = GenArena<Domain, NB_DOMAINS>;

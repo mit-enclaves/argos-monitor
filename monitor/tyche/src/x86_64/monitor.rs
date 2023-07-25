@@ -667,6 +667,7 @@ unsafe fn free_ept(ept: HostPhysAddr, allocator: &impl FrameAllocator) {
 
 // ———————————————————————————————— Attestation ————————————————————————————————— //
 
+//hashing every byte covered by region tracker of specific domain
 fn hash_segment_data(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, CapaEngine>, domain : Handle<Domain>) {
     let mut cnt_bytes = 0;
     for (_, region) in engine[domain].regions().iter() {
@@ -709,15 +710,19 @@ fn hash_capa_info(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, Capa
     while let Some((info, next_next_capa)) = engine.enumerate(domain, next_capa) {
         next_capa = next_next_capa;
         match info {
-            CapaInfo::Region {start , end, active, confidential,ops} => {
+            CapaInfo::Region {start , end, active : _, confidential,ops} => {
+                //hash region capa start-end
                 attestation_hash::hash_segment(hasher, &(usize::to_le_bytes(start)));
                 attestation_hash::hash_segment(hasher, &(usize::to_le_bytes(end)));
                 log::trace!("Capa info start {:#x}", start);
                 log::trace!("Capa info end {:#x}", end);
+                
+                //hash conf/shared info
                 let conf_info = if confidential { 1 as u8}  else {0 as u8}; 
                 log::trace!("Conf info {:#x}", conf_info);
                 attestation_hash::hash_segment(hasher, &(u8::to_le_bytes(conf_info)));
             
+                //hashing access rights
                 let access_rights = ops.bits();
                 log::trace!("X right");
                 hash_access_right(hasher, access_rights, MemOps::EXEC.bits());
