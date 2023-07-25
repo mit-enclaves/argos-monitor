@@ -19,7 +19,7 @@
 #include "sdk_tyche.h"
 
 // ———————————————————————————— Local Functions ————————————————————————————— //
-
+static uint32_t PF_H = 1 << 3;
 /// Translate ELF flags into tyche memory access rights.
 static memory_access_right_t translate_flags_to_tyche(Elf64_Word flags) {
   memory_access_right_t rights = 0;
@@ -31,6 +31,10 @@ static memory_access_right_t translate_flags_to_tyche(Elf64_Word flags) {
   }
   if ((flags & PF_W) == PF_W) {
     rights |= MEM_WRITE;
+  }
+  if((flags & PF_H) == PF_H) {
+    ERROR("ATTESTATION RIGHT");
+    rights |= MEM_HASH;
   }
   //TODO do user?
   rights |= MEM_SUPER;

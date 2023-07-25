@@ -125,6 +125,7 @@ pub fn parse_binary(binary: &BinaryInstrumentation) -> Box<ModifiedELF> {
             }
         }
     }
+
     elf
 }
 
@@ -182,6 +183,7 @@ pub fn instrument_binary(manifest: &Manifest) {
         if manifest.generate_pts {
             kern.generate_page_tables(manifest.security);
         }
+        kern.set_attestation_hash();
         kern
     } else {
         panic!("We had nothing to instrument");
