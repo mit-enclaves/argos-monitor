@@ -4,9 +4,10 @@ use sha2::Sha256;
 
 pub type TycheHasher = Sha256;
 
+#[derive(Copy,Clone)]
 pub struct hash_enclave {
-    low : u128,
-    high : u128,
+    pub low : u128,
+    pub high : u128,
 }
 
 pub mod attestation_hash {
