@@ -1,3 +1,5 @@
+use attestation::hash_enclave;
+
 use crate::capa::{Capa, IntoCapa};
 use crate::config::{NB_CAPAS_PER_DOMAIN, NB_DOMAINS};
 use crate::free_list::FreeList;
@@ -165,7 +167,7 @@ pub struct Domain {
     /// Is the domain sealed?
     is_sealed: bool,
     /// attestation hash (type of it ?)
-    attestation_hash : u128,
+    attestation_hash : Option<hash_enclave>,
 }
 
 impl Domain {
@@ -196,7 +198,7 @@ impl Domain {
             cores: core_bits::NONE,
             is_being_revoked: false,
             is_sealed: false,
-            attestation_hash : 0,
+            attestation_hash : None,
         }
     }
 
@@ -313,8 +315,8 @@ impl Domain {
         }
     }
 
-    pub fn set_hash(& mut self, hash : u128) {
-        self.attestation_hash = hash;
+    pub fn set_hash(& mut self, hash : hash_enclave) {
+        self.attestation_hash = Some(hash);
     }
 }
 
