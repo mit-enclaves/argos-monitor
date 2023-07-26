@@ -1,0 +1,5 @@
+{
+    "files.associations": {
+        "enclave_loader.h": "c"
+    }
+}

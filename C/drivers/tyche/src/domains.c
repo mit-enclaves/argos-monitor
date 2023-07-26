@@ -517,3 +517,25 @@ delete_dom_struct:
 failure:
   return FAILURE;
 }
+
+int domain_attestation(domain_handle_t handle) {
+  driver_domain_t* domain = NULL;
+  domain = find_domain(handle);
+  if (domain == NULL) {
+    ERROR("Unable to find the enclave %p", handle);
+    goto failure;
+  }
+
+  ERROR("Getting the attestation for the enclave");
+  ERROR("Trying to get the attestation for the domain %lld for enclave %p",
+        domain->domain_id, handle);
+  if(get_attestation(enclave->domain_id) != SUCCESS) {
+    ERROR("Unable to get the attestation for the domain %lld for enclave %p",
+        domain->domain_id, handle);
+    goto failure;
+  }
+
+  return SUCCESS;
+failure:
+  return FAILURE;
+}
