@@ -12,6 +12,7 @@ mod utils;
 
 use core::ops::Index;
 
+use attestation::hash_enclave;
 use capa::Capa;
 pub use capa::{capa_type, CapaInfo};
 use cores::{Core, CoreList};
@@ -503,7 +504,7 @@ impl CapaEngine {
     pub fn set_hash(
         & mut self,
         domain : Handle<Domain>,
-        hash : u128
+        hash : hash_enclave
     ) -> Result<(), CapaError> {
         self.domains[domain].set_hash(hash);
         Ok(())
