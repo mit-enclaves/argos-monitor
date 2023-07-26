@@ -21,7 +21,7 @@ use super::init::NB_BOOTED_CORES;
 use crate::allocator::allocator;
 use crate::rcframe::{drop_rc, RCFrame, RCFramePool, EMPTY_RCFRAME};
 
-use attestation::attestation_hash;
+use attestation::{attestation_hash, hash_enclave};
 use attestation::TycheHasher;
 
 // ————————————————————————— Statics & Backend Data ————————————————————————— //
@@ -392,6 +392,24 @@ pub fn do_debug() {
         log::trace!("{}", engine[domain].regions());
     }
 }
+
+pub fn do_enclave_attestation(
+    current: Handle<Domain>,
+    domain: LocalCapa,
+) -> hash_enclave {
+    let core = cpuid();
+    let mut engine = CAPA_ENGINE.lock();
+    if let Ok(domain_capa) = engine.get_domain_capa(current, domain) {
+        engine[domain_capa].get_hash()
+    }
+    else {
+        hash_enclave {
+            low : 0,
+            high : 0
+        }
+    }
+}
+
 // —————————————————————— Interrupt Handling functions —————————————————————— //
 
 pub fn handle_trap(

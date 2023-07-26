@@ -256,8 +256,12 @@ fn handle_exit(
                 calls::ENCLAVE_ATTESTATION => {
                     log::trace!("Get attestation!");
                     log::warn!("Not implemented!");
-                    log::trace!("{:#x}", arg_1);
+                    let enclave_hash = monitor::do_enclave_attestation(*domain, LocalCapa::new(arg_1));
                     vcpu.set(Register::Rax, 0);
+                    vcpu.set(Register::Rdi, (enclave_hash.low & ((1 << 64) - 1)) as u64);
+                    vcpu.set(Register::Rsi, (enclave_hash.low >> 64) as u64);
+                    vcpu.set(Register::Rdx, (enclave_hash.high & ((1 << 64) - 1)) as u64);
+                    vcpu.set(Register::Rcx, (enclave_hash.high >> 64) as u64);
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }

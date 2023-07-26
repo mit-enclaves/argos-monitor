@@ -318,6 +318,18 @@ impl Domain {
     pub fn set_hash(& mut self, hash : hash_enclave) {
         self.attestation_hash = Some(hash);
     }
+
+    pub fn get_hash(&self) -> hash_enclave {
+        if let Some(he) = &self.attestation_hash {
+            *he
+        }
+        else {
+            hash_enclave {
+                low : 0,
+                high : 0
+            }
+        }
+    }
 }
 
 // —————————————————————————————— Insert Capa ——————————————————————————————— //
