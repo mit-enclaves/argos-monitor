@@ -244,6 +244,13 @@ long tyche_ioctl(struct file* handle, unsigned int cmd, unsigned long arg)
         goto failure;
       }
       break;
+    case TYCHE_ENCLAVE_ATTESTATION:
+      ERROR("In ioctl driver for tyche enclave call");
+      if(enclave_attestation(handle) != SUCCESS) {
+        ERROR("Unable to get enclave attestation %p", handle);
+        goto failure;
+      }
+      break;
     default:
       ERROR("The command is not valid!");
       goto failure;

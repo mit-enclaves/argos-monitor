@@ -17,6 +17,7 @@ typedef enum tyche_monitor_call_t {
   TYCHE_EXIT = 10,
   TYCHE_CONFIGURE = 12,
   TYCHE_SET_ENTRY_ON_CORE = 13,
+  TYCHE_ENCLAVE_ATTESTATION = 14,
 } tyche_monitor_call_t;
 
 typedef enum tyche_configurations_t {
@@ -98,5 +99,7 @@ int tyche_revoke(capa_index_t id);
 int tyche_switch(capa_index_t* transition_handle, void* args);
 
 int tyche_duplicate(capa_index_t* new_capa, capa_index_t capa);
+
+int tyche_enclave_attestation(capa_index_t id);
 
 #endif

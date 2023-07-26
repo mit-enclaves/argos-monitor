@@ -154,3 +154,15 @@ int ioctl_switch(handle_t handle, void* args)
 failure:
   return FAILURE;
 }
+
+int ioctl_enclave_attestation(handle_t handle) {
+  msg_enclave_attestation_t msg = {0,0};
+  ERROR("Making ioctl call");
+  if(ioctl(handle, TYCHE_ENCLAVE_ATTESTATION, &msg) != SUCCESS) {
+    ERROR("ioctl failed to get attestation %lld", handle);
+    goto failure;
+  }
+  return SUCCESS;
+failure:
+  return FAILURE;
+}

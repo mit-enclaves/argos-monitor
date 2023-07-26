@@ -512,3 +512,20 @@ int sdk_delete_domain(tyche_domain_t* domain)
 failure:
   return FAILURE;
 }
+
+int sdk_domain_attestation(tyche_domain_t* domain) {
+  if (domain == NULL) {
+    ERROR("The provided domain is null.");
+    goto failure;
+  }
+
+  ERROR("Making ioctl wrapper call");
+  if(ioctl_enclave_attestation(domain->handle) != SUCCESS) {
+    ERROR("Unable to get attestation of the enclave");
+    goto failure;
+  }
+
+  return SUCCESS;
+failure:
+  return FAILURE;
+}

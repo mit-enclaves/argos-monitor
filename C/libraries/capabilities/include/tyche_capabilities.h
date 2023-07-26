@@ -74,4 +74,5 @@ int set_domain_switch(domain_id_t id, usize swtype);
 /// Set the domain's entry point of the selected core.
 int set_domain_entry_on_core(domain_id_t id, usize core, usize cr3, usize rip, usize rsp);
 
+int get_attestation(domain_id_t id);
 #endif

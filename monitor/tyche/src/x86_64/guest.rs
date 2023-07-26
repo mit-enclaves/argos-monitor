@@ -159,10 +159,13 @@ fn handle_exit(
                 }
                 calls::SEAL_DOMAIN => {
                     log::trace!("Seal Domain");
-                    let capa = monitor::do_seal(*domain, LocalCapa::new(arg_1)).expect("TODO");
-                    vs.vcpu.set(Register::Rdi, capa.as_u64());
-                    vs.vcpu.set(Register::Rax, 0);
-                    vs.vcpu.next_instruction()?;
+                    log::trace!("{:#x}", arg_1);
+                    let capa =
+                        monitor::do_seal(*domain, LocalCapa::new(arg_1))
+                            .expect("TODO");
+                    vcpu.set(Register::Rdi, capa.as_u64());
+                    vcpu.set(Register::Rax, 0);
+                    vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
                 calls::SHARE => {
@@ -249,9 +252,11 @@ fn handle_exit(
                     dump(&mut vs.vcpu);
                     Ok(HandlerResult::Exit)
                 }
-                calls::GET_ATTESTATION => {
+                calls::ENCLAVE_ATTESTATION => {
                     log::trace!("Get attestation!");
                     log::warn!("Not implemented!");
+                    log::trace!("{:#x}", arg_1);
+                    vcpu.set(Register::Rax, 0);
                     vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
