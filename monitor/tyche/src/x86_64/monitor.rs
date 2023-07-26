@@ -667,29 +667,6 @@ unsafe fn free_ept(ept: HostPhysAddr, allocator: &impl FrameAllocator) {
 
 // ———————————————————————————————— Attestation ————————————————————————————————— //
 
-//hashing every byte covered by region tracker of specific domain
-fn hash_segment_data(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, CapaEngine>, domain : Handle<Domain>) {
-    let mut cnt_bytes = 0;
-    for (_, region) in engine[domain].regions().iter() {
-        let mut addr = region.get_start();
-        let addr_end = region.get_end();
-        log::trace!("Hashing region of enclave start addr: {:#x}", addr);
-        log::trace!("Hashing region of enclave end addr: {:#x}", addr_end);
-        log::trace!("Hashing region of enclave sz: {:#x}", addr_end - addr);
-        while addr< addr_end {
-            let mut byte_data : u8= 0;
-            unsafe {
-                byte_data = *(addr as * const u8);
-            }
-            let byte_arr : [u8;1] = [byte_data];
-            attestation_hash::hash_segment(hasher, &byte_arr);
-            addr = addr + 1;
-            cnt_bytes+=1;
-        }
-    }
-    log::trace!("Number of bytes {:#x}", cnt_bytes);
-}
-
 fn hash_access_right(hasher : & mut TycheHasher, access_rights : u8, mask : u8){
     if access_rights & mask != 0 {
         log::trace!("1");
