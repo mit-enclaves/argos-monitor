@@ -296,6 +296,20 @@ failure:
   return FAILURE;
 }
 
+int tyche_enclave_attestation(domain_id_t id) {
+  ERROR("Making tyche enclave attestation call");
+  vmcall_frame_t frame = {
+    .vmcall = TYCHE_ENCLAVE_ATTESTATION,
+    .arg_1 = id,
+  };
+  if (tyche_call(&frame) != SUCCESS) {
+    goto failure;
+  }
+  return SUCCESS;
+failure:
+  return FAILURE;
+}
+
 int tyche_switch(capa_index_t* transition_handle, void* args)
 {
   usize result = FAILURE;

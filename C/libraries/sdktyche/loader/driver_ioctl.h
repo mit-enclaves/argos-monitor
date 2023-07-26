@@ -24,3 +24,5 @@ int ioctl_set_entry_on_core(
     usize cr3,
     usize rip,
     usize rsp);
+int ioctl_enclave_attestation(handle_t handle);
+#endif /*__LOADER_DRIVER_IOCTL_H__*/
