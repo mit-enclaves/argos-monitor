@@ -855,3 +855,25 @@ failure:
   ERROR("[revoke_domain] failure");
   return FAILURE;
 }
+
+int get_attestation(domain_id_t id) {
+  child_domain_t *child = NULL;
+
+  DEBUG("start");
+  child = find_child(id); 
+
+  if (child == NULL) {
+    ERROR("child not found.");
+    goto failure;
+  }
+
+  ERROR("Making tyche_enclave att call %lld", id);
+  if(tyche_enclave_attestation(child->management->local_id)!= SUCCESS) {
+    ERROR("Tyche enclave attestation error");
+    goto failure;
+  }
+
+  return SUCCESS;
+failure:
+  return FAILURE;
+}
