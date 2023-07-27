@@ -597,7 +597,6 @@ int carve_region(domain_id_t id, paddr_t start, paddr_t end,
     capa = right_copy;
   }
 
-  // We do the magic segment_region_capa to have a single revoke.
   // One last duplicate to have a revocation {NULL, to_send}.
   do {
     capability_t *to_send = trick_segment_null_copy(capa);
@@ -622,11 +621,11 @@ int carve_region(domain_id_t id, paddr_t start, paddr_t end,
     local_domain.dealloc(to_send);
   } while(0);
 
-  // Just remove the capability now. 
+  // Remove it from the capabilities and put it in the revocation list..
   dll_remove(&(local_domain.capabilities), capa, list);
-  dll_add(&(child->revocations), right, list);
+  dll_add(&(child->revocations), capa, list);
 
-  // All done!
+  // We are done!
   DEBUG("Success");
   return SUCCESS;
 failure:
@@ -854,27 +853,5 @@ int revoke_domain(domain_id_t id) {
   return SUCCESS;
 failure:
   ERROR("[revoke_domain] failure");
-  return FAILURE;
-}
-
-int get_attestation(domain_id_t id) {
-  child_domain_t *child = NULL;
-
-  DEBUG("start");
-  child = find_child(id); 
-
-  if (child == NULL) {
-    ERROR("child not found.");
-    goto failure;
-  }
-
-  ERROR("Making tyche_enclave att call %lld", id);
-  if(tyche_enclave_attestation(child->management->local_id)!= SUCCESS) {
-    ERROR("Tyche enclave attestation error");
-    goto failure;
-  }
-
-  return SUCCESS;
-failure:
   return FAILURE;
 }

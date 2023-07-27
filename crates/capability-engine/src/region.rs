@@ -13,13 +13,15 @@ bitflags! {
          const WRITE = 1 << 1;
          const EXEC  = 1 << 2;
          const SUPER = 1 << 3;
+         const HASH = 1 << 4;
     }
 }
 
 pub const MEMOPS_ALL: MemOps = MemOps::READ
     .union(MemOps::WRITE)
     .union(MemOps::EXEC)
-    .union(MemOps::SUPER);
+    .union(MemOps::SUPER)
+    .union(MemOps::HASH);
 
 impl MemOps {
     pub fn from_usize(val: usize) -> Result<Self, CapaError> {
@@ -887,32 +889,6 @@ impl fmt::Display for RegionTracker {
 impl fmt::Display for MemoryPermission {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[0x{:x}, 0x{:x} | {}]", self.start, self.end, self.ops)
-    }
-}
-
-impl fmt::Display for MemOps {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.contains(Self::READ) {
-            write!(f, "R")?;
-        } else {
-            write!(f, "_")?;
-        }
-        if self.contains(Self::WRITE) {
-            write!(f, "W")?;
-        } else {
-            write!(f, "_")?;
-        }
-        if self.contains(Self::EXEC) {
-            write!(f, "X")?;
-        } else {
-            write!(f, "_")?;
-        }
-        if self.contains(Self::SUPER) {
-            write!(f, "S")?;
-        } else {
-            write!(f, "_")?;
-        }
-        write!(f, "")
     }
 }
 
