@@ -97,6 +97,9 @@ int main(int argc, char *argv[]) {
     ERROR("Unable to find the default shared region.");
     goto failure;
   }
+
+  sdk_domain_attestation(enclave);
+
   LOG("Calling the enclave, good luck!");
 
   if (hello_world() != SUCCESS) {
