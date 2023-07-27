@@ -168,15 +168,8 @@ checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
 name = "capa-engine"
 version = "0.1.0"
 dependencies = [
-<<<<<<< HEAD
-<<<<<<< HEAD
- "bitflags",
-=======
  "attestation",
->>>>>>> Added mapping guest to Tyche addr space in stage 1 (support it in stage 2 ?) and initial measurement during sealing of domain. Problems: ubuntu_mount - fix the nbd problem
-=======
  "bitflags",
->>>>>>> Adding the notion of access rights
  "log",
  "simple_logger",
 ]

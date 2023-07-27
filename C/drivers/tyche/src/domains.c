@@ -529,7 +529,7 @@ int domain_attestation(domain_handle_t handle) {
   ERROR("Getting the attestation for the enclave");
   ERROR("Trying to get the attestation for the domain %lld for enclave %p",
         domain->domain_id, handle);
-  if(get_attestation(enclave->domain_id) != SUCCESS) {
+  if(get_attestation(domain->domain_id) != SUCCESS) {
     ERROR("Unable to get the attestation for the domain %lld for enclave %p",
         domain->domain_id, handle);
     goto failure;
