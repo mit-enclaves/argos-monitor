@@ -254,6 +254,8 @@ fn handle_exit(
                 }
                 calls::ENCLAVE_ATTESTATION => {
                     log::trace!("Get attestation!");
+                    log::trace!("arg1 {:#x}", arg_1);
+                    log::trace!("arg2 {:#x}", arg_2);
                     let enclave_hash = monitor::do_enclave_attestation(*domain, LocalCapa::new(arg_1));
                     log::trace!("{:#x}", enclave_hash.high);
                     log::trace!("{:#x}", enclave_hash.low);

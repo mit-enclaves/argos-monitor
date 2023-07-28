@@ -162,6 +162,8 @@ int ioctl_enclave_attestation(handle_t handle) {
     ERROR("ioctl failed to get attestation %lld", handle);
     goto failure;
   }
+  ERROR("Copied from ioctl %llx", msg.high);
+  ERROR("Copied from ioctl %llx", msg.low);
   return SUCCESS;
 failure:
   return FAILURE;
