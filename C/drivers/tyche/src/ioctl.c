@@ -123,6 +123,7 @@ long tyche_ioctl(struct file* handle, unsigned int cmd, unsigned long arg)
   msg_mprotect_t mprotect = {0, 0, 0, 0};
   msg_switch_t transition = {0};
   msg_set_perm_t perm = {0};
+  msg_enclave_attestation_t msg_attestation = {0,0};
   switch(cmd) {
     case TYCHE_GET_PHYSOFFSET:
       if (driver_get_physoffset_domain(handle, &info.physoffset) != SUCCESS) {
@@ -246,8 +247,15 @@ long tyche_ioctl(struct file* handle, unsigned int cmd, unsigned long arg)
       break;
     case TYCHE_ENCLAVE_ATTESTATION:
       ERROR("In ioctl driver for tyche enclave call");
-      if(domain_attestation(handle) != SUCCESS) {
+      if(domain_attestation(handle, &msg_attestation) != SUCCESS) {
         ERROR("Unable to get enclave attestation %p", handle);
+        goto failure;
+      }
+      if (copy_to_user(
+            (msg_enclave_attestation_t*) arg, 
+            &msg_attestation, 
+            sizeof(msg_enclave_attestation_t))) {
+        ERROR("Unable to copy domain attestation for %p", handle);
         goto failure;
       }
       break;

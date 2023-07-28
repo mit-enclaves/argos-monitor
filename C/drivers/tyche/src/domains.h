@@ -136,5 +136,5 @@ int driver_switch_domain(domain_handle_t handle, void* args);
 /// Delete the domain and revoke the capabilities.
 int driver_delete_domain(domain_handle_t handle);
 /// For getting attestation of the domain
-int domain_attestation(domain_handle_t handle);
+int domain_attestation(domain_handle_t handle, msg_enclave_attestation_t* msg_att);
 #endif /*__SRC_DOMAINS_H__*/

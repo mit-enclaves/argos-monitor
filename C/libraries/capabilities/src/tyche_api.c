@@ -296,15 +296,23 @@ failure:
   return FAILURE;
 }
 
-int tyche_enclave_attestation(domain_id_t id) {
+typedef struct {
+  unsigned long long low;
+  unsigned long long high;
+}msg_attestation;
+
+int tyche_enclave_attestation(domain_id_t id, usize phys_off, void* p) {
   ERROR("Making tyche enclave attestation call");
   vmcall_frame_t frame = {
     .vmcall = TYCHE_ENCLAVE_ATTESTATION,
     .arg_1 = id,
+    .arg_2 = phys_off,
   };
   if (tyche_call(&frame) != SUCCESS) {
     goto failure;
   }
+  ((msg_attestation*)p)->low = frame.value_1;
+  ((msg_attestation*)p)->high = frame.value_2 ;
   return SUCCESS;
 failure:
   return FAILURE;
