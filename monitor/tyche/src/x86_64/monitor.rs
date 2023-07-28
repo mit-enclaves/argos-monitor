@@ -21,7 +21,7 @@ use super::init::NB_BOOTED_CORES;
 use crate::allocator::allocator;
 use crate::rcframe::{drop_rc, RCFrame, RCFramePool, EMPTY_RCFRAME};
 
-use attestation::{attestation_hash, hash_enclave};
+use attestation::{attestation_hash, hash_enclave, attestation_keys};
 use attestation::TycheHasher;
 
 // ————————————————————————— Statics & Backend Data ————————————————————————— //
