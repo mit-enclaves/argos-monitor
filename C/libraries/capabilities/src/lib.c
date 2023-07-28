@@ -856,7 +856,7 @@ failure:
   return FAILURE;
 }
 
-int get_attestation(domain_id_t id) {
+int get_attestation(domain_id_t id, usize phys_off, void* msg_att) {
   child_domain_t *child = NULL;
 
   DEBUG("start");
@@ -868,7 +868,7 @@ int get_attestation(domain_id_t id) {
   }
 
   ERROR("Making tyche_enclave att call %lld", id);
-  if(tyche_enclave_attestation(child->management->local_id)!= SUCCESS) {
+  if(tyche_enclave_attestation(child->management->local_id, phys_off, msg_att)!= SUCCESS) {
     ERROR("Tyche enclave attestation error");
     goto failure;
   }
