@@ -301,12 +301,13 @@ typedef struct {
   unsigned long long high;
 }msg_attestation;
 
-int tyche_enclave_attestation(domain_id_t id, usize phys_off, void* p) {
+int tyche_enclave_attestation(domain_id_t id, usize phys_off, usize nonce, void* p) {
   ERROR("Making tyche enclave attestation call");
   vmcall_frame_t frame = {
     .vmcall = TYCHE_ENCLAVE_ATTESTATION,
     .arg_1 = id,
     .arg_2 = phys_off,
+    .arg_3 = nonce,
   };
   if (tyche_call(&frame) != SUCCESS) {
     goto failure;

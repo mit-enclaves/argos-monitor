@@ -1,5 +1,6 @@
 //! Architecture specific monitor state, independant of the CapaEngine.
 
+
 use capa_engine::config::{NB_CORES, NB_DOMAINS};
 use capa_engine::{
     permission, AccessRights, Bitmaps, Buffer, CapaEngine, CapaError, CapaInfo, Domain, GenArena,
@@ -21,9 +22,10 @@ use super::init::NB_BOOTED_CORES;
 use crate::allocator::allocator;
 use crate::rcframe::{drop_rc, RCFrame, RCFramePool, EMPTY_RCFRAME};
 
-use attestation::{attestation_hash, hash_enclave, attestation_keys};
+use attestation::{attestation_hash, signature::attestation_signing};
 use attestation::TycheHasher;
-
+use attestation::signature::attestation_signing::get_attestation_keys;
+use attestation::signature::{EnclaveReport, ATTESTATION_DATA_SZ, DEVICE_PRIVATE};
 // ————————————————————————— Statics & Backend Data ————————————————————————— //
 
 static CAPA_ENGINE: Mutex<CapaEngine> = Mutex::new(CapaEngine::new());
@@ -393,20 +395,37 @@ pub fn do_debug() {
     }
 }
 
+fn copy_array(dst : &mut [u8], src : &[u8], index : usize) {
+    let mut ind_help = index;
+    for x in src {
+        dst[ind_help] = *x;
+        ind_help+=1;
+    }
+}
+
 pub fn do_enclave_attestation(
     current: Handle<Domain>,
     domain: LocalCapa,
-) -> hash_enclave {
+    poffset : usize, 
+    nonce : usize
+) -> Option<EnclaveReport> {
     let core = cpuid();
-    let mut engine = CAPA_ENGINE.lock();
+    let engine = CAPA_ENGINE.lock();
     if let Ok(domain_capa) = engine.get_domain_capa(current, domain) {
-        engine[domain_capa].get_hash()
-    }
+        let enc_hash = engine[domain_capa].get_hash();
+        let mut sign_data : [u8;ATTESTATION_DATA_SZ] = [0;ATTESTATION_DATA_SZ];
+        enc_hash.to_byte_arr(& mut sign_data, 0);
+        copy_array(& mut sign_data, &usize::to_le_bytes(poffset), enc_hash.bytes_size() as usize);
+        let (pb_key, priv_key) = get_attestation_keys();
+        let signed_enc_data = attestation_signing::sign_attestation_data(&sign_data, priv_key);
+        let signed_att_key = attestation_signing::sign_by_device(&u128::to_le_bytes(pb_key), DEVICE_PRIVATE);
+        Some(EnclaveReport{
+            signed_attestation_key : signed_att_key,
+            signed_enclave_data : signed_enc_data
+        })
+    }   
     else {
-        hash_enclave {
-            low : 0,
-            high : 0
-        }
+        None
     }
 }
 

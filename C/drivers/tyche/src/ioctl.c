@@ -246,6 +246,13 @@ long tyche_ioctl(struct file* handle, unsigned int cmd, unsigned long arg)
       }
       break;
     case TYCHE_ENCLAVE_ATTESTATION:
+      if (copy_from_user(
+            &msg_attestation,
+            (msg_enclave_attestation_t*) arg,
+            sizeof(msg_enclave_attestation_t))) {
+        ERROR("Unable to copy perm arguments from user.");
+        goto failure;
+      }
       ERROR("In ioctl driver for tyche enclave call");
       if(domain_attestation(handle, &msg_attestation) != SUCCESS) {
         ERROR("Unable to get enclave attestation %p", handle);
