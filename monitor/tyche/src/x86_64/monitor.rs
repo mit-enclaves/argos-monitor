@@ -22,9 +22,9 @@ use super::init::NB_BOOTED_CORES;
 use crate::allocator::allocator;
 use crate::rcframe::{drop_rc, RCFrame, RCFramePool, EMPTY_RCFRAME};
 
-use attestation::{attestation_hash, signature::attestation_signing};
-use attestation::TycheHasher;
-use attestation::signature::attestation_signing::get_attestation_keys;
+use attestation::{hashing, signature};
+use hashing::TycheHasher;
+use attestation::signature::{get_attestation_keys, MAX_ATTESTATION_DATA_SZ};
 use attestation::signature::{EnclaveReport, ATTESTATION_DATA_SZ, DEVICE_PRIVATE};
 // ————————————————————————— Statics & Backend Data ————————————————————————— //
 
@@ -297,6 +297,7 @@ pub fn do_seal(current: Handle<Domain>, domain: LocalCapa) -> Result<LocalCapa, 
     }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     let capa = engine.seal(current, core, domain)?;
 =======
     /*let new_domain = engine
@@ -311,6 +312,8 @@ pub fn do_seal(current: Handle<Domain>, domain: LocalCapa) -> Result<LocalCapa, 
     drop_rc(&mut guard, context.vmcs);
     context.vmcs = Handle::new_invalid();*/
 >>>>>>> Refactored code to be in sync with Charly comments he made to move hashing outside of capa engine
+=======
+>>>>>>> Few refactors, attestation should be very independent of signing, next thing is to implement something there
     apply_updates(&mut engine);
     Ok(capa)
 }
@@ -403,22 +406,35 @@ fn copy_array(dst : &mut [u8], src : &[u8], index : usize) {
     }
 }
 
+fn fill_sign_array(start : usize, index : & mut usize, arr : & mut [u8], tokens : usize) {
+    let mut addr = start;
+    let mut toks = tokens;
+    while toks > 0 {
+        unsafe {
+            arr[*index] = *(addr as * const u8);
+        }
+        *index = *index + 1;
+        addr+=1;
+        toks-=1;
+    }
+}
+
 pub fn do_enclave_attestation(
     current: Handle<Domain>,
     domain: LocalCapa,
-    poffset : usize, 
-    nonce : usize
+    poffset : usize,
+    nonce : usize,
 ) -> Option<EnclaveReport> {
-    let core = cpuid();
-    let engine = CAPA_ENGINE.lock();
+    let mut engine = CAPA_ENGINE.lock();
     if let Ok(domain_capa) = engine.get_domain_capa(current, domain) {
         let enc_hash = engine[domain_capa].get_hash();
         let mut sign_data : [u8;ATTESTATION_DATA_SZ] = [0;ATTESTATION_DATA_SZ];
         enc_hash.to_byte_arr(& mut sign_data, 0);
         copy_array(& mut sign_data, &usize::to_le_bytes(poffset), enc_hash.bytes_size() as usize);
+        
         let (pb_key, priv_key) = get_attestation_keys();
-        let signed_enc_data = attestation_signing::sign_attestation_data(&sign_data, priv_key);
-        let signed_att_key = attestation_signing::sign_by_device(&u128::to_le_bytes(pb_key), DEVICE_PRIVATE);
+        let signed_enc_data = signature::sign_attestation_data(&sign_data, priv_key);
+        let signed_att_key = signature::sign_by_device(&u128::to_le_bytes(pb_key), DEVICE_PRIVATE);
         Some(EnclaveReport{
             signed_attestation_key : signed_att_key,
             signed_enclave_data : signed_enc_data
@@ -707,30 +723,30 @@ unsafe fn free_ept(ept: HostPhysAddr, allocator: &impl FrameAllocator) {
 fn hash_access_right(hasher : & mut TycheHasher, access_rights : u8, mask : u8){
     if access_rights & mask != 0 {
         log::trace!("1");
-        attestation_hash::hash_segment(hasher, &u8::to_le_bytes(1 as u8));
+        hashing::hash_segment(hasher, &u8::to_le_bytes(1 as u8));
     }
     else {
         log::trace!("0");
-        attestation_hash::hash_segment(hasher, &u8::to_le_bytes(0 as u8));
+        hashing::hash_segment(hasher, &u8::to_le_bytes(0 as u8));
     }
 }
 
 fn hash_capa_info(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, CapaEngine>, domain : Handle<Domain>) {
     let domain_id = engine[domain].id();
-    attestation_hash::hash_segment(hasher, &(usize::to_le_bytes(domain_id)));
+    hashing::hash_segment(hasher, &(usize::to_le_bytes(domain_id)));
     log::trace!("Domain id {:#x}", domain_id);
 
     let mut next_capa = NextCapaToken::new();
     while let Some((info, next_next_capa)) = engine.enumerate(domain, next_capa) {
         next_capa = next_next_capa;
         match info {
-            CapaInfo::Region {start , end, active : _, confidential,ops} => {
+            CapaInfo::Region {start , end, active , confidential,ops} => {
                 log::trace!("Capa info start {:#x}", start);
                 log::trace!("Capa info end {:#x}", end);
-                if ops.contains(MemOps::HASH) {
+                if ops.contains(MemOps::HASH) && active {
                     log::trace!("Hashing it");
-                    attestation_hash::hash_segment(hasher, &(usize::to_le_bytes(start)));
-                    attestation_hash::hash_segment(hasher, &(usize::to_le_bytes(end)));
+                    hashing::hash_segment(hasher, &(usize::to_le_bytes(start)));
+                    hashing::hash_segment(hasher, &(usize::to_le_bytes(end)));
                     let access_rights = ops.bits();
                     log::trace!("Attestation right");
                     hash_access_right(hasher, access_rights, MemOps::HASH.bits());
@@ -744,7 +760,7 @@ fn hash_capa_info(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, Capa
                     //hash conf/shared info
                     let conf_info = if confidential { 1 as u8}  else {0 as u8}; 
                     log::trace!("Conf info {:#x}", conf_info);
-                    attestation_hash::hash_segment(hasher, &(u8::to_le_bytes(conf_info)));
+                    hashing::hash_segment(hasher, &(u8::to_le_bytes(conf_info)));
                 
                     //hashing access rights
                     let mut addr = start;
@@ -758,7 +774,7 @@ fn hash_capa_info(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, Capa
                             byte_data = *(addr as * const u8);
                         }
                         let byte_arr : [u8;1] = [byte_data];
-                        attestation_hash::hash_segment(hasher, &byte_arr);
+                        hashing::hash_segment(hasher, &byte_arr);
                         addr = addr + 1;
                     }
                 }
@@ -769,14 +785,15 @@ fn hash_capa_info(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, Capa
     }
 }
 
+
 fn calculate_attestation_hash(engine : & mut MutexGuard<'_, CapaEngine>, domain : Handle<Domain>) {
-    let mut hasher = attestation_hash::get_hasher();
+    let mut hasher = hashing::get_hasher();
     
     // hash_segment_data(&mut hasher, engine, domain);
     hash_capa_info(&mut hasher, engine, domain);
 
     log::trace!("Finished calculating the hash!");
-    engine.set_hash(domain, attestation_hash::get_hash(& mut hasher));
+    engine.set_hash(domain, hashing::get_hash(& mut hasher));
 }
 
 // ———————————————————————————————— Display ————————————————————————————————— //
