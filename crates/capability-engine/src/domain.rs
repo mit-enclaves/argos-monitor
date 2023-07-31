@@ -1,4 +1,4 @@
-use attestation::hash_enclave;
+use attestation::hashing::HashEnclave;
 
 use crate::capa::{Capa, IntoCapa};
 use crate::config::{NB_CAPAS_PER_DOMAIN, NB_DOMAINS};
@@ -167,7 +167,7 @@ pub struct Domain {
     /// Is the domain sealed?
     is_sealed: bool,
     /// attestation hash (type of it ?)
-    attestation_hash : Option<hash_enclave>,
+    attestation_hash : Option<HashEnclave>,
 }
 
 impl Domain {
@@ -315,16 +315,16 @@ impl Domain {
         }
     }
 
-    pub fn set_hash(& mut self, hash : hash_enclave) {
+    pub fn set_hash(& mut self, hash : HashEnclave) {
         self.attestation_hash = Some(hash);
     }
 
-    pub fn get_hash(&self) -> hash_enclave {
+    pub fn get_hash(&self) -> HashEnclave {
         if let Some(he) = &self.attestation_hash {
             *he
         }
         else {
-            hash_enclave {
+            HashEnclave {
                 low : 0,
                 high : 0
             }
