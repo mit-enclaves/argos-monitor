@@ -264,6 +264,7 @@ fn handle_exit(
                         vs.vcpu.set(Register::Rsi, report.signed_enclave_data);
                     }
                     else {
+                        log::trace!("Attestation error");
                         vs.vcpu.set(Register::Rax, 1 as u64);
                     }
                     vs.vcpu.next_instruction()?;
