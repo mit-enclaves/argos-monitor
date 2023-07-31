@@ -130,3 +130,6 @@ typedef struct {
   /// The domain's switch type.
   switch_save_t switch_type;
 } tyche_domain_t;
+
+
+typedef unsigned long long nonce_t;

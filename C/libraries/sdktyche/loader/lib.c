@@ -513,14 +513,14 @@ failure:
   return FAILURE;
 }
 
-int sdk_domain_attestation(tyche_domain_t* domain) {
+int sdk_domain_attestation(tyche_domain_t* domain, nonce_t nonce) {
   if (domain == NULL) {
     ERROR("The provided domain is null.");
     goto failure;
   }
 
   ERROR("Making ioctl wrapper call");
-  if(ioctl_enclave_attestation(domain->handle) != SUCCESS) {
+  if(ioctl_enclave_attestation(domain->handle, nonce) != SUCCESS) {
     ERROR("Unable to get attestation of the enclave");
     goto failure;
   }

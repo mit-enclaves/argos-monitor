@@ -155,8 +155,8 @@ failure:
   return FAILURE;
 }
 
-int ioctl_enclave_attestation(handle_t handle) {
-  msg_enclave_attestation_t msg = {0,0};
+int ioctl_enclave_attestation(handle_t handle, nonce_t nonce) {
+  msg_enclave_attestation_t msg = {nonce,0};
   ERROR("Making ioctl call");
   if(ioctl(handle, TYCHE_ENCLAVE_ATTESTATION, &msg) != SUCCESS) {
     ERROR("ioctl failed to get attestation %lld", handle);
