@@ -256,26 +256,15 @@ fn handle_exit(
                     log::trace!("Get attestation!");
                     log::trace!("arg1 {:#x}", arg_1);
                     log::trace!("arg2 {:#x}", arg_2);
-                    let enclave_hash = monitor::do_enclave_attestation(*domain, LocalCapa::new(arg_1));
-                    log::trace!("{:#x}", enclave_hash.high);
-                    log::trace!("{:#x}", enclave_hash.low);
-                    vs.vcpu.set(Register::Rax, 0);
-                    vs.vcpu.set(Register::Rdi, (enclave_hash.low & ((1 << 64) - 1)) as u64);
-                    vs.vcpu.set(Register::Rsi, (enclave_hash.low >> 64) as u64);
-                    vs.vcpu.set(Register::Rdx, (enclave_hash.high & ((1 << 64) - 1)) as u64);
-                    vs.vcpu.set(Register::Rcx, (enclave_hash.high >> 64) as u64);
-                    vs.vcpu.next_instruction()?;
-                    Ok(HandlerResult::Resume)
-                }
-                calls::GET_RSA_KEY=> {
-                    log::trace!("Get rsa key!");
-                    log::warn!("Not implemented!");
-                    vs.vcpu.next_instruction()?;
-                    Ok(HandlerResult::Resume)
-                }
-                calls::CHALLENGE => {
-                    log::trace!("Challenge!");
-                    log::warn!("Not implemented!");
+                    log::trace!("arg3 {:#x}", arg_3);
+                    if let Some(report) = monitor::do_enclave_attestation(*domain, LocalCapa::new(arg_1), arg_2, arg_3) {
+                        vs.vcpu.set(Register::Rax, 0 as u64);
+                        vs.vcpu.set(Register::Rdi, report.signed_attestation_key);
+                        vs.vcpu.set(Register::Rsi, report.signed_enclave_data);
+                    }
+                    else {
+                        vs.vcpu.set(Register::Rax, 1 as u64);
+                    }
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }

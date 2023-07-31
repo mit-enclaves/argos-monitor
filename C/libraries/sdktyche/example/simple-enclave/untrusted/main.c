@@ -98,7 +98,8 @@ int main(int argc, char *argv[]) {
     goto failure;
   }
 
-  sdk_domain_attestation(enclave);
+  unsigned long long nonce = 0x1234;
+  sdk_domain_attestation(enclave, nonce);
 
   LOG("Calling the enclave, good luck!");
 
