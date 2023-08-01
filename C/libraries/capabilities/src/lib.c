@@ -738,7 +738,7 @@ failure:
 }
 
 // TODO nothing thread safe in this implementation for the moment.
-int switch_domain(domain_id_t id, void *args) {
+int switch_domain(domain_id_t id, void *args, transition_cli_t tr) {
   child_domain_t *child = NULL;
   transition_t *wrapper = NULL;
   DEBUG("start");
@@ -775,7 +775,7 @@ int switch_domain(domain_id_t id, void *args) {
   DEBUG("Found a handle for domain %lld, id %lld", id,
         wrapper->transition->local_id);
 
-  if (tyche_switch(&(wrapper->transition->local_id), args) !=
+  if (tyche_switch(&(wrapper->transition->local_id), args, tr) !=
       SUCCESS) {
     ERROR("failed to perform a switch on capa %lld",
           wrapper->transition->local_id);

@@ -33,6 +33,5 @@ typedef struct idtr_t {
 void idt_init(frame_t* frame);
 void save_idt(idtr_t* to_save);
 void restore_idt(idtr_t* to_restore);
-void exception_handler(void);
-void divide_zero_handler(void);
+void exception_handler(int sig);
 #endif

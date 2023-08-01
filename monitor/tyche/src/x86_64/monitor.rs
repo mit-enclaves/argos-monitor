@@ -10,7 +10,7 @@ use mmu::{EptMapper, FrameAllocator};
 use spin::{Mutex, MutexGuard};
 use stage_two_abi::Manifest;
 use utils::{GuestPhysAddr, HostPhysAddr};
-use vmx::bitmaps::{EptEntryFlags, ExceptionBitmap};
+use vmx::bitmaps::{EptEntryFlags, ExceptionBitmap, ExitControls, PinbasedControls};
 use vmx::errors::Trapnr;
 use vmx::msr::IA32_LSTAR;
 use vmx::{ActiveVmcs, ControlRegister, Register, VmExitInterrupt, REGFILE_SIZE};
@@ -536,6 +536,32 @@ pub fn apply_core_updates(
                 //future.
                 vcpu.set_exception_bitmap(ExceptionBitmap::from_bits_truncate(value))
                     .expect("Error setting the exception bitmap");
+                // Intercept external interrupts
+                // TODO this is debugging for now.
+                // If there is anything that needs to trap, trap everything.
+                if value != 0 {
+                    let value = vcpu.get_pin_based_ctrls().expect("Unable to read PinBased");
+                    vcpu.set_pin_based_ctrls(value | PinbasedControls::EXTERNAL_INTERRUPT_EXITING)
+                        .expect("Unable to turn on external_interrupt.");
+                    let exit_controls = vcpu
+                        .get_vm_exit_ctrls()
+                        .expect("Unable to read exit controls");
+                    vcpu.set_vm_exit_ctrls(
+                        exit_controls.union(ExitControls::ACK_INTERRUPT_ON_EXIT),
+                    )
+                    .expect("Unable to set acknowledgement of interrupts on vm exit");
+                } else {
+                    let mut value = vcpu.get_pin_based_ctrls().expect("Unable to read PinBased");
+                    value.remove(PinbasedControls::EXTERNAL_INTERRUPT_EXITING);
+                    vcpu.set_pin_based_ctrls(value)
+                        .expect("Unable to turn off external_interrupt.");
+                    let mut exit_controls = vcpu
+                        .get_vm_exit_ctrls()
+                        .expect("Unable to read exit controls");
+                    exit_controls.remove(ExitControls::ACK_INTERRUPT_ON_EXIT);
+                    vcpu.set_vm_exit_ctrls(exit_controls)
+                        .expect("Unable to set the exit controls");
+                }
             }
         }
     }

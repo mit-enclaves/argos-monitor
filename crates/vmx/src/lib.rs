@@ -1052,6 +1052,11 @@ impl<'vmx> core::fmt::Debug for ActiveVmcs<'vmx> {
         )?;
         writeln!(
             f,
+            "        rflags: {:#x}",
+            self.get_nat(fields::GuestStateNat::Rflags).unwrap()
+        )?;
+        writeln!(
+            f,
             "        VM Entry Controls: {:?}",
             self.get_vm_entry_cntrls().ok()
         )?;

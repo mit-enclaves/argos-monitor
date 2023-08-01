@@ -465,14 +465,16 @@ failure:
 int driver_switch_domain(domain_handle_t handle, void* args)
 {
   driver_domain_t* dom = NULL;
+  transition_cli_t trans = DISABLE_INTERRUPTS; 
   dom = find_domain(handle);
   if (dom == NULL) {
     ERROR("Unable to find the domain %p", handle);
     goto failure;
   }
+  trans = (dom->switch_type == SharedVCPU)? DISABLE_INTERRUPTS: ENABLE_INTERRUPTS;
   DEBUG("About to try to switch to domain %lld| dom %lld",
       dom->domain_id, dom->handle);
-  if (switch_domain(dom->domain_id, args) != SUCCESS) {
+  if (switch_domain(dom->domain_id, args, trans) != SUCCESS) {
     ERROR("Unable to switch to domain %p", dom->handle);
     goto failure;
   }

@@ -202,6 +202,12 @@ pub struct VmExitInterrupt {
 /// @warn apparently setting the deliver bit results in invalid ctrls fields
 /// upon a vmresume.
 impl VmExitInterrupt {
+    pub fn new_empty() -> Self {
+        Self {
+            _raw: 0,
+            _error_code: 0,
+        }
+    }
     pub fn from_u32(value: u32) -> Self {
         Self {
             _raw: value,
@@ -228,6 +234,11 @@ impl VmExitInterrupt {
     /// Returns vector of interrupt or exception: bits 0:7.
     pub fn vector(&self) -> u8 {
         self._raw as u8
+    }
+
+    pub fn set_vector(&mut self, vec: u8) {
+        let mask: u32 = 0b1111_1111;
+        self._raw = (self._raw & !(mask)) | (vec as u32);
     }
 
     /// Returns Interruption type: bits 8:10

@@ -132,6 +132,13 @@ typedef enum transition_lock_t {
   TRANSITION_LOCKED = 1,
 } transition_lock_t;
 
+/// Allows to pick whether we want interrupt disabled or not.
+/// Eventually, this should be taken care of by interrupt routing automatically.
+typedef enum transition_cli_t {
+  DISABLE_INTERRUPTS = 0,
+  ENABLE_INTERRUPTS = 1,
+} transition_cli_t;
+
 /// Wrapper around transition handles.
 /// This allows to add a lock.
 typedef struct transition_t {

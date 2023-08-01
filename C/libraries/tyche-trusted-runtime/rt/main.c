@@ -18,21 +18,32 @@ void trusted_entry(frame_t* frame)
   idtr_t saved_idt;
   uint64_t sys_handler; 
   uint16_t ds, es, ss;
+  int* shared = (int*) get_default_shared_buffer();
+  *shared = 555;
 
   save_gdt(&saved_gdt);
+
+  *shared = 444;
   //save_segments(&ds, &es, &ss); // TODO still have a problem when restoring.
   save_idt(&saved_idt);
+
+  *shared = 333;
   save_syscall(&sys_handler);
+
+  *shared = 222;
 
   //Set up the gdt
   gdt_assemble();
+   *shared = 111;
   //Set up idt handler.
   idt_init(frame);
+
+  *shared = 1112;
   //Set up syscall handler.
   syscall_init();
-  //TODO call the user
+  //Mark the end of initialization.
+  *shared = 777;
 
-  // Dead code below 
   asm volatile (
       "sti\n\t"
       "mov $0, %%ebx\n\t"
@@ -40,7 +51,13 @@ void trusted_entry(frame_t* frame)
       :
       :
       :);
-
+/*  __asm__ volatile(
+      "sti\n\t"
+      "loop_start: jmp loop_start\n\t"
+      :
+      :
+      :);
+*/
   //asm volatile("cli\n\t" : : : );
 }
 

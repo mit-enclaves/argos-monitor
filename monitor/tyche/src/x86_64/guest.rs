@@ -416,6 +416,27 @@ fn handle_exit(
                 }
             }
         }
+        VmxExitReason::ExternalInterrupt => {
+            let to_inject = match vs.vcpu.interrupt_info() {
+                Ok(Some(value)) => value,
+                Err(e) => {
+                    log::error!("Error handling external interrupt: {:?}", e);
+                    return Ok(HandlerResult::Crash);
+                }
+                _ => {
+                    log::error!("Empty external interrupt, is ACK_INTERRUPT_ON_EXIT enabled in vcpu VM-exit controls? {:x?}", vs.vcpu);
+                    return Ok(HandlerResult::Crash);
+                }
+            };
+            log::info!("External interrupt {:?} -> {:x?}", vs.vcpu, to_inject);
+            match monitor::handle_trap(*domain, cpuid(), to_inject) {
+                Ok(()) => Ok(HandlerResult::Resume),
+                Err(e) => {
+                    log::error!("Okay it didn't work {:?}", e);
+                    Ok(HandlerResult::Crash)
+                }
+            }
+        }
         _ => {
             log::error!(
                 "Emulation is not yet implemented for exit reason: {:?}",

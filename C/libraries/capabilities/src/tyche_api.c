@@ -296,7 +296,7 @@ failure:
   return FAILURE;
 }
 
-int tyche_switch(capa_index_t* transition_handle, void* args)
+int tyche_switch(capa_index_t* transition_handle, void* args, transition_cli_t tr)
 {
   usize result = FAILURE;
   vmcall_frame_t frame = {
@@ -312,47 +312,50 @@ int tyche_switch(capa_index_t* transition_handle, void* args)
   DEBUG("About to switch from the capability lib: handle %lld", transition_handle);
 
 #if defined(CONFIG_X86) || defined(__x86_64__)
-  // TODO We must save some registers on the stack.
-  asm volatile(
-    // Saving registers.
-    "pushq %%rbp\n\t"
-    "pushq %%rbx\n\t"
-    "pushq %%rcx\n\t"
-    "pushq %%rdx\n\t"
-    "pushq %%r10\n\t"
-    "pushq %%r11\n\t"
-    "pushq %%r12\n\t"
-    "pushq %%r13\n\t"
-    "pushq %%r14\n\t"
-    "pushq %%r15\n\t"
-    "pushfq\n\t"
-    "cli \n\t"
-    "movq %2, %%rax\n\t"
-    "movq %3, %%rdi\n\t"
-    "movq %4, %%rsi\n\t"
-    "movq %5, %%r11\n\t"
-    "vmcall\n\t"
-    // Restoring registers first, otherwise gcc uses them.
-    "popfq\n\t"
-    "popq %%r15\n\t"
-    "popq %%r14\n\t"
-    "popq %%r13\n\t"
-    "popq %%r12\n\t"
-    "popq %%r11\n\t"
-    "popq %%r10\n\t"
-    "popq %%rdx\n\t"
-    "popq %%rcx\n\t"
-    "popq %%rbx\n\t"
-    "popq %%rbp\n\t"
-    // Get the result from the call.
-    "movq %%rax, %0\n\t"
-    "movq %%rdi, %1\n\t"
-    : "=rm" (result), "=rm" (frame.value_1)
-    : "rm" (frame.vmcall), "rm" (frame.arg_1), "rm" (frame.arg_2), "rm" (frame.arg_3)
-    : "rax", "rdi", "rsi", "r11", "memory");
+  if (tr == DISABLE_INTERRUPTS) {
+   asm volatile(
+     // Saving registers.
+     "pushq %%rbp\n\t"
+     "pushq %%rbx\n\t"
+     "pushq %%rcx\n\t"
+     "pushq %%rdx\n\t"
+     "pushq %%r10\n\t"
+     "pushq %%r11\n\t"
+     "pushq %%r12\n\t"
+     "pushq %%r13\n\t"
+     "pushq %%r14\n\t"
+     "pushq %%r15\n\t"
+     "pushfq\n\t"
+     "cli \n\t"
+     "movq %2, %%rax\n\t"
+     "movq %3, %%rdi\n\t"
+     "movq %4, %%rsi\n\t"
+     "movq %5, %%r11\n\t"
+     "vmcall\n\t"
+     // Restoring registers first, otherwise gcc uses them.
+     "popfq\n\t"
+     "popq %%r15\n\t"
+     "popq %%r14\n\t"
+     "popq %%r13\n\t"
+     "popq %%r12\n\t"
+     "popq %%r11\n\t"
+     "popq %%r10\n\t"
+     "popq %%rdx\n\t"
+     "popq %%rcx\n\t"
+     "popq %%rbx\n\t"
+     "popq %%rbp\n\t"
+     // Get the result from the call.
+     "movq %%rax, %0\n\t"
+     "movq %%rdi, %1\n\t"
+     : "=rm" (result), "=rm" (frame.value_1)
+     : "rm" (frame.vmcall), "rm" (frame.arg_1), "rm" (frame.arg_2), "rm" (frame.arg_3)
+     : "rax", "rdi", "rsi", "r11", "memory");
 
   // Set the return handle as the one used to do the switch got consummed.
   *transition_handle = frame.value_1;
+  } else {
+    result = tyche_call(&frame);
+  }
 #elif defined(CONFIG_RISCV) || defined(__riscv)
   //TODO(neelu)
   TEST(0);

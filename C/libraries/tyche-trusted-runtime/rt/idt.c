@@ -47,12 +47,10 @@ void idt_init(frame_t* frame)
   idtr.limit = (uint16_t) (sizeof(idt_desc_t) * IDT_MAX_DESCRIPTORS -1);
   
   
-  // Special handler for divide by zero.
-  idt_set_descriptor(0, (uintptr_t) divide_zero_handler, 0x8E, 0);
-
-  for (uint8_t vector = 1; vector < 32; vector++) {
-    idt_set_descriptor(vector, (uintptr_t) exception_handler, 0x8E, 0); 
+  for (uint16_t vector = 0; vector < 256; vector++) {
+    idt_set_descriptor((uint8_t)vector, (uintptr_t) isr_stub_table[vector], 0x8E, 0); 
   }
+
   __asm__ volatile("lidt %0" : : "memory"(idtr)); // load the new IDT
   //TODO reenable when we want to have interrupts
   //__asm__ volatile("sti");    
@@ -60,14 +58,14 @@ void idt_init(frame_t* frame)
  
 // ———————————————————————————————— Handlers ———————————————————————————————— //
 __attribute__((noreturn))
-void exception_handler() {
-    __asm__ volatile ("cli; hlt");
-}
-
-__attribute__((noreturn))
-void divide_zero_handler() {
-  // Let's just return to the original domain.
+void exception_handler(int sig) {
   int* shared = (int*) get_default_shared_buffer();
-  *shared = 666;
+  if (sig == 0) {
+    *shared = 666;
+  } else {
+    //*shared = sig;
+   __asm__ volatile("cli; hlt");
+  }
+  // Let's not do a return from interrupt.
   gate_call(ret_handle);
 }
