@@ -255,9 +255,7 @@ fn handle_exit(
                 }
                 calls::ENCLAVE_ATTESTATION => {
                     log::trace!("Get attestation!");
-                    log::trace!("Current domain {:#x}", (*domain).idx());
-                    log::trace!("arg1 - nonce {:#x}", arg_1);
-                    if let Some(report) = monitor::do_enclave_attestation(*domain,  arg_1) {
+                    if let Some(report) = monitor::do_domain_attestation(*domain,  arg_1) {
                         vs.vcpu.set(Register::Rax, 0 as u64);
                         vs.vcpu.set(Register::Rdi, (report.hash_low & ((1 << 64) - 1)) as u64);
                         vs.vcpu.set(Register::Rsi, (report.hash_low >> 64) as u64);
