@@ -290,7 +290,7 @@ pub fn do_seal(current: Handle<Domain>, domain: LocalCapa) -> Result<LocalCapa, 
     let capa = engine.seal(current, core, domain)?;
 
     //similar to debug, testing purpose
-    dummy_debug(& mut engine);
+    // dummy_debug(& mut engine);
 
     if let Ok(domain_capa) = engine.get_domain_capa(current, domain) {
         calculate_attestation_hash(& mut engine, domain_capa);
@@ -702,11 +702,9 @@ unsafe fn free_ept(ept: HostPhysAddr, allocator: &impl FrameAllocator) {
 
 fn hash_access_right(hasher : & mut TycheHasher, access_rights : u8, mask : u8){
     if access_rights & mask != 0 {
-        log::trace!("1");
         hashing::hash_segment(hasher, &u8::to_le_bytes(1 as u8));
     }
     else {
-        log::trace!("0");
         hashing::hash_segment(hasher, &u8::to_le_bytes(0 as u8));
     }
 }

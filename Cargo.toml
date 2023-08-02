@@ -23,6 +23,7 @@ members = [
     "crates/arena",
     "crates/capability-engine",
     "crates/tychools",
+    "crates/forked_signature/rust-ed25519-compact",
     "crates/attestation",
     "boot_toolchain",
 ]
@@ -69,3 +70,6 @@ harness = false
 
 [profile.release]
 opt-level = "s"
+
+[profile.release.package.num-bigint-dig]
+opt-level = 3
