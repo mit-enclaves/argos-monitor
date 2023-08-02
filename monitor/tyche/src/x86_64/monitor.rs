@@ -406,43 +406,24 @@ fn copy_array(dst : &mut [u8], src : &[u8], index : usize) {
     }
 }
 
-fn fill_sign_array(start : usize, index : & mut usize, arr : & mut [u8], tokens : usize) {
-    let mut addr = start;
-    let mut toks = tokens;
-    while toks > 0 {
-        unsafe {
-            arr[*index] = *(addr as * const u8);
-        }
-        *index = *index + 1;
-        addr+=1;
-        toks-=1;
-    }
-}
-
 pub fn do_enclave_attestation(
     current: Handle<Domain>,
-    domain: LocalCapa,
-    poffset : usize,
     nonce : usize,
 ) -> Option<EnclaveReport> {
     let mut engine = CAPA_ENGINE.lock();
-    if let Ok(domain_capa) = engine.get_domain_capa(current, domain) {
-        let enc_hash = engine[domain_capa].get_hash();
-        let mut sign_data : [u8;ATTESTATION_DATA_SZ] = [0;ATTESTATION_DATA_SZ];
-        enc_hash.to_byte_arr(& mut sign_data, 0);
-        copy_array(& mut sign_data, &usize::to_le_bytes(poffset), enc_hash.bytes_size() as usize);
-        
-        let (pb_key, priv_key) = get_attestation_keys();
-        let signed_enc_data = signature::sign_attestation_data(&sign_data, priv_key);
-        let signed_att_key = signature::sign_by_device(&u128::to_le_bytes(pb_key), DEVICE_PRIVATE);
-        Some(EnclaveReport{
-            signed_attestation_key : signed_att_key,
-            signed_enclave_data : signed_enc_data
-        })
-    }   
-    else {
-        None
-    }
+    log::trace!("Current domain id {:#x}", engine[current].id());
+    let enc_hash = engine[current].get_hash();
+    let mut sign_data : [u8;ATTESTATION_DATA_SZ] = [0;ATTESTATION_DATA_SZ];
+    enc_hash.to_byte_arr(& mut sign_data, 0);
+    copy_array(& mut sign_data, &usize::to_le_bytes(nonce), enc_hash.bytes_size() as usize);
+    let (pb_key, priv_key) = get_attestation_keys();
+    let signed_enc_data = signature::sign_attestation_data(&sign_data, priv_key);
+    let signed_att_key = signature::sign_by_device(&u128::to_le_bytes(pb_key), DEVICE_PRIVATE);
+    Some(EnclaveReport{
+        hash_low : enc_hash.low,
+        hash_high : enc_hash.high, 
+        nonce : nonce as u64
+    })
 }
 
 // —————————————————————— Interrupt Handling functions —————————————————————— //

@@ -161,6 +161,7 @@ fn handle_exit(
                 calls::SEAL_DOMAIN => {
                     log::trace!("Seal Domain");
                     log::trace!("{:#x}", arg_1);
+                    log::trace!("Current domain {:#x}", (*domain).idx());
                     let capa =
                         monitor::do_seal(*domain, LocalCapa::new(arg_1))
                             .expect("TODO");
@@ -255,13 +256,15 @@ fn handle_exit(
                 }
                 calls::ENCLAVE_ATTESTATION => {
                     log::trace!("Get attestation!");
-                    log::trace!("arg1 {:#x}", arg_1);
-                    log::trace!("arg2 {:#x}", arg_2);
-                    log::trace!("arg3 {:#x}", arg_3);
-                    if let Some(report) = monitor::do_enclave_attestation(*domain, LocalCapa::new(arg_1), arg_2, arg_3) {
+                    log::trace!("Current domain {:#x}", (*domain).idx());
+                    log::trace!("arg1 - nonce {:#x}", arg_1);
+                    if let Some(report) = monitor::do_enclave_attestation(*domain,  arg_1) {
                         vs.vcpu.set(Register::Rax, 0 as u64);
-                        vs.vcpu.set(Register::Rdi, report.signed_attestation_key);
-                        vs.vcpu.set(Register::Rsi, report.signed_enclave_data);
+                        vs.vcpu.set(Register::Rdi, (report.hash_low & ((1 << 64) - 1)) as u64);
+                        vs.vcpu.set(Register::Rsi, (report.hash_low >> 64) as u64);
+                        vs.vcpu.set(Register::Rdx, (report.hash_high & ((1 << 64) - 1)) as u64);
+                        vs.vcpu.set(Register::Rcx, (report.hash_high >> 64) as u64);
+                        vs.vcpu.set(Register::R8, report.nonce);
                     }
                     else {
                         log::trace!("Attestation error");

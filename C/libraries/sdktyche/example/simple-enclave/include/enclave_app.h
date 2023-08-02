@@ -8,9 +8,20 @@ typedef struct {
   void* args;
 } config_t;
 
+typedef unsigned long long nonce_t;
+typedef unsigned long long phys_offset_t;
+typedef unsigned long long hash_part_t;
 /// Hello world argument.
 typedef struct {
   char reply[30];
+  nonce_t nonce;
+  nonce_t nonce_resp;
+  hash_part_t hash_low_low;
+  hash_part_t hash_low_high;
+  hash_part_t hash_high_low;
+  hash_part_t hash_high_high;
 } hello_world_t;
+
+
 
 #endif
