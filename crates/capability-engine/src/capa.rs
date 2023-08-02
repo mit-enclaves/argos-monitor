@@ -56,16 +56,12 @@ impl CapaInfo {
                 confidential,
                 ops,
             } => {
-                log::trace!("serialize start {:#x}", start);
-                log::trace!("serialize end {:#x}", end);
                 v1 = *start;
                 v2 = *end;
                 if *active {
-                    log::trace!("active");
                     flags |= 1 << 0;
                 }
                 if *confidential { 
-                    log::trace!("confidential");
                     flags |= 1 << 1;
                 }
                 flags |= ops.bits() << 2;

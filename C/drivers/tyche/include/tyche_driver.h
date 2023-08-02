@@ -74,11 +74,6 @@ typedef struct {
 typedef struct {
   usize value;
 } msg_set_perm_t;
-/// Structure to return attesation of the enclave
-typedef struct {
-  unsigned long long low;
-  unsigned long long high;
-} msg_enclave_attestation_t;
 
 // ———————————————————————————— Tyche IOCTL API ————————————————————————————— //
 // @deprecated, use open.
@@ -92,6 +87,5 @@ typedef struct {
 #define TYCHE_SET_PERM _IOWR('a', 'k', msg_set_perm_t)
 #define TYCHE_SET_SWITCH _IOWR('a', 'l', msg_set_perm_t)
 #define TYCHE_SET_ENTRY_POINT _IOWR('a', 'm', msg_entry_on_core_t*)
-#define TYCHE_ENCLAVE_ATTESTATION _IOR('a','n', msg_enclave_attestation_t*)
 
 #endif

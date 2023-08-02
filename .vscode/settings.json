@@ -1,6 +1,0 @@
-{
-    "files.associations": {
-        "enclave_loader.h": "c",
-        "common.h": "c"
-    }
-}

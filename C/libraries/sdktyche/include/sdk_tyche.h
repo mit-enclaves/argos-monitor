@@ -27,5 +27,3 @@ int sdk_call_domain(tyche_domain_t* domain, void* args);
 
 /// Delete the domain.
 int sdk_delete_domain(tyche_domain_t* domain);
-
-int sdk_domain_attestation(tyche_domain_t* domain, nonce_t nonce);

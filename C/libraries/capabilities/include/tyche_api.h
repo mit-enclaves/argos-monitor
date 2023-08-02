@@ -99,7 +99,4 @@ int tyche_revoke(capa_index_t id);
 int tyche_switch(capa_index_t* transition_handle, void* args);
 
 int tyche_duplicate(capa_index_t* new_capa, capa_index_t capa);
-
-int tyche_enclave_attestation(capa_index_t id, usize phys_off, usize nonce,void* msg);
-
 #endif

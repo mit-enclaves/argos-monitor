@@ -55,13 +55,19 @@ int hello_world()
   }
   LOG("First enclave message:\n%s", msg->reply);
 
-  // Do a second call to the enclave.
+  nonce_t nonce = 0x1234; //need a way to get this in a random way
+  msg->nonce = nonce;
+  LOG("Calling enclave to execute attestation");
   if (sdk_call_domain(enclave, NULL) != SUCCESS) {
     ERROR("Unable to call the enclave a second time %lld!", enclave->handle);
     goto failure;
   }
   LOG("Second enclave message:\n%s", msg->reply);
-  
+  LOG("Enclave hash_low_low %llx\n", msg->hash_low_low);
+  LOG("Enclave hash_low_high %llx\n", msg->hash_low_high);
+  LOG("Enclave hash_high_low %llx\n", msg->hash_high_low);
+  LOG("Enclave hash_high_high %llx\n", msg->hash_high_high);
+  LOG("Enclave nonce resp %llx\n", msg->nonce_resp);
   // Clean up.
   if (sdk_delete_domain(enclave) != SUCCESS) {
     ERROR("Unable to delete the enclave %lld", enclave->handle);
@@ -97,9 +103,6 @@ int main(int argc, char *argv[]) {
     ERROR("Unable to find the default shared region.");
     goto failure;
   }
-
-  unsigned long long nonce = 0x1234;
-  sdk_domain_attestation(enclave, nonce);
 
   LOG("Calling the enclave, good luck!");
 
