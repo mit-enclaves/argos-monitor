@@ -55,7 +55,9 @@ int hello_world()
   }
   LOG("First enclave message:\n%s", msg->reply);
 
-  nonce_t nonce = 0x1234; //need a way to get this in a random way
+  const nonce_t mod = (1e9 + 7);
+  nonce_t nonce = rand() % mod;
+  LOG("Nonce sent by the client is %llx", nonce);
   msg->nonce = nonce;
   LOG("Calling enclave to execute attestation");
   if (sdk_call_domain(enclave, NULL) != SUCCESS) {
