@@ -517,29 +517,3 @@ delete_dom_struct:
 failure:
   return FAILURE;
 }
-
-int domain_attestation(domain_handle_t handle, msg_enclave_attestation_t* msg_att) {
-  driver_domain_t* domain = NULL;
-  domain = find_domain(handle);
-  if (domain == NULL) {
-    ERROR("Unable to find the enclave %p", handle);
-    goto failure;
-  }
-
-  ERROR("Getting the attestation for the enclave");
-  ERROR("Trying to get the attestation for the domain %lld for enclave %p",
-        domain->domain_id, handle);
-  //low field was used for nonce
-  if(get_attestation(domain->domain_id, domain->phys_start, msg_att->low, msg_att) != SUCCESS) {
-    ERROR("Unable to get the attestation for the domain %lld for enclave %p",
-        domain->domain_id, handle);
-    goto failure;
-  }
-
-  ERROR("msg->high 0x%llx", msg_att->high);
-  ERROR("msg->low 0x%llx", msg_att->low);
-
-  return SUCCESS;
-failure:
-  return FAILURE;
-}
