@@ -159,8 +159,6 @@ fn handle_exit(
                 }
                 calls::SEAL_DOMAIN => {
                     log::trace!("Seal Domain");
-                    log::trace!("{:#x}", arg_1);
-                    log::trace!("Current domain {:#x}", (*domain).idx());
                     let capa =
                         monitor::do_seal(*domain, LocalCapa::new(arg_1))
                             .expect("TODO");
