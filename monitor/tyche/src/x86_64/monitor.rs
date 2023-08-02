@@ -406,12 +406,11 @@ fn copy_array(dst : &mut [u8], src : &[u8], index : usize) {
     }
 }
 
-pub fn do_enclave_attestation(
+pub fn do_domain_attestation(
     current: Handle<Domain>,
     nonce : usize,
 ) -> Option<EnclaveReport> {
     let mut engine = CAPA_ENGINE.lock();
-    log::trace!("Current domain id {:#x}", engine[current].id());
     let enc_hash = engine[current].get_hash();
     let mut sign_data : [u8;ATTESTATION_DATA_SZ] = [0;ATTESTATION_DATA_SZ];
     enc_hash.to_byte_arr(& mut sign_data, 0);
@@ -722,33 +721,22 @@ fn hash_capa_info(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, Capa
         next_capa = next_next_capa;
         match info {
             CapaInfo::Region {start , end, active , confidential,ops} => {
-                log::trace!("Capa info start {:#x}", start);
-                log::trace!("Capa info end {:#x}", end);
                 if ops.contains(MemOps::HASH) && active {
-                    log::trace!("Hashing it");
                     hashing::hash_segment(hasher, &(usize::to_le_bytes(start)));
                     hashing::hash_segment(hasher, &(usize::to_le_bytes(end)));
                     let access_rights = ops.bits();
-                    log::trace!("Attestation right");
                     hash_access_right(hasher, access_rights, MemOps::HASH.bits());
-                    log::trace!("X right");
                     hash_access_right(hasher, access_rights, MemOps::EXEC.bits());
-                    log::trace!("W right");
                     hash_access_right(hasher, access_rights, MemOps::WRITE.bits());
-                    log::trace!("R right");
                     hash_access_right(hasher, access_rights, MemOps::READ.bits());
                      
                     //hash conf/shared info
                     let conf_info = if confidential { 1 as u8}  else {0 as u8}; 
-                    log::trace!("Conf info {:#x}", conf_info);
                     hashing::hash_segment(hasher, &(u8::to_le_bytes(conf_info)));
                 
                     //hashing access rights
                     let mut addr = start;
                     let addr_end = end;
-                    log::trace!("Hashing region of enclave start addr: {:#x}", addr);
-                    log::trace!("Hashing region of enclave end addr: {:#x}", addr_end);
-                    log::trace!("Hashing region of enclave sz: {:#x}", addr_end - addr);
                     while addr < addr_end {
                         let mut byte_data : u8= 0;
                         unsafe {
