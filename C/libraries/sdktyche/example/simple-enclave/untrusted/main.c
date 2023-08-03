@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
 #include <signal.h>
@@ -17,6 +18,9 @@ usize has_faulted = FAILURE;
 tyche_domain_t* enclave = NULL;
 
 config_t* shared = NULL;
+
+FILE* file_tychools;
+FILE* tychools_response;
 
 // ———————————————————————————————— Helpers ————————————————————————————————— //
 
@@ -40,6 +44,16 @@ failure:
 }
 
 // ————————————————————————— Application functions —————————————————————————— //
+
+void run_commands(nonce_t nonce, unsigned long long offset) {
+  // system("pwd");
+  // system("cd crates/tychools");
+  // system("pwd");
+  char cmd[256];
+  sprintf(cmd, "cd crates/tychools;cargo run attestation --src_att=../../tychools_file.txt --src_bin=... --offset=0x%llx --nonce=0x%x", offset, nonce);
+  LOG("cmd %s", cmd);
+  system(cmd);
+}
 
 /// Calls the enclave twice to print a message.
 int hello_world()
@@ -67,14 +81,51 @@ int hello_world()
   LOG("Second enclave message:\n%s", msg->reply);
   LOG("Public key bytes\n");
   for(int i = 0;i < 32;i++) {
-    LOG("%02x ", msg->pub_key[i]);
+    LOG("%02x ", (unsigned)msg->pub_key[i]);
   }
   LOG("\n");
   LOG("Signed data bytes\n");
   for(int i = 0;i < 64;i++) {
-    LOG("%02x ", msg->signed_enclave_data[i]);
+    LOG("%02x ", (unsigned)msg->signed_enclave_data[i]);
   }
   LOG("\n");
+
+  file_tychools = fopen("file_tychools.txt", "w");
+
+  if(file_tychools == NULL) {
+    LOG("File failed to open tychools file\n");
+  }
+  else {
+    LOG("Writing pub key and data to tychools file\n");
+    for(int i = 0;i < 32;i++) {
+      uint32_t x = (uint32_t)msg->pub_key[i] & 0x0FF;
+      fprintf(file_tychools, "%u\n", x);
+    }
+    for(int i = 0;i < 64;i++) {
+      uint32_t x = (uint32_t)msg->signed_enclave_data[i] & 0x0FF;
+      fprintf(file_tychools, "%u\n", x);
+    }
+    fclose(file_tychools);
+  }
+  LOG("Calling the command to tychools to compare the result\n");
+  //todo
+  //call the command
+  run_commands(msg->nonce, enclave->map.physoffset);
+
+  tychools_response = fopen("tychools_response.txt", "r");
+  if(tychools_response == NULL) {
+    LOG("Failed to open a reponse file");
+  }
+  else {
+    LOG("Answer from tychools\n");
+    char* line = NULL;
+    int len = 0;
+    while ((getline(&line, &len, tychools_response)) != -1) {
+        LOG("%s", line);
+    }
+    fclose(tychools_response);
+  }
+
   // Clean up.
   if (sdk_delete_domain(enclave) != SUCCESS) {
     ERROR("Unable to delete the enclave %lld", enclave->handle);

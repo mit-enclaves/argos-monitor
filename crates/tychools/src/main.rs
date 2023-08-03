@@ -7,7 +7,7 @@ mod page_table_mapper;
 
 use std::path::PathBuf;
 
-use attestation::attest;
+use attestation::{attest, attestation_check};
 use clap::{Args, Parser, Subcommand};
 use clap_num::maybe_hex;
 use instrument::{instrument_with_manifest, modify_binary, print_enum};
@@ -32,6 +32,7 @@ enum Commands {
     PrintEnum,
     Hash(FileAndOffset),
     Extract(SrcDestArgs),
+    Attestation(AttestationArgs),
 }
 
 #[derive(Args)]
@@ -56,6 +57,18 @@ struct FileAndOffset {
     offset: u64,
 }
 
+#[derive(Args)]
+struct AttestationArgs {
+    #[arg(short, long, value_name = "SRC_ATT")]
+    src_att: PathBuf,
+    #[arg(short, long, value_name = "SRC_BIN")]
+    src_bin: PathBuf,
+    #[arg(short, long, value_name = "OFFSET", value_parser=maybe_hex::<u64>)]
+    offset: u64,
+    #[arg(short, long, value_name = "NONCE", value_parser=maybe_hex::<u64>)]
+    nonce: u64,
+}
+
 fn main() {
     simple_logger::init().unwrap();
     let cli = Cli::parse();
@@ -75,9 +88,14 @@ fn main() {
         Commands::PrintEnum => {
             print_enum();
         }
-        Commands::Hash(args) => attest(&args.src, args.offset),
+        Commands::Hash(args) => {
+            attest(&args.src, args.offset);
+        }
         Commands::Extract(args) => {
             extract_bin(&args.src, &args.dst);
+        }
+        Commands::Attestation(args) => {
+            attestation_check(&args.src_bin, &args.src_att, args.offset, args.nonce);
         }
     }
 }

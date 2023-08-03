@@ -26,3 +26,4 @@ ioctl-sys = "0.8.0"
 sha2 = "0.6.0"
 # sha2  = {version = "0.10.7", default-features = false}
 clap-num = "1.0.2"
+ed25519-compact = {path = "../../crates/forked_signature/rust-ed25519-compact"}
