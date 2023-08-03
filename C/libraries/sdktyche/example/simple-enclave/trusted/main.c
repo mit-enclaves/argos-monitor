@@ -39,19 +39,50 @@ int tyche_call_enclave(vmcall_frame_t* frame)
   return (int)result;
 } 
 
+void put_bytes_in_arr(char* arr, unsigned long long val) {
+  for(int i = 0; i < 8;i++) {
+    char c = (char)(val & 0xFF);
+    *arr = c;
+    arr++;
+    val>>=8;
+  }
+}
+
 int tyche_domain_attestation(usize nonce, hello_world_t* ans) {
   vmcall_frame_t frame = {
     .vmcall = TYCHE_ENCLAVE_ATTESTATION,
     .arg_1 = nonce,
+    .arg_2 = 0,
   };
   if (tyche_call_enclave(&frame) != SUCCESS) {
     goto failure;
   }
-  ans->hash_low_low = frame.value_1;
-  ans->hash_low_high = frame.value_2;
-  ans->hash_high_low = frame.value_3;
-  ans->hash_high_high = frame.value_4;
-  ans->nonce_resp = frame.value_5;
+  put_bytes_in_arr(ans->pub_key, frame.value_1);
+  put_bytes_in_arr(ans->pub_key + 8, frame.value_2);
+  put_bytes_in_arr(ans->pub_key + 16, frame.value_3);
+  put_bytes_in_arr(ans->pub_key + 24, frame.value_4);
+  put_bytes_in_arr(ans->signed_enclave_data, frame.value_5);
+  put_bytes_in_arr(ans->signed_enclave_data + 8, frame.value_6);
+  return SUCCESS;
+failure:
+  return FAILURE;
+}
+
+int tyche_domain_attestation_2(usize nonce, hello_world_t* ans) {
+  vmcall_frame_t frame = {
+    .vmcall = TYCHE_ENCLAVE_ATTESTATION,
+    .arg_1 = nonce,
+    .arg_2 = 1,
+  };
+  if (tyche_call_enclave(&frame) != SUCCESS) {
+    goto failure;
+  }
+  put_bytes_in_arr(ans->signed_enclave_data + 16, frame.value_1);
+  put_bytes_in_arr(ans->signed_enclave_data + 24, frame.value_2);
+  put_bytes_in_arr(ans->signed_enclave_data + 32, frame.value_3);
+  put_bytes_in_arr(ans->signed_enclave_data + 40, frame.value_4);
+  put_bytes_in_arr(ans->signed_enclave_data + 48, frame.value_5);
+  put_bytes_in_arr(ans->signed_enclave_data + 56, frame.value_6);
   return SUCCESS;
 failure:
   return FAILURE;
@@ -86,6 +117,7 @@ void hello_world(frame_t* frame)
 
   nonce_t nonce = msg->nonce;
   tyche_domain_attestation(nonce, msg);
+  tyche_domain_attestation_2(nonce,msg);
   print_message((void*)message3, 20);
 }
 

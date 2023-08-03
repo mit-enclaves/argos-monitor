@@ -1,4 +1,5 @@
 use attestation::hashing::HashEnclave;
+use attestation::signature::EnclaveReport;
 
 use crate::capa::{Capa, IntoCapa};
 use crate::config::{NB_CAPAS_PER_DOMAIN, NB_DOMAINS};
@@ -166,8 +167,10 @@ pub struct Domain {
     is_being_revoked: bool,
     /// Is the domain sealed?
     is_sealed: bool,
-    /// attestation hash (type of it ?)
+    /// attestation hash
     attestation_hash : Option<HashEnclave>,
+    /// last attestation report 
+    attestation_report : Option<EnclaveReport>,
 }
 
 impl Domain {
@@ -199,6 +202,7 @@ impl Domain {
             is_being_revoked: false,
             is_sealed: false,
             attestation_hash : None,
+            attestation_report : None,
         }
     }
 
@@ -319,6 +323,18 @@ impl Domain {
         self.attestation_hash = Some(hash);
     }
 
+    pub fn set_report(& mut self, report : EnclaveReport) {
+        self.attestation_report = Some(report);
+    }
+
+    pub fn get_report(&self) -> Option<EnclaveReport> {
+        if let Some(rep) = &self.attestation_report {
+            Some(*rep)
+        }
+        else {
+            None
+        }
+    }
     pub fn get_hash(&self) -> HashEnclave {
         if let Some(he) = &self.attestation_hash {
             *he

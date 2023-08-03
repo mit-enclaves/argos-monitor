@@ -1,43 +1,40 @@
-pub type DeviceKey = u128;
-pub type DevicePublicKey = DeviceKey;
-pub type DevicePrivateKey = DeviceKey;
-pub type AttestationKey = DeviceKey;
+use ed25519_compact::{KeyPair, SecretKey, PublicKey, Seed, Noise, Signature};
+pub type DevicePublicKey = PublicKey;
+pub type DevicePrivateKey = SecretKey;
+pub type AttestationPublicKey = PublicKey;
+pub type AttestationPrivateKey = SecretKey;
 
-pub type AttestationSignature = u128;
+pub type AttestationSignature = Signature;
 
-pub const MAX_ATTESTATION_DATA_SZ : usize = 64;
+pub const MAX_ATTESTATION_DATA_SZ : usize = 8;
 pub const ATTESTATION_DATA_SZ : usize = MAX_ATTESTATION_DATA_SZ + 256;
 
-pub const DEVICE_PRIVATE : DevicePrivateKey = 0x1000;
-pub const DEVICE_PUBLIC : DevicePublicKey = 0x2000;
+// pub const DEVICE_PRIVATE : DevicePrivateKey = 0x1000;
+// pub const DEVICE_PUBLIC : DevicePublicKey = 0x2000;
 
+#[derive(Copy,Clone)]
 pub struct EnclaveReport {
+    // pub dev_public_key : DevicePublicKey,
+    // pub attestation_public_key : AttestationPublicKey,
+    pub public_key : PublicKey,
+    pub signed_enclave_data : AttestationSignature,
     // pub signed_attestation_key : AttestationSignature,
-    // pub signed_enclave_data : AttestationSignature
-    pub hash_low : AttestationSignature,
-    pub hash_high : AttestationSignature,
-    pub nonce : u64,
+    // pub hash_low : AttestationSignature,
+    // pub hash_high : AttestationSignature,
+    // pub nonce : u64,
 }
-// use rsa::{RsaPrivateKey, RsaPublicKey, Pkcs1v15Encrypt};
-use ed25519_compact::{KeyPair, PublicKey, Seed, Noise};
-pub fn get_attestation_keys() -> (AttestationKey, AttestationKey) { 
-    let msg = b"test";
+
+pub fn get_attestation_keys() -> (AttestationPublicKey, AttestationPrivateKey) { 
     let key_pair = KeyPair::from_seed(Seed::default());
-
-    let s = key_pair.sk.sign(msg, Some(Noise::default()));
-    if let Ok(r) = key_pair.pk.verify(msg, &s) {
-        log::trace!("Message verified");
-    }
-    else {
-        log::trace!("Didn't verify the message");
-    }
-    (0,0)
+    (key_pair.pk, key_pair.sk)
 }
 
-pub fn sign_attestation_data(_data : &[u8], _key : AttestationKey) -> AttestationSignature {
-    0
+pub fn sign_attestation_data(data : &[u8], key : AttestationPrivateKey) -> AttestationSignature {
+    let sig = key.sign(data, Some(Noise::default()));
+    sig
 }
 
-pub fn sign_by_device(_data : &[u8], _key : DevicePrivateKey) -> AttestationSignature {
-    0
+pub fn sign_by_device(data : &[u8], key : DevicePrivateKey) -> AttestationSignature {
+    let sig = key.sign(data, Some(Noise::default()));
+    sig
 }
