@@ -24,8 +24,8 @@ use crate::rcframe::{drop_rc, RCFrame, RCFramePool, EMPTY_RCFRAME};
 
 use attestation::{hashing, signature};
 use hashing::TycheHasher;
-use attestation::signature::{get_attestation_keys, MAX_ATTESTATION_DATA_SZ};
-use attestation::signature::{EnclaveReport, ATTESTATION_DATA_SZ, DEVICE_PRIVATE};
+use attestation::signature::{get_attestation_keys};
+use attestation::signature::{EnclaveReport, ATTESTATION_DATA_SZ};
 // ————————————————————————— Statics & Backend Data ————————————————————————— //
 
 static CAPA_ENGINE: Mutex<CapaEngine> = Mutex::new(CapaEngine::new());
@@ -409,20 +409,32 @@ fn copy_array(dst : &mut [u8], src : &[u8], index : usize) {
 pub fn do_domain_attestation(
     current: Handle<Domain>,
     nonce : usize,
+    mode : usize,
 ) -> Option<EnclaveReport> {
     let mut engine = CAPA_ENGINE.lock();
-    let enc_hash = engine[current].get_hash();
-    let mut sign_data : [u8;ATTESTATION_DATA_SZ] = [0;ATTESTATION_DATA_SZ];
-    enc_hash.to_byte_arr(& mut sign_data, 0);
-    copy_array(& mut sign_data, &usize::to_le_bytes(nonce), enc_hash.bytes_size() as usize);
-    let (pb_key, priv_key) = get_attestation_keys();
-    let signed_enc_data = signature::sign_attestation_data(&sign_data, priv_key);
-    let signed_att_key = signature::sign_by_device(&u128::to_le_bytes(pb_key), DEVICE_PRIVATE);
-    Some(EnclaveReport{
-        hash_low : enc_hash.low,
-        hash_high : enc_hash.high, 
-        nonce : nonce as u64
-    })
+    if mode == 0 {
+        log::trace!("Mode 0 calculating the report");
+        let enc_hash = engine[current].get_hash();
+        let mut sign_data : [u8;ATTESTATION_DATA_SZ] = [0;ATTESTATION_DATA_SZ];
+        enc_hash.to_byte_arr(& mut sign_data, 0);
+        copy_array(& mut sign_data, &usize::to_le_bytes(nonce), enc_hash.bytes_size() as usize);
+        let (pb_key, priv_key) = get_attestation_keys();
+        let signed_enc_data = signature::sign_attestation_data(&sign_data, priv_key);
+        let rep = EnclaveReport{
+            public_key : pb_key,
+            signed_enclave_data : signed_enc_data
+        };
+        engine.set_report(current, rep);
+        Some(rep)
+    }
+    else if mode == 1 {
+        log::trace!("Mode 1 just read the report");
+        engine[current].get_report() 
+    }
+    else {
+        log::trace!("Wrong mode");
+        None
+    }
 }
 
 // —————————————————————— Interrupt Handling functions —————————————————————— //

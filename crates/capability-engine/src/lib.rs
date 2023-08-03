@@ -12,7 +12,7 @@ mod utils;
 
 use core::ops::Index;
 
-use attestation::hashing::HashEnclave;
+use attestation::{hashing::HashEnclave, signature::EnclaveReport};
 use capa::Capa;
 pub use capa::{capa_type, CapaInfo};
 use cores::{Core, CoreList};
@@ -507,6 +507,15 @@ impl CapaEngine {
         hash : HashEnclave
     ) -> Result<(), CapaError> {
         self.domains[domain].set_hash(hash);
+        Ok(())
+    }
+
+    pub fn set_report(
+        & mut self,
+        domain : Handle<Domain>,
+        rep :  EnclaveReport
+    ) -> Result<(), CapaError> {
+        self.domains[domain].set_report(rep);
         Ok(())
     }
 

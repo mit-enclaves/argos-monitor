@@ -65,11 +65,16 @@ int hello_world()
     goto failure;
   }
   LOG("Second enclave message:\n%s", msg->reply);
-  LOG("Enclave hash_low_low %llx\n", msg->hash_low_low);
-  LOG("Enclave hash_low_high %llx\n", msg->hash_low_high);
-  LOG("Enclave hash_high_low %llx\n", msg->hash_high_low);
-  LOG("Enclave hash_high_high %llx\n", msg->hash_high_high);
-  LOG("Enclave nonce resp %llx\n", msg->nonce_resp);
+  LOG("Public key bytes\n");
+  for(int i = 0;i < 32;i++) {
+    LOG("%02x ", msg->pub_key[i]);
+  }
+  LOG("\n");
+  LOG("Signed data bytes\n");
+  for(int i = 0;i < 64;i++) {
+    LOG("%02x ", msg->signed_enclave_data[i]);
+  }
+  LOG("\n");
   // Clean up.
   if (sdk_delete_domain(enclave) != SUCCESS) {
     ERROR("Unable to delete the enclave %lld", enclave->handle);
