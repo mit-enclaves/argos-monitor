@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-log = { workspace = true }
+log = { version = "0.4.17" }
 ed25519-compact = {path = "../../crates/forked_signature/rust-ed25519-compact"}
 sha2 = "0.6.0"
 
