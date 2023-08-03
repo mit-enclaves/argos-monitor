@@ -1,7 +1,11 @@
 use std::path::PathBuf;
 
+use std::fs::read_to_string;
+
 use object::read::elf::ProgramHeader;
 use sha2::{Digest, Sha256};
+
+use ed25519_compact::{PublicKey, SecretKey, Signature};
 
 use crate::elf_modifier::{ModifiedELF, ModifiedSegment, TychePhdrTypes, DENDIAN};
 
@@ -78,7 +82,7 @@ fn hash_segments_info(enclave : & Box<ModifiedELF>, hasher : & mut Sha256, offse
     }
 }
 
-pub fn attest(src: &PathBuf, offset: u64) {
+pub fn attest(src: &PathBuf, offset: u64) -> (u128, u128) {
     let data = std::fs::read(src).expect("Unable to read source file");
     let mut hasher = Sha256::default();
     let mut enclave = ModifiedELF::new(&data);
@@ -89,4 +93,69 @@ pub fn attest(src: &PathBuf, offset: u64) {
     let result = hasher.result();
     log::info!("Computed hash:");
     log::info!("{}", format!("{:x}", result));
+    let mut hash_low : u128 = 0;
+    let mut hash_high : u128 = 0;
+    let mut cnt = 0;
+    let limit = 16;
+    for x in result {
+        if cnt < limit {
+            hash_high = (hash_high << 8) + (x as u128);
+        }
+        else {
+            hash_low = (hash_low << 8) + (x as u128);
+        }
+    }
+    (hash_high, hash_low)
+}
+
+const MSG_SZ : usize = 256 + 8;
+
+use std::fs::File;
+use std::io::Write;
+
+fn copy_arr(dst : & mut[u8], src : &[u8], index : usize) {
+    let mut ind = index;
+    for x in src {
+        dst[ind] = *x;
+        ind+=1;
+    }
+}
+
+pub fn attestation_check(src_bin : &PathBuf, src_att : &PathBuf, offset : u64, nonce : u64) {
+    let mut pub_key_arr : [u8;32] = [0;32];
+    let mut enc_data_arr : [u8 ; 64] = [0 ; 64];
+    let mut index_pub = 0;
+    let mut index_enc = 0;
+    let mut cnt = 0;
+    for line in read_to_string(src_att).unwrap().lines() {
+        let num : u32= line.parse().unwrap();
+        log::trace!("line {:#x}", num);
+        if cnt < 32 {
+            pub_key_arr[index_pub] = num as u8;
+            index_pub+=1;
+        }
+        else {
+            enc_data_arr[index_enc] = num as u8;
+            index_enc+=1;
+        }   
+        cnt+=1;
+    }
+    let mut pkey : PublicKey = PublicKey::new(pub_key_arr); 
+    let mut sig : Signature = Signature::new(enc_data_arr);
+
+    let mut message : [u8;MSG_SZ]= [0;MSG_SZ];
+    
+    let (hash_low, hash_high) = attest(src_bin, offset);
+    copy_arr(& mut message, &u128::to_le_bytes(hash_low), 0);
+    copy_arr(& mut message, &u128::to_le_bytes(hash_high), 16);
+    copy_arr(& mut message, &u64::to_le_bytes(nonce), 32);
+    {
+        let mut data_file = File::create("response.txt").expect("creation failed");
+        if let Ok(r) = pkey.verify(message, &sig) {
+            data_file.write(b"Message verified").expect("Write failed");
+        }
+        else {
+            data_file.write(b"Message was not verified").expect("Write failed");
+        }
+    }
 }

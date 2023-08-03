@@ -14,4 +14,5 @@ update_disk:
 	make -B -C libraries/sdktyche/example/simple-enclave install_disk
 	make -B -C libraries/sdktyche/example/simple-sandbox install_disk
 	make -B -C libraries/tyche-trusted-runtime install_disk
+	make -B -C ../crates/ install_disk
 	cp scripts/install_drivers.sh /tmp/mount/tyche

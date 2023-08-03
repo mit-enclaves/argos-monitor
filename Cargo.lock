@@ -1111,6 +1111,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "clap-num",
+ "ed25519-compact",
  "elf",
  "elfloader",
  "goblin",
