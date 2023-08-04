@@ -33,7 +33,6 @@ static memory_access_right_t translate_flags_to_tyche(Elf64_Word flags) {
     rights |= MEM_WRITE;
   }
   if((flags & PF_H) == PF_H) {
-    ERROR("ATTESTATION RIGHT");
     rights |= MEM_HASH;
   }
   //TODO do user?
