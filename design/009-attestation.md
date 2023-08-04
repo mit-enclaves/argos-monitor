@@ -15,23 +15,26 @@ Added flag to Tychools binary to be able to tell whether we want certain segment
 Added Tyche call for getting back the hash (similar call will be used for attestation), with code 'ENCLAVE_ATTESTATION = 14'. 
 
 Tyche will have pair of keys representing device keys, coming from Root of Trust probably. Private device key is used to sign public attestation key, and public attestaion key is used to sign enclave hash, offset and data.
-Attestation is done through the enclave attestation call, in a way that client is sending a nonce to enclave as a challenge, enclave calls Tyche and Tyche responds with a report. Report should consist of signed attestation key, and data signed by public attestation key, but for now it is without signatures.
+Attestation is done through the enclave attestation call, in a way that client is sending a nonce to enclave as a challenge, enclave calls Tyche and Tyche responds with a report. Report should consist of signed attestation key, and data signed by public attestation key.
+
+## Implementation
 
 Schema of how it works, without signature so far
 
 ```
 [user space]
-Client (has physical offset and generates a nonce)          [checks the hash]
+Client (has physical offset and generates a nonce)          [checks the hash]---->TYCHOOLS
 | [puts args in shared buffer]                                     ^
--------------------------------------------------------------------|
+-------------------------------------------------------------------|--------------
 | [kernel space]            [reads from shared buff]    [puts results in shared buff, returns]
 |----(call the enclave)----> enclave -----|                        ^
-----------ENCLAVE_ATTESTATION CALL--------|------------------------|
+----------ENCLAVE_ATTESTATION CALL--------|------------------------|--------------
 [Tyche]                                   V [creates the report]   |
                                             -----------------------|
 ```
-
-Expantion could be for client to do the same thing as tychools/attestation but is there need for it? Next step is creating the signature of the message.
+For now there is only one keypair per attestation because we still don't have possibility to encrypt data, just to sign/verify it. That could be thing to fix in the whole proceess. Report consists of signature of enclave hash and nonce, plus public signature key (plain). Client then calls tychools lib to check whether using offset, nonce and public key can be sure that the data is properly signed. 
+Better thing would be to have encryption of keys, rather then signature/verification, then we would have only device key pair which would be transmitted not encrypted. 
+ENCLAVE_ATTESTATION comes with a mode in which we want to call it for certain enclave (0 - calculate report and return some data, 1 - read remaining parts of the report). This is becaus of size of the signature and keys, because we cannot transfer everything using only one call now.
 
 ## Next steps
 

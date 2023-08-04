@@ -13,7 +13,7 @@ bitflags! {
          const WRITE = 1 << 1;
          const EXEC  = 1 << 2;
          const SUPER = 1 << 3;
-         const HASH = 1 << 4;
+         const HASH = 1 << 4; //flag for do we want to hash particular RegionCapa
     }
 }
 

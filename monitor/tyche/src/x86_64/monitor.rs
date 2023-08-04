@@ -717,7 +717,6 @@ fn hash_access_right(hasher : & mut TycheHasher, access_rights : u8, mask : u8){
 }
 
 fn hash_capa_info(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, CapaEngine>, domain : Handle<Domain>) {
-    let domain_id = engine[domain].id();
     let mut next_capa = NextCapaToken::new();
     while let Some((info, next_next_capa)) = engine.enumerate(domain, next_capa) {
         next_capa = next_next_capa;
@@ -758,7 +757,6 @@ fn hash_capa_info(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, Capa
         }
     }
 }
-
 
 fn calculate_attestation_hash(engine : & mut MutexGuard<'_, CapaEngine>, domain : Handle<Domain>) {
     let mut hasher = hashing::get_hasher();
