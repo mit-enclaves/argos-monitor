@@ -46,11 +46,8 @@ failure:
 // ————————————————————————— Application functions —————————————————————————— //
 
 void run_commands(nonce_t nonce, unsigned long long offset) {
-  // system("pwd");
-  // system("cd crates/tychools");
-  // system("pwd");
   char cmd[256];
-  sprintf(cmd, "cd crates/tychools;cargo run attestation --att-src=../../file_tychools.txt --src-bin=../../papa_enclave --offset=0x%llx --nonce=0x%x", offset, nonce);
+  sprintf(cmd, "cd crates/tychools;cargo run attestation --att-src=../../file_tychools.txt --src-bin=../../enclave_iso --offset=0x%llx --nonce=0x%x", offset, nonce);
   LOG("cmd %s", cmd);
   system(cmd);
 }
@@ -78,25 +75,12 @@ int hello_world()
     ERROR("Unable to call the enclave a second time %lld!", enclave->handle);
     goto failure;
   }
-  LOG("Second enclave message:\n%s", msg->reply);
-  LOG("Public key bytes\n");
-  for(int i = 0;i < 32;i++) {
-    LOG("%02x ", (unsigned)msg->pub_key[i]);
-  }
-  LOG("\n");
-  LOG("Signed data bytes\n");
-  for(int i = 0;i < 64;i++) {
-    LOG("%02x ", (unsigned)msg->signed_enclave_data[i]);
-  }
-  LOG("\n");
-
   file_tychools = fopen("file_tychools.txt", "w");
-
   if(file_tychools == NULL) {
     LOG("File failed to open tychools file\n");
   }
   else {
-    LOG("Writing pub key and data to tychools file\n");
+    LOG("Writing public key and data to tychools file\n");
     for(int i = 0;i < 32;i++) {
       uint32_t x = (uint32_t)msg->pub_key[i] & 0x0FF;
       fprintf(file_tychools, "%u\n", x);
