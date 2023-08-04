@@ -289,9 +289,6 @@ pub fn do_seal(current: Handle<Domain>, domain: LocalCapa) -> Result<LocalCapa, 
     
     let capa = engine.seal(current, core, domain)?;
 
-    //similar to debug, testing purpose
-    // dummy_debug(& mut engine);
-
     if let Ok(domain_capa) = engine.get_domain_capa(current, domain) {
         calculate_attestation_hash(& mut engine, domain_capa);
     }
@@ -413,15 +410,10 @@ pub fn do_domain_attestation(
 ) -> Option<EnclaveReport> {
     let mut engine = CAPA_ENGINE.lock();
     if mode == 0 {
-        log::trace!("Mode 0 calculating the report");
         let enc_hash = engine[current].get_hash();
         let mut sign_data : [u8;ATTESTATION_DATA_SZ] = [0;ATTESTATION_DATA_SZ];
         enc_hash.to_byte_arr(& mut sign_data, 0);
         copy_array(& mut sign_data, &usize::to_le_bytes(nonce), 32);
-        log::trace!("Data to be signed!");
-        for x in sign_data {
-            log::trace!("data {:#x}", x);
-        }
         let (pb_key, priv_key) = get_attestation_keys();
         let signed_enc_data = signature::sign_attestation_data(&sign_data, priv_key);
         let rep = EnclaveReport{
@@ -432,7 +424,6 @@ pub fn do_domain_attestation(
         Some(rep)
     }
     else if mode == 1 {
-        log::trace!("Mode 1 just read the report");
         engine[current].get_report() 
     }
     else {
@@ -727,17 +718,17 @@ fn hash_access_right(hasher : & mut TycheHasher, access_rights : u8, mask : u8){
 
 fn hash_capa_info(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, CapaEngine>, domain : Handle<Domain>) {
     let domain_id = engine[domain].id();
-    hashing::hash_segment(hasher, &(usize::to_le_bytes(domain_id)));
-    log::trace!("Domain id {:#x}", domain_id);
-
     let mut next_capa = NextCapaToken::new();
     while let Some((info, next_next_capa)) = engine.enumerate(domain, next_capa) {
         next_capa = next_next_capa;
         match info {
             CapaInfo::Region {start , end, active , confidential,ops} => {
                 if ops.contains(MemOps::HASH) && active {
+                    //hashing start - end of region
                     hashing::hash_segment(hasher, &(usize::to_le_bytes(start)));
                     hashing::hash_segment(hasher, &(usize::to_le_bytes(end)));
+
+                    //hashing access rights
                     let access_rights = ops.bits();
                     hash_access_right(hasher, access_rights, MemOps::HASH.bits());
                     hash_access_right(hasher, access_rights, MemOps::EXEC.bits());
@@ -748,7 +739,7 @@ fn hash_capa_info(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, Capa
                     let conf_info = if confidential { 1 as u8}  else {0 as u8}; 
                     hashing::hash_segment(hasher, &(u8::to_le_bytes(conf_info)));
                 
-                    //hashing access rights
+                    //hashing region data info
                     let mut addr = start;
                     let addr_end = end;
                     while addr < addr_end {
@@ -772,7 +763,6 @@ fn hash_capa_info(hasher : & mut TycheHasher, engine : & mut MutexGuard<'_, Capa
 fn calculate_attestation_hash(engine : & mut MutexGuard<'_, CapaEngine>, domain : Handle<Domain>) {
     let mut hasher = hashing::get_hasher();
     
-    // hash_segment_data(&mut hasher, engine, domain);
     hash_capa_info(&mut hasher, engine, domain);
 
     log::trace!("Finished calculating the hash!");
