@@ -104,11 +104,12 @@ pub fn attest(src: &PathBuf, offset: u64) -> (u128, u128) {
         else {
             hash_low = (hash_low << 8) + (x as u128);
         }
+        cnt+=1;
     }
     (hash_high, hash_low)
 }
 
-const MSG_SZ : usize = 256 + 8;
+const MSG_SZ : usize = 32 + 8;
 
 use std::fs::File;
 use std::io::Write;
@@ -145,16 +146,25 @@ pub fn attestation_check(src_bin : &PathBuf, src_att : &PathBuf, offset : u64, n
 
     let mut message : [u8;MSG_SZ]= [0;MSG_SZ];
     
-    let (hash_low, hash_high) = attest(src_bin, offset);
+    let (hash_high, hash_low) = attest(src_bin, offset);
+    log::trace!("hash high {:#x}", hash_high);
+    log::trace!("hash low {:#x}", hash_low);
+    log::trace!("nonce {:#x}", nonce);
     copy_arr(& mut message, &u128::to_le_bytes(hash_low), 0);
     copy_arr(& mut message, &u128::to_le_bytes(hash_high), 16);
     copy_arr(& mut message, &u64::to_le_bytes(nonce), 32);
+    log::trace!("Data that was signed!");
+    for x in message {
+        log::trace!("data {:#x}", x);
+    }
     {
-        let mut data_file = File::create("response.txt").expect("creation failed");
+        let mut data_file = File::create("../../tychools_response.txt").expect("creation failed");
         if let Ok(r) = pkey.verify(message, &sig) {
+            log::trace!("Verified!");
             data_file.write(b"Message verified").expect("Write failed");
         }
         else {
+            log::trace!("Unverified!");
             data_file.write(b"Message was not verified").expect("Write failed");
         }
     }

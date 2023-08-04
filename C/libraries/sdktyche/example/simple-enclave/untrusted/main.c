@@ -50,7 +50,7 @@ void run_commands(nonce_t nonce, unsigned long long offset) {
   // system("cd crates/tychools");
   // system("pwd");
   char cmd[256];
-  sprintf(cmd, "cd crates/tychools;cargo run attestation --src_att=../../tychools_file.txt --src_bin=... --offset=0x%llx --nonce=0x%x", offset, nonce);
+  sprintf(cmd, "cd crates/tychools;cargo run attestation --att-src=../../file_tychools.txt --src-bin=../../papa_enclave --offset=0x%llx --nonce=0x%x", offset, nonce);
   LOG("cmd %s", cmd);
   system(cmd);
 }
@@ -108,8 +108,7 @@ int hello_world()
     fclose(file_tychools);
   }
   LOG("Calling the command to tychools to compare the result\n");
-  //todo
-  //call the command
+
   run_commands(msg->nonce, enclave->map.physoffset);
 
   tychools_response = fopen("tychools_response.txt", "r");

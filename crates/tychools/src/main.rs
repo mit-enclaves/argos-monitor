@@ -59,8 +59,8 @@ struct FileAndOffset {
 
 #[derive(Args)]
 struct AttestationArgs {
-    #[arg(short, long, value_name = "SRC_ATT")]
-    src_att: PathBuf,
+    #[arg(short, long, value_name = "ATT_SRC")]
+    att_src: PathBuf,
     #[arg(short, long, value_name = "SRC_BIN")]
     src_bin: PathBuf,
     #[arg(short, long, value_name = "OFFSET", value_parser=maybe_hex::<u64>)]
@@ -95,7 +95,7 @@ fn main() {
             extract_bin(&args.src, &args.dst);
         }
         Commands::Attestation(args) => {
-            attestation_check(&args.src_bin, &args.src_att, args.offset, args.nonce);
+            attestation_check(&args.src_bin, &args.att_src, args.offset, args.nonce);
         }
     }
 }

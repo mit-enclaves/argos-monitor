@@ -417,7 +417,11 @@ pub fn do_domain_attestation(
         let enc_hash = engine[current].get_hash();
         let mut sign_data : [u8;ATTESTATION_DATA_SZ] = [0;ATTESTATION_DATA_SZ];
         enc_hash.to_byte_arr(& mut sign_data, 0);
-        copy_array(& mut sign_data, &usize::to_le_bytes(nonce), enc_hash.bytes_size() as usize);
+        copy_array(& mut sign_data, &usize::to_le_bytes(nonce), 32);
+        log::trace!("Data to be signed!");
+        for x in sign_data {
+            log::trace!("data {:#x}", x);
+        }
         let (pb_key, priv_key) = get_attestation_keys();
         let signed_enc_data = signature::sign_attestation_data(&sign_data, priv_key);
         let rep = EnclaveReport{
