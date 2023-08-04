@@ -19,7 +19,7 @@ int ioctl_getphysoffset(
     ERROR("Failed to read the physoffset for domain %d", handle);
     goto failure;
   }
-  ERROR("Physical offset of the enclave is %lx", info.physoffset);
+  LOG("Physical offset of the enclave is %lx", info.physoffset);
   *physoffset = info.physoffset;
   return SUCCESS;
 failure:

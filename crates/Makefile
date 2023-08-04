@@ -6,8 +6,6 @@ UTILS_PATH ?= $(DISK_PATH)/utils
 VMX_PATH ?= $(DISK_PATH)/vmx
 
 install_disk: 
-	# rm -r TYCHOOLS_PATH
-	# rm -r FORK_PATH
 	mkdir -p $(DISK_PATH)
 	mkdir -p $(TYCHOOLS_PATH)
 	mkdir -p $(FORK_PATH)

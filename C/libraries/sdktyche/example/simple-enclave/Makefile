@@ -41,11 +41,6 @@ HDRS_PTS=$(wildcard $(PTS)/include/*.h)
 CODE_APP=$(CODE_ELF64) $(CODE_PTS) $(CODE_LOADER) $(CODE_UNTRUSTED)
 HDRS_APP=$(HDRS_ELF64) $(HDRS_PTS) $(HDRS_LOADER) $(HDRS_UNTRUSTED)
 
-## —————————————————————— Capa code and headers —————————————————————— ##
-
-CODE_CAPA = $(wildcard $(CAPA_LIB)/src/*.c)
-# HDRS_CAPA = $(wildcard $(CAPA_LIB)/include/*.h)
-
 ## ———————————————————————— Enclave code and headers ———————————————————————— ##
 CODE_ENCLAVE=$(CODE_RUNTIME) $(CODE_TRUSTED)
 HDRS_ENCLAVE=$(HDRS_RUNTIME) $(HDRS_TRUSTED)
