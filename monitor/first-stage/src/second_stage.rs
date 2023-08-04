@@ -158,9 +158,6 @@ pub fn load(
     let guest_regions = memory_map.guest;
     for mem_region in guest_regions {
         let region_size = mem_region.end - mem_region.start;
-        log::trace!("Mapping the guest region start addr: {:#x}", mem_region.start);
-        log::trace!("Mapping the guest region end addr: {:#x}", mem_region.end);
-        log::trace!("Mappint the geust region size: {:#x}", region_size);
         loaded_elf.pt_mapper.map_range(
             stage2_allocator, 
             HostVirtAddr::new(mem_region.start as usize),

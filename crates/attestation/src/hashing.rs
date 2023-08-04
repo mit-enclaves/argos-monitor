@@ -9,7 +9,7 @@ pub struct HashEnclave {
 
 impl HashEnclave {
     pub fn bytes_size(&self) -> u64 {
-        u128::BITS as u64 / 8
+        u128::BITS as u64 / 4
     }
     pub fn to_byte_arr(&self, arr : & mut [u8], index : usize) {
         let arr_low = u128::to_le_bytes(self.low);

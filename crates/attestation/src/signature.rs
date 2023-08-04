@@ -7,7 +7,7 @@ pub type AttestationPrivateKey = SecretKey;
 pub type AttestationSignature = Signature;
 
 pub const MAX_ATTESTATION_DATA_SZ : usize = 8;
-pub const ATTESTATION_DATA_SZ : usize = MAX_ATTESTATION_DATA_SZ + 256;
+pub const ATTESTATION_DATA_SZ : usize = MAX_ATTESTATION_DATA_SZ + 32;
 
 // pub const DEVICE_PRIVATE : DevicePrivateKey = 0x1000;
 // pub const DEVICE_PUBLIC : DevicePublicKey = 0x2000;
