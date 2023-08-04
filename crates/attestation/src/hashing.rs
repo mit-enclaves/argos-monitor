@@ -41,19 +41,8 @@ pub fn get_hash(hasher : & mut TycheHasher) -> HashEnclave {
     //todo check the length of this result
     log::trace!("Computed hash: ");
     log::trace!("{:x}", result);
-    let mut hash_low : u128 = 0;
-    let mut hash_high : u128 = 0;
-    let mut cnt = 0;
-    let limit = 16;
-    for element in result {
-        if cnt < limit {
-            hash_high = (hash_high << 8) + (element as u128);
-        }
-        else {
-            hash_low = (hash_low << 8) + (element as u128);
-        }
-        cnt+=1;
-    }
+    let hash_low : u128 = u128::from_be_bytes(result.as_slice()[0..16].try_into().unwrap());
+    let hash_high : u128 = u128::from_be_bytes(result.as_slice()[16..32].try_into().unwrap());
     let henc = HashEnclave{
         low : hash_low,
         high: hash_high

@@ -44,8 +44,10 @@ fn hash_segments_info(enclave : & Box<ModifiedELF>, hasher : & mut Sha256, offse
                 let should_hash = (flags & PF_H) != 0;
                 log::trace!("{}", should_hash);
                 if should_hash {
+                    //hashing start - end of segment
                     hasher.input(&u64::to_le_bytes(start));
                     hasher.input(&u64::to_le_bytes(start + sz));
+                    //hashing access rights
                     hash_acc_rights(hasher, flags, PF_H);
                     log::trace!("X right");
                     hash_acc_rights(hasher, flags, PF_X);
@@ -53,6 +55,7 @@ fn hash_segments_info(enclave : & Box<ModifiedELF>, hasher : & mut Sha256, offse
                     hash_acc_rights(hasher, flags, PF_W);
                     log::trace!("R right");
                     hash_acc_rights(hasher, flags, PF_R);
+                    //hashing confidential info
                     if tpe.is_confidential() {
                         log::trace!("Conf 1");
                         hasher.input(&u8::to_le_bytes(1 as u8));
@@ -61,10 +64,12 @@ fn hash_segments_info(enclave : & Box<ModifiedELF>, hasher : & mut Sha256, offse
                         log::trace!("Conf 0");
                         hasher.input(&u8::to_le_bytes(0 as u8));
                     }
+                    //hashing data
                     for u8_data in &seg.data {
                         let arr_u8 : [u8;1] = [*u8_data];
                         hasher.input(&arr_u8);
                     }
+                    //padding (allignment) which loader does
                     for _ in 0..diff {
                         let arr_u8 : [u8;1] = [0];
                         hasher.input(&arr_u8);
@@ -87,19 +92,8 @@ pub fn attest(src: &PathBuf, offset: u64) -> (u128, u128) {
     let result = hasher.result();
     log::info!("Computed hash:");
     log::info!("{}", format!("{:x}", result));
-    let mut hash_low : u128 = 0;
-    let mut hash_high : u128 = 0;
-    let mut cnt = 0;
-    let limit = 16;
-    for x in result {
-        if cnt < limit {
-            hash_high = (hash_high << 8) + (x as u128);
-        }
-        else {
-            hash_low = (hash_low << 8) + (x as u128);
-        }
-        cnt+=1;
-    }
+    let hash_low : u128 = u128::from_be_bytes(result.as_slice()[0..16].try_into().unwrap());
+    let hash_high : u128 = u128::from_be_bytes(result.as_slice()[16..32].try_into().unwrap());
     (hash_high, hash_low)
 }
 
@@ -154,11 +148,11 @@ pub fn attestation_check(src_bin : &PathBuf, src_att : &PathBuf, offset : u64, n
     {
         let mut data_file = File::create("../../tychools_response.txt").expect("creation failed");
         if let Ok(r) = pkey.verify(message, &sig) {
-            log::trace!("Verified!");
+            log::info!("Verified!");
             data_file.write(b"Message verified").expect("Write failed");
         }
         else {
-            log::trace!("Not verified!");
+            log::info!("Not verified!");
             data_file.write(b"Message was not verified").expect("Write failed");
         }
     }
