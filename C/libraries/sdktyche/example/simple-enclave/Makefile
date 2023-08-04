@@ -76,7 +76,7 @@ simple_enclave: app enclave
 install_disk: all 
 	mkdir -p $(DISK_PATH)
 	cp -t $(DISK_PATH) simple_enclave 
-	cp -t $(DISK_PATH) papa_enclave
+	cp -t $(DISK_PATH) enclave_iso
 
 .PHONY: clean
 

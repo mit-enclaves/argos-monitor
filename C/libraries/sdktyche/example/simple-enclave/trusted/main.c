@@ -4,6 +4,8 @@
 
 // ———————————————————————————————— Globals ————————————————————————————————— //
 config_t* shared = NULL;
+#define CALC_REPORT 0
+#define READ_REPORT 1
 
 // ————————————————————————— HELLO_WORLD Functions —————————————————————————— //
 
@@ -48,41 +50,32 @@ void put_bytes_in_arr(char* arr, unsigned long long val) {
   }
 }
 
-int tyche_domain_attestation(usize nonce, hello_world_t* ans) {
+int tyche_domain_attestation(usize nonce, hello_world_t* ans, int mode) {
   vmcall_frame_t frame = {
     .vmcall = TYCHE_ENCLAVE_ATTESTATION,
     .arg_1 = nonce,
-    .arg_2 = 0,
+    .arg_2 = mode,
   };
   if (tyche_call_enclave(&frame) != SUCCESS) {
     goto failure;
   }
-  put_bytes_in_arr(ans->pub_key, frame.value_1);
-  put_bytes_in_arr(ans->pub_key + 8, frame.value_2);
-  put_bytes_in_arr(ans->pub_key + 16, frame.value_3);
-  put_bytes_in_arr(ans->pub_key + 24, frame.value_4);
-  put_bytes_in_arr(ans->signed_enclave_data, frame.value_5);
-  put_bytes_in_arr(ans->signed_enclave_data + 8, frame.value_6);
-  return SUCCESS;
-failure:
-  return FAILURE;
-}
-
-int tyche_domain_attestation_2(usize nonce, hello_world_t* ans) {
-  vmcall_frame_t frame = {
-    .vmcall = TYCHE_ENCLAVE_ATTESTATION,
-    .arg_1 = nonce,
-    .arg_2 = 1,
-  };
-  if (tyche_call_enclave(&frame) != SUCCESS) {
-    goto failure;
+  if(mode == CALC_REPORT) {
+    put_bytes_in_arr(ans->pub_key, frame.value_1);
+    put_bytes_in_arr(ans->pub_key + 8, frame.value_2);
+    put_bytes_in_arr(ans->pub_key + 16, frame.value_3);
+    put_bytes_in_arr(ans->pub_key + 24, frame.value_4);
+    put_bytes_in_arr(ans->signed_enclave_data, frame.value_5);
+    put_bytes_in_arr(ans->signed_enclave_data + 8, frame.value_6);
   }
-  put_bytes_in_arr(ans->signed_enclave_data + 16, frame.value_1);
-  put_bytes_in_arr(ans->signed_enclave_data + 24, frame.value_2);
-  put_bytes_in_arr(ans->signed_enclave_data + 32, frame.value_3);
-  put_bytes_in_arr(ans->signed_enclave_data + 40, frame.value_4);
-  put_bytes_in_arr(ans->signed_enclave_data + 48, frame.value_5);
-  put_bytes_in_arr(ans->signed_enclave_data + 56, frame.value_6);
+  else if(mode == READ_REPORT) {
+    put_bytes_in_arr(ans->signed_enclave_data + 16, frame.value_1);
+    put_bytes_in_arr(ans->signed_enclave_data + 24, frame.value_2);
+    put_bytes_in_arr(ans->signed_enclave_data + 32, frame.value_3);
+    put_bytes_in_arr(ans->signed_enclave_data + 40, frame.value_4);
+    put_bytes_in_arr(ans->signed_enclave_data + 48, frame.value_5);
+    put_bytes_in_arr(ans->signed_enclave_data + 56, frame.value_6);
+  }
+  
   return SUCCESS;
 failure:
   return FAILURE;
@@ -116,8 +109,8 @@ void hello_world(frame_t* frame)
   gate_call(frame);
 
   nonce_t nonce = msg->nonce;
-  tyche_domain_attestation(nonce, msg);
-  tyche_domain_attestation_2(nonce,msg);
+  tyche_domain_attestation(nonce, msg, CALC_REPORT);
+  tyche_domain_attestation(nonce, msg, READ_REPORT);
   print_message((void*)message3, 20);
 }
 
