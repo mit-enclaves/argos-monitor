@@ -274,12 +274,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ct-codecs"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3b7eb4404b8195a9abb6356f4ac07d8ba267045c8d6d220ac4dc992e6cc75df"
-
-[[package]]
 name = "debug"
 version = "0.1.0"
 
@@ -305,7 +299,6 @@ dependencies = [
 name = "ed25519-compact"
 version = "2.0.4"
 dependencies = [
- "ct-codecs",
  "ed25519",
 ]
 
