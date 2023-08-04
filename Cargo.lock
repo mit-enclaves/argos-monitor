@@ -325,8 +325,19 @@ version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
+<<<<<<< HEAD
  "const-oid",
  "crypto-common",
+=======
+ "signature",
+]
+
+[[package]]
+name = "ed25519-compact"
+version = "2.0.4"
+dependencies = [
+ "ed25519",
+>>>>>>> 1d6d6c3c (Updated submodules)
 ]
 
 [[package]]

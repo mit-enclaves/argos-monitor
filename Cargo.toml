@@ -23,7 +23,7 @@ members = [
     "crates/arena",
     "crates/capability-engine",
     "crates/tychools",
-    "crates/forked_signature/rust-ed25519-compact",
+    "crates/forked_signature",
     "crates/attestation",
     "boot_toolchain",
 ]
