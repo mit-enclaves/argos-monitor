@@ -45,36 +45,14 @@ failure:
 
 // ————————————————————————— Application functions —————————————————————————— //
 
-void run_commands(nonce_t nonce, unsigned long long offset) {
+void call_tychools(nonce_t nonce, unsigned long long offset) {
   char cmd[256];
   sprintf(cmd, "cd crates/tychools;cargo run attestation --att-src=../../file_tychools.txt --src-bin=../../enclave_iso --offset=0x%llx --nonce=0x%x", offset, nonce);
   LOG("cmd %s", cmd);
   system(cmd);
 }
 
-/// Calls the enclave twice to print a message.
-int hello_world()
-{
-  TEST(enclave != NULL);
-  TEST(shared != NULL);
-  LOG("Executing HELLO_WORLD enclave\n");
-  hello_world_t* msg = (hello_world_t*)(&(shared->args));
-  // Call the enclave.
-  if (sdk_call_domain(enclave, NULL) != SUCCESS) {
-    ERROR("Unable to call the enclave %d!", enclave->handle);
-    goto failure;
-  }
-  LOG("First enclave message:\n%s", msg->reply);
-
-  const nonce_t mod = (1e9 + 7);
-  nonce_t nonce = rand() % mod;
-  LOG("Nonce sent by the client is %llx", nonce);
-  msg->nonce = nonce;
-  LOG("Calling enclave to execute attestation");
-  if (sdk_call_domain(enclave, NULL) != SUCCESS) {
-    ERROR("Unable to call the enclave a second time %lld!", enclave->handle);
-    goto failure;
-  }
+void write_to_tychools(hello_world_t* msg) {
   file_tychools = fopen("file_tychools.txt", "w");
   if(file_tychools == NULL) {
     LOG("File failed to open tychools file\n");
@@ -91,10 +69,9 @@ int hello_world()
     }
     fclose(file_tychools);
   }
-  LOG("Calling the command to tychools to compare the result\n");
+}
 
-  run_commands(msg->nonce, enclave->map.physoffset);
-
+void read_tychools_response() {
   tychools_response = fopen("tychools_response.txt", "r");
   if(tychools_response == NULL) {
     LOG("Failed to open a reponse file");
@@ -108,6 +85,39 @@ int hello_world()
     }
     fclose(tychools_response);
   }
+}
+
+/// Calls the enclave twice to print a message.
+int hello_world()
+{
+  TEST(enclave != NULL);
+  TEST(shared != NULL);
+  LOG("Executing HELLO_WORLD enclave\n");
+  hello_world_t* msg = (hello_world_t*)(&(shared->args));
+
+  // Call the enclave.
+  if (sdk_call_domain(enclave, NULL) != SUCCESS) {
+    ERROR("Unable to call the enclave %d!", enclave->handle);
+    goto failure;
+  }
+  LOG("First enclave message:\n%s", msg->reply);
+
+  //generating random nonce
+  const nonce_t mod = (1e9 + 7);
+  nonce_t nonce = rand() % mod;
+  LOG("Nonce sent by the client is %llx", nonce);
+  msg->nonce = nonce;
+  //call to enclave, which will do attestation
+  LOG("Calling enclave to execute attestation");
+  if (sdk_call_domain(enclave, NULL) != SUCCESS) {
+    ERROR("Unable to call the enclave a second time %lld!", enclave->handle);
+    goto failure;
+  }
+  
+  write_to_tychools(msg);
+  LOG("Calling the command to tychools to compare the result\n");
+  call_tychools(msg->nonce, enclave->map.physoffset);
+  read_tychools_response();
 
   // Clean up.
   if (sdk_delete_domain(enclave) != SUCCESS) {
