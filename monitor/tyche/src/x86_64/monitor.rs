@@ -293,24 +293,6 @@ pub fn do_seal(current: Handle<Domain>, domain: LocalCapa) -> Result<LocalCapa, 
         calculate_attestation_hash(& mut engine, domain_capa);
     }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-    let capa = engine.seal(current, core, domain)?;
-=======
-    /*let new_domain = engine
-        .get_domain_capa(current, domain)
-        .expect("Should be a domain capa");
-    let mut context = get_context(new_domain, core);
-    //TODO do it on all the cores.
-    context.cr3 = cr3;
-    context.rip = rip;
-    context.rsp = rsp;
-    let mut guard = RC_VMCS.lock();
-    drop_rc(&mut guard, context.vmcs);
-    context.vmcs = Handle::new_invalid();*/
->>>>>>> Refactored code to be in sync with Charly comments he made to move hashing outside of capa engine
-=======
->>>>>>> Few refactors, attestation should be very independent of signing, next thing is to implement something there
     apply_updates(&mut engine);
     Ok(capa)
 }
