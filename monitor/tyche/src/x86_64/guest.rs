@@ -256,14 +256,14 @@ fn handle_exit(
                 calls::ENCLAVE_ATTESTATION => {
                     log::trace!("Get attestation!");
                     if let Some(report) = monitor::do_domain_attestation(*domain,  arg_1, arg_2) {
-                        log::trace!("Public key");
-                        for x in report.public_key.as_slice() {
-                            log::trace!("byte {:#x}", x);
-                        }
-                        log::trace!("Signed data");
-                        for x in report.signed_enclave_data.as_slice() {
-                            log::trace!("byte {:#x}", x);
-                        }
+                        // log::trace!("Public key");
+                        // for x in report.public_key.as_slice() {
+                        //     log::trace!("byte {:#x}", x);
+                        // }
+                        // log::trace!("Signed data");
+                        // for x in report.signed_enclave_data.as_slice() {
+                        //     log::trace!("byte {:#x}", x);
+                        // }
                         vs.vcpu.set(Register::Rax, 0 as u64);
                         if arg_2 == 0 {
                             vs.vcpu.set(Register::Rdi, u64::from_le_bytes(report.public_key.as_slice()[0..8].try_into().unwrap()));
