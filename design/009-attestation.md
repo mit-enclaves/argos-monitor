@@ -36,6 +36,24 @@ For now there is only one keypair per attestation because we still don't have po
 Better thing would be to have encryption of keys, rather then signature/verification, then we would have only device key pair which would be transmitted not encrypted. 
 ENCLAVE_ATTESTATION comes with a mode in which we want to call it for certain enclave (0 - calculate report and return some data, 1 - read remaining parts of the report). This is becaus of size of the signature and keys, because we cannot transfer everything using only one call now.
 
+## Running
+
+Running the example
+- before running VM instead of doing make in simple-enclave folder, you can do ./make_scirpt.sh to get both the binary to run in VM and binary to attest through tychools named enclave_iso
+- enclave_iso is binary embedded as section (Adrien explained it in [https://github.com/CharlyCst/vmxvmm/blob/main/design/008-sdktyche-overview.md])
+- attestation_startup is to enable internet on .qcow2 image as well as install drivers
+- apart from given response, output of tychools during verification of signature can be seen as well
+```
+./attestation_startup.sh
+cd programs
+./simple_enclave
+-------------------------part of the output when tychools verifies signature
+2023-08-04T13:28:12.864Z INFO  [tychools::attestation] Verified!
+[LOG @untrusted/main.c:80 read_tychools_response] Answer from tychools
+
+[LOG @untrusted/main.c:84 read_tychools_response] Message verified
+```
+
 ## Next steps
 
 One of the approaches ould be to have a separate domain that is used for hashing/attestation. When tyche receives a call, it then 'forwards' the call to the domain. This way TCB won't be increased, and the mappings of memory in Tyche could be removed. If we can generate std static Rust binaries then we can do it probably. That will be the path to explore.

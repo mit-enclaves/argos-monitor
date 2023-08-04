@@ -68,6 +68,12 @@ simple_enclave: app enclave
 	chmod +x simple_enclave
 	rm app enclave
 
+enclave_iso: app enclave
+	cargo -C $(TYCHOOLS_PATH) install --path .
+	tychools instrument -s manifests/enclave_iso.json 
+	chmod +x enclave_iso
+	rm app enclave
+
 install_disk: all 
 	mkdir -p $(DISK_PATH)
 	cp -t $(DISK_PATH) simple_enclave 
