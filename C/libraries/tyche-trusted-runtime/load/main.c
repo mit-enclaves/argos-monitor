@@ -1,5 +1,6 @@
 #include "common.h"
 #include "sdk_tyche.h"
+#include <stdint.h>
 
 /// Looks up for the shared memory region with the enclave.
 static void* find_default_shared(tyche_domain_t* enclave)
@@ -34,7 +35,7 @@ int main(int argc, char* argv[])
   }
 
   /// Call the enclave a first time.
-  int* shared = (int*) find_default_shared(&enclave);
+  uint64_t* shared = (uint64_t*) find_default_shared(&enclave);
   LOG("About to call the enclave");
   if (sdk_call_domain(&enclave, NULL) != SUCCESS) {
     ERROR("Unable to call the enclave %lld", enclave.handle);
@@ -45,7 +46,7 @@ int main(int argc, char* argv[])
   if (*shared == 666) {
     LOG("The runtime managed to write the value!");
    } else {
-    LOG("The div by 0 never happened %d.", *shared);
+    LOG("The div by 0 never happened %llx.", *shared);
    }
 
   /// Clean up.

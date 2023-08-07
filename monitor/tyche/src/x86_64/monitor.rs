@@ -10,7 +10,9 @@ use mmu::{EptMapper, FrameAllocator};
 use spin::{Mutex, MutexGuard};
 use stage_two_abi::Manifest;
 use utils::{GuestPhysAddr, HostPhysAddr};
-use vmx::bitmaps::{EptEntryFlags, ExceptionBitmap, ExitControls, PinbasedControls};
+use vmx::bitmaps::{
+    EptEntryFlags, ExceptionBitmap, PinbasedControls, PrimaryControls, SecondaryControls,
+};
 use vmx::errors::Trapnr;
 use vmx::msr::IA32_LSTAR;
 use vmx::{ActiveVmcs, ControlRegister, Register, VmExitInterrupt, REGFILE_SIZE};
@@ -543,24 +545,35 @@ pub fn apply_core_updates(
                     let value = vcpu.get_pin_based_ctrls().expect("Unable to read PinBased");
                     vcpu.set_pin_based_ctrls(value | PinbasedControls::EXTERNAL_INTERRUPT_EXITING)
                         .expect("Unable to turn on external_interrupt.");
-                    let exit_controls = vcpu
-                        .get_vm_exit_ctrls()
-                        .expect("Unable to read exit controls");
-                    vcpu.set_vm_exit_ctrls(
-                        exit_controls.union(ExitControls::ACK_INTERRUPT_ON_EXIT),
-                    )
-                    .expect("Unable to set acknowledgement of interrupts on vm exit");
+                    let tpr = vcpu.get_primary_ctrls().expect("Unable to read primary");
+                    vcpu.set_primary_ctrls(tpr.union(PrimaryControls::USE_TPR_SHADOW))
+                        .expect("Failed to set primary controls");
+                    let apic = vcpu
+                        .get_secondary_ctrls()
+                        .expect("Failed to get secondary controls");
+                    vcpu.set_secondary_ctrls(apic.union(
+                        SecondaryControls::VIRTUALIZE_APIC
+                            /*| SecondaryControls::VIRTUALIZE_X2APIC*/
+                            /*| SecondaryControls::VIRTUALIZE_APIC_REGISTER*/,
+                    ))
+                    .expect("Failed to write the secondary controls.");
+                    vcpu.set_virt_apic_addr(HostPhysAddr::new(0x33000)).unwrap();
+                    log::info!(
+                        "The virtual apic addr: {:x}",
+                        vcpu.get_virt_apic_addr().unwrap()
+                    );
+                    log::info!("Let's read the msr apic base {:x}", unsafe {
+                        vmx::msr::I32_APIC_BASE.read()
+                    });
                 } else {
+                    //TODO we will need a flush of these controls...
                     let mut value = vcpu.get_pin_based_ctrls().expect("Unable to read PinBased");
                     value.remove(PinbasedControls::EXTERNAL_INTERRUPT_EXITING);
                     vcpu.set_pin_based_ctrls(value)
                         .expect("Unable to turn off external_interrupt.");
-                    let mut exit_controls = vcpu
-                        .get_vm_exit_ctrls()
-                        .expect("Unable to read exit controls");
-                    exit_controls.remove(ExitControls::ACK_INTERRUPT_ON_EXIT);
-                    vcpu.set_vm_exit_ctrls(exit_controls)
-                        .expect("Unable to set the exit controls");
+                    let mut secondary = vcpu.get_secondary_ctrls().unwrap();
+                    secondary.remove(SecondaryControls::VIRTUALIZE_APIC);
+                    vcpu.set_secondary_ctrls(secondary).unwrap();
                 }
             }
         }

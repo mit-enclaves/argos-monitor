@@ -720,6 +720,16 @@ impl<'vmx> ActiveVmcs<'vmx> {
         unsafe { fields::Ctrl64::EptPtr.vmread() }
     }
 
+    /// Sets the virtual apic address in the current vmcs.
+    pub fn set_virt_apic_addr(&mut self, virt_apic_ptr: HostPhysAddr) -> Result<(), VmxError> {
+        unsafe { fields::Ctrl64::VirtApicAddr.vmwrite(virt_apic_ptr.as_u64()) }
+    }
+
+    /// Gets the virtual apic address in the current vmcs.
+    pub fn get_virt_apic_addr(&self) -> Result<u64, VmxError> {
+        unsafe { fields::Ctrl64::VirtApicAddr.vmread() }
+    }
+
     /// Sets the EPTP address list.
     pub fn set_eptp_list(&mut self, eptp_list: &ept::EptpList) -> Result<(), VmxError> {
         unsafe { fields::Ctrl64::EptpListAddr.vmwrite(eptp_list.get_ptr().as_u64()) }

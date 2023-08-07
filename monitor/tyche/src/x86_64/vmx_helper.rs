@@ -50,7 +50,8 @@ fn default_vmcs_config(vmcs: &mut ActiveVmcs, info: &GuestInfo, switching: bool)
             vmcs.set_vm_exit_ctrls(
                 ExitControls::HOST_ADDRESS_SPACE_SIZE
                     | ExitControls::LOAD_IA32_EFER
-                    | ExitControls::SAVE_IA32_EFER,
+                    | ExitControls::SAVE_IA32_EFER
+                    | ExitControls::ACK_INTERRUPT_ON_EXIT,
             )
         })
         .and_then(|_| {

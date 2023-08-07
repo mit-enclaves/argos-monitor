@@ -15,6 +15,7 @@ pub const HIGH_MSR_END: u32 = 0xC000_1FFF;
 
 // ——————————————————————————————— Known MSRs ——————————————————————————————— //
 
+pub const I32_APIC_BASE: Msr = Msr::new(0x1B);
 pub const FEATURE_CONTROL: Msr = Msr::new(0x3A);
 pub const IA32_FS_BASE: Msr = Msr::new(0x100); // if CPUID.80000001:EDX.[29] = 1
 pub const IA32_GS_BASE: Msr = Msr::new(0x101); // if CPUID.80000001:EDX.[29] = 1
