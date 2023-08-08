@@ -160,9 +160,7 @@ fn handle_exit(
                 }
                 calls::SEAL_DOMAIN => {
                     log::trace!("Seal Domain");
-                    let capa =
-                        monitor::do_seal(*domain, LocalCapa::new(arg_1))
-                            .expect("TODO");
+                    let capa = monitor::do_seal(*domain, LocalCapa::new(arg_1)).expect("TODO");
                     vs.vcpu.set(Register::Rdi, capa.as_u64());
                     vs.vcpu.set(Register::Rax, 0);
                     vs.vcpu.next_instruction()?;
@@ -254,26 +252,100 @@ fn handle_exit(
                 }
                 calls::ENCLAVE_ATTESTATION => {
                     log::trace!("Get attestation!");
-                    if let Some(report) = monitor::do_domain_attestation(*domain,  arg_1, arg_2) {
+                    if let Some(report) = monitor::do_domain_attestation(*domain, arg_1, arg_2) {
                         vs.vcpu.set(Register::Rax, 0 as u64);
                         if arg_2 == 0 {
-                            vs.vcpu.set(Register::Rdi, u64::from_le_bytes(report.public_key.as_slice()[0..8].try_into().unwrap()));
-                            vs.vcpu.set(Register::Rsi, u64::from_le_bytes(report.public_key.as_slice()[8..16].try_into().unwrap()));
-                            vs.vcpu.set(Register::Rdx, u64::from_le_bytes(report.public_key.as_slice()[16..24].try_into().unwrap()));
-                            vs.vcpu.set(Register::Rcx, u64::from_le_bytes(report.public_key.as_slice()[24..32].try_into().unwrap()));
-                            vs.vcpu.set(Register::R8, u64::from_le_bytes(report.signed_enclave_data.as_slice()[0..8].try_into().unwrap()));
-                            vs.vcpu.set(Register::R9, u64::from_le_bytes(report.signed_enclave_data.as_slice()[8..16].try_into().unwrap()));
+                            vs.vcpu.set(
+                                Register::Rdi,
+                                u64::from_le_bytes(
+                                    report.public_key.as_slice()[0..8].try_into().unwrap(),
+                                ),
+                            );
+                            vs.vcpu.set(
+                                Register::Rsi,
+                                u64::from_le_bytes(
+                                    report.public_key.as_slice()[8..16].try_into().unwrap(),
+                                ),
+                            );
+                            vs.vcpu.set(
+                                Register::Rdx,
+                                u64::from_le_bytes(
+                                    report.public_key.as_slice()[16..24].try_into().unwrap(),
+                                ),
+                            );
+                            vs.vcpu.set(
+                                Register::Rcx,
+                                u64::from_le_bytes(
+                                    report.public_key.as_slice()[24..32].try_into().unwrap(),
+                                ),
+                            );
+                            vs.vcpu.set(
+                                Register::R8,
+                                u64::from_le_bytes(
+                                    report.signed_enclave_data.as_slice()[0..8]
+                                        .try_into()
+                                        .unwrap(),
+                                ),
+                            );
+                            vs.vcpu.set(
+                                Register::R9,
+                                u64::from_le_bytes(
+                                    report.signed_enclave_data.as_slice()[8..16]
+                                        .try_into()
+                                        .unwrap(),
+                                ),
+                            );
+                        } else if arg_2 == 1 {
+                            vs.vcpu.set(
+                                Register::Rdi,
+                                u64::from_le_bytes(
+                                    report.signed_enclave_data.as_slice()[16..24]
+                                        .try_into()
+                                        .unwrap(),
+                                ),
+                            );
+                            vs.vcpu.set(
+                                Register::Rsi,
+                                u64::from_le_bytes(
+                                    report.signed_enclave_data.as_slice()[24..32]
+                                        .try_into()
+                                        .unwrap(),
+                                ),
+                            );
+                            vs.vcpu.set(
+                                Register::Rdx,
+                                u64::from_le_bytes(
+                                    report.signed_enclave_data.as_slice()[32..40]
+                                        .try_into()
+                                        .unwrap(),
+                                ),
+                            );
+                            vs.vcpu.set(
+                                Register::Rcx,
+                                u64::from_le_bytes(
+                                    report.signed_enclave_data.as_slice()[40..48]
+                                        .try_into()
+                                        .unwrap(),
+                                ),
+                            );
+                            vs.vcpu.set(
+                                Register::R8,
+                                u64::from_le_bytes(
+                                    report.signed_enclave_data.as_slice()[48..56]
+                                        .try_into()
+                                        .unwrap(),
+                                ),
+                            );
+                            vs.vcpu.set(
+                                Register::R9,
+                                u64::from_le_bytes(
+                                    report.signed_enclave_data.as_slice()[56..64]
+                                        .try_into()
+                                        .unwrap(),
+                                ),
+                            );
                         }
-                        else if arg_2 == 1 {
-                            vs.vcpu.set(Register::Rdi, u64::from_le_bytes(report.signed_enclave_data.as_slice()[16..24].try_into().unwrap()));
-                            vs.vcpu.set(Register::Rsi, u64::from_le_bytes(report.signed_enclave_data.as_slice()[24..32].try_into().unwrap()));
-                            vs.vcpu.set(Register::Rdx, u64::from_le_bytes(report.signed_enclave_data.as_slice()[32..40].try_into().unwrap()));
-                            vs.vcpu.set(Register::Rcx, u64::from_le_bytes(report.signed_enclave_data.as_slice()[40..48].try_into().unwrap()));
-                            vs.vcpu.set(Register::R8, u64::from_le_bytes(report.signed_enclave_data.as_slice()[48..56].try_into().unwrap()));
-                            vs.vcpu.set(Register::R9, u64::from_le_bytes(report.signed_enclave_data.as_slice()[56..64].try_into().unwrap()));
-                        }
-                    }
-                    else {
+                    } else {
                         log::trace!("Attestation error");
                         vs.vcpu.set(Register::Rax, 1 as u64);
                     }

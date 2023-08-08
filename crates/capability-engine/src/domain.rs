@@ -168,9 +168,9 @@ pub struct Domain {
     /// Is the domain sealed?
     is_sealed: bool,
     /// attestation hash
-    attestation_hash : Option<HashEnclave>,
-    /// last attestation report 
-    attestation_report : Option<EnclaveReport>,
+    attestation_hash: Option<HashEnclave>,
+    /// last attestation report
+    attestation_report: Option<EnclaveReport>,
 }
 
 impl Domain {
@@ -201,8 +201,8 @@ impl Domain {
             cores: core_bits::NONE,
             is_being_revoked: false,
             is_sealed: false,
-            attestation_hash : None,
-            attestation_report : None,
+            attestation_hash: None,
+            attestation_report: None,
         }
     }
 
@@ -319,31 +319,27 @@ impl Domain {
         }
     }
 
-    pub fn set_hash(& mut self, hash : HashEnclave) {
+    pub fn set_hash(&mut self, hash: HashEnclave) {
         self.attestation_hash = Some(hash);
     }
 
-    pub fn set_report(& mut self, report : EnclaveReport) {
+    pub fn set_report(&mut self, report: EnclaveReport) {
         self.attestation_report = Some(report);
     }
 
     pub fn get_report(&self) -> Option<EnclaveReport> {
         if let Some(rep) = &self.attestation_report {
             Some(*rep)
-        }
-        else {
+        } else {
             None
         }
     }
+    
     pub fn get_hash(&self) -> HashEnclave {
         if let Some(he) = &self.attestation_hash {
             *he
-        }
-        else {
-            HashEnclave {
-                low : 0,
-                high : 0
-            }
+        } else {
+            HashEnclave { low: 0, high: 0 }
         }
     }
 }

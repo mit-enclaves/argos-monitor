@@ -102,12 +102,12 @@ int hello_world()
   }
   LOG("First enclave message:\n%s", msg->reply);
 
-  //generating random nonce
+  // Generating random nonce
   const nonce_t mod = (1e9 + 7);
   nonce_t nonce = rand() % mod;
   LOG("Nonce sent by the client is %llx", nonce);
   msg->nonce = nonce;
-  //call to enclave, which will do attestation
+  // Call to enclave, which will do attestation
   LOG("Calling enclave to execute attestation");
   if (sdk_call_domain(enclave, NULL) != SUCCESS) {
     ERROR("Unable to call the enclave a second time %lld!", enclave->handle);

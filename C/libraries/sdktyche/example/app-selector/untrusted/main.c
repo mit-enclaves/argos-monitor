@@ -296,9 +296,6 @@ int main(int argc, char *argv[]) {
   }
   shared->app = application;
 
-  //getting the attestation
-  // get_enclave_attestation(enclave);
-
   LOG("Calling the application '%s', good luck!", APP_NAMES[shared->app]);
   if (dispatcher[application]() != SUCCESS) {
     ERROR("Oups... we received a failure... good luck debugging.");
