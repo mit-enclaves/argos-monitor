@@ -2,7 +2,6 @@
 
 use core::arch::asm;
 
-use attestation::signature;
 use capa_engine::{Bitmaps, Domain, Handle, LocalCapa, NextCapaToken};
 use vmx::bitmaps::exit_qualification;
 use vmx::errors::Trapnr;

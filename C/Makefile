@@ -20,22 +20,25 @@ update_disk:
 
 # not so clean, was done in order to remove Makefile from crates/folder
 DISK_PATH ?= /tmp/mount/tyche/programs/crates
+VENDOR_PATH ?= /tmp/mount/tyche/programs/vendor
 TYCHOOLS_PATH ?= $(DISK_PATH)/tychools
-FORK_PATH ?= $(DISK_PATH)/forked_signature
+FORK_PATH ?= $(VENDOR_PATH)/forked_signature
 MMU_PATH ?= $(DISK_PATH)/mmu
 UTILS_PATH ?= $(DISK_PATH)/utils
 VMX_PATH ?= $(DISK_PATH)/vmx
 CRATES_PATH ?= ../crates/
+VENDOR_LOCAL ?= ../vendor/
 
 copy_tychools:
 	mkdir -p $(DISK_PATH)
+	mkdir -p $(VENDOR_PATH)
 	mkdir -p $(TYCHOOLS_PATH)
 	mkdir -p $(FORK_PATH)
 	mkdir -p $(MMU_PATH)
 	mkdir -p $(UTILS_PATH)
 	mkdir -p $(VMX_PATH)
 	cp -r -t $(TYCHOOLS_PATH) $(CRATES_PATH)/tychools/*
-	cp -r -t $(FORK_PATH) $(CRATES_PATH)/forked_signature/*
+	cp -r -t $(FORK_PATH) $(VENDOR_LOCAL)/forked_signature/*
 	cp -r -t $(MMU_PATH) $(CRATES_PATH)/mmu/*
 	cp -r -t $(UTILS_PATH) $(CRATES_PATH)/utils/*
 	cp -r -t $(VMX_PATH) $(CRATES_PATH)/vmx/*

@@ -772,20 +772,3 @@ impl core::fmt::Display for CoreUpdate {
         }
     }
 }
-
-// ———————————————————————————————— Helper ————————————————————————————————— //
-
-fn dummy_debug(engine: &mut MutexGuard<'_, CapaEngine>) {
-    let mut next = NextCapaToken::new();
-    while let Some((domain, next_next)) = engine.enumerate_domains(next) {
-        next = next_next;
-
-        log::trace!("Domain");
-        let mut next_capa = NextCapaToken::new();
-        while let Some((info, next_next_capa)) = engine.enumerate(domain, next_capa) {
-            next_capa = next_next_capa;
-            log::trace!(" - {}", info);
-        }
-        log::trace!("{}", engine[domain].regions());
-    }
-}
