@@ -17,7 +17,7 @@ const PMP_CFG: usize = 0;
 const PMP_ADDR: usize = 1; 
 
 const XWR_MASK: usize = 7; 
-const RV64_PAGESIZE: usize = 4096;
+const RV64_PAGESIZE_MASK: usize = 0xfffffffffffff000;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(usize)]
@@ -54,6 +54,7 @@ pub fn pmp_read(csr_id: usize, csr_index: usize) -> Result<usize, PMPErrorCode> 
 
 //Returns PMP addressing mode and PMPErrorCode
 pub fn pmp_write(csr_index: usize, region_addr: usize, region_size:usize, region_perm: usize) -> Result<PMPAddressingMode, PMPErrorCode> { 
+    log::info!("Writing PMP with args: {}, {:x}, {:x}, {:x}", csr_index, region_addr, region_size, region_perm);
     //This will ensure that the index is in expected range
     if csr_index < 0 || csr_index >= PMP_ENTRIES { 
         return Err(PMPErrorCode::InvalidIndex);
@@ -61,7 +62,8 @@ pub fn pmp_write(csr_index: usize, region_addr: usize, region_size:usize, region
    
     //To enforce that the region_addr is the start of a page and the region_size is a multiple of
     //page_size. 
-    if ((region_addr & (RV64_PAGESIZE - 1)) == 0) && ((region_size & (RV64_PAGESIZE)) == 0) {
+    if ((region_addr & (RV64_PAGESIZE_MASK)) != region_addr) && ((region_size & (RV64_PAGESIZE_MASK)) != region_size) {
+        log::info!("PMP addr or size not page aligned!");
         return Err(PMPErrorCode::NotPageAligned);
     }
 

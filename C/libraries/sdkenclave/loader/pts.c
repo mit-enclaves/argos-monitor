@@ -14,6 +14,7 @@
 #endif
 #include "tyche_enclave.h"
 #include "enclave_loader.h"
+#define TYCHE_DEBUG 1
 
 // —————————————————— Actual constants used for the bumper —————————————————— //
 
@@ -56,17 +57,25 @@ static entry_t translate_flags(Elf64_Word flags) {
     result |= PT_RW;
   }
 #elif defined(CONFIG_RISCV) || defined(__riscv)
- if ((flags & PF_R) == PF_R) {
+  //result |= PT_V;
+  if ((flags & PF_R) == PF_R) {
+      DEBUG("%s R + V", __func__);
       result |= PT_V;
       result |= PT_R;
   }
   //if ((flags & PF_X) != PF_X) {
     //result |= PT_NX;
   //}
+  if ((flags & PF_X) == PF_X) {
+    DEBUG("%s X", __func__);
+    result |= PT_X;
+  }
   if ((flags & PF_W) == PF_W) {
+    DEBUG("%s W", __func__);
     result |= PT_W;
   }
 #endif
+    DEBUG("%s result: %lx", __func__, result);
   return result;
 }
 
@@ -165,7 +174,7 @@ normal_page:
   }
 entry_page:
   *entry = ((info->segment_offset + offset) & PT_PHYS_PAGE_MASK) |
-    translate_flags(info->segment->p_flags) | PT_BIT_D | PT_BIT_A; 
+    translate_flags(info->segment->p_flags) | PT_D | PT_A; 
   DEBUG("entry: lvl: %d, curr_va: %llx, entry: %llx, pa: %llx",
       lvl, profile->curr_va, *entry, profile->va_to_pa((addr_t)entry, profile));
   return WALK;
@@ -308,7 +317,10 @@ int create_page_tables(uint64_t phys_offset, page_tables_t* bump, Elf64_Ehdr* he
 #elif defined(__riscv) || defined(CONFIG_RISCV)
   //TODO(neelu)
   info.bump = bump; 
-  info.intermed_flags = PT_BIT_V | PT_BIT_R | PT_BIT_W | PT_BIT_X | PT_BIT_U | PT_BIT_D;
+  //info.intermed_flags = PT_V | PT_R | PT_W | PT_X | PT_A | PT_D;
+
+  info.intermed_flags = PT_V | PT_A | PT_D; 
+  //NEELU TODO: PT_U is not enabled currently as the domain executes in S-mode. 
 
   // Set up the profile. 
   profile = riscv64_sv48_profile;
@@ -330,6 +342,8 @@ int create_page_tables(uint64_t phys_offset, page_tables_t* bump, Elf64_Ehdr* he
   // Allocate the root.
   entry_t root = (entry_t) allocate((void*)bump);
 
+  DEBUG("root: %llx addr: %p", root, &root);
+
   // Map the segments.
   mem_size = 0;
   for (int i = 0; i < header->e_phnum; i++) {
@@ -349,10 +363,13 @@ int create_page_tables(uint64_t phys_offset, page_tables_t* bump, Elf64_Ehdr* he
     }
 #elif defined(__riscv) || defined(CONFIG_RISCV)
     //TODO(neelu)
-#ifdef RISCV64_RV48 
+#ifdef RISCV64_SV48 
     if (pt_walk_page_range(root, LVL3, start, end, &profile)) { 
         ERROR("Unable to map the region %llx -- %llx ", start, end);
         goto unmap_failure;
+    }
+    else {
+        DEBUG("Segment Mapped Successfully. Start: %llx, End: %llx", start, end);
     }
 #endif
     //TEST(0);
@@ -377,7 +394,7 @@ int fix_page_tables(usize offset, page_tables_t * tables)
     ERROR("The provided tables is null.");
     goto failure;
   }
-  DEBUG("About to fix the page tables, the physical offset is: %llx", offset);
+  DEBUG("About to fix the page tables, the physical offset is: %llx tables->idx: %d", offset, tables->idx);
   for (int i = 0; i < tables->idx; i++) {
     page_t* page = &tables->pages[i];
     for (int j = 0; j < ENTRIES_PER_PAGE; j++) {
@@ -392,12 +409,29 @@ int fix_page_tables(usize offset, page_tables_t * tables)
       DEBUG("fixed: entry: %llx @(%d, %d)", *entry, i, j);
 #elif defined(__riscv) || defined(CONFIG_RISCV)
       //TODO(neelu) 
-      if ((*entry & PT_BIT_V) != PT_BIT_V) {
-        continue;
+      if ((*entry & PT_V) != PT_V) {
+          //DEBUG("Skipping invalid entry!");
+          if (*entry != 0) { 
+            DEBUG("Skipping invalid entry: %llx, @(%d,%d)", *entry, i, j);
+          }
+          continue;
       }
+      /* uint8_t readable = 0, executable = 0, writable = 0;
+      if ((*entry & PT_R) == PT_R) 
+          readable = 1;
+      if((*entry & PT_X) == PT_X) 
+          executable = 1;
+      if((*entry & PT_W) == PT_W) 
+          writable = 1; */
+
       uint64_t addr = offset + (*entry & PT_PHYS_PAGE_MASK);
+      //addr >>= 12; 
       *entry = (*entry & ~PT_PHYS_PAGE_MASK) | addr;
-      DEBUG("fixed: entry: %llx @(%d, %d)", *entry, i, j);
+      //DEBUG("fixed: entry: %llx @(%d, %d)", *entry, i, j);
+    //DEBUG("fixed: entry: %llx, pa: %llx, RWX: %d, %d, %d", *entry, addr, readable, writable, executable);
+      DEBUG("fixed: entry: %llx, pa: %llx @(%d,%d)", *entry, addr, i, j);
+ 
+
       //TEST(0);
 #endif
     }
