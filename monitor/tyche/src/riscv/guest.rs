@@ -1,4 +1,4 @@
-use core::arch::asm;
+use core::{arch::asm};
 
 use capa_engine::{LocalCapa, NextCapaToken, Domain, Handle};
 use qemu::println;
@@ -115,12 +115,19 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     let mut mepc: usize;
     let mut mstatus: usize;
     let mut mtval: usize;
+    let mut sp: usize = 0;
+    let mut mie: usize = 0; 
+    let mut mip: usize = 0;
+    let mut mideleg: usize = 0;
 
     unsafe {
         asm!("csrr {}, mcause", out(reg) mcause);
         asm!("csrr {}, mepc", out(reg) mepc);
         asm!("csrr {}, mstatus", out(reg) mstatus);
         asm!("csrr {}, mtval", out(reg) mtval);
+        asm!("csrr {}, mie", out(reg) mie);
+        asm!("csrr {}, mideleg", out(reg) mideleg);
+        asm!("csrr {}, mip", out(reg) mip);
     }
 
     // print trap related registers
@@ -130,11 +137,14 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     println!("mtval: {:x}", mtval); */
 
     println!(
-        "Trap arguments: mcause {:x}, mepc {:x} mstatus {:x} mtval {:x} ra {:x} a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x} ",
+        "Trap arguments: mcause {:x}, mepc {:x} mstatus {:x} mtval {:x} mie {:x} mip {:x} mideleg {:x} ra {:x} a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x} ",
         mcause, 
         mepc, 
         mstatus,
         mtval,
+        mie,
+        mip, 
+        mideleg,
         reg_state.ra,
         reg_state.a0,
         reg_state.a1,
@@ -163,18 +173,23 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         mcause::LOAD_ADDRESS_MISALIGNED => {
             misaligned_load_handler(reg_state);
         }
+        mcause::STORE_ACCESS_FAULT | mcause::LOAD_ACCESS_FAULT | mcause::INSTRUCTION_ACCESS_FAULT => { 
+            panic!("PMP Access Fault!");
+        }
         _ => exit_handler_failed(),
         //Default - just print whatever information you can about the trap.
     }
     unsafe {
         asm!("csrr {}, mepc", out(reg) mepc);
+        asm!("mv {}, sp", out(reg) sp);
     }
-    println!("Trap handler complete: returning from ecall {:x}, mepc: {:x} ", ret, mepc);
+    println!("Trap handler complete: returning from ecall {:x}, mepc: {:x} sp: {:x}", ret, mepc, sp);
 
     //monitor::apply_core_updates(current_domain, core_id);
 
     // Return to the next instruction after the trap.
     // i.e. mepc += 4
+    // TODO: This shouldn't happen in case of switch. 
     unsafe {
         asm!("csrr t0, mepc");
         asm!("addi t0, t0, 0x4");
@@ -187,13 +202,13 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
 }
 
 pub fn illegal_instruction_handler(mepc: usize, mstatus: usize) {
-    let mut mepc_instr_opcode: usize = 0;
+    //let mut mepc_instr_opcode: usize = 0;
 
     // Read the instruction which caused the trap. (mepc points to the VA of this instruction).
     // Need to set mprv before reading the instruction pointed to by mepc (to enable VA to PA
     // translation in M-mode. Reset mprv once done.
 
-    let mut mprv_index: usize = 1 << mstatus::MPRV;
+    /* let mut mprv_index: usize = 1 << mstatus::MPRV;
 
     unsafe {
         asm!("csrs mstatus, {}", in(reg) mprv_index);
@@ -207,7 +222,9 @@ pub fn illegal_instruction_handler(mepc: usize, mstatus: usize) {
         "Illegal instruction trap from {} mode, caused by instruction {:x}",
         ((mstatus >> mstatus::MPP_LOW) & mstatus::MPP_MASK),
         mepc_instr_opcode
-    );
+    ); */ 
+
+    println!("Illegal Instruction Trap! Returning!");
 }
 
 pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
@@ -233,14 +250,33 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
         }
 
         match tyche_call {
-           calls::CREATE_DOMAIN => 
-           {
+           calls::CREATE_DOMAIN => {
                 log::info!("Create Domain");
                 let capa = monitor::do_create_domain(active_dom).expect("TODO");
                 reg_state.a0 = 0x0;
                 reg_state.a1 = capa.as_usize();
                 //TODO: Ok(HandlerResult::Resume) There is no main loop to check what happened
                 //here, do we need a wrapper to determine when we crash?  
+           },
+           calls::SET_CORES => {
+                log::info!("Set Cores");
+                match monitor::do_set_cores(active_dom, LocalCapa::new(arg_1), arg_2) {
+                    Ok(()) => reg_state.a0 = 0x0,
+                    Err(e) => {
+                        log::debug!("Set cores failed {:?}", e);
+                        reg_state.a0 = 0x1;
+                    }
+                }
+           },
+           calls::SET_TRAPS => { 
+                log::info!("Set Traps");
+                match monitor::do_set_traps(active_dom, LocalCapa::new(arg_1), arg_2) {
+                    Ok(()) => reg_state.a0 = 0x0,
+                    Err(e) => {
+                        log::debug!("Set traps failed {:?}", e);
+                        reg_state.a0 = 0x1;
+                    }
+                }
            },
            calls::SEAL_DOMAIN => { 
                 log::info!("Seal Domain");

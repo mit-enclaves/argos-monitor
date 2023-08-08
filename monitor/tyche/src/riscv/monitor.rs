@@ -5,7 +5,7 @@ use capa_engine::{
     permission, AccessRights, CapaEngine, CapaError, CapaInfo, Domain, Handle, LocalCapa,
     NextCapaToken, Buffer
 };
-use riscv_utils::{RegisterState, PAGING_MODE_SV48, read_mscratch, read_satp, write_satp, write_mscratch, read_mepc, write_mepc};
+use riscv_utils::{RegisterState, PAGING_MODE_SV48, read_mscratch, read_satp, write_satp, write_mscratch, read_mepc, write_mepc, clear_mstatus_xie, clear_mstatus_spie, clear_mideleg, disable_supervisor_interrupts, clear_medeleg};
 use spin::{Mutex, MutexGuard};
 use riscv_pmp::{pmp_write, clear_pmp, PMPAddressingMode, PMPErrorCode, FROZEN_PMP_ENTRIES, PMP_ENTRIES};
 
@@ -132,6 +132,7 @@ pub fn do_seal(
     mepc: usize,
     sp: usize,
 ) -> Result<LocalCapa, CapaError> {
+    log::info!("satp: {:x} mepc: {:x} sp: {:x}", satp, mepc, sp);
     let cpuid = cpuid();
     let mut engine = CAPA_ENGINE.lock();
     let capa = engine.seal(current, cpuid, domain)?;
@@ -140,8 +141,11 @@ pub fn do_seal(
         .expect("Should be a domain capa");
     let mut context = get_context(new_domain, cpuid);
     //Todo: Populate context with the input context
-    context.satp = (satp | PAGING_MODE_SV48);  
-    context.mepc = mepc;
+    context.satp = ((satp >> 12) | PAGING_MODE_SV48);  
+    context.mepc = (mepc - 0x4);    //TODO: Temporarily subtracting 4, because at the end of handle_exit,
+                            //mepc+4 is the address being returned to. Need to find an elegant way
+                            //to manage this. 
+
     context.sp = sp;
     let temp_reg_state = RegisterState::const_default(); 
     context.reg_state = temp_reg_state; 
@@ -230,15 +234,18 @@ pub fn do_switch(
         get_context(next_context),
         return_capa,
     ))*/
+    log::info!("engine.switch");
     let mut engine = CAPA_ENGINE.lock();
     engine.switch(current, cpuid, capa)?;
     apply_updates(&mut engine);
+    //do_debug();
     Ok(())
 }
 
 pub fn do_debug() {
     let mut engine = CAPA_ENGINE.lock();
     let mut next = NextCapaToken::new();
+    log::info!("Logging domains.");
     while let Some((domain, next_next)) = engine.enumerate_domains(next) {
         next = next_next;
 
@@ -274,9 +281,11 @@ enum CoreUpdate {
 }
 
 fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
+    log::info!("Applying updates.");
     while let Some(update) = engine.pop_update() {
         match update {
-            capa_engine::Update::PermissionUpdate { domain } => update_permission(domain, engine),
+            capa_engine::Update::PermissionUpdate { domain } => (),
+                //update_permission(domain, engine),
             capa_engine::Update::RevokeDomain { domain } => revoke_domain(domain),
             capa_engine::Update::CreateDomain { domain } => create_domain(domain),
             //capa_engine::Update::None => todo!(),
@@ -330,7 +339,7 @@ pub fn apply_core_updates(
     let core = cpuid();
     let mut update_queue = CORE_UPDATES[core_id].lock();
     while let Some(update) = update_queue.pop() {
-        log::trace!("Core Update: {}", update);
+        log::info!("Core Update: {}", update);
         match update {
             CoreUpdate::TlbShootdown => {
                 log::trace!("TLB Shootdown on core {}", core_id);
@@ -347,12 +356,12 @@ pub fn apply_core_updates(
                 return_capa,
                 //current_reg_state, 
             } => {
-                log::trace!("Domain Switch on core {}", core_id);
+                log::info!("Domain Switch on core {} for domain {}", core_id, domain);
 
                 let current_ctx = get_context(*current_domain, core);
                 let next_ctx = get_context(domain, core);
                 let next_domain = get_domain(domain);
-                switch_domain(current_domain, current_ctx, current_reg_state, next_ctx, next_domain);
+                switch_domain(current_domain, current_ctx, current_reg_state, next_ctx, next_domain, domain);
 
                 current_reg_state.a0 = 0x0;
                 current_reg_state.a1 = return_capa.as_usize();
@@ -426,7 +435,9 @@ fn switch_domain(
     current_reg_state: &mut RegisterState,
     next_ctx: MutexGuard<ContextData>,
     next_domain: MutexGuard<DomainData>,
+    domain: Handle<Domain>,
 ) {
+    log::info!("switch_domain writing satp: {:x} mepc {:x} mscratch: {:x}", next_ctx.satp, next_ctx.mepc, next_ctx.sp);
     //Save current context 
     current_ctx.reg_state = *current_reg_state;
     current_ctx.mepc = read_mepc();
@@ -440,13 +451,27 @@ fn switch_domain(
     write_mepc(next_ctx.mepc);
     *current_reg_state = next_ctx.reg_state;
 
+    disable_supervisor_interrupts();
+
+    clear_mideleg();
+    clear_medeleg();
+
+    //clear_mstatus_sie();    //this disables interrupts for s-mode. 
+    //clear_mstatus_spie();
+
     //TODO: Create a snapshot of the PMPCFG and PMPADDR values and store it as the DomainData 
     //After that, instead of update_permission, something like apply_permission could be called to
     //directly write the PMP - no need to reiterate through the domain's regions as happens in
     //update_permission. 
 
+    do_debug();
+
     let mut engine = CAPA_ENGINE.lock();
-    update_permission(*current_domain, &mut engine);
+    log::info!("Args to update_permission: {}", domain);
+    //do_debug();
+    update_permission(domain, &mut engine);
+
+    clear_mideleg();
 
     //TODO: update_permission(domain_handle, engine)??????? 
     
@@ -456,7 +481,7 @@ fn switch_domain(
     current_ctx.rsp = vcpu.get(Register::Rsp) as usize;
 
     // Switch domain
-    vcpu.set_cr(ControlRegister::Cr3, next_ctx.cr3);
+    vcpu.set_cr(ControlRegister::Cr3, next_ctx.cr3)
     vcpu.set(Register::Rip, next_ctx.rip as u64);
     vcpu.set(Register::Rsp, next_ctx.rsp as u64);
     vcpu.set_ept_ptr(HostPhysAddr::new(
@@ -480,10 +505,13 @@ fn revoke_domain(_domain: Handle<Domain>) {
     //Todo 
 }
 
-fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) {
+fn update_permission(domain_handle: Handle<Domain> , engine: &mut MutexGuard<CapaEngine>) {
     //Update PMPs
-    let mut domain = get_domain(domain_handle); 
+    //log::info!("get_domain");
+ 
+    //let mut domain = get_domain(domain_handle); 
     //First clean current PMP settings - this should internally cause the appropriate flushes 
+    log::info!("Clearing PMP");
     clear_pmp();
     log::info!("updating permission");
     //Currently assuming that the number of regions are less than number of PMP entries. 
@@ -497,7 +525,9 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
         //Check the PMP addressing mode so the index can be advanced by 1
         //(NAPOT) or 2 (TOR). 
         if pmp_write_result.is_ok() { 
-        
+       
+            log::info!("PMP write ok");
+
             if pmp_write_result.unwrap() == PMPAddressingMode::NAPOT {
                 pmp_index = pmp_index + 1; 
             }
@@ -512,6 +542,7 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
             }
         }
         else {
+            log::info!("PMP write NOT ok!");
             //Todo: Check error codes and manage appropriately. 
         }
     } 

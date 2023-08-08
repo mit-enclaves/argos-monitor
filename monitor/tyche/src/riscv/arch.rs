@@ -28,6 +28,9 @@ pub fn init() {
         asm!("csrw mscratch, {}", in(reg) TYCHE_STACK_POINTER);
     }
 
+    clear_mstatus_xie();
+    disable_supervisor_interrupts();
+
     //Configuring mtvec direct base address to point to Tyche's trap handler.
     let mtvec_ptr = machine_trap_handler as *const ();
     println!("mtvec_ptr to be set by Tyche {:p}", mtvec_ptr);
