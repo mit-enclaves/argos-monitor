@@ -56,8 +56,8 @@ cd programs
 
 ## Next steps
 
-One of the approaches ould be to have a separate domain that is used for hashing/attestation. When tyche receives a call, it then 'forwards' the call to the domain. This way TCB won't be increased, and the mappings of memory in Tyche could be removed. If we can generate std static Rust binaries then we can do it probably. That will be the path to explore.
+One of the approaches would be to have a separate domain that is used for hashing/attestation. When Tyche receives a call, it then 'forwards' the call to the domain. This way TCB won't be increased, and the mappings of memory in Tyche could be removed. If we can generate std static Rust binaries then we can do it probably. That will be the path to explore.
 
 ## Problems
 
-Rust no_std crates (LLVM/target bug)
+Rust no_std crates (LLVM/target/std bug). Every rust crate had some kind of a problem when I tried to include it. It requested std when I explicitly added only feature flags for no_std. Other error was for Sha2 and crates that depend on it, had a llvm error: do not know how to split the result of this operator error. In the end forked a repo and swapped getrandom crate with just returning always the same array. It should be worked on later on.

@@ -282,7 +282,6 @@ failure:
   return FAILURE;
 }
 
-
 int tyche_revoke(capa_index_t id)
 {
   vmcall_frame_t frame = {

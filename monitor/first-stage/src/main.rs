@@ -22,7 +22,7 @@ use s1::{guests, println, second_stage, smp, HostPhysAddr, HostVirtAddr};
 use stage_two_abi::{Smp, VgaInfo};
 use x86_64::registers::control::Cr4;
 
-const LOG_LEVEL: LevelFilter = LevelFilter::Trace;
+const LOG_LEVEL: LevelFilter = LevelFilter::Info;
 
 entry_point!(kernel_main);
 
@@ -213,7 +213,7 @@ fn launch_guest(
             &mut stage2_allocator,
             &mut pt_mapper,
             smp,
-            memory_map
+            memory_map,
         );
         smp::BSP_READY.store(true, Ordering::SeqCst);
         second_stage::enter();

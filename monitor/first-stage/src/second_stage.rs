@@ -11,8 +11,7 @@ use stage_two_abi::{EntryPoint, Manifest, Smp};
 use crate::cpu::MAX_CPU_NUM;
 use crate::elf::{Elf64PhdrType, ElfProgram};
 use crate::guests::ManifestInfo;
-use crate::mmu::frames::MemoryMap;
-use crate::mmu::frames::RangeFrameAllocator;
+use crate::mmu::frames::{MemoryMap, RangeFrameAllocator};
 use crate::{cpu, HostPhysAddr, HostVirtAddr};
 
 #[cfg(feature = "second-stage")]
@@ -159,7 +158,7 @@ pub fn load(
     for mem_region in guest_regions {
         let region_size = mem_region.end - mem_region.start;
         loaded_elf.pt_mapper.map_range(
-            stage2_allocator, 
+            stage2_allocator,
             HostVirtAddr::new(mem_region.start as usize),
             HostPhysAddr::new(mem_region.start as usize),
             region_size as usize,
