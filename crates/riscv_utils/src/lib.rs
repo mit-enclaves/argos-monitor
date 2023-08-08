@@ -5,7 +5,7 @@ use core::arch::asm;
 //uart base address
 pub const SERIAL_PORT_BASE_ADDRESS: usize = 0x1000_0000;
 
-pub const PAGING_MODE_SV48: usize = 0x9;
+pub const PAGING_MODE_SV48: usize = 0x9000000000000000;
 
 #[derive(Copy, Clone, Debug)]
 pub struct RegisterState {
@@ -139,5 +139,69 @@ pub fn write_ra(ra: usize) {
 pub fn write_sp(sp: usize) {
     unsafe {
         asm!("mv sp, {}", in(reg) sp);
+    }
+}
+
+pub fn clear_mstatus_xie() {
+    unsafe {
+        asm!(
+            "li t0, 0xa",
+            "not t1, t0",
+            "csrr t2, mstatus",
+            "and t2, t2, t1",
+            "csrw mstatus, t2",
+        //asm!("csrrci t0, mstatus, 0x2");
+            //"clear_sie: 
+             //"csrrci t0, mstatus, 0x2"
+             //bnez t0, clear_sie",
+             //options(nostack)
+        );
+    }
+}
+
+pub fn clear_mstatus_spie() {
+    unsafe {
+        asm!(
+            "li t0, 0x20",
+            "not t1, t0",
+            "csrr t2, mstatus",
+            "and t2, t2, t1",
+            "csrw mstatus, t2",
+            );
+    }
+}
+
+pub fn clear_mideleg() {
+    unsafe {
+        asm!( 
+            "li t0, 0",
+            "csrw mideleg, t0",
+        );
+    }
+}
+
+pub fn disable_supervisor_interrupts() {
+    unsafe {
+        asm!(
+            "li t0, 0x222",
+            "not t1, t0",
+            "csrr t2, mie",
+            "and t2, t2, t1",
+            "csrw mie, t2",
+            //"csrci mie, 0x2",
+            //"li t0, 0x20",
+            //"csrrci t0, mie, t0",
+            //"li t0, 0x200",
+            //"csrrci t0, mie, t0",
+        );
+    }
+}
+
+pub fn clear_medeleg() {
+    unsafe { 
+        asm!(
+            "li t0, 0",
+            "csrw medeleg, t0",
+        );
     }
 }

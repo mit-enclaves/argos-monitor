@@ -3,7 +3,7 @@
 // Take a capa_index_t* and a void**, expected to be in rdi, rsi.
 .globl riscv_asm_call_gate
 riscv_asm_call_gate:
-    addi sp, sp, -34*8
+    /*addi sp, sp, -34*8
     sd ra, 0*8(sp)
     sd a0, 1*8(sp)
     sd a1, 2*8(sp)
@@ -34,14 +34,14 @@ riscv_asm_call_gate:
     sd s8, 27*8(sp)
     sd s9, 28*8(sp)
     sd s10, 29*8(sp)
-    sd s11, 30*8(sp)
+    sd s11, 30*8(sp) */
     ld a2, 0x0(a1)      //loading the args - TODO: Make sure this is correct!! Because the tyche call id is supposed to be in a0. 
     ld a1, 0x0(a0)
     li a0, 0x9  
     li a7, 0x78ac5b
     ecall 
     //ld t0, 0x1(x0) 
-    ld ra, 0*8(sp)
+    /* ld ra, 0*8(sp)
     ld a0, 1*8(sp)
     ld a1, 2*8(sp)
     ld a2, 3*8(sp)
@@ -72,8 +72,8 @@ riscv_asm_call_gate:
     ld s9, 28*8(sp)
     ld s10, 29*8(sp)
     ld s11, 30*8(sp)
-    addi sp, sp, 34*8
-    uret 
+    addi sp, sp, 34*8 */
+    sret 
 
 .globl _start
 _start:

@@ -34,5 +34,7 @@ compile_riscv:
 	#make ARCH=riscv -B -B libraries/sdkenclave/example/debug install_disk
 	#make ARCH=riscv -B -C libraries/trt
 	cp scripts/install_drivers.sh /home/neelu/vmxvmm/builds/ramfs-riscv/
+	cp scripts/run_eapp.sh /home/neelu/vmxvmm/builds/ramfs-riscv/
+	cp libraries/sdkenclave/*.so /home/neelu/vmxvmm/builds/ramfs-riscv/
 endif
 
