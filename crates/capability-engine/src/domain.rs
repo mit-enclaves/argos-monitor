@@ -334,7 +334,7 @@ impl Domain {
             None
         }
     }
-    
+
     pub fn get_hash(&self) -> HashEnclave {
         if let Some(he) = &self.attestation_hash {
             *he

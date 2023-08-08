@@ -2,12 +2,11 @@ use std::fs::read_to_string;
 use std::path::PathBuf;
 
 use ed25519_compact::{PublicKey, SecretKey, Signature};
+use object::elf::{PF_R, PF_W, PF_X};
 use object::read::elf::ProgramHeader;
 use sha2::{Digest, Sha256};
-use crate::elf_modifier::PF_H;
-use object::elf::{PF_W, PF_R, PF_X};
 
-use crate::elf_modifier::{ModifiedELF, ModifiedSegment, TychePhdrTypes, DENDIAN};
+use crate::elf_modifier::{ModifiedELF, ModifiedSegment, TychePhdrTypes, DENDIAN, PF_H};
 
 fn hash_acc_rights(hasher: &mut Sha256, flags: u32, mask: u32) {
     if flags & mask != 0 {
