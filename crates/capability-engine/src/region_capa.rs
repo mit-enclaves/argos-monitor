@@ -127,7 +127,6 @@ pub(crate) fn duplicate(
 
     let capa = &regions[handle];
     let domain_handle = capa.domain;
-    
     // Ensure that the operation is valid
     if capa.left.is_some() || capa.right.is_some() {
         log::info!("Tried to duplicate a handle with a left and/or right child");
@@ -158,7 +157,6 @@ pub(crate) fn duplicate(
         regions.free(left);
         return Err(CapaError::OutOfMemory);
     };
-
 
     // Insert the capas in the domain
     let Ok(capa_left) = insert_capa(domain_handle, left, regions, domains) else {

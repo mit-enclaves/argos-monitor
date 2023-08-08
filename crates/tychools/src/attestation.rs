@@ -1,32 +1,25 @@
+use std::fs::read_to_string;
 use std::path::PathBuf;
 
-use std::fs::read_to_string;
-
+use ed25519_compact::{PublicKey, SecretKey, Signature};
 use object::read::elf::ProgramHeader;
 use sha2::{Digest, Sha256};
-
-use ed25519_compact::{PublicKey, SecretKey, Signature};
+use crate::elf_modifier::PF_H;
+use object::elf::{PF_W, PF_R, PF_X};
 
 use crate::elf_modifier::{ModifiedELF, ModifiedSegment, TychePhdrTypes, DENDIAN};
 
-fn hash_acc_rights(hasher : & mut Sha256, flags : u32, mask : u32) {
+fn hash_acc_rights(hasher: &mut Sha256, flags: u32, mask: u32) {
     if flags & mask != 0 {
         log::trace!("1");
         hasher.input(&u8::to_le_bytes(1 as u8));
-    }
-    else {
+    } else {
         log::trace!("0");
         hasher.input(&u8::to_le_bytes(0 as u8));
     }
 }
 
-static PF_X : u32 = 1 << 0;
-static PF_W : u32 = 1 << 1;
-static PF_R : u32 = 1 << 2;
-static PF_H : u32 = 1 << 3;
-
-//todo why are segments not in order
-fn hash_segments_info(enclave : & Box<ModifiedELF>, hasher : & mut Sha256, offset : u64) {
+fn hash_segments_info(enclave: &Box<ModifiedELF>, hasher: &mut Sha256, offset: u64) {
     let mut segment_off = offset;
     for seg in &enclave.segments {
         if ModifiedSegment::is_loadable(seg.program_header.p_type(DENDIAN)) {
@@ -59,23 +52,22 @@ fn hash_segments_info(enclave : & Box<ModifiedELF>, hasher : & mut Sha256, offse
                     if tpe.is_confidential() {
                         log::trace!("Conf 1");
                         hasher.input(&u8::to_le_bytes(1 as u8));
-                    }
-                    else {
+                    } else {
                         log::trace!("Conf 0");
                         hasher.input(&u8::to_le_bytes(0 as u8));
                     }
                     //hashing data
                     for u8_data in &seg.data {
-                        let arr_u8 : [u8;1] = [*u8_data];
+                        let arr_u8: [u8; 1] = [*u8_data];
                         hasher.input(&arr_u8);
                     }
                     //padding (allignment) which loader does
                     for _ in 0..diff {
-                        let arr_u8 : [u8;1] = [0];
+                        let arr_u8: [u8; 1] = [0];
                         hasher.input(&arr_u8);
                     }
                 }
-                segment_off+=sz;
+                segment_off += sz;
             }
         }
     }
@@ -88,72 +80,72 @@ pub fn attest(src: &PathBuf, offset: u64) -> (u128, u128) {
     enclave.fix_page_tables(offset);
 
     hash_segments_info(&enclave, &mut hasher, offset);
-    
+
     let result = hasher.result();
     log::info!("Computed hash:");
     log::info!("{}", format!("{:x}", result));
-    let hash_low : u128 = u128::from_be_bytes(result.as_slice()[0..16].try_into().unwrap());
-    let hash_high : u128 = u128::from_be_bytes(result.as_slice()[16..32].try_into().unwrap());
+    let hash_low: u128 = u128::from_be_bytes(result.as_slice()[0..16].try_into().unwrap());
+    let hash_high: u128 = u128::from_be_bytes(result.as_slice()[16..32].try_into().unwrap());
     (hash_high, hash_low)
 }
 
-const MSG_SZ : usize = 32 + 8;
-const PB_KEY_SZ : usize = 32;
-const ENC_DATA_SZ : usize = 64;
+const MSG_SZ: usize = 32 + 8;
+const PB_KEY_SZ: usize = 32;
+const ENC_DATA_SZ: usize = 64;
 use std::fs::File;
 use std::io::Write;
 
-fn copy_arr(dst : & mut[u8], src : &[u8], index : usize) {
+fn copy_arr(dst: &mut [u8], src: &[u8], index: usize) {
     let mut ind = index;
     for x in src {
         dst[ind] = *x;
-        ind+=1;
+        ind += 1;
     }
 }
 
-pub fn attestation_check(src_bin : &PathBuf, src_att : &PathBuf, offset : u64, nonce : u64) {
+pub fn attestation_check(src_bin: &PathBuf, src_att: &PathBuf, offset: u64, nonce: u64) {
     log::trace!("Tychools attestation check");
     log::trace!("Binary path {}", src_bin.display());
     log::trace!("Attestation data path {}", src_att.display());
     log::trace!("Offset {:#x}", offset);
     log::trace!("Nonce {:#x}", nonce);
-    let mut pub_key_arr : [u8;PB_KEY_SZ] = [0;PB_KEY_SZ];
-    let mut enc_data_arr : [u8 ; ENC_DATA_SZ] = [0 ; ENC_DATA_SZ];
+    let mut pub_key_arr: [u8; PB_KEY_SZ] = [0; PB_KEY_SZ];
+    let mut enc_data_arr: [u8; ENC_DATA_SZ] = [0; ENC_DATA_SZ];
     let mut index_pub = 0;
     let mut index_enc = 0;
     let mut cnt = 0;
     //read lines from file and make public key and encrypted data
     for line in read_to_string(src_att).unwrap().lines() {
-        let num : u32= line.parse().unwrap();
+        let num: u32 = line.parse().unwrap();
         if cnt < PB_KEY_SZ {
             pub_key_arr[index_pub] = num as u8;
-            index_pub+=1;
-        }
-        else {
+            index_pub += 1;
+        } else {
             enc_data_arr[index_enc] = num as u8;
-            index_enc+=1;
-        }   
-        cnt+=1;
+            index_enc += 1;
+        }
+        cnt += 1;
     }
-    let pkey : PublicKey = PublicKey::new(pub_key_arr); 
-    let sig : Signature = Signature::new(enc_data_arr);
+    let pkey: PublicKey = PublicKey::new(pub_key_arr);
+    let sig: Signature = Signature::new(enc_data_arr);
 
-    let mut message : [u8;MSG_SZ]= [0;MSG_SZ];
-    
+    let mut message: [u8; MSG_SZ] = [0; MSG_SZ];
+
     let (hash_high, hash_low) = attest(src_bin, offset);
     //fill the bytes of the message to be checked
-    copy_arr(& mut message, &u128::to_le_bytes(hash_low), 0);
-    copy_arr(& mut message, &u128::to_le_bytes(hash_high), 16);
-    copy_arr(& mut message, &u64::to_le_bytes(nonce), 32);
+    copy_arr(&mut message, &u128::to_le_bytes(hash_low), 0);
+    copy_arr(&mut message, &u128::to_le_bytes(hash_high), 16);
+    copy_arr(&mut message, &u64::to_le_bytes(nonce), 32);
     {
         let mut data_file = File::create("../../tychools_response.txt").expect("creation failed");
         if let Ok(r) = pkey.verify(message, &sig) {
             log::info!("Verified!");
             data_file.write(b"Message verified").expect("Write failed");
-        }
-        else {
+        } else {
             log::info!("Not verified!");
-            data_file.write(b"Message was not verified").expect("Write failed");
+            data_file
+                .write(b"Message was not verified")
+                .expect("Write failed");
         }
     }
 }

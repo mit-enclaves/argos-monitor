@@ -147,7 +147,7 @@ impl Region {
         }
         ops
     }
-    
+
     pub fn get_start(&self) -> usize {
         self.start
     }
