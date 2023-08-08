@@ -255,6 +255,7 @@ only-linux SMP=default_smp:
 dbg-only-linux:
   gdb -ex "target remote {{default_dbg}}" \
   -ex "source builds/linux-x86/vmlinux-gdb.py" \
+  -ex "lx-symbols" \
   builds/linux-x86/vmlinux  
 
 # The following line gives highlighting on vim
