@@ -728,13 +728,12 @@ fn hash_capa_info(
                     let mut addr = start;
                     let addr_end = end;
                     while addr < addr_end {
-                        let mut byte_data: u8 = 0;
                         unsafe {
-                            byte_data = *(addr as *const u8);
+                            let byte_data = *(addr as *const u8);
+                            let byte_arr: [u8; 1] = [byte_data as u8];
+                            hashing::hash_segment(hasher, &byte_arr);
+                            addr = addr + 1;
                         }
-                        let byte_arr: [u8; 1] = [byte_data];
-                        hashing::hash_segment(hasher, &byte_arr);
-                        addr = addr + 1;
                     }
                 }
             }

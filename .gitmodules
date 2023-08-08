@@ -7,6 +7,3 @@
 [submodule "busybox"]
 	path = busybox
 	url = git://busybox.net/busybox.git
-# [submodule "crates/forked_signature"]
-# 	path = crates/forked_signature
-# 	url = https://github.com/papa/rust-ed25519-compact.git
