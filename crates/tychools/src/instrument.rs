@@ -163,12 +163,13 @@ pub fn instrument_binary(manifest: &Manifest) {
     };
 
     // Complex case.
-    let main_conf = if let (Some(ref mut user), Some(kern)) = (&mut user_elf, &kern_elf) {
+    let main_conf = if let (Some(ref mut user), Some(kern)) = (&mut user_elf, &mut kern_elf) {
         let user = user.as_mut();
-        let kern = kern.as_ref();
+        let kern = kern.as_mut();
         if user.overlap(kern) {
             panic!("The two binaries overlap");
         }
+        kern.set_attestation_hash();
         user.merge(kern);
         if manifest.generate_pts {
             user.generate_page_tables(manifest.security);

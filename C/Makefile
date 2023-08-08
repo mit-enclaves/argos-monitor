@@ -16,7 +16,6 @@ update_disk:
 	make -B -C libraries/tyche-trusted-runtime install_disk
 	cp scripts/install_drivers.sh /tmp/mount/tyche
 	cp scripts/attestation_startup.sh /tmp/mount/tyche
-	# make -B -C ../crates/ install_disk
 	make copy_tychools
 
 # not so clean, was done in order to remove Makefile from crates/folder
