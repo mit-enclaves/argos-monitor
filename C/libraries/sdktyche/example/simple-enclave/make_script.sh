@@ -1,2 +1,0 @@
-make enclave_iso
-make
