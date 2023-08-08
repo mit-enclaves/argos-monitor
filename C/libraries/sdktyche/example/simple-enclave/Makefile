@@ -1,4 +1,4 @@
-all: simple_enclave
+all: attestation_enclave
 
 ## ————————————————————————————————— Paths —————————————————————————————————— ##
 LIB_PATH=../../../
@@ -74,6 +74,14 @@ enclave_iso: app enclave
 	chmod +x enclave_iso
 	rm app enclave
 
+attestation_enclave: app enclave
+	cargo -C $(TYCHOOLS_PATH) install --path .
+	tychools instrument -s manifests/default.json 
+	chmod +x simple_enclave
+	tychools instrument -s manifests/enclave_iso.json 
+	chmod +x enclave_iso
+	rm app enclave
+
 install_disk: all 
 	mkdir -p $(DISK_PATH)
 	cp -t $(DISK_PATH) simple_enclave 
@@ -83,3 +91,4 @@ install_disk: all
 
 clean:
 	rm simple_enclave 
+	rm enclave_iso
