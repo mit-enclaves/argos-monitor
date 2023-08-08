@@ -1,0 +1,26 @@
+[package]
+name = "ed25519-compact"
+version = "2.0.4"
+authors = ["Frank Denis <github@pureftpd.org>"]
+edition = "2018"
+description = "A small, self-contained, wasm-friendly Ed25519 implementation"
+readme = "README.md"
+keywords = ["crypto", "ed25519", "x25519", "eddsa", "signature"]
+repository = "https://github.com/jedisct1/rust-ed25519-compact"
+homepage = "https://github.com/jedisct1/rust-ed25519-compact"
+categories = ["algorithms", "cryptography", "no-std", "wasm"]
+license = "MIT"
+
+[features]
+default = ["x25519","blind-keys"]
+pem = []
+traits = ["ed25519"]
+self-verify = []
+blind-keys = []
+std = []
+opt_size = []
+disable-signatures = []
+x25519 = []
+
+[dependencies]
+ed25519 = { version = "1.5", optional = true }

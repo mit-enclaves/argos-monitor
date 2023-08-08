@@ -23,7 +23,7 @@ members = [
     "crates/arena",
     "crates/capability-engine",
     "crates/tychools",
-    "crates/forked_signature",
+    "vendor/forked_signature",
     "crates/attestation",
     "boot_toolchain",
 ]

@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 log = { version = "0.4.17" }
-ed25519-compact = {path = "../../crates/forked_signature"}
+ed25519-compact = {path = "../../vendor/forked_signature"}
 sha2 = "0.6.0"
 
 [dev-dependencies.simple_logger]
