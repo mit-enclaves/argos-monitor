@@ -502,18 +502,12 @@ impl CapaEngine {
         self.updates.pop()
     }
 
-    pub fn set_hash(&mut self, domain: Handle<Domain>, hash: HashEnclave) -> Result<(), CapaError> {
+    pub fn set_hash(&mut self, domain: Handle<Domain>, hash: HashEnclave) {
         self.domains[domain].set_hash(hash);
-        Ok(())
     }
 
-    pub fn set_report(
-        &mut self,
-        domain: Handle<Domain>,
-        rep: EnclaveReport,
-    ) -> Result<(), CapaError> {
+    pub fn set_report(&mut self, domain: Handle<Domain>, rep: EnclaveReport) {
         self.domains[domain].set_report(rep);
-        Ok(())
     }
 
     /// Returns a fresh domain ID.
