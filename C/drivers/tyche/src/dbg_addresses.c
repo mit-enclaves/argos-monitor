@@ -1,4 +1,4 @@
-#include <linux/types.h>
+/* #include <linux/types.h>
 #include <linux/sched.h>
 #include <linux/pagewalk.h>
 #include <linux/mm.h>
@@ -135,4 +135,4 @@ int walk_and_collect_region(usize virt, usize size, usize* phys) {
   walk_page_range_prox(current->mm, virt, virt+size, &ops, &info); 
   *phys = info.phys_addr;
   return !(info.success);
-}
+} */

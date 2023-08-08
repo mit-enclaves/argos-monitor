@@ -6,6 +6,8 @@
 /// Default name for the environment variable setting up the nb pages for bump.
 #define NB_PAGES_ENVVAR "NB_PAGES"
 
+#define RISCV64_SV48
+
 /// These are default values, use the variable defined at the top of pts.c
 /// which reflect variables set through the environment.
 #define DEFAULT_NB_PAGES ((uint64_t)100)

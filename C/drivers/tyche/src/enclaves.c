@@ -419,10 +419,10 @@ int debug_addr(usize virt_addr, usize* phys_addr)
     goto failure;
   }
   //*phys_addr = (usize) virt_to_phys((void*)virt_addr);
-  if (walk_and_collect_region(virt_addr, 0x1000, phys_addr) != SUCCESS) {
+  /* if (walk_and_collect_region(virt_addr, 0x1000, phys_addr) != SUCCESS) {
     ERROR("Walk and collect failed!");
     goto failure;
-  }
+  } */
   return SUCCESS;
 failure:
   return FAILURE;

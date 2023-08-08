@@ -1,6 +1,5 @@
 #include "tyche_api.h"
 #include "common.h"
-#define TYCHE_DEBUG 1
 
 /// Simple generic vmcall implementation.
 int tyche_call(vmcall_frame_t* frame)
@@ -33,7 +32,7 @@ int tyche_call(vmcall_frame_t* frame)
   //TODO(neelu)
   //TEST(0);
     asm volatile(
-        "mv t0, a0\n\t"
+        //"mv t0, a0\n\t"
         "mv a0, %[sa0]\n\t"
         "mv a1, %[sa1]\n\t"
         "mv a2, %[sa2]\n\t"
@@ -41,12 +40,13 @@ int tyche_call(vmcall_frame_t* frame)
         "mv a4, %[sa4]\n\t"
         "mv a5, %[sa5]\n\t" 
         "mv a6, %[sa6]\n\t"
-        "mv a7, %[sa7]\n\t"
+        //"mv a0, %[sa0]\n\t"
+        //"mv a7, %[sa7]\n\t"
 	    "li a7, 0x78ac5b\n\t"
         //"ld t0, 0x1(x0)\n\t"
         "ecall\n\t"
         //"wfi"	//TODO: Update this to be usable by both U-mode and S-mode.
-        "csrs sstatus, %[mask]\n\t"
+        //"csrs sstatus, %[mask]\n\t"
         "mv %[da0], a0\n\t"
         "mv %[da1], a1\n\t"
         "mv %[da2], a2\n\t"
@@ -54,10 +54,13 @@ int tyche_call(vmcall_frame_t* frame)
         "mv %[da4], a4\n\t" 
         "mv %[da5], a5\n\t"
         "mv %[da6], a6\n\t"
-        "mv a0, t0\n\t"
+        //"mv a0, t0\n\t"
         : [da0]"=r" (result), [da1]"=r" (frame->value_1), [da2]"=r" (frame->value_2), [da3]"=r" (frame->value_3), [da4]"=r" (frame->value_4), [da5]"=r" (frame->value_5), [da6]"=r" (frame->value_6)
-        : [sa0]"r" (frame->vmcall), [sa1]"r" (frame->arg_1), [sa2]"r" (frame->arg_2), [sa3]"r" (frame->arg_3), [sa4]"r" (frame->arg_4), [sa5]"r" (frame->arg_5), [sa6]"r" (frame->arg_6), [sa7]"r" (frame->arg_7), [mask]"r" (1 << 18)
-	);
+        :  [sa0]"r" (frame->vmcall), [sa1]"r" (frame->arg_1), [sa2]"r" (frame->arg_2), [sa3]"r" (frame->arg_3), [sa4]"r" (frame->arg_4), [sa5]"r" (frame->arg_5), [sa6]"r" (frame->arg_6)   
+           //, [sa7]"r" (frame->arg_7)
+           //, [mask]"r" (1 << 18)
+	    : "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"
+    );
 #endif
   return (int)result;
 } 
@@ -145,6 +148,9 @@ int tyche_segment_region(
     usize end2,
     usize prot2)
 {
+
+  //printk("%s capa %llu, st1: %llu, end1: %llu, st2: %llu, end2: %llu\n",__func__, capa, ); 
+
   vmcall_frame_t frame = {
     TYCHE_SEGMENT_REGION,
     capa,
@@ -157,6 +163,7 @@ int tyche_segment_region(
   if (left == NULL || right == NULL) {
     goto failure;
   }
+
   if (tyche_call(&frame) != SUCCESS) {
     goto failure;
   } 
@@ -311,6 +318,7 @@ int tyche_switch(capa_index_t* transition_handle, void* args)
         "mv %[da1], a1\n\t"
         : [da0]"=r" (result), [da1]"=r" (frame.value_1) 
         : [sa0]"r" (frame.vmcall), [sa1]"r" (frame.arg_1), [sa2]"r" (frame.arg_2), [sa3]"r" (frame.arg_3)
+        : "a0", "a1", "a2", "a3", "a7"
 	);
 
 #endif

@@ -21,11 +21,11 @@ static int __init tyche_enclave_init(void)
   printk(KERN_INFO "Loading Tyche driver.");
   result = tyche_register();
   printk(KERN_INFO "tyche_register() complete");
-  if (init_page_walker() != 0) {
+  /* if (init_page_walker() != 0) {
     ERROR("Unable to init the page walker for some reason!");
     return -1;
   }
-  printk(KERN_INFO "Exiting tyche_enclave_init");
+  printk(KERN_INFO "Exiting tyche_enclave_init"); */
   return result;
 }
 

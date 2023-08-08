@@ -70,7 +70,7 @@ endif
 ## ———————————————————————————————— Targets ————————————————————————————————— ##
 
 app: $(CODE_APP) $(HDRS_APP) 
-	$(GCC) -DTYCHE_USER_SPACE=1 -g $(APP_INCLUDES) -o $@ $(CODE_APP)
+	$(GCC) -DTYCHE_USER_SPACE=1 -g $(APP_INCLUDES) -static -o $@ $(CODE_APP)
 
 enclave: $(CODE_ENCLAVE) $(HDRS_ENCLAVE)
 	$(GCC) -DTYCHE_USER_SPACE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_ENCLAVE) 

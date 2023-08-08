@@ -1,4 +1,4 @@
-#ifndef __DBG_ADDRESSES_H__
+/* #ifndef __DBG_ADDRESSES_H__
 #define __DBG_ADDRESSES_H__
 
 #include "tyche_capabilities_types.h"
@@ -15,4 +15,4 @@ struct walker_info_t {
 int init_page_walker(void);
 int walk_and_collect_region(usize virt, usize size, usize* phys);
 
-#endif
+#endif */
