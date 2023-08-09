@@ -6,6 +6,9 @@ ubuntu_mount:
 ubuntu_umount:
 	sudo ./scripts/mount_ubuntu.sh umount ../ubuntu.qcow2 /tmp/mount
 
+PROGRAMGS_PATH ?= /tmp/mount/tyche/programs
+TYCHOOLS_LOCAL_BIN_PATH ?= ../target/release
+
 # Make sure you mount the disk first
 update_disk:
 	sudo chown --recursive $(shell whoami) /tmp/mount/tyche
@@ -15,30 +18,5 @@ update_disk:
 	make -B -C libraries/sdktyche/example/simple-sandbox install_disk
 	make -B -C libraries/tyche-trusted-runtime install_disk
 	cp scripts/install_drivers.sh /tmp/mount/tyche
-	cp scripts/attestation_startup.sh /tmp/mount/tyche
-	make copy_tychools
-
-# not so clean, was done in order to remove Makefile from crates/folder
-DISK_PATH ?= /tmp/mount/tyche/programs/crates
-VENDOR_PATH ?= /tmp/mount/tyche/programs/vendor
-TYCHOOLS_PATH ?= $(DISK_PATH)/tychools
-FORK_PATH ?= $(VENDOR_PATH)/forked_signature
-MMU_PATH ?= $(DISK_PATH)/mmu
-UTILS_PATH ?= $(DISK_PATH)/utils
-VMX_PATH ?= $(DISK_PATH)/vmx
-CRATES_PATH ?= ../crates/
-VENDOR_LOCAL ?= ../vendor/
-
-copy_tychools:
-	mkdir -p $(DISK_PATH)
-	mkdir -p $(VENDOR_PATH)
-	mkdir -p $(TYCHOOLS_PATH)
-	mkdir -p $(FORK_PATH)
-	mkdir -p $(MMU_PATH)
-	mkdir -p $(UTILS_PATH)
-	mkdir -p $(VMX_PATH)
-	cp -r -t $(TYCHOOLS_PATH) $(CRATES_PATH)/tychools/*
-	cp -r -t $(FORK_PATH) $(VENDOR_LOCAL)/forked_signature/*
-	cp -r -t $(MMU_PATH) $(CRATES_PATH)/mmu/*
-	cp -r -t $(UTILS_PATH) $(CRATES_PATH)/utils/*
-	cp -r -t $(VMX_PATH) $(CRATES_PATH)/vmx/*
+	cp $(TYCHOOLS_LOCAL_BIN_PATH)/tychools $(PROGRAMGS_PATH)/tychools 
+	
