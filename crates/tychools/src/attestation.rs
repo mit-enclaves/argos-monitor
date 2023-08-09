@@ -136,7 +136,7 @@ pub fn attestation_check(src_bin: &PathBuf, src_att: &PathBuf, offset: u64, nonc
     copy_arr(&mut message, &u128::to_le_bytes(hash_high), 16);
     copy_arr(&mut message, &u64::to_le_bytes(nonce), 32);
     {
-        let mut data_file = File::create("../../tychools_response.txt").expect("creation failed");
+        let mut data_file = File::create("tychools_response.txt").expect("creation failed");
         if let Ok(r) = pkey.verify(message, &sig) {
             log::info!("Verified!");
             data_file.write(b"Message verified").expect("Write failed");
