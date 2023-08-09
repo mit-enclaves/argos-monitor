@@ -31,12 +31,18 @@
 #endif
 
 #ifdef TYCHE_USER_SPACE
+#ifndef TYCHE_ENCLAVE
 #define LOG(...)                                              \
   do {                                                        \
     printf("[LOG @%s:%d %s] ", __FILE__, __LINE__, __func__); \
     printf(__VA_ARGS__);                                      \
     printf("\n");                                             \
   } while (0);
+#else
+#define LOG(...)                                              \
+  do {                                                        \
+  } while (0);
+#endif
 #else
 #define LOG(...)                                                      \
   do {                                                                \
@@ -69,12 +75,18 @@
 #endif
 
 #ifdef TYCHE_USER_SPACE
+#ifndef TYCHE_ENCLAVE
 #define ERROR(...)                                              \
   do {                                                          \
     printf("[ERROR @%s:%d %s] ", __FILE__, __LINE__, __func__); \
     printf(__VA_ARGS__);                                        \
     printf("\n");                                               \
   } while (0);
+#else
+#define ERROR(...)                                              \
+  do {                                                          \
+  } while (0);
+#endif
 #else
 #define ERROR(...)                                                 \
   do {                                                             \
