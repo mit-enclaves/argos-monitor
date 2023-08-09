@@ -359,3 +359,26 @@ int tyche_switch(capa_index_t* transition_handle, void* args)
 #endif
   return result;
 }
+
+
+int tyche_domain_attestation(usize nonce, unsigned long long* ans, int mode) {
+  vmcall_frame_t frame = {
+    .vmcall = TYCHE_ENCLAVE_ATTESTATION,
+    .arg_1 = nonce,
+    .arg_2 = mode,
+  };
+  if (tyche_call(&frame) != SUCCESS) {
+    goto failure;
+  }
+  
+  ans[0] = frame.value_1;
+  ans[1] = frame.value_2;
+  ans[2] = frame.value_3;
+  ans[3] = frame.value_4;
+  ans[4] = frame.value_5;
+  ans[5] = frame.value_6;
+  
+  return SUCCESS;
+failure:
+  return FAILURE;
+}
