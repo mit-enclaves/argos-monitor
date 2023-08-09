@@ -41,8 +41,11 @@ HDRS_PTS=$(wildcard $(PTS)/include/*.h)
 CODE_APP=$(CODE_ELF64) $(CODE_PTS) $(CODE_LOADER) $(CODE_UNTRUSTED)
 HDRS_APP=$(HDRS_ELF64) $(HDRS_PTS) $(HDRS_LOADER) $(HDRS_UNTRUSTED)
 
+## —————————————————————— Capability lib code and headers —————————————————————— ##
+CAPA_CODE = $(wildcard $(CAPA_LIB)/src/*.c)
+
 ## ———————————————————————— Enclave code and headers ———————————————————————— ##
-CODE_ENCLAVE=$(CODE_RUNTIME) $(CODE_TRUSTED)
+CODE_ENCLAVE=$(CODE_RUNTIME) $(CODE_TRUSTED) $(CAPA_CODE)
 HDRS_ENCLAVE=$(HDRS_RUNTIME) $(HDRS_TRUSTED)
 
 ## ———————————————————————————————— Includes ———————————————————————————————— ##
@@ -60,7 +63,7 @@ app: $(CODE_APP) $(HDRS_APP)
 	gcc -DTYCHE_USER_SPACE=1 -g $(APP_INCLUDES) -o $@ $(CODE_APP)
 
 enclave: $(CODE_ENCLAVE) $(HDRS_ENCLAVE)
-	gcc -DTYCHE_USER_SPACE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_ENCLAVE)
+	gcc -DTYCHE_USER_SPACE=1 -DTYCHE_ENCLAVE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_ENCLAVE)
 
 simple_enclave: app enclave
 	cargo -C $(TYCHOOLS_PATH) install --path .
