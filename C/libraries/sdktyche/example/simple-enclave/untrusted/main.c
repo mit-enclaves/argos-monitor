@@ -47,7 +47,7 @@ failure:
 
 void call_tychools(nonce_t nonce, unsigned long long offset) {
   char cmd[256];
-  sprintf(cmd, "sudo chmod ugo+rwx tychools;./tychools attestation --att-src=file_tychools.txt --src-bin=enclave_iso --offset=0x%llx --nonce=0x%x", offset, nonce);
+  sprintf(cmd, "sudo chmod ugo+rx tychools;./tychools attestation --att-src=file_tychools.txt --src-bin=enclave_iso --offset=0x%llx --nonce=0x%x", offset, nonce);
   LOG("cmd %s", cmd);
   system(cmd);
 }
