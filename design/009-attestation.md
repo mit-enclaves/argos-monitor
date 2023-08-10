@@ -41,7 +41,6 @@ ENCLAVE_ATTESTATION comes with a mode in which we want to call it for certain en
 Running the example
 - before running VM instead of doing make in simple-enclave folder, you can do ./make_scirpt.sh to get both the binary to run in VM and binary to attest through tychools named enclave_iso
 - enclave_iso is binary embedded as section (Adrien explained it in https://github.com/CharlyCst/vmxvmm/blob/main/design/008-sdktyche-overview.md)
-- attestation_startup is to enable internet on .qcow2 image as well as install drivers
 - apart from given response, output of tychools during verification of signature can be seen as well
 ```
 ./attestation_startup.sh
