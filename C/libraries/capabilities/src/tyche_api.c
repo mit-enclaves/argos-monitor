@@ -5,7 +5,7 @@
 int tyche_call(vmcall_frame_t* frame)
 {
   usize result = FAILURE;
-    DEBUG("frame va: %p", frame);
+    //DEBUG("frame va: %p", frame);
 #if defined(CONFIG_X86) || defined(__x86_64__)
   asm volatile(
     // Setting arguments.
@@ -344,7 +344,7 @@ int tyche_switch(capa_index_t* transition_handle, void* args)
     return FAILURE;
   }
   frame.arg_1 = *transition_handle;
-  DEBUG("About to switch from the capability lib: handle %lld", transition_handle);
+  //DEBUG("About to switch from the capability lib: handle %lld", transition_handle);
 
 #if defined(CONFIG_X86) || defined(__x86_64__)
   // TODO We must save some registers on the stack.
@@ -405,7 +405,7 @@ int tyche_switch(capa_index_t* transition_handle, void* args)
         : [sa0]"r" (frame.vmcall), [sa1]"r" (frame.arg_1), [sa2]"r" (frame.arg_2), [sa3]"r" (frame.arg_3)
         : "a0", "a1", "a2", "a3", "a7"
 	);
-
+   *transition_handle = frame.value_1;
 #endif
   return result;
 }

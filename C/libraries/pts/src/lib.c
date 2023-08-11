@@ -24,6 +24,7 @@ int pt_walk_page_range(entry_t root, level_t level, addr_t start, addr_t end, pt
   curr_va = start;
   s = get_index(start, level, profile);
   va_root = (entry_t*) profile->pa_to_va(root, profile);
+  DEBUG("va_root: %llx", va_root);
   for (i = s; i < profile->nb_entries; i++) {
     // Compute the current virtual address.
     curr_va = (start & ~(profile->masks[level])) 
@@ -118,6 +119,7 @@ walk:
     } 
     // Next level page table (PA) to visit.
     next = profile->next(va_root[i], level);
+    DEBUG("va_root next: %llx addr: %p", next, &next);
     if (pt_walk_page_range(next, level-1, curr_va, end, profile) == -1) {
       TEST(0);
       return -1; 
