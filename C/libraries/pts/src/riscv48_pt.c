@@ -84,6 +84,7 @@ index_t riscv48_get_index(addr_t addr, level_t level, pt_profile_t* profile)
 
 entry_t riscv48_next(entry_t entry, level_t curr_level) 
 {
-  return (entry & PT_PHYS_PAGE_MASK);  
+  //return (entry & PT_PHYS_PAGE_MASK);  
       //((entry & PT_PHYS_PAGE_MASK) >> PT_FLAGS_RESERVED) << PT_PAGE_WIDTH;
+    return (entry >> PT_FLAGS_RESERVED) << PT_PAGE_WIDTH; 
 }

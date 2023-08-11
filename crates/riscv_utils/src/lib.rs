@@ -127,6 +127,7 @@ pub fn read_satp() -> usize {
 pub fn write_satp(satp: usize) {
     unsafe { 
         asm!("csrw satp, {}", in(reg) satp);
+        asm!("sfence.vma");
     }
 }
 
