@@ -173,14 +173,15 @@ normal_page:
       break;
   }
 entry_page:
-  *entry = ((info->segment_offset + offset) & PT_PHYS_PAGE_MASK) |
-    translate_flags(info->segment->p_flags) | PT_D | PT_A; 
+  *entry = ((((info->segment_offset + offset) & PT_PHYS_PAGE_MASK) >> PT_PAGE_WIDTH) << PT_FLAGS_RESERVED) |
+    translate_flags(info->segment->p_flags);
+  //| PT_D | PT_A; 
   DEBUG("entry: lvl: %d, curr_va: %llx, entry: %llx, pa: %llx",
       lvl, profile->curr_va, *entry, profile->va_to_pa((addr_t)entry, profile));
   return WALK;
 normal_page:
   new_page = profile->allocate((void*)(info->bump));
-  *entry = ((entry_t)new_page) | info->intermed_flags;
+  *entry = ((((entry_t)new_page) >> PT_PAGE_WIDTH) << PT_FLAGS_RESERVED) | info->intermed_flags;
   DEBUG("map: lvl: %d, curr_va: %llx, entry: %llx", lvl, profile->curr_va, *entry);
   return WALK; 
  
@@ -319,7 +320,7 @@ int create_page_tables(uint64_t phys_offset, page_tables_t* bump, Elf64_Ehdr* he
   info.bump = bump; 
   //info.intermed_flags = PT_V | PT_R | PT_W | PT_X | PT_A | PT_D;
 
-  info.intermed_flags = PT_V | PT_A | PT_D; 
+  info.intermed_flags = PT_V; 
   //NEELU TODO: PT_U is not enabled currently as the domain executes in S-mode. 
 
   // Set up the profile. 
@@ -424,12 +425,16 @@ int fix_page_tables(usize offset, page_tables_t * tables)
       if((*entry & PT_W) == PT_W) 
           writable = 1; */
 
-      uint64_t addr = offset + (*entry & PT_PHYS_PAGE_MASK);
+      if ((offset & ~PT_PAGE_ALIGN) !=  offset) { 
+            ERROR("Offset %llx is not page-aligned.", offset);
+      }
+
+      uint64_t ppn = (offset >> PT_PAGE_WIDTH) + (*entry >> PT_FLAGS_RESERVED);
       //addr >>= 12; 
-      *entry = (*entry & ~PT_PHYS_PAGE_MASK) | addr;
+      *entry = (*entry & ~PT_PHYS_PAGE_MASK) | (ppn << PT_FLAGS_RESERVED);
       //DEBUG("fixed: entry: %llx @(%d, %d)", *entry, i, j);
     //DEBUG("fixed: entry: %llx, pa: %llx, RWX: %d, %d, %d", *entry, addr, readable, writable, executable);
-      DEBUG("fixed: entry: %llx, pa: %llx @(%d,%d)", *entry, addr, i, j);
+      DEBUG("fixed: entry: %llx, ppn: %llx @(%d,%d)", *entry, ppn, i, j);
  
 
       //TEST(0);

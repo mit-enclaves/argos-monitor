@@ -35,8 +35,10 @@ riscv_asm_call_gate:
     sd s9, 28*8(sp)
     sd s10, 29*8(sp)
     sd s11, 30*8(sp) */
-    ld a2, 0x0(a1)      //loading the args - TODO: Make sure this is correct!! Because the tyche call id is supposed to be in a0. 
-    ld a1, 0x0(a0)
+    //ld a2, 0x0(a1)      //loading the args - TODO: Make sure this is correct!! Because the tyche call id is supposed to be in a0. 
+    //ld a1, 0x0(a0)
+    //mv a2, a1 
+    ld a1, 0x0(a1)
     li a0, 0x9  
     li a7, 0x78ac5b
     ecall 
