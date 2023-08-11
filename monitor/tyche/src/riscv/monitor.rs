@@ -356,7 +356,7 @@ pub fn apply_core_updates(
                 return_capa,
                 //current_reg_state, 
             } => {
-                log::info!("Domain Switch on core {} for domain {}", core_id, domain);
+                log::info!("Domain Switch on core {} for domain {}, return_capa: {:x}", core_id, domain, return_capa.as_usize());
 
                 let current_ctx = get_context(*current_domain, core);
                 let next_ctx = get_context(domain, core);
@@ -453,8 +453,8 @@ fn switch_domain(
 
     disable_supervisor_interrupts();
 
-    clear_mideleg();
-    clear_medeleg();
+    //clear_mideleg();
+    //clear_medeleg();
 
     //clear_mstatus_sie();    //this disables interrupts for s-mode. 
     //clear_mstatus_spie();
@@ -464,14 +464,14 @@ fn switch_domain(
     //directly write the PMP - no need to reiterate through the domain's regions as happens in
     //update_permission. 
 
-    do_debug();
+    //do_debug();
 
     let mut engine = CAPA_ENGINE.lock();
     log::info!("Args to update_permission: {}", domain);
     //do_debug();
     update_permission(domain, &mut engine);
 
-    clear_mideleg();
+    //clear_mideleg();
 
     //TODO: update_permission(domain_handle, engine)??????? 
     
