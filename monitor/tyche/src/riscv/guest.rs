@@ -183,7 +183,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         asm!("csrr {}, mepc", out(reg) mepc);
         asm!("mv {}, sp", out(reg) sp);
     }
-    println!("Trap handler complete: returning from ecall {:x}, mepc: {:x} sp: {:x}", ret, mepc, sp);
+    println!("Trap handler complete: returning from ecall {:x}, mepc: {:x} sp: {:x} a0: {:x}, a1: {:x}", ret, mepc, sp, reg_state.a0, reg_state.a1);
 
     //monitor::apply_core_updates(current_domain, core_id);
 
