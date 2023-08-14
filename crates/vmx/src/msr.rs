@@ -78,6 +78,18 @@ impl Msr {
         ((high as u64) << 32) | (low as u64)
     }
 
+    #[inline]
+    pub unsafe fn read_raw(&self) -> (u32, u32) {
+        let (high, low): (u32, u32);
+        asm!(
+            "rdmsr",
+            in("ecx") self.0,
+            out("eax") low, out("edx") high,
+            options(nomem, nostack, preserves_flags),
+        );
+        (low, high)
+    }
+
     /// Writes 64 bits to MSR register.
     ///
     /// ## Safety

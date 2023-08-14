@@ -375,13 +375,21 @@ fn handle_exit(
         VmxExitReason::Rdmsr => {
             let ecx = vs.vcpu.get(Register::Rcx);
             if ecx == 0xc0011029 {
-                // Reading an AMD specifig register, just ignore it
+                // Reading an AMD specific register, just ignore it
                 vs.vcpu.next_instruction()?;
                 Ok(HandlerResult::Resume)
             } else {
-                log::error!("Unexpected rdmsr number: {:#x}", ecx);
-                Ok(HandlerResult::Crash)
-            }
+                log::trace!("Emulated read of msr {:x}", ecx);
+                let msr_reg = vmx::msr::Msr::new(ecx as u32);
+                let (low, high) = unsafe { msr_reg.read_raw() };
+                vs.vcpu.set(Register::Rax, low as u64);
+                vs.vcpu.set(Register::Rdx, high as u64);
+                vs.vcpu.next_instruction()?;
+                Ok(HandlerResult::Resume)
+            } /*else {
+                  log::error!("Unexpected rdmsr number: {:#x}", ecx);
+                  Ok(HandlerResult::Crash)
+              }*/
         }
         VmxExitReason::Exception => {
             match vs.vcpu.interrupt_info() {

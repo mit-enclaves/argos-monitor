@@ -121,10 +121,6 @@ build-riscv:
 
 ## ——————————————————————————— Linux Kernel Build ——————————————————————————— ##
 
-# Build linux image.
-build-linux:
-	make -C linux-image/
-
 build-linux-x86:
 	@just _build-linux-common x86
 
