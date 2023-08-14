@@ -75,7 +75,7 @@ riscv_asm_call_gate:
     ld s10, 29*8(sp)
     ld s11, 30*8(sp)
     addi sp, sp, 34*8 */
-    sret 
+    ret 
 
 .globl _start
 _start:

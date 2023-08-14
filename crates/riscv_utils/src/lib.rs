@@ -206,3 +206,20 @@ pub fn clear_medeleg() {
         );
     }
 }
+
+pub fn read_medeleg() -> usize {
+    let mut medeleg: usize = 0; 
+
+    unsafe { 
+        asm!("csrr {}, medeleg", out(reg) medeleg); 
+    }
+
+    return medeleg; 
+}
+
+pub fn write_medeleg(medeleg: usize) {
+    unsafe { 
+        asm!("csrw medeleg, {}", in(reg) medeleg);
+    }
+}
+
