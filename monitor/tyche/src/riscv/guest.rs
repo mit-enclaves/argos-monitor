@@ -332,11 +332,11 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                     reg_state.a2 = v2 as usize;
                     reg_state.a3 = v3 as usize;
                     reg_state.a4 = next.as_usize();
-                    log::info!("do_enumerate response: {:x} {:x} {:x} {:x}", reg_state.a1, reg_state.a2, reg_state.a3, reg_state.a4);
+                    //log::info!("do_enumerate response: {:x} {:x} {:x} {:x}", reg_state.a1, reg_state.a2, reg_state.a3, reg_state.a4);
                 } else {
                     // For now, this marks the end
                     reg_state.a4 = 0;
-                    log::info!("do_enumerate response: {:x}", reg_state.a4);
+                    //log::info!("do_enumerate response: {:x}", reg_state.a4);
                 }
                 reg_state.a0 = 0x0;
            }, 
