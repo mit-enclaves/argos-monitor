@@ -379,8 +379,13 @@ fn handle_exit(
                 vs.vcpu.next_instruction()?;
                 Ok(HandlerResult::Resume)
             } else {
-                log::error!("Unexpected rdmsr number: {:#x}", ecx);
-                Ok(HandlerResult::Crash)
+                log::trace!("Emulated read of msr {:x}", ecx);
+                let msr_reg = vmx::msr::Msr::new(ecx as u32);
+                let (low, high) = unsafe { msr_reg.read_raw() };
+                vs.vcpu.set(Register::Rax, low as u64);
+                vs.vcpu.set(Register::Rdx, high as u64);
+                vs.vcpu.next_instruction()?;
+                Ok(HandlerResult::Resume)
             }
         }
         VmxExitReason::Exception => {

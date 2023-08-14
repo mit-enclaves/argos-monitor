@@ -235,5 +235,34 @@ _tpm:
 		swtpm socket --tpm2 --tpmstate dir={{tpm_path}} --ctrl type=unixio,path={{tpm_path}}/sock &
 	fi
 
+## ———————————————————————— Run Linux without tyche ————————————————————————— ##
+
+only-linux SMP=default_smp:
+  touch _empty.fake_disk
+  qemu-system-x86_64 \
+  -kernel builds/linux-x86/arch/x86_64/boot/bzImage \
+  -smp {{SMP}} \
+  --no-reboot \
+  -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+  -device intel-iommu,intremap=on,aw-bits=48 \
+  -cpu host,+kvm -machine q35 -accel kvm,kernel-irqchip=split -m 6G \
+  -drive file=_empty.fake_disk,format=raw,media=disk \
+  -drive file=ubuntu.qcow2,format=qcow2,media=disk \
+  -append "root=/dev/sda1 apic=debug earlyprintk=serial,ttyS0 console=ttyS0" \
+  -chardev socket,path={{default_dbg}},server=on,wait=off,id=gdb0 -gdb chardev:gdb0
+  rm _empty.fake_disk
+
+dbg-only-linux:
+  gdb -ex "target remote {{default_dbg}}" \
+  -ex "source builds/linux-x86/vmlinux-gdb.py" \
+  -ex "lx-symbols" \
+  builds/linux-x86/vmlinux
+
+install-drivers:
+  make -C C/ ubuntu_mount
+  make -C builds/linux-x86/ modules
+  sudo INSTALL_MOD_PATH=/tmp/mount/ make -C builds/linux-x86/ modules_install
+  make -C C/ ubuntu_umount
+
 # The following line gives highlighting on vim
 # vim: set ft=make :
