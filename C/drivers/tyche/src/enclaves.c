@@ -404,6 +404,14 @@ delete_encl_struct:
   }
 
   // Delete the enclave memory region.
+
+#if defined(__riscv) || defined(CONFIG_RISCV) 
+  void * allocation = phys_to_virt((phys_addr_t)(encl->phys_start)); 
+  for (int i = 0; i < (encl->size/PAGE_SIZE); i++) {
+    char* mem = ((char*)allocation) + i * PAGE_SIZE;
+    ClearPageReserved(virt_to_page((unsigned long)mem));
+  }
+#endif
   free_pages_exact(phys_to_virt((phys_addr_t)(encl->phys_start)), encl->size);
   dll_remove(&enclaves, encl, list);
   kfree(encl);
