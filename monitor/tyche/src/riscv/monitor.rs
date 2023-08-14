@@ -5,10 +5,12 @@ use capa_engine::{
     permission, AccessRights, CapaEngine, CapaError, CapaInfo, Domain, Handle, LocalCapa,
     NextCapaToken, Buffer
 };
-use riscv_utils::{RegisterState, PAGING_MODE_SV48, read_mscratch, read_satp, write_satp, write_mscratch, read_mepc, write_mepc, clear_mstatus_xie, clear_mstatus_spie, clear_mideleg, disable_supervisor_interrupts, clear_medeleg};
+use riscv_utils::*;
+//use riscv_utils::{RegisterState, PAGING_MODE_SV48, read_mscratch, read_satp, write_satp, write_mscratch, read_mepc, write_mepc, clear_mstatus_xie, clear_mstatus_spie, clear_mideleg, disable_supervisor_interrupts, clear_medeleg};
 use spin::{Mutex, MutexGuard};
 use riscv_pmp::{pmp_write, clear_pmp, PMPAddressingMode, PMPErrorCode, FROZEN_PMP_ENTRIES, PMP_ENTRIES};
 
+//use crate::riscv::arch::write_medeleg;
 use crate::statics::NB_CORES;
 
 use crate::arch::cpuid;
@@ -32,6 +34,7 @@ pub struct ContextData {
     pub satp: usize,
     pub mepc: usize,
     pub sp: usize,
+    pub medeleg: usize,
 }
 
 const EMPTY_DOMAIN: Mutex<DomainData> = Mutex::new(DomainData { }); //Todo Init the domain data
@@ -41,6 +44,7 @@ const EMPTY_CONTEXT: Mutex<ContextData> = Mutex::new(ContextData {
     satp: 0,
     mepc: 0,   
     sp: 0,
+    medeleg: 0,
 });
 const EMPTY_CONTEXT_ARRAY: [Mutex<ContextData>; NB_CORES] = [EMPTY_CONTEXT; NB_CORES];
 
@@ -234,7 +238,7 @@ pub fn do_switch(
         get_context(next_context),
         return_capa,
     ))*/
-    log::info!("engine.switch");
+    //log::info!("engine.switch");
     let mut engine = CAPA_ENGINE.lock();
     engine.switch(current, cpuid, capa)?;
     apply_updates(&mut engine);
@@ -281,7 +285,7 @@ enum CoreUpdate {
 }
 
 fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
-    log::info!("Applying updates.");
+    //log::info!("Applying updates.");
     while let Some(update) = engine.pop_update() {
         match update {
             capa_engine::Update::PermissionUpdate { domain } => (),
@@ -356,7 +360,7 @@ pub fn apply_core_updates(
                 return_capa,
                 //current_reg_state, 
             } => {
-                log::info!("Domain Switch on core {} for domain {}, return_capa: {:x}", core_id, domain, return_capa.as_usize());
+                //log::info!("Domain Switch on core {} for domain {}, return_capa: {:x}", core_id, domain, return_capa.as_usize());
 
                 let current_ctx = get_context(*current_domain, core);
                 let next_ctx = get_context(domain, core);
@@ -415,7 +419,7 @@ pub fn apply_core_updates(
                 *current_domain = manager; */
             }
             CoreUpdate::UpdateTrap { bitmap } => {
-                log::trace!("Updating trap bitmap on core {} to {:b}", core_id, bitmap);
+                //log::info!("Updating trap bitmap on core {} to {:b}", core_id, bitmap);
                 /* let value = bitmap as u32;
                 //TODO: for the moment we only offer interposition on the hardware cpu exception
                 //interrupts (first 32 values).
@@ -437,24 +441,31 @@ fn switch_domain(
     next_domain: MutexGuard<DomainData>,
     domain: Handle<Domain>,
 ) {
-    log::info!("switch_domain writing satp: {:x} mepc {:x} mscratch: {:x}", next_ctx.satp, next_ctx.mepc, next_ctx.sp);
+    //log::info!("switch_domain writing satp: {:x} mepc {:x} mscratch: {:x}", next_ctx.satp, next_ctx.mepc, next_ctx.sp);
     //Save current context 
     current_ctx.reg_state = *current_reg_state;
     current_ctx.mepc = read_mepc();
     current_ctx.sp = read_mscratch();   //Recall that this is where the sp is saved. 
     current_ctx.satp = read_satp();
+    current_ctx.medeleg = read_medeleg();   
 
     //Switch domain 
     write_satp(next_ctx.satp);
     //TODO: Is this needed? Should I write mepc instead? YES! write_ra(next_ctx.ra);
     write_mscratch(next_ctx.sp);
     write_mepc(next_ctx.mepc);
+    write_medeleg(next_ctx.medeleg);    //TODO: This needs to be part of Trap/UpdateTrap.
     *current_reg_state = next_ctx.reg_state;
 
     disable_supervisor_interrupts();
 
-    //clear_mideleg();
-    //clear_medeleg();
+   /*  if(domain == INITIAL_DOMAIN) {
+        restore_medeleg();
+    }
+    else {
+        save_medeleg();
+        clear_medeleg();
+    } */
 
     //clear_mstatus_sie();    //this disables interrupts for s-mode. 
     //clear_mstatus_spie();
@@ -467,7 +478,7 @@ fn switch_domain(
     //do_debug();
 
     let mut engine = CAPA_ENGINE.lock();
-    log::info!("Args to update_permission: {}", domain);
+    //log::info!("Args to update_permission: {}", domain);
     //do_debug();
     update_permission(domain, &mut engine);
 
@@ -513,7 +524,7 @@ fn update_permission(domain_handle: Handle<Domain> , engine: &mut MutexGuard<Cap
     //First clean current PMP settings - this should internally cause the appropriate flushes 
     log::info!("Clearing PMP");
     clear_pmp();
-    log::info!("updating permission");
+    //log::info!("updating permission");
     //Currently assuming that the number of regions are less than number of PMP entries. 
     let mut pmp_write_result: Result<PMPAddressingMode, PMPErrorCode>;
     let mut pmp_index = FROZEN_PMP_ENTRIES; 
