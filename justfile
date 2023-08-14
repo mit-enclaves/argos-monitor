@@ -238,7 +238,7 @@ only-linux SMP=default_smp:
   qemu-system-x86_64 \
   -kernel builds/linux-x86/arch/x86_64/boot/bzImage \
   -smp {{SMP}} \
-  --no-reboot -nographic \
+  --no-reboot \
   -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
   -device intel-iommu,intremap=on,aw-bits=48 \
   -cpu host,+kvm -machine q35 -accel kvm,kernel-irqchip=split -m 6G \
@@ -252,7 +252,13 @@ dbg-only-linux:
   gdb -ex "target remote {{default_dbg}}" \
   -ex "source builds/linux-x86/vmlinux-gdb.py" \
   -ex "lx-symbols" \
-  builds/linux-x86/vmlinux  
+  builds/linux-x86/vmlinux
+
+install-drivers:
+  make -C C/ ubuntu_mount
+  make -C builds/linux-x86/ modules
+  sudo INSTALL_MOD_PATH=/tmp/mount/ make -C builds/linux-x86/ modules_install
+  make -C C/ ubuntu_umount
 
 # The following line gives highlighting on vim
 # vim: set ft=make :
