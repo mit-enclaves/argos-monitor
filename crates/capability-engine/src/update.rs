@@ -40,6 +40,10 @@ pub enum Update {
         trap: u64,
         core: usize,
     },
+    CoreInit {
+        core: u64,
+        state: u64,
+    },
 }
 
 pub struct Buffer<U> {
@@ -116,6 +120,9 @@ impl fmt::Display for Update {
             ),
             Update::UpdateTraps { trap, core } => {
                 write!(f, "UpdateTrap(bitmap {}, core {})", trap, core)
+            }
+            Update::CoreInit { core, state } => {
+                write!(f, "CoreInit(core{}, state{:?})", core, state)
             }
         }
     }
