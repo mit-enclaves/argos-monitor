@@ -52,7 +52,7 @@ pub enum Update {
     },
     UpdateVmcsDefault {
         core: usize,
-    }
+    },
 }
 
 pub struct Buffer<U> {
@@ -131,10 +131,18 @@ impl fmt::Display for Update {
                 write!(f, "UpdateTrap(bitmap {}, core {})", trap, core)
             }
             Update::UpdateVmcs32 { core, field, value } => {
-                write!(f, "UpdateVmcs32(core {}, field {:#x}, value {:#x})", core, field, value)
+                write!(
+                    f,
+                    "UpdateVmcs32(core {}, field {:#x}, value {:#x})",
+                    core, field, value
+                )
             }
             Update::UpdateVmcs64 { core, field, value } => {
-                write!(f, "UpdateVmcs64(core {}, field {:#x}, value {:#x})", core, field, value)
+                write!(
+                    f,
+                    "UpdateVmcs64(core {}, field {:#x}, value {:#x})",
+                    core, field, value
+                )
             }
             Update::UpdateVmcsDefault { core } => {
                 write!(f, "UpdateVmcsDefault(core {})", core)

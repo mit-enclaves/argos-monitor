@@ -203,7 +203,9 @@ impl TryFrom<u64> for Ctrl32 {
     fn try_from(v: u64) -> Result<Self, Self::Error> {
         match v {
             x if x == Ctrl32::PinBasedExecCtrls as u64 => Ok(Ctrl32::PinBasedExecCtrls),
-            x if x == Ctrl32::PrimaryProcBasedExecCtrls as u64 => Ok(Ctrl32::PrimaryProcBasedExecCtrls),
+            x if x == Ctrl32::PrimaryProcBasedExecCtrls as u64 => {
+                Ok(Ctrl32::PrimaryProcBasedExecCtrls)
+            }
             x if x == Ctrl32::ExceptionBitmap as u64 => Ok(Ctrl32::ExceptionBitmap),
             x if x == Ctrl32::PageFaultErrCodeMask as u64 => Ok(Ctrl32::PageFaultErrCodeMask),
             x if x == Ctrl32::PageFaultErrCodeMatch as u64 => Ok(Ctrl32::PageFaultErrCodeMatch),
@@ -217,10 +219,12 @@ impl TryFrom<u64> for Ctrl32 {
             x if x == Ctrl32::VmEntryExceptErrCode as u64 => Ok(Ctrl32::VmEntryExceptErrCode),
             x if x == Ctrl32::VmEntryInstrLength as u64 => Ok(Ctrl32::VmEntryInstrLength),
             x if x == Ctrl32::TprThreshold as u64 => Ok(Ctrl32::TprThreshold),
-            x if x == Ctrl32::SecondaryProcBasedVmExecCtrls as u64 => Ok(Ctrl32::SecondaryProcBasedVmExecCtrls),
+            x if x == Ctrl32::SecondaryProcBasedVmExecCtrls as u64 => {
+                Ok(Ctrl32::SecondaryProcBasedVmExecCtrls)
+            }
             x if x == Ctrl32::PleGap as u64 => Ok(Ctrl32::PleGap),
             x if x == Ctrl32::PleWindow as u64 => Ok(Ctrl32::PleWindow),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -289,11 +293,10 @@ impl TryFrom<u64> for Ctrl64 {
             x if x == Ctrl64::XssExitBitmap as u64 => Ok(Ctrl64::XssExitBitmap),
             x if x == Ctrl64::EnclsExitBitmap as u64 => Ok(Ctrl64::EnclsExitBitmap),
             x if x == Ctrl64::TscMultiplier as u64 => Ok(Ctrl64::TscMultiplier),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
-
 
 /// VMCS fields encoding of natural width control fields.
 #[rustfmt::skip]
@@ -325,7 +328,7 @@ impl TryFrom<u64> for CtrlNat {
             x if x == CtrlNat::Cr3TargetValue1 as u64 => Ok(CtrlNat::Cr3TargetValue1),
             x if x == CtrlNat::Cr3TargetValue2 as u64 => Ok(CtrlNat::Cr3TargetValue2),
             x if x == CtrlNat::Cr3TargetValue3 as u64 => Ok(CtrlNat::Cr3TargetValue3),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }

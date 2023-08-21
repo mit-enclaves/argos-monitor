@@ -23,7 +23,7 @@ use region_capa::{RegionCapa, RegionPool};
 use update::UpdateBuffer;
 pub use update::{Buffer, Update};
 
-use crate::domain::{core_bits, switch_bits, trap_bits};
+use crate::domain::{core_bits, switch_bits, trap_bits, init_bits};
 
 /// Configuration for the static Capa Engine size.
 pub mod config {
@@ -111,6 +111,12 @@ impl CapaEngine {
                     &mut self.domains,
                     domain::Bitmaps::SWITCH,
                     switch_bits::ALL,
+                )?;
+                domain::set_config(
+                    handle,
+                    &mut self.domains,
+                    domain::Bitmaps::INIT,
+                    init_bits::NONE,
                 )?;
                 log::info!("About to seal");
                 self.domains[handle].seal()?;
