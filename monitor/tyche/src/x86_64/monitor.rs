@@ -13,7 +13,7 @@ use utils::{GuestPhysAddr, HostPhysAddr};
 use vmx::bitmaps::{EptEntryFlags, ExceptionBitmap};
 use vmx::errors::Trapnr;
 use vmx::msr::IA32_LSTAR;
-use vmx::{ActiveVmcs, ControlRegister, Register, VmExitInterrupt, REGFILE_SIZE};
+use vmx::{fields, ActiveVmcs, ControlRegister, Register, VmExitInterrupt, REGFILE_SIZE};
 
 use super::cpuid;
 use super::guest::VmxState;
@@ -396,6 +396,15 @@ enum CoreUpdate {
     UpdateTrap {
         bitmap: u64,
     },
+    UpdateVmcs32 {
+        field: u64,
+        value: u32,
+    },
+    UpdateVmcs64 {
+        field: u64,
+        value: u64,
+    },
+    UpdateVmcsDefault {},
 }
 
 /// General updates, containing both global updates on the domain's states, and core specific
@@ -441,6 +450,24 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
             capa_engine::Update::UpdateTraps { trap, core } => {
                 let mut core_updates = CORE_UPDATES[core as usize].lock();
                 core_updates.push(CoreUpdate::UpdateTrap { bitmap: !trap });
+            }
+            capa_engine::Update::UpdateVmcs32 { core, field, value } => {
+                let mut core_updates = CORE_UPDATES[core as usize].lock();
+                core_updates.push(CoreUpdate::UpdateVmcs32 {
+                    field: field,
+                    value: value,
+                });
+            }
+            capa_engine::Update::UpdateVmcs64 { core, field, value } => {
+                let mut core_updates = CORE_UPDATES[core as usize].lock();
+                core_updates.push(CoreUpdate::UpdateVmcs64 {
+                    field: field,
+                    value: value,
+                });
+            }
+            capa_engine::Update::UpdateVmcsDefault { core } => {
+                let mut core_updates = CORE_UPDATES[core as usize].lock();
+                core_updates.push(CoreUpdate::UpdateVmcsDefault {});
             }
         }
     }
@@ -536,6 +563,115 @@ pub fn apply_core_updates(
                 //future.
                 vcpu.set_exception_bitmap(ExceptionBitmap::from_bits_truncate(value))
                     .expect("Error setting the exception bitmap");
+            }
+            CoreUpdate::UpdateVmcs32 { field, value } => {
+                use fields::traits::*;
+                log::trace!("Update VMCS32 field {:#x} to value {:#x}", field, value);
+                if let Ok(ctrl32) = fields::Ctrl32::try_from(field) {
+                    unsafe { ctrl32.vmwrite(value) };
+                }
+            }
+            CoreUpdate::UpdateVmcs64 { field, value } => {
+                use fields::traits::*;
+                log::trace!("Update VMCS64 field {:#x} to value {:#x}", field, value);
+                if let Ok(ctrl64) = fields::Ctrl64::try_from(field) {
+                    unsafe { ctrl64.vmwrite(value) };
+                } else if let Ok(ctrl_nat) = fields::CtrlNat::try_from(field) {
+                    unsafe { ctrl_nat.vmwrite(value as usize) };
+                }
+                // TODO: probably need these
+                /*
+                vcpu.set64(fields::GuestState64::Ia32Efer, state.guest_ia32_efer)?;
+                vcpu.set_nat(fields::GuestStateNat::Rflags, 0x2)?;
+                vcpu.set_nat(fields::GuestStateNat::Rip, state.guest_rip as usize)?;
+                vcpu.set_nat(fields::GuestStateNat::Cr0, state.guest_cr0 as usize)?;
+                vcpu.set_nat(fields::GuestStateNat::Cr3, state.guest_cr3 as usize)?;
+                vcpu.set_nat(fields::GuestStateNat::Rsp, state.guest_rsp as usize)?;
+                // vcpu.set(Register::Rsi, state.guest_rsi as u64);
+                // VMXE flags, required during VMX operations.
+                vcpu.set_nat(fields::GuestStateNat::Cr4, state.guest_cr4 as usize)?;
+                vcpu.set_cr4_mask(state.cr4_guest_host_mask as usize)?;
+                vcpu.set_cr4_shadow(state.cr4_read_shadow as usize)?;
+                vcpu.set_cr0_mask(state.cr0_guest_host_mask as usize)?;
+                vcpu.set_cr0_shadow(state.cr0_read_shadow as usize)?;
+                vcpu.set_nat(fields::GuestStateNat::Dr7, state.guest_dr7 as usize)?;
+                */
+            }
+            CoreUpdate::UpdateVmcsDefault {} => {
+                use fields::traits::*;
+                // one call to setup as many non-binary dependant registers as possible
+                unsafe {
+                    fields::Ctrl32::PinBasedExecCtrls.vmwrite(0x000000ff);
+                    fields::Ctrl32::PrimaryProcBasedExecCtrls.vmwrite(0xb5a06dfa);
+                    fields::Ctrl32::SecondaryProcBasedVmExecCtrls.vmwrite(0x00000be3);
+                    fields::Ctrl32::ExceptionBitmap.vmwrite(0xffffffff);
+                    fields::Ctrl64::MsrBitmaps.vmwrite(0x109ab0000);
+                    fields::Ctrl64::EoiExitBitmap0.vmwrite(0x00000001);
+                    fields::Ctrl64::EoiExitBitmap1.vmwrite(0x00000000);
+                    fields::Ctrl64::EoiExitBitmap2.vmwrite(0x00000000);
+                    fields::Ctrl64::EoiExitBitmap3.vmwrite(0x00000000);
+                    fields::Ctrl64::PostedIntDescAddr.vmwrite(0x109aa9f40);
+                    fields::Ctrl32::PageFaultErrCodeMask.vmwrite(0x0);
+                    fields::Ctrl32::PageFaultErrCodeMatch.vmwrite(0x0);
+                    fields::Ctrl32::Cr3TargetCount.vmwrite(0x0);
+                    fields::GuestState64::VmcsLinkPtr.vmwrite(0xffffffffffffffff);
+                    fields::Ctrl32::VmExitMsrLoadCount.vmwrite(0);
+                    fields::Ctrl32::VmExitMsrStoreCount.vmwrite(0);
+                    fields::Ctrl32::VmEntryMsrLoadCount.vmwrite(0);
+                }
+                // Default States
+                // CS
+                vcpu.set_nat(fields::GuestStateNat::CsBase, 0xffff0000);
+                vcpu.set32(fields::GuestState32::CsLimit, 0x0000ffff);
+                vcpu.set16(fields::GuestState16::CsSelector, 0x0000f000);
+                vcpu.set32(fields::GuestState32::CsAccessRights, 0x0000009b);
+                // DS
+                vcpu.set_nat(fields::GuestStateNat::DsBase, 0x0);
+                vcpu.set32(fields::GuestState32::DsLimit, 0x0000ffff);
+                vcpu.set16(fields::GuestState16::DsSelector, 0);
+                vcpu.set32(fields::GuestState32::DsAccessRights, 0x93);
+                // ES
+                vcpu.set_nat(fields::GuestStateNat::EsBase, 0x0);
+                vcpu.set32(fields::GuestState32::EsLimit, 0x0000ffff);
+                vcpu.set16(fields::GuestState16::EsSelector, 0);
+                vcpu.set32(fields::GuestState32::EsAccessRights, 0x93);
+                // FS
+                vcpu.set_nat(fields::GuestStateNat::FsBase, 0x0);
+                vcpu.set32(fields::GuestState32::FsLimit, 0x0000ffff);
+                vcpu.set16(fields::GuestState16::FsSelector, 0);
+                vcpu.set32(fields::GuestState32::FsAccessRights, 0x93);
+                // GS
+                vcpu.set_nat(fields::GuestStateNat::GsBase, 0x0);
+                vcpu.set32(fields::GuestState32::GsLimit, 0x0);
+                vcpu.set16(fields::GuestState16::GsSelector, 0);
+                vcpu.set32(fields::GuestState32::GsAccessRights, 0x93);
+                // SS
+                vcpu.set_nat(fields::GuestStateNat::SsBase, 0x0);
+                vcpu.set32(fields::GuestState32::SsLimit, 0x0000ffff);
+                vcpu.set16(fields::GuestState16::SsSelector, 0);
+                vcpu.set32(fields::GuestState32::SsAccessRights, 0x93);
+                // TR
+                vcpu.set_nat(fields::GuestStateNat::TrBase, 0x0);
+                vcpu.set32(fields::GuestState32::TrLimit, 0x0000ffff); // At least 0x67
+                vcpu.set16(fields::GuestState16::TrSelector, 0);
+                vcpu.set32(fields::GuestState32::TrAccessRights, 0x8b);
+                // LDTR
+                vcpu.set_nat(fields::GuestStateNat::LdtrBase, 0x0);
+                vcpu.set32(fields::GuestState32::LdtrLimit, 0x0000ffff);
+                vcpu.set16(fields::GuestState16::LdtrSelector, 0);
+                vcpu.set32(fields::GuestState32::LdtrAccessRights, 0x82);
+                // GDTR
+                vcpu.set_nat(fields::GuestStateNat::GdtrBase, 0x0);
+                vcpu.set32(fields::GuestState32::GdtrLimit, 0x0000ffff);
+                // IDTR
+                vcpu.set_nat(fields::GuestStateNat::IdtrBase, 0x0);
+                vcpu.set32(fields::GuestState32::IdtrLimit, 0x0000ffff);
+
+                vcpu.set32(fields::GuestState32::ActivityState, 0);
+                vcpu.set64(fields::GuestState64::VmcsLinkPtr, u64::max_value());
+                vcpu.set16(fields::GuestState16::InterruptStatus, 0);
+                vcpu.set32(fields::GuestState32::VmxPreemptionTimerValue, 0xffffffff);
+                vcpu.set_nat(fields::GuestStateNat::Rflags, 0x2);
             }
         }
     }
@@ -654,6 +790,15 @@ impl core::fmt::Display for CoreUpdate {
             }
             CoreUpdate::UpdateTrap { bitmap } => {
                 write!(f, "UpdateTrap({:b})", bitmap)
+            }
+            CoreUpdate::UpdateVmcs32 { field, value } => {
+                write!(f, "UpdateVmcs32(field={:#x}, value={:#})", field, value)
+            }
+            CoreUpdate::UpdateVmcs64 { field, value } => {
+                write!(f, "UpdateVmcs64(field={:#x}, value={:#})", field, value)
+            }
+            CoreUpdate::UpdateVmcsDefault {} => {
+                write!(f, "UpdateVmcsDefault")
             }
         }
     }

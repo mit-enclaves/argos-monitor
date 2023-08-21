@@ -197,6 +197,34 @@ pub enum Ctrl32 {
 
 impl_field_for!(VmcsField32, Ctrl32);
 
+impl TryFrom<u64> for Ctrl32 {
+    type Error = ();
+
+    fn try_from(v: u64) -> Result<Self, Self::Error> {
+        match v {
+            x if x == Ctrl32::PinBasedExecCtrls as u64 => Ok(Ctrl32::PinBasedExecCtrls),
+            x if x == Ctrl32::PrimaryProcBasedExecCtrls as u64 => Ok(Ctrl32::PrimaryProcBasedExecCtrls),
+            x if x == Ctrl32::ExceptionBitmap as u64 => Ok(Ctrl32::ExceptionBitmap),
+            x if x == Ctrl32::PageFaultErrCodeMask as u64 => Ok(Ctrl32::PageFaultErrCodeMask),
+            x if x == Ctrl32::PageFaultErrCodeMatch as u64 => Ok(Ctrl32::PageFaultErrCodeMatch),
+            x if x == Ctrl32::Cr3TargetCount as u64 => Ok(Ctrl32::Cr3TargetCount),
+            x if x == Ctrl32::VmExitCtrls as u64 => Ok(Ctrl32::VmExitCtrls),
+            x if x == Ctrl32::VmExitMsrStoreCount as u64 => Ok(Ctrl32::VmExitMsrStoreCount),
+            x if x == Ctrl32::VmExitMsrLoadCount as u64 => Ok(Ctrl32::VmExitMsrLoadCount),
+            x if x == Ctrl32::VmEntryCtrls as u64 => Ok(Ctrl32::VmEntryCtrls),
+            x if x == Ctrl32::VmEntryMsrLoadCount as u64 => Ok(Ctrl32::VmEntryMsrLoadCount),
+            x if x == Ctrl32::VmEntryIntInfoField as u64 => Ok(Ctrl32::VmEntryIntInfoField),
+            x if x == Ctrl32::VmEntryExceptErrCode as u64 => Ok(Ctrl32::VmEntryExceptErrCode),
+            x if x == Ctrl32::VmEntryInstrLength as u64 => Ok(Ctrl32::VmEntryInstrLength),
+            x if x == Ctrl32::TprThreshold as u64 => Ok(Ctrl32::TprThreshold),
+            x if x == Ctrl32::SecondaryProcBasedVmExecCtrls as u64 => Ok(Ctrl32::SecondaryProcBasedVmExecCtrls),
+            x if x == Ctrl32::PleGap as u64 => Ok(Ctrl32::PleGap),
+            x if x == Ctrl32::PleWindow as u64 => Ok(Ctrl32::PleWindow),
+            _ => Err(())
+        }
+    }
+}
+
 /// VMCS fields encoding of 64 bits control fields.
 #[rustfmt::skip]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -231,6 +259,42 @@ pub enum Ctrl64 {
 
 impl_field_for!(VmcsField64, Ctrl64);
 
+impl TryFrom<u64> for Ctrl64 {
+    type Error = ();
+
+    fn try_from(v: u64) -> Result<Self, Self::Error> {
+        match v {
+            x if x == Ctrl64::IoBitmapA as u64 => Ok(Ctrl64::IoBitmapA),
+            x if x == Ctrl64::IoBitmapB as u64 => Ok(Ctrl64::IoBitmapB),
+            x if x == Ctrl64::MsrBitmaps as u64 => Ok(Ctrl64::MsrBitmaps),
+            x if x == Ctrl64::VmExitMsrStoreAddr as u64 => Ok(Ctrl64::VmExitMsrStoreAddr),
+            x if x == Ctrl64::VmExitMsrLoadAddr as u64 => Ok(Ctrl64::VmExitMsrLoadAddr),
+            x if x == Ctrl64::VmEntryMsrLoadAddr as u64 => Ok(Ctrl64::VmEntryMsrLoadAddr),
+            x if x == Ctrl64::ExecVmcsPtr as u64 => Ok(Ctrl64::ExecVmcsPtr),
+            x if x == Ctrl64::PmlAddr as u64 => Ok(Ctrl64::PmlAddr),
+            x if x == Ctrl64::TscOffset as u64 => Ok(Ctrl64::TscOffset),
+            x if x == Ctrl64::VirtApicAddr as u64 => Ok(Ctrl64::VirtApicAddr),
+            x if x == Ctrl64::ApicAccessAddr as u64 => Ok(Ctrl64::ApicAccessAddr),
+            x if x == Ctrl64::PostedIntDescAddr as u64 => Ok(Ctrl64::PostedIntDescAddr),
+            x if x == Ctrl64::VmFuncCtrls as u64 => Ok(Ctrl64::VmFuncCtrls),
+            x if x == Ctrl64::EptPtr as u64 => Ok(Ctrl64::EptPtr),
+            x if x == Ctrl64::EoiExitBitmap0 as u64 => Ok(Ctrl64::EoiExitBitmap0),
+            x if x == Ctrl64::EoiExitBitmap1 as u64 => Ok(Ctrl64::EoiExitBitmap1),
+            x if x == Ctrl64::EoiExitBitmap2 as u64 => Ok(Ctrl64::EoiExitBitmap2),
+            x if x == Ctrl64::EoiExitBitmap3 as u64 => Ok(Ctrl64::EoiExitBitmap3),
+            x if x == Ctrl64::EptpListAddr as u64 => Ok(Ctrl64::EptpListAddr),
+            x if x == Ctrl64::VmreadBitmapAddr as u64 => Ok(Ctrl64::VmreadBitmapAddr),
+            x if x == Ctrl64::VmwriteBitmapAddr as u64 => Ok(Ctrl64::VmwriteBitmapAddr),
+            x if x == Ctrl64::VirtExceptInfAddr as u64 => Ok(Ctrl64::VirtExceptInfAddr),
+            x if x == Ctrl64::XssExitBitmap as u64 => Ok(Ctrl64::XssExitBitmap),
+            x if x == Ctrl64::EnclsExitBitmap as u64 => Ok(Ctrl64::EnclsExitBitmap),
+            x if x == Ctrl64::TscMultiplier as u64 => Ok(Ctrl64::TscMultiplier),
+            _ => Err(())
+        }
+    }
+}
+
+
 /// VMCS fields encoding of natural width control fields.
 #[rustfmt::skip]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -247,6 +311,24 @@ pub enum CtrlNat {
 }
 
 impl_field_for!(VmcsFieldNat, CtrlNat);
+
+impl TryFrom<u64> for CtrlNat {
+    type Error = ();
+
+    fn try_from(v: u64) -> Result<Self, Self::Error> {
+        match v {
+            x if x == CtrlNat::Cr0Mask as u64 => Ok(CtrlNat::Cr0Mask),
+            x if x == CtrlNat::Cr4Mask as u64 => Ok(CtrlNat::Cr4Mask),
+            x if x == CtrlNat::Cr0ReadShadow as u64 => Ok(CtrlNat::Cr0ReadShadow),
+            x if x == CtrlNat::Cr4ReadShadow as u64 => Ok(CtrlNat::Cr4ReadShadow),
+            x if x == CtrlNat::Cr3TargetValue0 as u64 => Ok(CtrlNat::Cr3TargetValue0),
+            x if x == CtrlNat::Cr3TargetValue1 as u64 => Ok(CtrlNat::Cr3TargetValue1),
+            x if x == CtrlNat::Cr3TargetValue2 as u64 => Ok(CtrlNat::Cr3TargetValue2),
+            x if x == CtrlNat::Cr3TargetValue3 as u64 => Ok(CtrlNat::Cr3TargetValue3),
+            _ => Err(())
+        }
+    }
+}
 
 // ——————————————————————————— Host State Fields ———————————————————————————— //
 
