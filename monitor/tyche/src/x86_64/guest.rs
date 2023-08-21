@@ -374,7 +374,7 @@ fn handle_exit(
         }
         VmxExitReason::Rdmsr => {
             let ecx = vs.vcpu.get(Register::Rcx);
-            if ecx == 0xc0011029 {
+            if ecx == 0xc0011029 || ecx >= 0xc0010200 {
                 // Reading an AMD specifig register, just ignore it
                 vs.vcpu.next_instruction()?;
                 Ok(HandlerResult::Resume)
