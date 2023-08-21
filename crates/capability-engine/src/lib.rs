@@ -57,7 +57,6 @@ pub enum CapaError {
     InvalidOperation,
     InvalidValue,
     InvalidMemOps,
-    InvalidState,
 }
 
 pub struct CapaEngine {

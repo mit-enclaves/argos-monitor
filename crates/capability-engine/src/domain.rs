@@ -53,13 +53,6 @@ pub mod switch_bits {
     pub const ALL: u64 = !(NONE);
 }
 
-// —————————————————————————— Core Initialization Configuration —————————————————————————— //
-#[allow(dead_code)]
-pub mod init_bits {
-    /// Default none value.
-    pub const NONE: u64 = 0;
-}
-
 // —————————————————————————— Domain Capabilities ——————————————————————————— //
 
 /// An index into the capability table of a domain.
@@ -116,8 +109,7 @@ pub enum Bitmaps {
     TRAP = 1,
     CORE = 2,
     SWITCH = 3,
-    INIT = 4,
-    _SIZE = 5,
+    _SIZE = 4,
 }
 
 impl Bitmaps {
@@ -127,7 +119,6 @@ impl Bitmaps {
             1 => Ok(Self::TRAP),
             2 => Ok(Self::CORE),
             3 => Ok(Self::SWITCH),
-            4 => Ok(Self::INIT),
             _ => Err(CapaError::InvalidValue),
         }
     }
@@ -191,14 +182,12 @@ impl Domain {
                     trap_bits::NONE,
                     core_bits::NONE,
                     switch_bits::NONE,
-                    init_bits::NONE,
                 ],
                 valid_masks: [
                     permission::ALL,
                     trap_bits::ALL,
                     core_bits::ALL,
                     switch_bits::ALL,
-                    init_bits::NONE,
                 ],
                 initialized: [false; Bitmaps::_SIZE as usize],
             },

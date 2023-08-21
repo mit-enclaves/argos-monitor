@@ -13,7 +13,7 @@ use utils::{GuestPhysAddr, HostPhysAddr};
 use vmx::bitmaps::{EptEntryFlags, ExceptionBitmap};
 use vmx::errors::Trapnr;
 use vmx::msr::IA32_LSTAR;
-use vmx::{ActiveVmcs, ControlRegister, Register, VmExitInterrupt, VmxError, REGFILE_SIZE};
+use vmx::{ActiveVmcs, ControlRegister, Register, VmExitInterrupt, REGFILE_SIZE};
 
 use super::cpuid;
 use super::guest::VmxState;
@@ -396,9 +396,6 @@ enum CoreUpdate {
     UpdateTrap {
         bitmap: u64,
     },
-    Init {
-        init_state: InitVmcs,
-    },
 }
 
 /// General updates, containing both global updates on the domain's states, and core specific
@@ -444,20 +441,6 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
             capa_engine::Update::UpdateTraps { trap, core } => {
                 let mut core_updates = CORE_UPDATES[core as usize].lock();
                 core_updates.push(CoreUpdate::UpdateTrap { bitmap: !trap });
-            }
-            capa_engine::Update::CoreInit { core, state } => {
-                // FIXME: the vmcs changes should be applied on another core
-                //        double check here as I'm pretty sure this one is using the current core
-                let mut core_updates = CORE_UPDATES[core as usize].lock();
-
-                // FIXME: read the content of the address through hypercall
-                let raw_ptr = state as *mut InitVmcs;
-                let state_ref: &mut InitVmcs = unsafe { raw_ptr.as_mut().unwrap() };
-                crate::println!("{:?}", state_ref);
-                let state: InitVmcs = *state_ref;
-                crate::println!("state = {:?}", state);
-
-                core_updates.push(CoreUpdate::Init { init_state: state });
             }
         }
     }
@@ -554,232 +537,8 @@ pub fn apply_core_updates(
                 vcpu.set_exception_bitmap(ExceptionBitmap::from_bits_truncate(value))
                     .expect("Error setting the exception bitmap");
             }
-            CoreUpdate::Init { init_state } => {
-                log::trace!(
-                    "Init core {} VMCS configuration with state: {:?}",
-                    core_id,
-                    init_state
-                );
-
-                apply_state(vcpu, init_state).expect("Error setting initial state");
-            }
         }
     }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Default)]
-pub struct InitVmcs {
-    pin_based_vm_exec_control: u64,
-    cpu_based_vm_exec_control: u64,
-    secondary_vm_exec_control: u64,
-    exception_bitmap: u64,
-    eoi_exit_bitmap0: u64,
-    eoi_exit_bitmap1: u64,
-    eoi_exit_bitmap2: u64,
-    eoi_exit_bitmap3: u64,
-    posted_intr_desc_addr: u64,
-    page_fault_error_code_mask: u64,
-    page_fault_error_code_match: u64,
-    cr3_target_count: u64,
-    vmcs_link_pointer: u64,
-    vm_exit_msr_load_addr: u64,
-    vm_entry_msr_load_addr: u64,
-    vm_exit_controls: u64,
-    vm_entry_controls: u64,
-    virtual_apic_page_addr: u64,
-    apic_access_addr: u64,
-    ept_pointer: u64,
-    tpr_threshold: u64,
-    guest_pending_dbg_exceptions: u64,
-    vm_entry_intr_info_field: u64,
-    tsc_offset: u64,
-    guest_intr_status: u64,
-    guest_rip: u64,
-    guest_cr0: u64,
-    guest_cr3: u64,
-    guest_rsp: u64,
-    guest_cr4: u64,
-    guest_dr7: u64,
-    guest_ia32_efer: u64,
-    cr0_read_shadow: u64,
-    cr4_read_shadow: u64,
-    cr0_guest_host_mask: u64,
-    cr4_guest_host_mask: u64,
-    guest_sysenter_cs: u64,
-    guest_sysenter_esp: u64,
-    guest_sysenter_eip: u64,
-    guest_ia32_debugctl: u64,
-    guest_ia32_pat: u64,
-}
-
-fn apply_state(vcpu: &mut ActiveVmcs<'static>, state: InitVmcs) -> Result<(), VmxError> {
-    use vmx::fields;
-    use vmx::fields::traits::*;
-
-    log::trace!("apply state on vcpu {:?} with state {:?}", vcpu, state);
-
-    // Ctrl state
-    unsafe {
-        fields::Ctrl32::PinBasedExecCtrls.vmwrite(state.pin_based_vm_exec_control as u32)?;
-        fields::Ctrl32::PrimaryProcBasedExecCtrls
-            .vmwrite(state.cpu_based_vm_exec_control as u32)?;
-        fields::Ctrl32::SecondaryProcBasedVmExecCtrls
-            .vmwrite(state.secondary_vm_exec_control as u32)?;
-        fields::Ctrl32::ExceptionBitmap.vmwrite(state.exception_bitmap as u32)?;
-        // fields::Ctrl64::MsrBitmaps.vmwrite(state.msr_bitmap)?;
-        fields::Ctrl64::EoiExitBitmap0.vmwrite(state.eoi_exit_bitmap0)?;
-        fields::Ctrl64::EoiExitBitmap1.vmwrite(state.eoi_exit_bitmap1)?;
-        fields::Ctrl64::EoiExitBitmap2.vmwrite(state.eoi_exit_bitmap2)?;
-        fields::Ctrl64::EoiExitBitmap3.vmwrite(state.eoi_exit_bitmap3)?;
-        fields::Ctrl64::PostedIntDescAddr.vmwrite(state.posted_intr_desc_addr)?;
-
-        fields::Ctrl32::PageFaultErrCodeMask.vmwrite(state.page_fault_error_code_mask as u32)?;
-        fields::Ctrl32::PageFaultErrCodeMatch.vmwrite(state.page_fault_error_code_match as u32)?;
-        fields::Ctrl32::Cr3TargetCount.vmwrite(state.cr3_target_count as u32)?;
-
-        fields::GuestState64::VmcsLinkPtr.vmwrite(state.vmcs_link_pointer)?;
-    }
-
-    // Binary-dependent Guest States
-    vcpu.set64(fields::GuestState64::Ia32Efer, state.guest_ia32_efer)?;
-    vcpu.set_nat(fields::GuestStateNat::Rflags, 0x2)?;
-    vcpu.set_nat(fields::GuestStateNat::Rip, state.guest_rip as usize)?;
-    vcpu.set_nat(fields::GuestStateNat::Cr0, state.guest_cr0 as usize)?;
-    vcpu.set_nat(fields::GuestStateNat::Cr3, state.guest_cr3 as usize)?;
-    vcpu.set_nat(fields::GuestStateNat::Rsp, state.guest_rsp as usize)?;
-    // vcpu.set(Register::Rsi, state.guest_rsi as u64);
-    // VMXE flags, required during VMX operations.
-    vcpu.set_nat(fields::GuestStateNat::Cr4, state.guest_cr4 as usize)?;
-    vcpu.set_cr4_mask(state.cr4_guest_host_mask as usize)?;
-    vcpu.set_cr4_shadow(state.cr4_read_shadow as usize)?;
-    vcpu.set_cr0_mask(state.cr0_guest_host_mask as usize)?;
-    vcpu.set_cr0_shadow(state.cr0_read_shadow as usize)?;
-    vcpu.set_nat(fields::GuestStateNat::Dr7, state.guest_dr7 as usize)?;
-
-    //   nested_vmx_set_vmcs_shadowing_bitmap: vmcs_write: field 0x00002026 (VMREAD_BITMAP), value 0x104a8b000
-    //   nested_vmx_set_vmcs_shadowing_bitmap: vmcs_write: field 0x00002028 (VMWRITE_BITMAP), value 0x104bb0000
-
-    // Default States
-    // CS
-    vcpu.set_nat(fields::GuestStateNat::CsBase, 0xffff0000)?;
-    vcpu.set32(fields::GuestState32::CsLimit, 0x0000ffff)?;
-    vcpu.set16(fields::GuestState16::CsSelector, 0x0000f000)?;
-    vcpu.set32(fields::GuestState32::CsAccessRights, 0x0000009b)?;
-    // DS
-    vcpu.set_nat(fields::GuestStateNat::DsBase, 0x0)?;
-    vcpu.set32(fields::GuestState32::DsLimit, 0x0000ffff)?;
-    vcpu.set16(fields::GuestState16::DsSelector, 0)?;
-    vcpu.set32(fields::GuestState32::DsAccessRights, 0x93)?;
-    // ES
-    vcpu.set_nat(fields::GuestStateNat::EsBase, 0x0)?;
-    vcpu.set32(fields::GuestState32::EsLimit, 0x0000ffff)?;
-    vcpu.set16(fields::GuestState16::EsSelector, 0)?;
-    vcpu.set32(fields::GuestState32::EsAccessRights, 0x93)?;
-    // FS
-    vcpu.set_nat(fields::GuestStateNat::FsBase, 0x0)?;
-    vcpu.set32(fields::GuestState32::FsLimit, 0x0000ffff)?;
-    vcpu.set16(fields::GuestState16::FsSelector, 0)?;
-    vcpu.set32(fields::GuestState32::FsAccessRights, 0x93)?;
-    // GS
-    vcpu.set_nat(fields::GuestStateNat::GsBase, 0x0)?;
-    vcpu.set32(fields::GuestState32::GsLimit, 0x0)?;
-    vcpu.set16(fields::GuestState16::GsSelector, 0)?;
-    vcpu.set32(fields::GuestState32::GsAccessRights, 0x93)?;
-    // SS
-    vcpu.set_nat(fields::GuestStateNat::SsBase, 0x0)?;
-    vcpu.set32(fields::GuestState32::SsLimit, 0x0000ffff)?;
-    vcpu.set16(fields::GuestState16::SsSelector, 0)?;
-    vcpu.set32(fields::GuestState32::SsAccessRights, 0x93)?;
-    // TR
-    vcpu.set_nat(fields::GuestStateNat::TrBase, 0x0)?;
-    vcpu.set32(fields::GuestState32::TrLimit, 0x0000ffff)?; // At least 0x67
-    vcpu.set16(fields::GuestState16::TrSelector, 0)?;
-    vcpu.set32(fields::GuestState32::TrAccessRights, 0x8b)?;
-    // LDTR
-    vcpu.set_nat(fields::GuestStateNat::LdtrBase, 0x0)?;
-    vcpu.set32(fields::GuestState32::LdtrLimit, 0x0000ffff)?;
-    vcpu.set16(fields::GuestState16::LdtrSelector, 0)?;
-    vcpu.set32(fields::GuestState32::LdtrAccessRights, 0x82)?;
-    // GDTR
-    vcpu.set_nat(fields::GuestStateNat::GdtrBase, 0x0)?;
-    vcpu.set32(fields::GuestState32::GdtrLimit, 0x0000ffff)?;
-    // IDTR
-    vcpu.set_nat(fields::GuestStateNat::IdtrBase, 0x0)?;
-    vcpu.set32(fields::GuestState32::IdtrLimit, 0x0000ffff)?;
-
-    vcpu.set32(fields::GuestState32::ActivityState, 0)?;
-    vcpu.set64(fields::GuestState64::VmcsLinkPtr, u64::max_value())?;
-    vcpu.set16(fields::GuestState16::InterruptStatus, 0)?;
-    vcpu.set32(fields::GuestState32::VmxPreemptionTimerValue, 0xffffffff)?;
-    vcpu.set_nat(fields::GuestStateNat::Rflags, 0x2)?;
-
-    unsafe {
-        fields::Ctrl32::VmExitMsrLoadCount.vmwrite(0)?;
-        fields::Ctrl32::VmExitMsrStoreCount.vmwrite(0)?;
-        fields::Ctrl32::VmEntryMsrLoadCount.vmwrite(0)?;
-        fields::Ctrl64::VmExitMsrLoadAddr.vmwrite(state.vm_exit_msr_load_addr)?;
-        fields::Ctrl64::VmEntryMsrLoadAddr.vmwrite(state.vm_entry_msr_load_addr)?;
-        fields::GuestState64::Ia32Pat.vmwrite(state.guest_ia32_pat)?;
-
-        fields::Ctrl32::VmExitCtrls.vmwrite(state.vm_exit_controls as u32)?;
-        fields::Ctrl32::VmEntryCtrls.vmwrite(state.vm_entry_controls as u32)?;
-        fields::CtrlNat::Cr0Mask.vmwrite(state.cr0_guest_host_mask as usize)?;
-        fields::CtrlNat::Cr4Mask.vmwrite(state.cr4_guest_host_mask as usize)?;
-
-        fields::GuestState32::Ia32SysenterCs.vmwrite(state.guest_sysenter_cs as u32)?;
-        fields::GuestStateNat::Ia32SysenterEsp.vmwrite(state.guest_sysenter_esp as usize)?;
-        fields::GuestStateNat::Ia32SysenterEip.vmwrite(state.guest_sysenter_eip as usize)?;
-        fields::GuestState64::Ia32Debugctl.vmwrite(state.guest_ia32_debugctl as u64)?;
-
-        fields::Ctrl64::VirtApicAddr.vmwrite(state.virtual_apic_page_addr)?;
-        fields::Ctrl64::ApicAccessAddr.vmwrite(state.apic_access_addr)?;
-        fields::Ctrl64::EptPtr.vmwrite(state.ept_pointer)?;
-
-        fields::Ctrl32::TprThreshold.vmwrite(state.tpr_threshold as u32)?;
-
-        fields::GuestStateNat::PendingDebugExcept
-            .vmwrite(state.guest_pending_dbg_exceptions as usize)?;
-
-        fields::Ctrl32::VmEntryIntInfoField.vmwrite(state.vm_entry_intr_info_field as u32)?;
-        fields::CtrlNat::Cr0ReadShadow.vmwrite(state.cr0_read_shadow as usize)?;
-        fields::CtrlNat::Cr4ReadShadow.vmwrite(state.cr4_read_shadow as usize)?;
-
-        fields::Ctrl32::ExceptionBitmap.vmwrite(state.exception_bitmap as u32)?;
-
-        fields::Ctrl64::TscOffset.vmwrite(state.tsc_offset)?;
-
-        fields::GuestState32::InterruptibilityState.vmwrite(state.guest_intr_status as u32)?;
-    }
-
-    // Host State
-    // HOST_TR_BASE
-    // HOST_GDTR_BASE
-    // HOST_IA32_SYSENTER_ESP
-    // HOST_FS_SELECTOR
-    // HOST_GS_SELECTOR
-    // HOST_CR0
-    // HOST_CR3
-    // HOST_CR4
-    // HOST_CS_SELECTOR
-    // HOST_DS_SELECTOR
-    // HOST_ES_SELECTOR
-    // HOST_SS_SELECTOR
-    // HOST_TR_SELECTOR
-    // HOST_IDTR_BASE
-    // HOST_RIP
-    // HOST_IA32_SYSENTER_CS
-    // HOST_IA32_SYSENTER_EIP
-    // HOST_IA32_PAT
-    // HOST_IA32_EFER
-    // HOST_FS_BASE
-    // HOST_GS_BASE
-    // HOST_FS_BASE
-    // HOST_GS_BASE
-    // HOST_RSP
-    //
-
-    Ok(())
 }
 
 fn switch_domain(
@@ -895,9 +654,6 @@ impl core::fmt::Display for CoreUpdate {
             }
             CoreUpdate::UpdateTrap { bitmap } => {
                 write!(f, "UpdateTrap({:b})", bitmap)
-            }
-            CoreUpdate::Init { init_state } => {
-                write!(f, "CoreUpdate({:p})", init_state)
             }
         }
     }
