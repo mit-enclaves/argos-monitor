@@ -33,6 +33,15 @@ int tyche_call(vmcall_frame_t* frame)
   //TEST(0);
     asm volatile(
         //"mv t0, a0\n\t"
+        "addi sp, sp, -9*8\n\t"
+        "sd a0, 0*8(sp)\n\t"
+        "sd a1, 1*8(sp)\n\t"
+        "sd a2, 2*8(sp)\n\t"
+        "sd a3, 3*8(sp)\n\t"
+        "sd a4, 4*8(sp)\n\t"
+        "sd a5, 5*8(sp)\n\t"
+        "sd a6, 6*8(sp)\n\t"
+        "sd a7, 7*8(sp)\n\t"
         "mv a0, %[sa0]\n\t"
         "mv a1, %[sa1]\n\t"
         "mv a2, %[sa2]\n\t"
@@ -54,6 +63,16 @@ int tyche_call(vmcall_frame_t* frame)
         "mv %[da4], a4\n\t" 
         "mv %[da5], a5\n\t"
         "mv %[da6], a6\n\t"
+        "ld a0, 0*8(sp)\n\t"
+        "ld a1, 1*8(sp)\n\t"
+        "ld a2, 2*8(sp)\n\t"
+        "ld a3, 3*8(sp)\n\t"
+        "ld a4, 4*8(sp)\n\t"
+        "ld a5, 5*8(sp)\n\t"
+        "ld a6, 6*8(sp)\n\t"
+        "ld a7, 7*8(sp)\n\t"
+        "addi sp, sp, 9*8\n\t"
+
         //"mv a0, t0\n\t"
         : [da0]"=r" (result), [da1]"=r" (frame->value_1), [da2]"=r" (frame->value_2), [da3]"=r" (frame->value_3), [da4]"=r" (frame->value_4), [da5]"=r" (frame->value_5), [da6]"=r" (frame->value_6)
         :  [sa0]"r" (frame->vmcall), [sa1]"r" (frame->arg_1), [sa2]"r" (frame->arg_2), [sa3]"r" (frame->arg_3), [sa4]"r" (frame->arg_4), [sa5]"r" (frame->arg_5), [sa6]"r" (frame->arg_6)   
@@ -326,6 +345,7 @@ int tyche_revoke(capa_index_t id)
   if (tyche_call(&frame) != SUCCESS) {
     goto failure;
   }
+  ERROR("Neelu: Tyche_call successful");
   return SUCCESS;
 failure:
   return FAILURE;
@@ -391,6 +411,12 @@ int tyche_switch(capa_index_t* transition_handle, void* args)
 #elif defined(CONFIG_RISCV) || defined(__riscv)
   //TODO(neelu)
   asm volatile(
+        "addi sp, sp, -6*8\n\t"
+        "sd a0, 0*8(sp)\n\t"
+        "sd a1, 1*8(sp)\n\t"
+        "sd a2, 2*8(sp)\n\t"
+        "sd a3, 3*8(sp)\n\t"
+        "sd a7, 4*8(sp)\n\t"
         "mv a0, %[sa0]\n\t"
         "mv a1, %[sa1]\n\t"
         "mv a2, %[sa2]\n\t"
@@ -401,6 +427,12 @@ int tyche_switch(capa_index_t* transition_handle, void* args)
         //"ld t0, 0x1(x0)\n\t"
         "mv %[da0], a0\n\t"
         "mv %[da1], a1\n\t"
+        "ld a0, 0*8(sp)\n\t"
+        "ld a1, 1*8(sp)\n\t"
+        "ld a2, 2*8(sp)\n\t"
+        "ld a3, 3*8(sp)\n\t"
+        "ld a7, 4*8(sp)\n\t"
+        "addi sp, sp, 6*8\n\t"
         : [da0]"=r" (result), [da1]"=r" (frame.value_1) 
         : [sa0]"r" (frame.vmcall), [sa1]"r" (frame.arg_1), [sa2]"r" (frame.arg_2), [sa3]"r" (frame.arg_3)
         : "a0", "a1", "a2", "a3", "a7"

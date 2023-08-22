@@ -29,7 +29,7 @@ pub fn init() {
     }
 
     clear_mstatus_xie();
-    disable_supervisor_interrupts();
+    //disable_supervisor_interrupts();
 
     //Configuring mtvec direct base address to point to Tyche's trap handler.
     let mtvec_ptr = machine_trap_handler as *const ();

@@ -58,10 +58,10 @@ pub fn init() {
         .create_root_region(
             domain,
             AccessRights {
-                start: 0x80200000, //Linux Starting Address
-                end: 0x9fffffff,   //Todo: double check this - it's currently based on early
+                start: 0x80200000, //Linux Root Region Start Address
+                end: 0x17fffffff,   //Linux Root Region End Address - it's currently based on early
                                    //memory node range detected by linux. 
-                                   //Todo: It should be a part of the manifest. 
+                                   //TODO: It should be a part of the manifest. 
             },
         )
         .unwrap();
@@ -239,9 +239,10 @@ pub fn do_switch(
         return_capa,
     ))*/
     //log::info!("engine.switch");
+  
     let mut engine = CAPA_ENGINE.lock();
     engine.switch(current, cpuid, capa)?;
-    apply_updates(&mut engine);
+    apply_updates(&mut engine); 
     //do_debug();
     Ok(())
 }
@@ -457,7 +458,9 @@ fn switch_domain(
     write_medeleg(next_ctx.medeleg);    //TODO: This needs to be part of Trap/UpdateTrap.
     *current_reg_state = next_ctx.reg_state;
 
-    disable_supervisor_interrupts();
+    //disable_supervisor_interrupts();
+
+    toggle_supervisor_interrupts();
 
    /*  if(domain == INITIAL_DOMAIN) {
         restore_medeleg();
