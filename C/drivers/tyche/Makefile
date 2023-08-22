@@ -47,7 +47,8 @@ INSTALL_PATH ?= /tyche/tyche
 ifeq ($(ARCH), x86)
 DISK_PATH ?= /tmp/mount/tyche/drivers/
 else ifeq ($(ARCH), riscv)
-DISK_PATH ?= /home/neelu/vmxvmm/builds/ramfs-riscv/tyche/drivers/  
+#DISK_PATH ?= /home/neelu/vmxvmm/builds/ramfs-riscv/tyche/drivers/  
+DISK_PATH ?= /tmp/ubuntu_riscv_mount/tyche/drivers/ 
 endif
 
 $(info MAKE="$(MAKE)")
