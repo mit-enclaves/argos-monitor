@@ -198,6 +198,17 @@ pub fn disable_supervisor_interrupts() {
     }
 }
 
+pub fn toggle_supervisor_interrupts() { 
+    unsafe { 
+        asm!(
+            "li t0, 0x222",
+            "csrr t1, mie",
+            "xor t1, t1, t0",
+            "csrw mie, t1",
+        );
+    }
+}
+
 pub fn clear_medeleg() {
     unsafe { 
         asm!(
