@@ -65,7 +65,8 @@ ifeq ($(ARCH), x86)
 DISK_PATH ?= /tmp/mount/tyche/programs 
 TYCHOOLS_PATH ?= ../../../../../crates/tychools/ 
 else ifeq ($(ARCH), riscv)
-DISK_PATH ?= /home/neelu/vmxvmm/builds/ramfs-riscv/tyche/programs/
+#DISK_PATH ?= /home/neelu/vmxvmm/builds/ramfs-riscv/tyche/programs/
+DISK_PATH ?= /tmp/ubuntu_riscv_mount/tyche/programs
 endif
 ## ———————————————————————————————— Targets ————————————————————————————————— ##
 

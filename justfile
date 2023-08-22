@@ -9,6 +9,7 @@ build_features      := "-Zbuild-std-features=compiler-builtins-mem"
 cargo_args          := build_std + " " + build_features
 x86-linker-script   := "RUSTFLAGS='-C link-arg=-Tconfigs/x86-linker-script.x'"
 riscv-linker-script := "RUSTFLAGS='-C link-arg=-Tconfigs/riscv-linker-script.x'"
+#riscv-user-space	:= "RUSTFLAGS='-C target-feature=+crt-static'"
 first-stage         := "--package s1 --features=s1/second-stage"
 tyche               := "--package tyche"
 rawc                := "--features=s1/guest_rawc"
@@ -22,6 +23,7 @@ tpm_path            := "/tmp/tpm-dev-" + env_var('USER')
 default_dbg         := "/tmp/dbg-" + env_var('USER')
 default_smp         := "1"
 extra_arg           := ""
+
 
 # Print list of commands
 help:
@@ -164,7 +166,7 @@ _build-busybox-common ARCH CROSS_COMPILE=extra_arg:
 	cp ./configs/busybox-{{ARCH}}.config ./builds/busybox-{{ARCH}}/.config
 	make -C ./busybox ARCH={{ARCH}} CFLAGS="-I{{build_path}}/linux-headers-{{ARCH}}/include" O=../builds/busybox-{{ARCH}}/ {{CROSS_COMPILE}} -j `nproc`
 	make -C ./busybox ARCH={{ARCH}} O=../builds/busybox-{{ARCH}}/ {{CROSS_COMPILE}} PREFIX=../builds/ramfs-{{ARCH}} install
-	cp ./configs/init.sh ./builds/ramfs-{{ARCH}}/init
+	cp ./configs/{{ARCH}}_init.sh ./builds/ramfs-{{ARCH}}/init
 
 init-ramfs-x86:
 	@just _init-ramfs-common x86
@@ -222,6 +224,12 @@ _common-metal TARGET:
 # Build user-space programs
 user-space:
 	cargo build --package libtyche --target=x86_64-unknown-linux-musl --release
+
+# Build user-space programs for risc-v 
+#{{riscv-user-space}} cargo build -Z build-std --package libtyche --target=riscv64gc-unknown-linux-musl --release
+#user-space-riscv:
+#	{{riscv-user-space}} cargo build {{cargo_args}} --package libtyche {{riscv}} --release
+	
 
 # Start the software TPM emulator, if not already running
 _tpm:
