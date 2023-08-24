@@ -44,11 +44,16 @@ compile_riscv_and_update_disk:
 	cp scripts/riscv64_install_drivers.sh /tmp/ubuntu_riscv_mount/tyche
 	cp scripts/run_eapp.sh /tmp/ubuntu_riscv_mount/tyche 
 	cp libraries/sdkenclave/*.so /tmp/ubuntu_riscv_mount/tyche/programs
-	
+
+# Use this when you see errors like the following during the boot: 
+# EXT4-fs error (device vda1): ext4_validate_block_bitmap:390: comm ext4lazyinit: bg 30: bad block bitmap checksum
+# The superblock may have been corrupted and due to failing the checksum matching, the file system will get mounted in "ro" mode, which means you cannot write any logs to files, cannot copy the latest program builds to the /root and so on. 
+# This is undesirable. Make sure when running the VM you perform a clean poweroff or clean exit for all programs modifying the disk.  
+
 fix_disk_superblock: 
 	echo "fixing disk superblock"
 	sudo losetup -P /dev/loop0 ../ubuntu-22.04.3-preinstalled-server-riscv64+unmatched.img 
-	sudo fsck -f /dev/loop0p1
+	sudo fsck -f -y /dev/loop0p1 
 	sudo losetup -d /dev/loop0 
 
 endif
