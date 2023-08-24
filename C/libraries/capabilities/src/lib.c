@@ -4,11 +4,17 @@
 #define TYCHE_DEBUG 1
 #include "common.h"
 
+//#include <string.h>
+
 // ———————————————————————————————— Globals ————————————————————————————————— //
 
 domain_t local_domain;
 
 // ———————————————————————— Private helper functions ———————————————————————— //
+
+/* void log_capa_info(capability_t* capa) {
+    ERROR("Logging capa: %llx parent: %llx parent->left: %llx parent->right: %llx \n", capa, capa->parent, capa->parent->left, capa->parent->right); 
+} */
 
 void local_memcpy(void *dest, void *src, unsigned long n) {
   unsigned long i = 0;
@@ -61,28 +67,43 @@ int init(capa_alloc_t allocator, capa_dealloc_t deallocator) {
   // Start enumerating the domain's capabilities.
   while (1) {
     capability_t tmp_capa;
+    tmp_capa.parent = NULL; 
+    //ERROR("Done setting parent");
+    tmp_capa.left = NULL;
+    //ERROR("Done setting left");
+    tmp_capa.right = NULL;
+    //ERROR("Done setting right");
+    //local_memset(&tmp_capa, sizeof(capability_t));
     capability_t *capa = NULL;
     if (enumerate_capa(next, &next, &tmp_capa) != SUCCESS || next == 0) {
       // Failed to read or no more capa
       break;
     }
 
-    DEBUG("Done enumerating domain's capabilities");
+    //DEBUG("Done enumerating domain's capabilities");
 
     capa = (capability_t *)(local_domain.alloc(sizeof(capability_t)));
     if (capa == NULL) {
       ERROR("Unable to allocate a capability!\n");
       goto failure;
     }
+    //capa->parent = NULL;    //Neelu
+    //ERROR("Logging capa: %llx parent: %llx parent->left: %llx parent->right: %llx \n", tmp_capa, tmp_capa.parent, tmp_capa.parent->left, tmp_capa.parent->right); 
     // Copy the capability into the dynamically allocated one.
     local_memcpy(capa, &tmp_capa, sizeof(capability_t));
+    //Neelu: 
+    //log_capa_info(capa);
+
+    //ERROR("Logging capa: %llx parent: %llx left: %llx right: %llx \n", capa, capa->parent, capa->left, capa->right); 
+ 
+
     dll_init_elem(capa, list);
 
     // Add the capability to the list.
     dll_add(&(local_domain.capabilities), capa, list);
   }
 
-  DEBUG("success");
+  //DEBUG("success");
   return SUCCESS;
 failure:
   while (!dll_is_empty(&local_domain.capabilities)) {
@@ -99,7 +120,7 @@ int create_domain(domain_id_t *id) {
   capability_t *child_capa = NULL;
   child_domain_t *child = NULL;
 
-  DEBUG("start");
+  //DEBUG("start");
   // Initialization was not performed correctly.
   if (id == NULL) {
     ERROR("id null.");
@@ -157,7 +178,7 @@ int create_domain(domain_id_t *id) {
 
   // All done!
   *id = child->id;
-  DEBUG("Success");
+  //DEBUG("Success");
   return SUCCESS;
 
   // Failure paths.
@@ -260,7 +281,7 @@ int seal_domain(domain_id_t id) {
   capability_t *transition = NULL;
   transition_t *trans_wrapper = NULL;
 
-  DEBUG("start");
+  //DEBUG("start");
   // Find the target domain.
   child = find_child(id); 
 
@@ -322,7 +343,7 @@ int seal_domain(domain_id_t id) {
   dll_add(&(child->transitions), trans_wrapper, list);
 
   // All done !
-  DEBUG("Success");
+  //DEBUG("Success");
   return SUCCESS;
 failure_dealloc:
   local_domain.dealloc(trans_wrapper);
@@ -346,6 +367,8 @@ int segment_region_capa(
     goto failure;
   }
 
+  //printk("%s %llu\n", __func__, capa->local_id);
+
   // Attempt to allocate left and right.
   *left = (capability_t *)local_domain.alloc(sizeof(capability_t));
   if (*left == NULL) {
@@ -358,7 +381,9 @@ int segment_region_capa(
     goto fail_left;
   }
 
-  // Call duplicate.
+  //printk("%s %llu, s1: %x, e1: %x, s2: %x, e2: %x prot: %x\n", __func__, capa->local_id, start1, end1, start2, end2, (prot1 << 32 | prot2));
+  
+   // Call duplicate.
   if (tyche_segment_region(
         capa->local_id,
         &((*left)->local_id),
@@ -368,6 +393,8 @@ int segment_region_capa(
     ERROR("Duplicate rejected.");
     goto fail_right;
   }
+  
+   //printk("\n%s Done with tyche_segment_region call", __func__);
 
   // Update the capability.
   if (enumerate_capa(capa->local_id, NULL, capa) != SUCCESS) {
@@ -376,6 +403,8 @@ int segment_region_capa(
   }
   capa->left = *left;
   capa->right = *right;
+
+  //log_capa_info(capa);
 
   // Initialize the left.
   if (enumerate_capa((*left)->local_id, NULL, *left) != SUCCESS) {
@@ -388,6 +417,8 @@ int segment_region_capa(
   (*left)->left = NULL;
   (*left)->right = NULL;
 
+  //log_capa_info(*left);
+
   // Initialize the right.
   if (enumerate_capa((*right)->local_id, NULL, (*right)) != SUCCESS) {
     ERROR("We failed to enumerate the right of duplicate!");
@@ -398,6 +429,8 @@ int segment_region_capa(
   (*right)->parent = capa;
   (*right)->left = NULL;
   (*right)->right = NULL;
+
+  //log_capa_info(*right);
 
   // All done!
   return SUCCESS;
@@ -477,7 +510,7 @@ int carve_region(domain_id_t id, paddr_t start, paddr_t end,
   child_domain_t *child = NULL;
   capability_t *capa = NULL;
 
-  DEBUG("[grant_region] start");
+  //DEBUG("[grant_region] start");
   // Quick checks.
   if (start >= end) {
     ERROR("Start is greater or equal to end.\n");
@@ -514,6 +547,8 @@ int carve_region(domain_id_t id, paddr_t start, paddr_t end,
     ERROR("Unable to find the containing capa.");
     goto failure;
   }
+
+  //printk("The capa: %llu \n", capa->local_id);
 
   // The region is in the middle, requires two splits.
   if (capa->info.region.start < start && capa->info.region.end > end) {
@@ -628,7 +663,7 @@ int carve_region(domain_id_t id, paddr_t start, paddr_t end,
   dll_add(&(child->revocations), capa, list);
 
   // We are done!
-  DEBUG("Success");
+  //DEBUG("Success");
   return SUCCESS;
 failure:
   return FAILURE;
@@ -679,6 +714,7 @@ int internal_revoke(child_domain_t *child, capability_t *capa) {
            capa->parent->right->capa_type == Region && 
            (capa->parent->right->info.region.flags & MEM_ACTIVE) == MEM_ACTIVE))) {
     capability_t *parent = capa->parent;
+    //ERROR("Neelu: Capa and Parent: %llx %llx", capa, parent);
     if (tyche_revoke(parent->local_id) != SUCCESS) {
       goto failure;
     }
@@ -692,7 +728,54 @@ int internal_revoke(child_domain_t *child, capability_t *capa) {
       ERROR("Error[internal_revoke]: unable to enumerate after the merge.");
       goto failure;
     }
+    //ERROR("About to write the capa. %llx with parent %llx",capa, parent);
     capa = parent;
+    //ERROR("Done writing the capa. capa->parent: %llx", capa->parent);
+
+    /* if(capa->parent == NULL) {
+        ERROR("capa->parent is null");
+    }
+    else {
+        ERROR("capa->parent not null");
+        if(capa->parent->left == NULL) {
+            ERROR("Left = Null");
+        }
+        else {
+            ERROR("capa->parent->left not null");
+        }
+
+        if (capa->parent->right == NULL) {  
+            ERROR("Right == null");
+        }
+        else {
+            ERROR("capa->parent->right not null");
+        }
+
+    } */
+
+
+    /*if (capa->parent->right == capa && capa->parent->left != NULL &&
+           capa->parent->left->capa_type == Region &&
+           (capa->parent->left->info.region.flags & MEM_ACTIVE) == MEM_ACTIVE)
+    {
+        ERROR("Condition 1 is true");
+    }
+    else 
+    {
+        ERROR("Condition 1 is not true");
+    }
+    
+    if (capa->parent->left == capa && capa->parent->right != NULL &&
+           capa->parent->right->capa_type == Region && 
+           (capa->parent->right->info.region.flags & MEM_ACTIVE) == MEM_ACTIVE) 
+    {
+        ERROR("Condition 2 is true");
+    }
+    else 
+    {
+        ERROR("Condition 2 is not true");
+    } */
+ 
   }
 
   // All done!
@@ -707,7 +790,7 @@ int revoke_region(domain_id_t id, paddr_t start, paddr_t end) {
   child_domain_t *child = NULL;
   capability_t *capa = NULL;
 
-  DEBUG("start");
+  //DEBUG("start");
   // Find the target domain.
   child = find_child(id); 
 
@@ -732,7 +815,7 @@ int revoke_region(domain_id_t id, paddr_t start, paddr_t end) {
   if (internal_revoke(child, capa) != SUCCESS) {
     goto failure;
   }
-  DEBUG("success");
+  //DEBUG("success");
   return SUCCESS;
 failure:
   ERROR("failure");
@@ -743,7 +826,7 @@ failure:
 int switch_domain(domain_id_t id, void *args) {
   child_domain_t *child = NULL;
   transition_t *wrapper = NULL;
-  DEBUG("start");
+  //DEBUG("start");
 
   // Find the target domain.
   dll_foreach(&(local_domain.children), child, list) {
@@ -851,7 +934,7 @@ int revoke_domain(domain_id_t id) {
   dll_remove(&(local_domain.children), child, list);
   local_domain.dealloc(child);
 
-  DEBUG("[revoke_domain] success");
+  ERROR("[revoke_domain] success");
   return SUCCESS;
 failure:
   ERROR("[revoke_domain] failure");
