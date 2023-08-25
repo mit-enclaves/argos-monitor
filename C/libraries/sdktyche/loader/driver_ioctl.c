@@ -84,11 +84,11 @@ failure:
 int ioctl_set_entry_on_core(
     handle_t handle,
     usize core,
-    usize cr3,
-    usize rip,
-    usize rsp)
+    usize page_table_root,
+    usize entry_instr_ptr,
+    usize stack_ptr)
 {
-  msg_entry_on_core_t entry = {.core = core, .stack = rsp, .entry = rip, .page_tables = cr3};
+  msg_entry_on_core_t entry = {.core = core, .stack = stack_ptr, .entry = entry_instr_ptr, .page_tables = page_table_root};
   if (ioctl(handle, TYCHE_SET_ENTRY_POINT, &entry) != SUCCESS) {
       ERROR("Failed to set entry for the domain %d", handle);
       goto failure;

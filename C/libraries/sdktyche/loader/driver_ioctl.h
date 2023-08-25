@@ -21,6 +21,6 @@ int ioctl_set_switch(handle_t handle, usize sw);
 int ioctl_set_entry_on_core(
     handle_t handle,
     usize core,
-    usize cr3,
-    usize rip,
-    usize rsp);
+    usize page_table_root,
+    usize entry_instr_ptr,
+    usize stack_ptr);
