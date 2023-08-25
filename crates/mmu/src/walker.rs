@@ -1,6 +1,7 @@
 //! Memory Mapings walker
 //!
 //! This module provides abstractions for manipulating virtual memory mappings (i.e. page tables).
+//! For RISC-V, it's implementing SV48 i.e. 48-bit virtual address spaces.
 
 use core::slice;
 
@@ -14,6 +15,14 @@ const PAGE_SIZE: u64 = 0x1000;
 const ADDRESS_MASK: u64 = 0x7fffffffff000;
 /// Mask for the last 9 bits, corresponding to the size of page table indexes.
 const PAGE_TABLE_INDEX_MASK: u64 = 0b111111111;
+const PAGE_TABLE_INDEX_LEN: u64 = 9; 
+
+#[cfg(target_arch = "x86_64")]
+const L1_INDEX_START: u64 = 12; 
+
+#[cfg(target_arch = "riscv64")]
+const L1_INDEX_START: u64 = 10; 
+
 
 // —————————————————————————————— Page Levels ——————————————————————————————— //
 
@@ -49,10 +58,10 @@ impl Level {
 
     pub fn mask(self) -> u64 {
         match self {
-            Level::L4 => !((1 << 39) - 1),
-            Level::L3 => !((1 << 30) - 1),
-            Level::L2 => !((1 << 21) - 1),
-            Level::L1 => !((1 << 12) - 1),
+            Level::L4 => !((1 << (L1_INDEX_START + 3*PAGE_TABLE_INDEX_LEN)) - 1),
+            Level::L3 => !((1 << (L1_INDEX_START + 2*PAGE_TABLE_INDEX_LEN)) - 1),
+            Level::L2 => !((1 << (L1_INDEX_START + PAGE_TABLE_INDEX_LEN)) - 1),
+            Level::L1 => !((1 << L1_INDEX_START) - 1),
         }
     }
 }
@@ -83,25 +92,25 @@ pub trait Address: Sized + Copy + Ord {
     /// Returns this address' L4 index.
     #[inline]
     fn l4_index(self) -> usize {
-        ((self.as_u64() >> 39) & PAGE_TABLE_INDEX_MASK) as usize
+        ((self.as_u64() >> (L1_INDEX_START + 3*PAGE_TABLE_INDEX_LEN) ) & PAGE_TABLE_INDEX_MASK) as usize
     }
 
     /// Returns this address' L3 index.
     #[inline]
     fn l3_index(self) -> usize {
-        ((self.as_u64() >> 30) & PAGE_TABLE_INDEX_MASK) as usize
+        ((self.as_u64() >> (L1_INDEX_START + 2*PAGE_TABLE_INDEX_LEN)) & PAGE_TABLE_INDEX_MASK) as usize
     }
 
     /// Returns this address' L2 index.
     #[inline]
     fn l2_index(self) -> usize {
-        ((self.as_u64() >> 21) & PAGE_TABLE_INDEX_MASK) as usize
+        ((self.as_u64() >> (L1_INDEX_START + PAGE_TABLE_INDEX_LEN)) & PAGE_TABLE_INDEX_MASK) as usize
     }
 
     /// Returns this address' L1 index.
     #[inline]
     fn l1_index(self) -> usize {
-        ((self.as_u64() >> 12) & PAGE_TABLE_INDEX_MASK) as usize
+        ((self.as_u64() >> L1_INDEX_START) & PAGE_TABLE_INDEX_MASK) as usize
     }
 
     /// Returns this address index for a given level.
