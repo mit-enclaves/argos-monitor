@@ -253,7 +253,7 @@ int parse_domain(tyche_domain_t* domain)
     }
     // Found the page tables.
     if (segment->p_type == PAGE_TABLES_SB || segment->p_type == PAGE_TABLES_CONF) {
-      domain->config.cr3 = segment->p_vaddr;
+      domain->config.page_table_root = segment->p_vaddr;
       //TODO figure out if we want to keep a pointer to the segment.
     }
   }
@@ -320,9 +320,9 @@ int load_domain(tyche_domain_t* domain)
     goto failure;
   }
 
-  // Add the offset to the domain's cr3.
-  domain->config.cr3 += domain->map.physoffset;
-  DEBUG("The domain's cr3 is at %llx", domain->config.cr3);
+  // Add the offset to the domain's page_table_root.
+  domain->config.page_table_root += domain->map.physoffset;
+  DEBUG("The domain's page_table_root is at %llx", domain->config.page_table_root);
 
   // Copy the domain's content.
   phys_size = 0;
@@ -406,7 +406,7 @@ int load_domain(tyche_domain_t* domain)
   if (ioctl_set_entry_on_core(
         domain->handle,
         0,
-        domain->config.cr3,
+        domain->config.page_table_root,
         domain->config.entry,
         domain->config.stack) != SUCCESS) {
       ERROR("Unable to set the entry on core 0");
