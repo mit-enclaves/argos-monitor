@@ -1,6 +1,6 @@
 use core::{arch::asm};
 
-use capa_engine::{LocalCapa, NextCapaToken, Domain, Handle};
+use capa_engine::{Bitmaps, LocalCapa, NextCapaToken, Domain, Handle};
 use qemu::println;
 use riscv_csrs::*;
 use riscv_sbi::ecall::ecall_handler;
@@ -256,31 +256,45 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                 reg_state.a0 = 0x0;
                 reg_state.a1 = capa.as_usize();
                 //TODO: Ok(HandlerResult::Resume) There is no main loop to check what happened
-                //here, do we need a wrapper to determine when we crash?  
+                //here, do we need a wrapper to determine when we crash? For all cases except Exit,
+                //not yet. Must be handled after addition of more exception handling in Tyche. 
            },
-           calls::SET_CORES => {
-                log::info!("Set Cores");
-                match monitor::do_set_cores(active_dom, LocalCapa::new(arg_1), arg_2) {
-                    Ok(()) => reg_state.a0 = 0x0,
-                    Err(e) => {
-                        log::debug!("Set cores failed {:?}", e);
-                        reg_state.a0 = 0x1;
+           calls::CONFIGURE => {
+                log::info!("Configure");
+                if let Ok(bitmap) = Bitmaps::from_usize(arg_1) {
+                    match monitor::do_set_config(
+                        active_dom, 
+                        LocalCapa::new(arg_2),
+                        bitmap, 
+                        arg_3 as u64,
+                    ) { 
+                        Ok(_) => {
+                            //TODO: do_init_child_contexts is not yet implemented on RISC-V. 
+                            reg_state.a0 = 0x0; 
+                        }, 
+                        Err(e) => {
+                            log::error!("Configuration error: {:?}", e);
+                            reg_state.a0 = 0x1; 
+                        }
                     }
+                } else {
+                    log::error!("Invalid configuration target");
+                    reg_state.a0 = 0x1; 
                 }
            },
-           calls::SET_TRAPS => { 
-                log::info!("Set Traps");
-                match monitor::do_set_traps(active_dom, LocalCapa::new(arg_1), arg_2) {
+           calls::SET_ENTRY_ON_CORE => { 
+                log::info!("Set entry on core");
+                match monitor::do_set_entry(active_dom, LocalCapa::new(arg_1), arg_2, arg_3, arg_4, arg_5) {
                     Ok(()) => reg_state.a0 = 0x0,
                     Err(e) => {
-                        log::debug!("Set traps failed {:?}", e);
-                        reg_state.a0 = 0x1;
+                        log::error!("Unable to set entry: {:?}", e);
+                        reg_state.a0 = 0x1; 
                     }
                 }
            },
            calls::SEAL_DOMAIN => { 
                 log::info!("Seal Domain");
-                let capa = monitor::do_seal(active_dom, LocalCapa::new(arg_1), arg_2, arg_3, arg_4).expect("TODO");
+                let capa = monitor::do_seal(active_dom, LocalCapa::new(arg_1)).expect("TODO");
                 reg_state.a0 = 0x0;
                 reg_state.a1 = capa.as_usize();
            }, 
@@ -368,13 +382,16 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                 reg_state.a0 = 0x0;
            },
            calls::EXIT => { 
-                log::info!("Exit");
+                log::info!("Tyche Call: Exit");
                 //TODO 
                 //let capa = monitor::.do_().expect("TODO");
                 reg_state.a0 = 0x0;
                 //reg_state.a1 = capa.as_usize();
            }
-           _ => { /*TODO: Invalid Tyche Call*/ },
+           _ => { /*TODO: Invalid Tyche Call*/ 
+                log::info!("Invalid Tyche Call: {:x}", reg_state.a0);
+                todo!("Unknown Tyche Call.");
+           },
         }
         monitor::apply_core_updates(&mut active_dom, cpuid, reg_state);
         //Updating the state

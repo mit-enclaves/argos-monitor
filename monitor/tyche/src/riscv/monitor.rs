@@ -1,9 +1,9 @@
 //! Architecture specific monitor state 
 
-use capa_engine::config::{NB_DOMAINS};
+use capa_engine::config::{NB_DOMAINS,NB_CORES};
 use capa_engine::{
-    permission, AccessRights, CapaEngine, CapaError, CapaInfo, Domain, Handle, LocalCapa,
-    NextCapaToken, Buffer
+    permission, AccessRights, Bitmaps, CapaEngine, CapaError, CapaInfo, Domain, Handle, LocalCapa,
+    NextCapaToken, Buffer, MEMOPS_ALL, MemOps
 };
 use riscv_utils::*;
 //use riscv_utils::{RegisterState, PAGING_MODE_SV48, read_mscratch, read_satp, write_satp, write_mscratch, read_mepc, write_mepc, clear_mstatus_xie, clear_mstatus_spie, clear_mideleg, disable_supervisor_interrupts, clear_medeleg};
@@ -11,7 +11,6 @@ use spin::{Mutex, MutexGuard};
 use riscv_pmp::{pmp_write, clear_pmp, PMPAddressingMode, PMPErrorCode, FROZEN_PMP_ENTRIES, PMP_ENTRIES};
 
 //use crate::riscv::arch::write_medeleg;
-use crate::statics::NB_CORES;
 
 use crate::arch::cpuid;
 
@@ -61,7 +60,8 @@ pub fn init() {
                 start: 0x80200000, //Linux Root Region Start Address
                 end: 0x17fffffff,   //Linux Root Region End Address - it's currently based on early
                                    //memory node range detected by linux. 
-                                   //TODO: It should be a part of the manifest. 
+                                   //TODO: It should be a part of the manifest.
+                ops: MEMOPS_ALL,
             },
         )
         .unwrap();
@@ -110,41 +110,35 @@ pub fn do_create_domain(current: Handle<Domain>) -> Result<LocalCapa, CapaError>
     Ok(management_capa)
 }
 
-pub fn do_set_cores(
+pub fn do_set_config(
     current: Handle<Domain>,
     domain: LocalCapa,
-    core_map: usize,
+    bitmap: Bitmaps,
+    value: u64,
 ) -> Result<(), CapaError> {
     let mut engine = CAPA_ENGINE.lock();
-    engine.set_domain_cores(current, domain, core_map)?;
-    return Ok(());
+    engine.set_child_config(current, domain, bitmap, value)?;
+    apply_updates(&mut engine);
+    Ok(())
 }
 
-pub fn do_set_traps(
+pub fn do_set_entry(
     current: Handle<Domain>,
     domain: LocalCapa,
-    traps: usize,
-) -> Result<(), CapaError> {
-    let mut engine = CAPA_ENGINE.lock();
-    engine.set_domain_traps(current, domain, traps)
-}
-
-pub fn do_seal(
-    current: Handle<Domain>,
-    domain: LocalCapa,
-    satp: usize, 
+    core: usize,
+    satp: usize,
     mepc: usize,
     sp: usize,
-) -> Result<LocalCapa, CapaError> {
+) -> Result<(), CapaError> {
     log::info!("satp: {:x} mepc: {:x} sp: {:x}", satp, mepc, sp);
-    let cpuid = cpuid();
     let mut engine = CAPA_ENGINE.lock();
-    let capa = engine.seal(current, cpuid, domain)?;
-    let new_domain = engine
-        .get_domain_capa(current, domain)
-        .expect("Should be a domain capa");
-    let mut context = get_context(new_domain, cpuid);
-    //Todo: Populate context with the input context
+    let domain = engine.get_domain_capa(current, domain)?;
+    let cores = engine.get_domain_config(domain, Bitmaps::CORE);
+    if (1 << core) & cores == 0 {   //Neelu: TODO: Is it better to create a mask for this check? 
+        return Err(CapaError::InvalidCore);
+    }
+    let context = &mut get_context(domain, core);
+    
     context.satp = ((satp >> 12) | PAGING_MODE_SV48);  
     context.mepc = (mepc - 0x4);    //TODO: Temporarily subtracting 4, because at the end of handle_exit,
                             //mepc+4 is the address being returned to. Need to find an elegant way
@@ -153,6 +147,21 @@ pub fn do_seal(
     context.sp = sp;
     let temp_reg_state = RegisterState::const_default(); 
     context.reg_state = temp_reg_state; 
+    Ok(())
+}
+
+pub fn do_seal(
+    current: Handle<Domain>,
+    domain: LocalCapa,
+) -> Result<LocalCapa, CapaError> {
+    let cpuid = cpuid();
+    let mut engine = CAPA_ENGINE.lock();
+    let capa = engine.seal(current, cpuid, domain)?;
+    
+    //let domain_capa = engine
+    //    .get_domain_capa(current, domain)
+    //    .expect("Should be a domain capa");
+
     apply_updates(&mut engine);
     Ok(capa)
 }
@@ -162,19 +171,23 @@ pub fn do_segment_region(
     capa: LocalCapa,
     start_1: usize,
     end_1: usize,
-    _prot_1: usize,
+    prot_1: usize,
     start_2: usize,
     end_2: usize,
-    _prot_2: usize,
+    prot_2: usize,
 ) -> Result<(LocalCapa, LocalCapa), CapaError> {
+    let prot_1 = MemOps::from_usize(prot_1)?;
+    let prot_2 = MemOps::from_usize(prot_2)?;
     let mut engine = CAPA_ENGINE.lock();
     let access_left = AccessRights {
         start: start_1,
         end: end_1,
+        ops: prot_1,
     };
     let access_right = AccessRights {
         start: start_2,
         end: end_2,
+        ops: prot_2,
     };
     let (left, right) = engine.segment_region(current, capa, access_left, access_right)?;
     apply_updates(&mut engine);
