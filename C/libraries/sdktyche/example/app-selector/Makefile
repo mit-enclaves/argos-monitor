@@ -52,9 +52,9 @@ HDRS_PTS=$(wildcard $(PTS)/include/*.h)
 CODE_APP=$(CODE_ELF64) $(CODE_PTS) $(CODE_LOADER) $(CODE_UNTRUSTED)
 HDRS_APP=$(HDRS_ELF64) $(HDRS_PTS) $(HDRS_LOADER) $(HDRS_UNTRUSTED)
 
-## ———————————————————————— Enclave code and headers ———————————————————————— ##
-CODE_ENCLAVE=$(CODE_RUNTIME) $(CODE_TRUSTED)
-HDRS_ENCLAVE=$(HDRS_RUNTIME) $(HDRS_TRUSTED)
+## ———————————————————————— Domain code and headers ———————————————————————— ##
+CODE_DOMAIN=$(CODE_RUNTIME) $(CODE_TRUSTED)
+HDRS_DOMAIN=$(HDRS_RUNTIME) $(HDRS_TRUSTED)
 
 ## ———————————————————————————————— Includes ———————————————————————————————— ##
 COMMON_INCLUDES = -Iinclude -I$(CAPA_LIB)/include -I$(COMMON_LIB)/include -I$(DLL_LIB)/include -I$(SDK)/include 
@@ -73,8 +73,8 @@ endif
 app: $(CODE_APP) $(HDRS_APP) 
 	$(GCC) -DTYCHE_USER_SPACE=1 -g $(APP_INCLUDES) -static -o $@ $(CODE_APP)
 
-enclave: $(CODE_ENCLAVE) $(HDRS_ENCLAVE)
-	$(GCC) -DTYCHE_USER_SPACE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_ENCLAVE)
+enclave: $(CODE_DOMAIN) $(HDRS_DOMAIN)
+	$(GCC) -DTYCHE_USER_SPACE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_DOMAIN)
 
 ifeq ($(ARCH), x86)
 
@@ -93,7 +93,8 @@ else ifeq ($(ARCH), riscv)
 app_selector: 
 	# Blank 
 
-install_disk: all 
+install_disk: all
+	# TODO: Update this after Tychools has been patched for RISC-V 
 	mkdir -p $(DISK_PATH)
 	cp -t $(DISK_PATH) app enclave
 endif
