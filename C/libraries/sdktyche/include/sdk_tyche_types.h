@@ -88,7 +88,7 @@ typedef struct domain_shared_memory_t {
 /// Configuration for the domain, necessary for proper commit.
 typedef struct {
   /// The root page table for the domain.
-  usize cr3;
+  usize page_table_root;
 
   /// The entry point for the domain, parsed from the binary.
   usize entry;
