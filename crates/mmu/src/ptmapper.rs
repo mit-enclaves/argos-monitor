@@ -18,6 +18,7 @@ pub struct PtMapper<PhysAddr, VirtAddr> {
 }
 
 bitflags! {
+#[cfg(target_arch = "x86_64")] 
     pub struct PtFlag: u64 {
         const PRESENT = 1 << 0;
         const WRITE = 1 << 1;
@@ -30,6 +31,18 @@ bitflags! {
         const EXEC_DISABLE = 1 << 63;
     }
 
+#[cfg(target_arch = "riscv64")]
+    pub struct PtFlag: u64 {
+        const VALID = 1 << 0;
+        const READ = 1 << 1;
+        const WRITE = 1 << 2;
+        const EXECUTE = 1 << 3;
+        const USER = 1 << 4;
+        const GLOBAL = 1 << 5;
+        const ACCESSED = 1 << 6;
+        const DIRTY = 1 << 7;
+    }
+
     pub struct PageSize: usize {
         const GIANT = 1 << 30;
         const HUGE = 1 << 21;
@@ -37,10 +50,18 @@ bitflags! {
     }
 }
 
+#[cfg(target_arch = "x86_64")] 
 /// Mask to remove the top 12 bits, containing PKU keys and Exec disable bits.
 pub const HIGH_BITS_MASK: u64 = !(0b111111111111 << 52);
 pub const DEFAULT_PROTS: PtFlag = PtFlag::PRESENT.union(PtFlag::WRITE).union(PtFlag::USER);
 pub const MAP_PAGE_TABLE: PtFlag = PtFlag::PRESENT.union(PtFlag::WRITE);
+
+#[cfg(target_arch = "riscv64")]
+/// Mask to remove the top 10 bits, containing N/PBMT/Reserved fields in the PTE.
+pub const HIGH_BITS_MASK: u64 = !(0b1111111111 << 54);
+pub const DEFAULT_PROTS: PtFlag = PtFlag::VALID;
+
+
 
 unsafe impl<PhysAddr, VirtAddr> Walker for PtMapper<PhysAddr, VirtAddr>
 where
@@ -51,7 +72,11 @@ where
     type VirtAddr = VirtAddr;
 
     fn translate(&self, phys_addr: Self::PhysAddr) -> HostVirtAddr {
+#[cfg(target_arch = "x86_64")] 
         HostVirtAddr::new(phys_addr.as_usize() + self.offset + self.host_offset)
+
+#[cfg(target_arch = "riscv64")]
+        HostVirtAddr::new(phys_addr.as_usize() + self.offset)
     }
 
     fn root(&mut self) -> (Self::PhysAddr, Level) {
@@ -79,10 +104,19 @@ where
         let mut phys_addr = None;
         unsafe {
             self.walk(virt_addr, &mut |entry, level| {
+                
+#[cfg(target_arch = "x86_64")] 
                 if *entry & PtFlag::PRESENT.bits() == 0 {
                     // Terminate the walk, no mapping exists
                     return WalkNext::Leaf;
                 }
+
+#[cfg(target_arch = "riscv64")] 
+                if *entry & PtFlag::VALID.bits() == 0 {
+                    // Terminate the walk, no mapping exists
+                    return WalkNext::Leaf;
+                }
+
                 if level == Level::L1 || *entry & PtFlag::PSIZE.bits() != 0 {
                     let raw_addr = *entry & level.mask() & HIGH_BITS_MASK;
                     let raw_addr_with_offset = raw_addr + (virt_addr.as_u64() & !level.mask());
@@ -116,11 +150,21 @@ where
                 VirtAddr::from_usize(virt_addr.as_usize() + size),
                 &mut |addr, entry, level| {
                     // TODO(aghosn) handle rewrite of access rights.
+#[cfg(target_arch = "x86_64")] 
                     if (*entry & PtFlag::PRESENT.bits()) != 0 {
                         *entry = *entry | prot.bits();
                         *entry = *entry & !PtFlag::EXEC_DISABLE.bits();
                         return WalkNext::Continue;
                     }
+
+#[cfg(target_arch = "riscv64")] 
+                   if (*entry & PtFlag::VALID.bits()) != 0 {
+                        *entry = *entry | prot.bits();
+                        //*entry = *entry & !PtFlag::EXEC_DISABLE.bits();
+                        return WalkNext::Continue;
+                    }
+ 
+
                     let end = virt_addr.as_usize() + size;
                     let phys = phys_addr.as_u64() + (addr.as_u64() - virt_addr.as_u64());
                     // Opportunity to map a 1GB region
