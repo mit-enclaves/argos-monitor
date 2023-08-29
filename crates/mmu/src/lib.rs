@@ -1,6 +1,6 @@
 //! Memory Management Unit
-
 #![no_std]
+
 pub mod frame_allocator;
 pub mod ptmapper;
 pub mod walker;

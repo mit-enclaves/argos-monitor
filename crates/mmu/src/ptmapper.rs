@@ -7,6 +7,7 @@ use super::frame_allocator::FrameAllocator;
 use super::walker::{Address, Level, WalkNext, Walker};
 
 static PAGE_MASK: usize = !(0x1000 - 1);
+static PAGE_OFFSET_WIDTH: usize = 12; 
 
 pub struct PtMapper<PhysAddr, VirtAddr> {
     /// Offset between host physical memory and virtual memory.
@@ -17,8 +18,8 @@ pub struct PtMapper<PhysAddr, VirtAddr> {
     _virt: PhantomData<VirtAddr>,
 }
 
-bitflags! {
 #[cfg(target_arch = "x86_64")] 
+bitflags! {
     pub struct PtFlag: u64 {
         const PRESENT = 1 << 0;
         const WRITE = 1 << 1;
@@ -31,7 +32,15 @@ bitflags! {
         const EXEC_DISABLE = 1 << 63;
     }
 
+    pub struct PageSize: usize {
+        const GIANT = 1 << 30;
+        const HUGE = 1 << 21;
+        const NORMAL = 1 << 12;
+    }
+}
+
 #[cfg(target_arch = "riscv64")]
+bitflags! {
     pub struct PtFlag: u64 {
         const VALID = 1 << 0;
         const READ = 1 << 1;
@@ -50,16 +59,26 @@ bitflags! {
     }
 }
 
+#[cfg(target_arch = "riscv64")]
+impl PtFlag { 
+    const FLAGS_COUNT: usize = 10;
+
+    pub fn flags_count() -> usize {
+        Self::FLAGS_COUNT
+    }
+}
+
 #[cfg(target_arch = "x86_64")] 
-/// Mask to remove the top 12 bits, containing PKU keys and Exec disable bits.
+    /// Mask to remove the top 12 bits, containing PKU keys and Exec disable bits.
 pub const HIGH_BITS_MASK: u64 = !(0b111111111111 << 52);
+#[cfg(target_arch = "x86_64")] 
 pub const DEFAULT_PROTS: PtFlag = PtFlag::PRESENT.union(PtFlag::WRITE).union(PtFlag::USER);
 
-#[cfg(target_arch = "riscv64")]
+#[cfg(target_arch = "riscv64")] 
 /// Mask to remove the top 10 bits, containing N/PBMT/Reserved fields in the PTE.
 pub const HIGH_BITS_MASK: u64 = !(0b1111111111 << 54);
+#[cfg(target_arch = "riscv64")] 
 pub const DEFAULT_PROTS: PtFlag = PtFlag::VALID;
-
 
 
 unsafe impl<PhysAddr, VirtAddr> Walker for PtMapper<PhysAddr, VirtAddr>
@@ -70,12 +89,14 @@ where
     type PhysAddr = PhysAddr;
     type VirtAddr = VirtAddr;
 
-    fn translate(&self, phys_addr: Self::PhysAddr) -> HostVirtAddr {
 #[cfg(target_arch = "x86_64")] 
+    fn translate(&self, phys_addr: Self::PhysAddr) -> HostVirtAddr {
         HostVirtAddr::new(phys_addr.as_usize() + self.offset + self.host_offset)
+    }
 
 #[cfg(target_arch = "riscv64")]
-        HostVirtAddr::new(phys_addr.as_usize() + self.offset)
+    fn translate(&self, phys_addr: Self::PhysAddr) -> HostVirtAddr {
+        HostVirtAddr::new(phys_addr.as_usize() + self.host_offset)
     }
 
     fn root(&mut self) -> (Self::PhysAddr, Level) {
@@ -116,6 +137,7 @@ where
                     return WalkNext::Leaf;
                 }
 
+#[cfg(target_arch = "x86_64")] 
                 if level == Level::L1 || *entry & PtFlag::PSIZE.bits() != 0 {
                     let raw_addr = *entry & level.mask() & HIGH_BITS_MASK;
                     let raw_addr_with_offset = raw_addr + (virt_addr.as_u64() & !level.mask());
@@ -123,6 +145,16 @@ where
                     // We found an address, terminate the walk.
                     return WalkNext::Leaf;
                 }
+
+#[cfg(target_arch = "riscv64")] 
+                if level == Level::L1 || *entry & PtFlag::READ.bits() != 0 || *entry & PtFlag::EXECUTE.bits() != 0 {
+                    let raw_addr = *entry & level.mask() & HIGH_BITS_MASK;
+                    let raw_addr_with_offset = raw_addr + (virt_addr.as_u64() & !level.mask());
+                    phys_addr = Some(PhysAddr::from_u64(raw_addr_with_offset));
+                    // We found an address, terminate the walk.
+                    return WalkNext::Leaf;
+                }
+
                 // Continue to walk if not yet on a leaf
                 return WalkNext::Continue;
             })
@@ -132,6 +164,7 @@ where
         phys_addr
     }
 
+#[cfg(target_arch = "x86_64")] 
     pub fn map_range(
         &mut self,
         allocator: &impl FrameAllocator,
@@ -162,7 +195,6 @@ where
                         //*entry = *entry & !PtFlag::EXEC_DISABLE.bits();
                         return WalkNext::Continue;
                     }
- 
 
                     let end = virt_addr.as_usize() + size;
                     let phys = phys_addr.as_u64() + (addr.as_u64() - virt_addr.as_u64());
@@ -203,6 +235,76 @@ where
         }
     }
 
+#[cfg(target_arch = "riscv64")] 
+    pub fn map_range(
+        &mut self,
+        allocator: &impl FrameAllocator,
+        virt_addr: VirtAddr,
+        phys_addr: PhysAddr,
+        size: usize,
+        prot: PtFlag,
+    ) {
+        // Align physical address first
+        let phys_addr = PhysAddr::from_usize(phys_addr.as_usize() & PAGE_MASK);
+        let offset = self.offset;
+        unsafe {
+            self.walk_range(
+                virt_addr,
+                VirtAddr::from_usize(virt_addr.as_usize() + size),
+                &mut |addr, entry, level| {
+                    // TODO(aghosn) handle rewrite of access rights.
+                   if (*entry & PtFlag::VALID.bits()) != 0 {
+                        *entry = *entry | prot.bits();  //TODO(neelu): Should prot.bits() be
+                                                        //checked for RWX for non-leaf entries? 
+                                                        //
+                        //*entry = *entry & !PtFlag::EXEC_DISABLE.bits();
+                        return WalkNext::Continue;
+                    }
+
+                    let end = virt_addr.as_usize() + size;
+                    let phys = phys_addr.as_u64() + (addr.as_u64() - virt_addr.as_u64());
+                    // Opportunity to map a 1GB region
+                    if level == Level::L3 {
+                        if (addr.as_usize() + PageSize::GIANT.bits() <= end)
+                            && (phys % (PageSize::GIANT.bits() as u64) == 0)
+                        {
+                            //Make sure protection bits have either read or execute set - to
+                            //denote a leaf PTE.
+                            *entry = ((phys >> PAGE_OFFSET_WIDTH) << PtFlag::flags_count()) | prot.bits();
+                            assert!(*entry & PtFlag::READ.bits() != 0 || *entry & PtFlag::EXECUTE.bits() != 0);
+                            return WalkNext::Leaf;
+                        }
+                    }
+                    // Opportunity to map a 2MB region.
+                    if level == Level::L2 {
+                        if (addr.as_usize() + PageSize::HUGE.bits() <= end)
+                            && (phys % (PageSize::HUGE.bits() as u64) == 0)
+                        {
+                            *entry = ((phys >> PAGE_OFFSET_WIDTH) << PtFlag::flags_count()) | prot.bits();
+                            assert!(*entry & PtFlag::READ.bits() != 0 || *entry & PtFlag::EXECUTE.bits() != 0);
+                            return WalkNext::Leaf;
+                        }
+                    }
+                    if level == Level::L1 {
+                        assert!(phys % (PageSize::NORMAL.bits() as u64) == 0);
+                        *entry = ((phys >> PAGE_OFFSET_WIDTH) << PtFlag::flags_count()) | prot.bits();
+                        assert!(*entry & PtFlag::READ.bits() != 0 || *entry & PtFlag::EXECUTE.bits() != 0);
+                        return WalkNext::Leaf;
+                    }
+                    // Create an entry
+                    let frame = allocator
+                        .allocate_frame()
+                        .expect("map_range: unable to allocate page table entry.")
+                        .zeroed();
+                    assert!(frame.phys_addr.as_u64() >= offset as u64);
+                    *entry = (frame.phys_addr.as_u64() - (offset as u64)) | DEFAULT_PROTS.bits();
+                    WalkNext::Continue
+                },
+            )
+            .expect("Failed to map PTs");
+        }
+    }
+
     /// Prints the permissions of page tables for the given range.
     pub fn debug_range(&mut self, virt_addr: VirtAddr, size: usize, dept: Level) {
         unsafe {
@@ -223,8 +325,31 @@ where
                         _ => (),
                     };
 
+#[cfg(target_arch = "x86_64")] 
                     // Print if present
                     if flags.contains(PtFlag::PRESENT) {
+                        let padding = match level {
+                            Level::L4 => "",
+                            Level::L3 => "  ",
+                            Level::L2 => "    ",
+                            Level::L1 => "      ",
+                        };
+                        log::info!(
+                            "{}{:?} Virt: 0x{:x} - Phys: 0x{:x} - {:?}\n",
+                            padding,
+                            level,
+                            addr.as_usize(),
+                            phys,
+                            flags
+                        );
+                        WalkNext::Continue
+                    } else {
+                        WalkNext::Leaf
+                    }
+
+#[cfg(target_arch = "riscv64")] 
+                    // Print if present
+                    if flags.contains(PtFlag::VALID) {
                         let padding = match level {
                             Level::L4 => "",
                             Level::L3 => "  ",
