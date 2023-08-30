@@ -14,7 +14,7 @@ use crate::page_table_mapper::{align_address, generate_page_tables};
 
 pub static PF_H: u32 = 1 << 3;
 
-#[cfg(riscv_enabled)]
+#[cfg(feature = "riscv_enabled")]
 const PT_PHYS_PAGE_MASK: u64 = ((1 << 44) - 1) << PtFlag::flags_count();    //TODO(neelu): This is specific for SV48. 
 
 
@@ -344,7 +344,7 @@ impl ModifiedELF {
             panic!("The offset is not page aligned.");
         }
 
-#[cfg(not(riscv_enabled))]        
+#[cfg(not(feature = "riscv_enabled"))]        
         // TODO(aghosn) I am lazy, is it correct to do a simple add?
         for entry in tables.iter_mut() {
             if *entry != 0 && (*entry & PtFlag::PRESENT.bits() == PtFlag::PRESENT.bits()) {
@@ -352,7 +352,7 @@ impl ModifiedELF {
             }
         }
 
-#[cfg(riscv_enabled)]         
+#[cfg(feature = "riscv_enabled")]         
         for entry in tables.iter_mut() {
             if *entry != 0 && (*entry & PtFlag::VALID.bits() == PtFlag::VALID.bits()) {
                 let ppn = (offset >> page_offset_width) + (*entry >> PtFlag::flags_count()); 
