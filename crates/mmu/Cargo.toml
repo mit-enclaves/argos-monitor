@@ -12,3 +12,6 @@ utils = { version = "0.1.0", path = "../utils" }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 vmx = { version = "0.1.0", path = "../vmx" }
+
+[features]
+riscv_enabled = []
