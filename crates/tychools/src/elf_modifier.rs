@@ -3,6 +3,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 
+use mmu::PtFlag;
 use object::read::elf::{FileHeader, ProgramHeader, SectionHeader};
 use object::{elf, Endianness, U16Bytes, U32Bytes, U64Bytes};
 use serde::{Deserialize, Serialize};
@@ -12,6 +13,10 @@ use crate::instrument::Security;
 use crate::page_table_mapper::{align_address, generate_page_tables};
 
 pub static PF_H: u32 = 1 << 3;
+
+#[cfg(riscv_enabled)]
+const PT_PHYS_PAGE_MASK: u64 = ((1 << 44) - 1) << PtFlag::flags_count();    //TODO(neelu): This is specific for SV48. 
+
 
 // —————————————————————————————— Local Enums ——————————————————————————————— //
 
@@ -324,12 +329,29 @@ impl ModifiedELF {
             let slice_bytes: &[u8] = page_seg.unwrap().data.as_mut_slice();
             std::slice::from_raw_parts_mut(slice_bytes.as_ptr() as *mut u64, slice_bytes.len() / 8)
         };
+
+        let page_offset_width: u64 = 12; //TODO(neelu): Generalize this, it assumes 4 KB pages. 
+        let page_offset_mask: u64 = 0x1000 - 1;
+        if (offset & !page_offset_mask) != offset {
+            panic!("The offset is not page aligned.");
+        }
+
+#[cfg(not(riscv_enabled))]        
         // TODO(aghosn) I am lazy, is it correct to do a simple add?
         for entry in tables.iter_mut() {
-            if *entry != 0 {
+            if *entry != 0 && (*entry & PtFlag::PRESENT.bits() == PtFlag::PRESENT.bits()) {
                 *entry += offset;
             }
         }
+
+#[cfg(riscv_enabled)]         
+        for entry in tables.iter_mut() {
+            if *entry != 0 && (*entry & PtFlag::VALID.bits() == PtFlag::VALID.bits()) {
+                let ppn = (offset >> page_offset_width) + (*entry >> PtFlag::flags_count()); 
+                *entry = (*entry & !PT_PHYS_PAGE_MASK) | (ppn << PtFlag::flags_count()); 
+            }
+        }
+    
     }
 
     /// Dumps the content of the ELF into a file.

@@ -3,6 +3,7 @@ use std::process::abort;
 
 use mmu::walker::{Level, WalkNext, Walker};
 use mmu::{FrameAllocator, PtFlag, PtMapper};
+
 use object::read::elf::ProgramHeader;
 use object::{elf, Endianness};
 use utils::{HostPhysAddr, HostVirtAddr};
@@ -17,8 +18,10 @@ pub fn align_address(addr: usize) -> usize {
     (PAGE_SIZE + addr) & !(PAGE_SIZE - 1)
 }
 
+#[cfg(not(riscv_enabled))] 
 fn translate_flags(flags: u32, segtype: u32) -> PtFlag {
-    let mut ptflags: PtFlag = PtFlag::PRESENT;
+    let mut ptflags: PtFlag; 
+    ptflags = PtFlag::PRESENT;
     if flags & elf::PF_W == elf::PF_W {
         ptflags = ptflags.union(PtFlag::WRITE);
     }
@@ -31,7 +34,24 @@ fn translate_flags(flags: u32, segtype: u32) -> PtFlag {
     ptflags
 }
 
-#[allow(dead_code)]
+#[cfg(riscv_enabled)] 
+fn translate_flags(flags: u32, segtype: u32) -> PtFlag {
+    let mut ptflags: PtFlag;
+    ptflags = PtFlag::VALID;  
+    if flags & elf::PF_R == elf::PF_R {
+        ptflags = ptflags.union(PtFlag::READ); 
+    }
+    if flags & elf::PF_W == elf::PF_W { 
+        ptflags = ptflags.union(PtFlag::WRITE);
+    }
+    if flags & elf::PF_X == elf::PF_X { 
+        ptflags = ptflags.union(PtFlag::EXECUTE);
+    }
+    //TODO: User flag is not enabled for now, should be enabled after TRT support is available for RV. 
+    ptflags
+}
+
+//#[allow(dead_code)]   Neelu: Commenting.
 pub fn generate_page_tables(melf: &ModifiedELF) -> (Vec<u8>, usize, usize) {
     // Compute the overall memory required for the binary.
     let mut memsz: usize = 0;
@@ -75,7 +95,7 @@ pub fn generate_page_tables(melf: &ModifiedELF) -> (Vec<u8>, usize, usize) {
         curr_phys += size;
     }
     log::debug!(
-        "Done mapping all the segments, we consummed {} extra pages",
+        "Done mapping all the segments, we consumed {} extra pages",
         bump.idx
     );
     // Transform everything into a vec array.
@@ -146,6 +166,7 @@ pub fn print_page_tables(file: &PathBuf) {
                     let flags = PtFlag::from_bits_truncate(*entry);
                     let phys = *entry & ((1 << 63) - 1) & (page_mask as u64);
 
+#[cfg(not(riscv_enabled))]
                     // Print if present
                     if flags.contains(PtFlag::PRESENT) {
                         let padding = match level {
@@ -166,6 +187,29 @@ pub fn print_page_tables(file: &PathBuf) {
                     } else {
                         WalkNext::Leaf
                     }
+
+#[cfg(riscv_enabled)]
+                    // Print if present
+                    if flags.contains(PtFlag::VALID) {
+                        let padding = match level {
+                            Level::L4 => "",
+                            Level::L3 => "  ",
+                            Level::L2 => "    ",
+                            Level::L1 => "      ",
+                        };
+                        log::info!(
+                            "{}{:?} Virt: 0x{:x} - Phys: 0x{:x} - {:?}\n",
+                            padding,
+                            level,
+                            addr.as_usize(),
+                            phys,
+                            flags
+                        );
+                        WalkNext::Continue
+                    } else {
+                        WalkNext::Leaf
+                    }
+
                 },
             )
             .expect("Failed to dump pts");
