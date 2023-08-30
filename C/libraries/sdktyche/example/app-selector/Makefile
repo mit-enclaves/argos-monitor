@@ -63,23 +63,23 @@ APP_INCLUDES = $(COMMON_INCLUDES) -I$(ELF64)/include -I$(PTS)/include -I$(DRIVER
 ## ————————————————————— Configuration for the install —————————————————————— ##
 ifeq ($(ARCH), x86)
 DISK_PATH ?= /tmp/mount/tyche/programs 
-TYCHOOLS_PATH ?= ../../../../../crates/tychools/ 
 else ifeq ($(ARCH), riscv)
 #DISK_PATH ?= /home/neelu/vmxvmm/builds/ramfs-riscv/tyche/programs/
 DISK_PATH ?= /tmp/ubuntu_riscv_mount/tyche/programs
 endif
+TYCHOOLS_PATH ?= ../../../../../crates/tychools/
 ## ———————————————————————————————— Targets ————————————————————————————————— ##
 
 app: $(CODE_APP) $(HDRS_APP) 
 	$(GCC) -DTYCHE_USER_SPACE=1 -g $(APP_INCLUDES) -static -o $@ $(CODE_APP)
 
+ifeq ($(ARCH), x86)
+
 enclave: $(CODE_DOMAIN) $(HDRS_DOMAIN)
 	$(GCC) -DTYCHE_USER_SPACE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_DOMAIN)
 
-ifeq ($(ARCH), x86)
-
 app_selector: app enclave
-	cargo -C $(TYCHOOLS_PATH) install --path .
+	cargo -C $(TYCHOOLS_PATH) install --path . --locked
 	tychools instrument -s manifests/default.json 
 	chmod +x app_selector
 	rm app enclave
@@ -90,13 +90,22 @@ install_disk: all
 
 else ifeq ($(ARCH), riscv)
 
-app_selector: 
-	# Blank 
+#This one is because the load segments starting virtual address is not page aligned, without specifying the section-start as done below. 
+#Todo (neelu): one way to do this is to write a linker script, as this particular fix may only work for some examples.  
+enclave: $(CODE_DOMAIN) $(HDRS_DOMAIN)
+	$(GCC) -DTYCHE_USER_SPACE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_DOMAIN) -Wl,--section-start=.data=0x12000
+
+app_selector: app enclave
+	echo "Building app_selector for RISCV"
+	cargo -C $(TYCHOOLS_PATH) install --features="riscv_enabled" --path . --locked 
+	tychools instrument -s manifests/default.json
+	chmod +x app_selector
+	rm app enclave
 
 install_disk: all
 	# TODO: Update this after Tychools has been patched for RISC-V 
 	mkdir -p $(DISK_PATH)
-	cp -t $(DISK_PATH) app enclave
+	cp -t $(DISK_PATH) app_selector
 endif
 
 .PHONY: clean
