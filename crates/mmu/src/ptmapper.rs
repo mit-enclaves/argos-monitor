@@ -18,7 +18,7 @@ pub struct PtMapper<PhysAddr, VirtAddr> {
     _virt: PhantomData<VirtAddr>,
 }
 
-#[cfg(not(riscv_enabled))] 
+#[cfg(not(feature = "riscv_enabled"))] 
 bitflags! {
     pub struct PtFlag: u64 {
         const PRESENT = 1 << 0;
@@ -39,7 +39,7 @@ bitflags! {
     }
 }
 
-#[cfg(riscv_enabled)] 
+#[cfg(feature = "riscv_enabled")] 
 bitflags! {
     pub struct PageSize: usize {
         const GIANT = 1 << 30;
@@ -60,25 +60,25 @@ bitflags! {
 }
 
 
-#[cfg(riscv_enabled)] 
+#[cfg(feature = "riscv_enabled")] 
 impl PtFlag { 
     const FLAGS_COUNT: usize = 10;
 
-    pub fn flags_count() -> usize {
+    pub const fn flags_count() -> usize {
         Self::FLAGS_COUNT
     }
 }
 
-#[cfg(not(riscv_enabled))] 
+#[cfg(not(feature = "riscv_enabled"))] 
     /// Mask to remove the top 12 bits, containing PKU keys and Exec disable bits.
 pub const HIGH_BITS_MASK: u64 = !(0b111111111111 << 52);
-#[cfg(not(riscv_enabled))] 
+#[cfg(not(feature = "riscv_enabled"))] 
 pub const DEFAULT_PROTS: PtFlag = PtFlag::PRESENT.union(PtFlag::WRITE).union(PtFlag::USER);
 
-#[cfg(riscv_enabled)] 
+#[cfg(feature = "riscv_enabled")] 
 /// Mask to remove the top 10 bits, containing N/PBMT/Reserved fields in the PTE.
 pub const HIGH_BITS_MASK: u64 = !(0b1111111111 << 54);
-#[cfg(riscv_enabled)] 
+#[cfg(feature = "riscv_enabled")] 
 pub const DEFAULT_PROTS: PtFlag = PtFlag::VALID;
 
 
@@ -90,12 +90,12 @@ where
     type PhysAddr = PhysAddr;
     type VirtAddr = VirtAddr;
 
-#[cfg(not(riscv_enabled))] 
+#[cfg(not(feature = "riscv_enabled"))] 
     fn translate(&self, phys_addr: Self::PhysAddr) -> HostVirtAddr {
         HostVirtAddr::new(phys_addr.as_usize() + self.offset + self.host_offset)
     }
 
-#[cfg(riscv_enabled)] 
+#[cfg(feature = "riscv_enabled")] 
     fn translate(&self, phys_addr: Self::PhysAddr) -> HostVirtAddr {
         HostVirtAddr::new(phys_addr.as_usize() + self.host_offset)
     }
@@ -119,7 +119,7 @@ where
         }
     }
 
-#[cfg(not(riscv_enabled))] 
+#[cfg(not(feature = "riscv_enabled"))] 
     pub fn translate(&mut self, virt_addr: VirtAddr) -> Option<PhysAddr> {
         // Align the address
         let virt_addr = VirtAddr::from_usize(virt_addr.as_usize() & PAGE_MASK);
@@ -146,7 +146,7 @@ where
         phys_addr
     }
 
-#[cfg(riscv_enabled)] 
+#[cfg(feature = "riscv_enabled")] 
     pub fn translate(&mut self, virt_addr: VirtAddr) -> Option<PhysAddr> {
         // Align the address
         let virt_addr = VirtAddr::from_usize(virt_addr.as_usize() & PAGE_MASK);
@@ -175,7 +175,7 @@ where
         phys_addr
     }
 
-#[cfg(not(riscv_enabled))] 
+#[cfg(not(feature = "riscv_enabled"))] 
     pub fn map_range(
         &mut self,
         allocator: &impl FrameAllocator,
@@ -184,6 +184,8 @@ where
         size: usize,
         prot: PtFlag,
     ) {
+        log::info!("x86_map_range");
+
         // Align physical address first
         let phys_addr = PhysAddr::from_usize(phys_addr.as_usize() & PAGE_MASK);
         let offset = self.offset;
@@ -238,7 +240,7 @@ where
         }
     }
 
-#[cfg(riscv_enabled)]     
+#[cfg(feature = "riscv_enabled")]     
     pub fn map_range(
         &mut self,
         allocator: &impl FrameAllocator,
@@ -247,6 +249,7 @@ where
         size: usize,
         prot: PtFlag,
     ) {
+        log::info!("riscv_map_range va: {:x}, pa: {:x}", virt_addr.as_u64(), phys_addr.as_u64());
         // Align physical address first
         let phys_addr = PhysAddr::from_usize(phys_addr.as_usize() & PAGE_MASK);
         let offset = self.offset;
@@ -265,6 +268,7 @@ where
                     }
 
                     let end = virt_addr.as_usize() + size;
+                    log::info!("pa: {:x}, va: {:x}, addr: {:x}", phys_addr.as_u64(), addr.as_u64(), virt_addr.as_u64());
                     let phys = phys_addr.as_u64() + (addr.as_u64() - virt_addr.as_u64());
                     // Opportunity to map a 1GB region
                     if level == Level::L3 {
@@ -289,6 +293,7 @@ where
                         }
                     }
                     if level == Level::L1 {
+                        log::info!("Phys: {:x}",phys);
                         assert!(phys % (PageSize::NORMAL.bits() as u64) == 0);
                         *entry = ((phys >> PAGE_OFFSET_WIDTH) << PtFlag::flags_count()) | prot.bits();
                         assert!(*entry & PtFlag::READ.bits() != 0 || *entry & PtFlag::EXECUTE.bits() != 0);
@@ -308,7 +313,7 @@ where
         }
     }
 
-#[cfg(not(riscv_enabled))] 
+#[cfg(not(feature = "riscv_enabled"))] 
     /// Prints the permissions of page tables for the given range.
     pub fn debug_range(&mut self, virt_addr: VirtAddr, size: usize, dept: Level) {
         unsafe {
@@ -356,7 +361,7 @@ where
         }
     }
 
-#[cfg(riscv_enabled)] 
+#[cfg(feature = "riscv_enabled")] 
     /// Prints the permissions of page tables for the given range.
     pub fn debug_range(&mut self, virt_addr: VirtAddr, size: usize, dept: Level) {
         unsafe {
