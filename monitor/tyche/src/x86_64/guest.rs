@@ -421,6 +421,12 @@ fn handle_exit(
                 }
             }
         }
+        VmxExitReason::Vmxon => {
+            // Assuming VMXON is issued from the nested guest in the trust domain, there is no need
+            // to switch on the VMX feature on the pCPU anymore
+            vs.vcpu.next_instruction()?;
+            Ok(HandlerResult::Resume)
+        }
         _ => {
             log::error!(
                 "Emulation is not yet implemented for exit reason: {:?}",
