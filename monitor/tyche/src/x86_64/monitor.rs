@@ -9,7 +9,7 @@ use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator};
 use spin::{Mutex, MutexGuard};
 use stage_two_abi::Manifest;
-use utils::{GuestPhysAddr, HostPhysAddr};
+use utils::{Frame, GuestPhysAddr, HostPhysAddr};
 use vmx::bitmaps::{EptEntryFlags, ExceptionBitmap};
 use vmx::errors::Trapnr;
 use vmx::msr::IA32_LSTAR;
@@ -250,12 +250,117 @@ pub fn do_init_child_contexts(
                 let rc = RCFrame::new(frame);
                 //TODO do an init;
                 dest.vmcs = rcvmcs.allocate(rc).expect("Unable to allocate rc frame");
+                // Save the original vmcs frame address
+                let orig_frame = Frame {
+                    phys_addr: vcpu.frame().phys_addr,
+                    virt_addr: vcpu.frame().virt_addr,
+                };
                 // Switch to the new vmcs frame
                 let rc_frame = rcvmcs.get(dest.vmcs).unwrap();
                 vcpu.switch_frame(rc_frame.frame).unwrap();
+                // Setup default vmcs fields
+                if let Err(e) = set_default_vmcs(vcpu) {
+                    log::error!("Failed to setup default vmcs on fresh vCPU: {:?}", e);
+                }
+                // Switch back
+                vcpu.switch_frame(orig_frame).unwrap();
             }
         }
     }
+}
+
+fn set_default_vmcs(vcpu: &mut ActiveVmcs<'static>) -> Result<(), vmx::VmxError> {
+    use vmx::fields::traits::*;
+    // one call to setup as many non-binary dependant registers as possible
+    unsafe {
+        fields::Ctrl32::PinBasedExecCtrls.vmwrite(0x000000ff)?;
+        fields::Ctrl32::PrimaryProcBasedExecCtrls.vmwrite(0xb5a06dfa)?;
+        fields::Ctrl32::SecondaryProcBasedVmExecCtrls.vmwrite(0x00000be3)?;
+        fields::Ctrl32::ExceptionBitmap.vmwrite(0xffffffff)?;
+        fields::Ctrl64::MsrBitmaps.vmwrite(0x109ab0000)?;
+        fields::Ctrl64::EoiExitBitmap0.vmwrite(0x00000001)?;
+        fields::Ctrl64::EoiExitBitmap1.vmwrite(0x00000000)?;
+        fields::Ctrl64::EoiExitBitmap2.vmwrite(0x00000000)?;
+        fields::Ctrl64::EoiExitBitmap3.vmwrite(0x00000000)?;
+        fields::Ctrl64::PostedIntDescAddr.vmwrite(0x109aa9f40)?;
+        fields::Ctrl32::PageFaultErrCodeMask.vmwrite(0x0)?;
+        fields::Ctrl32::PageFaultErrCodeMatch.vmwrite(0x0)?;
+        fields::Ctrl32::Cr3TargetCount.vmwrite(0x0)?;
+        fields::GuestState64::VmcsLinkPtr.vmwrite(0xffffffffffffffff)?;
+        fields::Ctrl32::VmExitMsrLoadCount.vmwrite(0)?;
+        fields::Ctrl32::VmExitMsrStoreCount.vmwrite(0)?;
+        fields::Ctrl32::VmEntryMsrLoadCount.vmwrite(0)?;
+
+        fields::HostStateNat::Cr0.vmwrite(0x80050033)?;
+        fields::HostStateNat::Cr3.vmwrite(0x1027c0001)?;
+        fields::HostStateNat::Cr4.vmwrite(0x00172ef0)?;
+
+        fields::HostState16::CsSelector.vmwrite(0x00000010)?;
+        fields::HostState16::DsSelector.vmwrite(0x00000000)?;
+        fields::HostState16::EsSelector.vmwrite(0x00000000)?;
+        fields::HostState16::FsSelector.vmwrite(0x00000000)?;
+        fields::HostState16::GsSelector.vmwrite(0x00000000)?;
+        fields::HostState16::SsSelector.vmwrite(0x00000018)?;
+        fields::HostState16::TrSelector.vmwrite(0x00000040)?;
+
+        fields::HostStateNat::IdtrBase.vmwrite(0xfffffe0000000000)?;
+    }
+
+    // Default States
+    // CS
+    vcpu.set_nat(fields::GuestStateNat::CsBase, 0xffff0000)?;
+    vcpu.set32(fields::GuestState32::CsLimit, 0x0000ffff)?;
+    vcpu.set16(fields::GuestState16::CsSelector, 0x0000f000)?;
+    vcpu.set32(fields::GuestState32::CsAccessRights, 0x0000009b)?;
+    // DS
+    vcpu.set_nat(fields::GuestStateNat::DsBase, 0x0)?;
+    vcpu.set32(fields::GuestState32::DsLimit, 0x0000ffff)?;
+    vcpu.set16(fields::GuestState16::DsSelector, 0)?;
+    vcpu.set32(fields::GuestState32::DsAccessRights, 0x93)?;
+    // ES
+    vcpu.set_nat(fields::GuestStateNat::EsBase, 0x0)?;
+    vcpu.set32(fields::GuestState32::EsLimit, 0x0000ffff)?;
+    vcpu.set16(fields::GuestState16::EsSelector, 0)?;
+    vcpu.set32(fields::GuestState32::EsAccessRights, 0x93)?;
+    // FS
+    vcpu.set_nat(fields::GuestStateNat::FsBase, 0x0)?;
+    vcpu.set32(fields::GuestState32::FsLimit, 0x0000ffff)?;
+    vcpu.set16(fields::GuestState16::FsSelector, 0)?;
+    vcpu.set32(fields::GuestState32::FsAccessRights, 0x93)?;
+    // GS
+    vcpu.set_nat(fields::GuestStateNat::GsBase, 0x0)?;
+    vcpu.set32(fields::GuestState32::GsLimit, 0x0)?;
+    vcpu.set16(fields::GuestState16::GsSelector, 0)?;
+    vcpu.set32(fields::GuestState32::GsAccessRights, 0x93)?;
+    // SS
+    vcpu.set_nat(fields::GuestStateNat::SsBase, 0x0)?;
+    vcpu.set32(fields::GuestState32::SsLimit, 0x0000ffff)?;
+    vcpu.set16(fields::GuestState16::SsSelector, 0)?;
+    vcpu.set32(fields::GuestState32::SsAccessRights, 0x93)?;
+    // TR
+    vcpu.set_nat(fields::GuestStateNat::TrBase, 0x0)?;
+    vcpu.set32(fields::GuestState32::TrLimit, 0x0000ffff)?; // At least 0x67
+    vcpu.set16(fields::GuestState16::TrSelector, 0)?;
+    vcpu.set32(fields::GuestState32::TrAccessRights, 0x8b)?;
+    // LDTR
+    vcpu.set_nat(fields::GuestStateNat::LdtrBase, 0x0)?;
+    vcpu.set32(fields::GuestState32::LdtrLimit, 0x0000ffff)?;
+    vcpu.set16(fields::GuestState16::LdtrSelector, 0)?;
+    vcpu.set32(fields::GuestState32::LdtrAccessRights, 0x82)?;
+    // GDTR
+    vcpu.set_nat(fields::GuestStateNat::GdtrBase, 0x0)?;
+    vcpu.set32(fields::GuestState32::GdtrLimit, 0x0000ffff)?;
+    // IDTR
+    vcpu.set_nat(fields::GuestStateNat::IdtrBase, 0x0)?;
+    vcpu.set32(fields::GuestState32::IdtrLimit, 0x0000ffff)?;
+
+    vcpu.set32(fields::GuestState32::ActivityState, 0)?;
+    vcpu.set64(fields::GuestState64::VmcsLinkPtr, u64::max_value())?;
+    vcpu.set16(fields::GuestState16::InterruptStatus, 0)?;
+    vcpu.set32(fields::GuestState32::VmxPreemptionTimerValue, 0xffffffff)?;
+    vcpu.set_nat(fields::GuestStateNat::Rflags, 0x2)?;
+    // vmx::check::check().expect("check error");
+    Ok(())
 }
 
 pub fn do_set_entry(
