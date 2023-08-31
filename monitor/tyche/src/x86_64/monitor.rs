@@ -243,10 +243,16 @@ pub fn do_init_child_contexts(
                 let dest = &mut get_context(domain, c);
                 let frame = allocator
                     .allocate_frame()
-                    .expect("Unable to allocate frame");
+                    .expect("Unable to allocate frame")
+                    .zeroed();
+                vmx::init_frame(frame);
+
                 let rc = RCFrame::new(frame);
                 //TODO do an init;
                 dest.vmcs = rcvmcs.allocate(rc).expect("Unable to allocate rc frame");
+                // Switch to the new vmcs frame
+                let rc_frame = rcvmcs.get(dest.vmcs).unwrap();
+                vcpu.switch_frame(rc_frame.frame).unwrap();
             }
         }
     }

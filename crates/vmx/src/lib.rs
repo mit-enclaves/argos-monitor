@@ -235,13 +235,13 @@ impl Vmxon {
             _not_sync: PhantomData,
         })
     }
+}
 
-    pub fn init_frame(&self, mut frame: Frame) {
-        unsafe {
-            let vmcs_info = get_vmx_info();
-            frame.zero_out();
-            frame.as_mut()[0..4].copy_from_slice(&vmcs_info.revision.to_le_bytes());
-        }
+pub fn init_frame(mut frame: Frame) {
+    unsafe {
+        let vmcs_info = get_vmx_info();
+        frame.zero_out();
+        frame.as_mut()[0..4].copy_from_slice(&vmcs_info.revision.to_le_bytes());
     }
 }
 
