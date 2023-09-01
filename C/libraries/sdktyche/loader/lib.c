@@ -467,12 +467,14 @@ int sdk_call_domain(tyche_domain_t* domain, void* args)
     ERROR("The provided domain is null.");
     goto failure;
   } 
+  ERROR("Calling domain");
   if (ioctl_switch(
         domain->handle,
         args) != SUCCESS) {
     ERROR("Unable to switch to the domain %d", domain->handle);
     goto failure;
   }
+  ERROR("Good switch!");
   return SUCCESS;
 failure:
   return FAILURE;

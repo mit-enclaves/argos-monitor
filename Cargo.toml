@@ -24,7 +24,6 @@ members = [
     "crates/capability-engine",
     "crates/tychools",
     "boot_toolchain",
-    "crates/bricks",
 ]
 
 [workspace.dependencies]

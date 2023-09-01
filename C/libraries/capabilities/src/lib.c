@@ -781,7 +781,7 @@ int switch_domain(domain_id_t id, void *args, transition_cli_t tr) {
           wrapper->transition->local_id);
     goto failure;
   }
-  DEBUG("[switch_domain] Came back from the switch");
+  ERROR("[switch_domain] Came back from the switch");
   // We are back from the switch, unlock the wrapper.
   wrapper->lock = TRANSITION_UNLOCKED;
   return SUCCESS;

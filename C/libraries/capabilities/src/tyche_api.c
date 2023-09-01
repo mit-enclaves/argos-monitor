@@ -354,7 +354,9 @@ int tyche_switch(capa_index_t* transition_handle, void* args, transition_cli_t t
   // Set the return handle as the one used to do the switch got consummed.
   *transition_handle = frame.value_1;
   } else {
+    ERROR("Calling switch");
     result = tyche_call(&frame);
+    ERROR("returned from switch");
   }
 #elif defined(CONFIG_RISCV) || defined(__riscv)
   //TODO(neelu)

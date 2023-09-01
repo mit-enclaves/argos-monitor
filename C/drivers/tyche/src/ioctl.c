@@ -243,6 +243,7 @@ long tyche_ioctl(struct file* handle, unsigned int cmd, unsigned long arg)
         ERROR("Unable to switch to domain %p", handle);
         goto failure;
       }
+      ERROR("Successfull return from switching domain");
       break;
     default:
       ERROR("The command is not valid!");

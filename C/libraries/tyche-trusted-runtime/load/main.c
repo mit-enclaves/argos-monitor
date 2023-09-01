@@ -45,10 +45,10 @@ int main(int argc, char* argv[])
   }
   if (*shared == 666) {
     LOG("The runtime managed to write the value!");
-   } else {
+  } else {
     LOG("The div by 0 never happened %llx.", *shared);
-   }
-
+  }
+  
   /// Clean up.
   if (sdk_delete_domain(&enclave) != SUCCESS) {
     ERROR("Unable to delete the enclave %lld", enclave.handle);

@@ -63,8 +63,8 @@ void exception_handler(int sig) {
   if (sig == 0) {
     *shared = 666;
   } else {
-    //*shared = sig;
-   __asm__ volatile("cli; hlt");
+    *shared = 666;
+  //  __asm__ volatile("cli; hlt");
   }
   // Let's not do a return from interrupt.
   gate_call(ret_handle);

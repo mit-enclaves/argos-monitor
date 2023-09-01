@@ -524,7 +524,8 @@ pub fn apply_core_updates(
 
                 // Set parameters
                 // TODO this could be a way to signal an error.
-                //vcpu.set(Register::Rax, trap);
+                // vcpu.set(Register::Rax, trap);
+                // vcpu.set(Register::Rax, 0);
 
                 // Update the current domain
                 *current_domain = manager;
@@ -542,9 +543,10 @@ pub fn apply_core_updates(
                 // TODO this is debugging for now.
                 // If there is anything that needs to trap, trap everything.
                 if value != 0 {
+                    log::trace!("Setting up APICv");
                     let value = vcpu.get_pin_based_ctrls().expect("Unable to read PinBased");
-                    vcpu.set_pin_based_ctrls(value | PinbasedControls::EXTERNAL_INTERRUPT_EXITING)
-                        .expect("Unable to turn on external_interrupt.");
+                    // vcpu.set_pin_based_ctrls(value | PinbasedControls::EXTERNAL_INTERRUPT_EXITING)
+                    //     .expect("Unable to turn on external_interrupt.");
                     let tpr = vcpu.get_primary_ctrls().expect("Unable to read primary");
                     vcpu.set_primary_ctrls(tpr.union(PrimaryControls::USE_TPR_SHADOW))
                         .expect("Failed to set primary controls");
@@ -553,8 +555,9 @@ pub fn apply_core_updates(
                         .expect("Failed to get secondary controls");
                     vcpu.set_secondary_ctrls(apic.union(
                         SecondaryControls::VIRTUALIZE_APIC
-                            /*| SecondaryControls::VIRTUALIZE_X2APIC*/
-                            /*| SecondaryControls::VIRTUALIZE_APIC_REGISTER*/,
+                        // | SecondaryControls::VIRTUALIZE_X2APIC
+                        // | SecondaryControls::VIRTUALIZE_APIC_REGISTER
+                        // | SecondaryControls::VIRTUAL_INTERRUPT_DELIVERY,
                     ))
                     .expect("Failed to write the secondary controls.");
                     vcpu.set_virt_apic_addr(HostPhysAddr::new(0x33000)).unwrap();
@@ -566,13 +569,20 @@ pub fn apply_core_updates(
                         vmx::msr::I32_APIC_BASE.read()
                     });
                 } else {
+                    log::trace!("Removing APICv commands");
                     //TODO we will need a flush of these controls...
                     let mut value = vcpu.get_pin_based_ctrls().expect("Unable to read PinBased");
                     value.remove(PinbasedControls::EXTERNAL_INTERRUPT_EXITING);
                     vcpu.set_pin_based_ctrls(value)
                         .expect("Unable to turn off external_interrupt.");
+                    let mut prim = vcpu.get_primary_ctrls().expect("Unable to read primary controls");
+                    prim.remove(PrimaryControls::USE_TPR_SHADOW);
+                    vcpu.set_primary_ctrls(prim).unwrap();
                     let mut secondary = vcpu.get_secondary_ctrls().unwrap();
                     secondary.remove(SecondaryControls::VIRTUALIZE_APIC);
+                    // secondary.remove(SecondaryControls::VIRTUALIZE_X2APIC);
+                    // secondary.remove(SecondaryControls::VIRTUALIZE_APIC_REGISTER);
+                    // secondary.remove(SecondaryControls::VIRTUAL_INTERRUPT_DELIVERY);
                     vcpu.set_secondary_ctrls(secondary).unwrap();
                 }
             }

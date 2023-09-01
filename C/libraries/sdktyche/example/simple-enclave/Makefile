@@ -63,7 +63,7 @@ enclave: $(CODE_ENCLAVE) $(HDRS_ENCLAVE)
 	gcc -DTYCHE_USER_SPACE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_ENCLAVE)
 
 simple_enclave: app enclave
-	type -p tychools > /dev/null || cargo -C $(TYCHOOLS_PATH) install --path .
+	type -p tychools > /dev/null || cargo -C $(TYCHOOLS_PATH) install --path . --locked
 	tychools instrument -s manifests/default.json 
 	chmod +x simple_enclave
 	rm app enclave
