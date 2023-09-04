@@ -276,6 +276,9 @@ fn set_default_vmcs(vcpu: &mut ActiveVmcs<'static>) -> Result<(), vmx::VmxError>
         fields::Ctrl32::PinBasedExecCtrls.vmwrite(0x000000ff)?;
         fields::Ctrl32::PrimaryProcBasedExecCtrls.vmwrite(0xb5a06dfa)?;
         fields::Ctrl32::SecondaryProcBasedVmExecCtrls.vmwrite(0x00000be3)?;
+        fields::Ctrl32::VmEntryCtrls.vmwrite(0x000051ff)?;
+        fields::Ctrl32::VmExitCtrls.vmwrite(0x000befff)?;
+
         fields::Ctrl32::ExceptionBitmap.vmwrite(0xffffffff)?;
         fields::Ctrl64::MsrBitmaps.vmwrite(0x109ab0000)?;
         fields::Ctrl64::EoiExitBitmap0.vmwrite(0x00000001)?;
@@ -303,8 +306,35 @@ fn set_default_vmcs(vcpu: &mut ActiveVmcs<'static>) -> Result<(), vmx::VmxError>
         fields::HostState16::SsSelector.vmwrite(0x00000018)?;
         fields::HostState16::TrSelector.vmwrite(0x00000040)?;
 
+        fields::GuestState32::Ia32SysenterCs.vmwrite(0x0)?;
+        fields::GuestStateNat::Ia32SysenterEsp.vmwrite(0x0)?;
+        fields::GuestStateNat::Ia32SysenterEip.vmwrite(0x0)?;
+
+        // ???
+        fields::HostState32::Ia32SysenterCs.vmwrite(0x10)?;
+        fields::HostStateNat::Ia32SysenterEsp.vmwrite(0xfffffe121e6a3000)?;
+        fields::HostStateNat::Ia32SysenterEip.vmwrite(0xffffffff82001cb0)?;
+
+        fields::Ctrl32::TprThreshold.vmwrite(0x0)?;
+        fields::Ctrl32::Cr3TargetCount.vmwrite(0x0)?;
+        fields::GuestState16::InterruptStatus.vmwrite(0x0)?;
+        fields::Ctrl32::PageFaultErrCodeMask.vmwrite(0x0)?;
+        fields::Ctrl32::PageFaultErrCodeMatch.vmwrite(0x0)?;
+        fields::Ctrl32::VmEntryIntInfoField.vmwrite(0x0)?;
+
+        fields::CtrlNat::Cr0ReadShadow.vmwrite(0x60000010)?;
+        fields::CtrlNat::Cr4ReadShadow.vmwrite(0x00000000)?;
+        fields::CtrlNat::Cr0Mask.vmwrite(0xfffffffffffffff7)?;
+        fields::CtrlNat::Cr4Mask.vmwrite(0xfffffffffffef8f1)?;
+
+        fields::GuestStateNat::PendingDebugExcept.vmwrite(0x0)?;
+
         fields::HostStateNat::IdtrBase.vmwrite(0xfffffe0000000000)?;
     }
+
+    // check vmx_set_constant_host_state implementation inside kvm_vmx
+
+    // check init_vmcs implementation inside kvm_vmx
 
     // Default States
     // CS
@@ -385,6 +415,75 @@ pub fn do_set_entry(
     context.cr3 = cr3;
     context.rip = rip;
     context.rsp = rsp;
+    Ok(())
+}
+
+pub fn do_set_vmcs(
+    current: Handle<Domain>,
+    domain: LocalCapa,
+    vcpu: &mut ActiveVmcs<'static>,
+    core: usize,
+    idx: usize,
+    value: usize,
+) -> Result<(), CapaError> {
+    let mut engine = CAPA_ENGINE.lock();
+    let domain = engine.get_domain_capa(current, domain)?;
+    let cores = engine.get_domain_config(domain, Bitmaps::CORE);
+    log::trace!("core={}, cores={}", core, cores);
+    if (1 << core) & cores == 0 {
+        return Err(CapaError::InvalidCore);
+    }
+    let context = &mut get_context(domain, core);
+    if context.vmcs.is_invalid() {
+        log::error!("Set the switch type first!");
+        return Err(CapaError::InvalidOperation);
+    }
+
+    let locked = RC_VMCS.lock();
+    // Save the original vmcs frame address
+    let orig_frame = Frame {
+        phys_addr: vcpu.frame().phys_addr,
+        virt_addr: vcpu.frame().virt_addr,
+    };
+    log::trace!("vcpu: getting the context.vmcs frame from RC_VMCS arena lock");
+    let rc_frame = locked.get(context.vmcs).unwrap();
+    log::trace!("vcpu: trying to switch to the context.vmcs frame");
+    vcpu.switch_frame(rc_frame.frame).unwrap();
+    if let Err(e) = set_vmcs(vcpu, idx, value) {
+        log::error!("failed to set vmcs idx={}, value={}: {:?}", idx, value, e);
+    }
+    log::trace!("vcpu: trying to switch back to the original frame");
+    vcpu.switch_frame(orig_frame).unwrap();
+    log::trace!("vcpu: switched back");
+    Ok(())
+}
+
+fn set_vmcs(vcpu: &mut ActiveVmcs<'static>, idx: usize, value: usize) -> Result<(), VmxError> {
+    use vmx::fields::traits::*;
+    log::trace!("set_vmcs: vmcs[{}] to value={:#04x}", idx, value);
+    match idx {
+        0 /* GUEST_CR0: 0x00006800 */ => vcpu.set_nat(fields::GuestStateNat::Cr0, value)?,
+        1 /* GUEST_CR3: 0x00006802 */ => vcpu.set_nat(fields::GuestStateNat::Cr3, value)?,
+        2 /* GUEST_CR4: 0x00006804 */ => vcpu.set_nat(fields::GuestStateNat::Cr4, value)?,
+        3 /* GUEST_RIP: 0x0000fff0 */ => vcpu.set_nat(fields::GuestStateNat::Rip, value)?,
+        4 /* GUEST_RSP: 0x0000681c */ => vcpu.set_nat(fields::GuestStateNat::Rsp, value)?,
+        5 /* IA32_EFER: 0x00002806 */ => vcpu.set64(fields::GuestState64::Ia32Efer, value as u64)?,
+        6 /* IA32_PAT: 0x00002804 */ => vcpu.set64(fields::GuestState64::Ia32Pat, value as u64)?,
+        7 /* EPT_POINTER: 0x0000201a */ => unsafe { fields::Ctrl64::EptPtr.vmwrite(value as u64)?},
+        8 /* MSR_BITMAP: 0x109ab0000 */ => unsafe { fields::Ctrl64::MsrBitmaps.vmwrite(value as u64)? },
+        9 /* GUEST_DR7: 0x0000681a */ => vcpu.set_nat(fields::GuestStateNat::Dr7, value)?,
+        10 /* POSTED_INTR_DESC_ADDR: 0x00002016 */ => unsafe { fields::Ctrl64::PostedIntDescAddr.vmwrite(value as u64)? },
+        11 /* POSTED_INTR_NV */ => unsafe { fields::Ctrl16::PostedIntteruptNotificationVector.vmwrite(value as u16)? },
+        12 => unsafe { fields::Ctrl64::VmreadBitmapAddr.vmwrite(value as u64)? },
+        13 => unsafe { fields::Ctrl64::VmwriteBitmapAddr.vmwrite(value as u64)? },
+        14 => unsafe { fields::Ctrl16::VirtualProcessorIdentifier.vmwrite(value as u16)? },
+        15 => unsafe { fields::Ctrl64::ApicAccessAddr.vmwrite(value as u64)? },
+        16 => unsafe { fields::Ctrl64::VirtApicAddr.vmwrite(value as u64)? },
+        17 => vcpu.set32(fields::GuestState32::InterruptibilityState, value as u32)?,
+        18 => unsafe { fields::Ctrl32::ExceptionBitmap.vmwrite(value as u32)? },
+        19 => unsafe { fields::Ctrl64::TscOffset.vmwrite(value as u64)? },
+        _ => log::trace!("set_vmcs on unsupported idx: {}", idx),
+    }
     Ok(())
 }
 

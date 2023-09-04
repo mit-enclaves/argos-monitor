@@ -112,12 +112,6 @@ impl CapaEngine {
                     domain::Bitmaps::SWITCH,
                     switch_bits::ALL,
                 )?;
-                domain::set_config(
-                    handle,
-                    &mut self.domains,
-                    domain::Bitmaps::INIT,
-                    init_bits::NONE,
-                )?;
                 log::info!("About to seal");
                 self.domains[handle].seal()?;
                 self.updates.push(Update::CreateDomain { domain: handle });
