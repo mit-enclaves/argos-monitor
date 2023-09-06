@@ -101,7 +101,6 @@ fn handle_exit(
                     Ok(HandlerResult::Resume)
                 }
                 calls::CONFIGURE => {
-                    log::trace!("Configure");
                     if let Ok(bitmap) = Bitmaps::from_usize(arg_1) {
                         match monitor::do_set_config(
                             *domain,
@@ -151,6 +150,128 @@ fn handle_exit(
                         Ok(()) => vs.vcpu.set(Register::Rax, 0),
                         Err(e) => {
                             log::error!("Unable to set entry: {:?}", e);
+                            vs.vcpu.set(Register::Rax, 1);
+                        }
+                    }
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
+                calls::VMREAD => {
+                    match monitor::do_vmread(
+                        *domain,
+                        LocalCapa::new(arg_1),
+                        &mut vs.vcpu,
+                        arg_2,
+                        arg_3,
+                    ) {
+                        Ok(val) => {
+                            vs.vcpu.set(Register::Rax, 0);
+                            vs.vcpu.set(Register::Rdi, val);
+                        }
+                        Err(e) => {
+                            log::error!("Unable to set vmcs field: {:?}", e);
+                            vs.vcpu.set(Register::Rax, 1);
+                        }
+                    }
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
+                calls::VMWRITE => {
+                    match monitor::do_vmwrite(
+                        *domain,
+                        LocalCapa::new(arg_1),
+                        &mut vs.vcpu,
+                        arg_2,
+                        arg_3,
+                        arg_4,
+                    ) {
+                        Ok(()) => vs.vcpu.set(Register::Rax, 0),
+                        Err(e) => {
+                            log::error!("Unable to set vmcs field: {:?}", e);
+                            vs.vcpu.set(Register::Rax, 1);
+                        }
+                    }
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
+                calls::VMCLEAR => {
+                    match monitor::do_vmclear(
+                        *domain,
+                        LocalCapa::new(arg_1),
+                        &mut vs.vcpu,
+                        arg_2,
+                        arg_3,
+                    ) {
+                        Ok(()) => vs.vcpu.set(Register::Rax, 0),
+                        Err(e) => {
+                            log::error!("vmclear failed: {:?}", e);
+                            vs.vcpu.set(Register::Rax, 1);
+                        }
+                    }
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
+                calls::VMPTRLD => {
+                    match monitor::do_vmptrld(
+                        *domain,
+                        LocalCapa::new(arg_1),
+                        &mut vs.vcpu,
+                        arg_2,
+                        arg_3,
+                    ) {
+                        Ok(()) => vs.vcpu.set(Register::Rax, 0),
+                        Err(e) => {
+                            log::error!("vmptrld failed: {:?}", e);
+                            vs.vcpu.set(Register::Rax, 1);
+                        }
+                    }
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
+                calls::VMINVVPID => {
+                    match monitor::do_invpid(
+                        *domain,
+                        LocalCapa::new(arg_1),
+                        &mut vs.vcpu,
+                        arg_2,
+                        arg_3,
+                        arg_4,
+                        arg_5,
+                    ) {
+                        Ok(()) => vs.vcpu.set(Register::Rax, 0),
+                        Err(e) => {
+                            log::error!("invvpid failed: {:?}", e);
+                            vs.vcpu.set(Register::Rax, 1);
+                        }
+                    }
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
+                calls::VMINVEPT => {
+                    match monitor::do_invept(
+                        *domain,
+                        LocalCapa::new(arg_1),
+                        &mut vs.vcpu,
+                        arg_2,
+                        arg_3,
+                        arg_4,
+                        arg_5,
+                    ) {
+                        Ok(()) => vs.vcpu.set(Register::Rax, 0),
+                        Err(e) => {
+                            log::error!("invept failed: {:?}", e);
+                            vs.vcpu.set(Register::Rax, 1);
+                        }
+                    }
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
+                calls::VMLAUNCH => {
+                    match monitor::do_vmlaunch(domain, LocalCapa::new(arg_1), &mut vs.vcpu, arg_2)
+                    {
+                        Ok(()) => vs.vcpu.set(Register::Rax, 0),
+                        Err(e) => {
+                            log::error!("vmlaunch failed: {:?}", e);
                             vs.vcpu.set(Register::Rax, 1);
                         }
                     }

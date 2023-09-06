@@ -12,8 +12,9 @@ use stage_two_abi::Manifest;
 use utils::{Frame, GuestPhysAddr, HostPhysAddr};
 use vmx::bitmaps::{EptEntryFlags, ExceptionBitmap};
 use vmx::errors::Trapnr;
+use vmx::fields::traits::VmcsField64;
 use vmx::msr::IA32_LSTAR;
-use vmx::{fields, ActiveVmcs, ControlRegister, Register, VmExitInterrupt, REGFILE_SIZE};
+use vmx::{fields, ActiveVmcs, ControlRegister, Register, VmExitInterrupt, VmxError, REGFILE_SIZE};
 
 use super::cpuid;
 use super::guest::VmxState;
@@ -386,6 +387,252 @@ pub fn do_set_entry(
     context.rip = rip;
     context.rsp = rsp;
     Ok(())
+}
+
+pub fn do_vmread(
+    current: Handle<Domain>,
+    domain: LocalCapa,
+    vcpu: &mut ActiveVmcs<'static>,
+    core: usize,
+    field: usize,
+) -> Result<u64 , CapaError> {
+    let mut engine = CAPA_ENGINE.lock();
+    let domain = engine.get_domain_capa(current, domain)?;
+    let cores = engine.get_domain_config(domain, Bitmaps::CORE);
+    log::trace!("core={}, cores={}", core, cores);
+    if (1 << core) & cores == 0 {
+        return Err(CapaError::InvalidCore);
+    }
+    let context = &mut get_context(domain, core);
+    if context.vmcs.is_invalid() {
+        log::error!("Set the switch type first!");
+        return Err(CapaError::InvalidOperation);
+    }
+
+    let locked = RC_VMCS.lock();
+    // Save the original vmcs frame address
+    let orig_frame = Frame {
+        phys_addr: vcpu.frame().phys_addr,
+        virt_addr: vcpu.frame().virt_addr,
+    };
+    log::trace!("vcpu: getting the context.vmcs frame from RC_VMCS arena lock");
+    let rc_frame = locked.get(context.vmcs).unwrap();
+    log::trace!("vcpu: trying to switch to the context.vmcs frame");
+    vcpu.switch_frame(rc_frame.frame).unwrap();
+
+    if let Ok(val) = vmcs_read(field) {
+        log::trace!("do_vmread: field={:#x} => value={:#x}", field, val);
+        log::trace!("vcpu: trying to switch back to the original frame");
+        vcpu.switch_frame(orig_frame).unwrap();
+        log::trace!("vcpu: switched back");
+        Ok(val)
+    } else {
+        log::error!("failed to read vmcs field={:#x}", field);
+        vcpu.switch_frame(orig_frame).unwrap();
+        log::trace!("vcpu: switched back");
+        Err(CapaError::InvalidOperation)
+    }
+}
+
+pub fn do_vmwrite(
+    current: Handle<Domain>,
+    domain: LocalCapa,
+    vcpu: &mut ActiveVmcs<'static>,
+    core: usize,
+    field: usize,
+    value: usize,
+) -> Result<(), CapaError> {
+    let mut engine = CAPA_ENGINE.lock();
+    let domain = engine.get_domain_capa(current, domain)?;
+    let cores = engine.get_domain_config(domain, Bitmaps::CORE);
+    log::trace!("core={}, cores={}", core, cores);
+    if (1 << core) & cores == 0 {
+        return Err(CapaError::InvalidCore);
+    }
+    let context = &mut get_context(domain, core);
+    if context.vmcs.is_invalid() {
+        log::error!("Set the switch type first!");
+        return Err(CapaError::InvalidOperation);
+    }
+
+    let locked = RC_VMCS.lock();
+    // Save the original vmcs frame address
+    let orig_frame = Frame {
+        phys_addr: vcpu.frame().phys_addr,
+        virt_addr: vcpu.frame().virt_addr,
+    };
+    log::trace!("vcpu: getting the context.vmcs frame from RC_VMCS arena lock");
+    let rc_frame = locked.get(context.vmcs).unwrap();
+    log::trace!("vcpu: trying to switch to the context.vmcs frame");
+    vcpu.switch_frame(rc_frame.frame).unwrap();
+    log::trace!("do_vmwrite: field={:#x}, value={:#x}", field, value);
+    if let Err(e) = vmcs_write(field, value) {
+        log::error!("failed to write vmcs field={:#x}: {:?}", field, e);
+    }
+    log::trace!("vcpu: trying to switch back to the original frame");
+    vcpu.switch_frame(orig_frame).unwrap();
+    log::trace!("vcpu: switched back");
+    Ok(())
+}
+
+pub fn do_vmclear(
+    current: Handle<Domain>,
+    domain: LocalCapa,
+    vcpu: &mut ActiveVmcs<'static>,
+    core: usize,
+    addr: usize,
+) -> Result<(), CapaError> {
+    let mut engine = CAPA_ENGINE.lock();
+    let domain = engine.get_domain_capa(current, domain)?;
+    let cores = engine.get_domain_config(domain, Bitmaps::CORE);
+    log::trace!("core={}, cores={}", core, cores);
+    if (1 << core) & cores == 0 {
+        return Err(CapaError::InvalidCore);
+    }
+    let context = &mut get_context(domain, core);
+    if context.vmcs.is_invalid() {
+        log::error!("Set the switch type first!");
+        return Err(CapaError::InvalidOperation);
+    }
+
+    let locked = RC_VMCS.lock();
+    // Save the original vmcs frame address
+    let orig_frame = Frame {
+        phys_addr: vcpu.frame().phys_addr,
+        virt_addr: vcpu.frame().virt_addr,
+    };
+    log::trace!("vcpu: getting the context.vmcs frame from RC_VMCS arena lock");
+    let rc_frame = locked.get(context.vmcs).unwrap();
+    log::trace!("vcpu: trying to switch to the context.vmcs frame");
+    vcpu.switch_frame(rc_frame.frame).unwrap();
+    log::trace!("do_vmclear");
+    if let Err(e) = vmclear(addr) {
+        log::error!("failed to vmclear: {:?}", e);
+    }
+    log::trace!("vcpu: trying to switch back to the original frame");
+    vcpu.switch_frame(orig_frame).unwrap();
+    log::trace!("vcpu: switched back");
+    Ok(())
+}
+
+pub fn do_vmptrld(
+    current: Handle<Domain>,
+    domain: LocalCapa,
+    vcpu: &mut ActiveVmcs<'static>,
+    core: usize,
+    addr: usize,
+) -> Result<(), CapaError> {
+    let mut engine = CAPA_ENGINE.lock();
+    let domain = engine.get_domain_capa(current, domain)?;
+    let cores = engine.get_domain_config(domain, Bitmaps::CORE);
+    log::trace!("core={}, cores={}", core, cores);
+    if (1 << core) & cores == 0 {
+        return Err(CapaError::InvalidCore);
+    }
+    let context = &mut get_context(domain, core);
+    if context.vmcs.is_invalid() {
+        log::error!("Set the switch type first!");
+        return Err(CapaError::InvalidOperation);
+    }
+
+    let locked = RC_VMCS.lock();
+    // Save the original vmcs frame address
+    let orig_frame = Frame {
+        phys_addr: vcpu.frame().phys_addr,
+        virt_addr: vcpu.frame().virt_addr,
+    };
+    log::trace!("vcpu: getting the context.vmcs frame from RC_VMCS arena lock");
+    let rc_frame = locked.get(context.vmcs).unwrap();
+    log::trace!("vcpu: trying to switch to the context.vmcs frame");
+    vcpu.switch_frame(rc_frame.frame).unwrap();
+    log::trace!("do_vmclear");
+    if let Err(e) = vmptrld(addr) {
+        log::error!("failed to vmptrld: {:?}", e);
+    }
+    log::trace!("vcpu: trying to switch back to the original frame");
+    vcpu.switch_frame(orig_frame).unwrap();
+    log::trace!("vcpu: switched back");
+    Ok(())
+}
+
+pub fn do_invpid(
+    current: Handle<Domain>,
+    domain: LocalCapa,
+    vcpu: &mut ActiveVmcs<'static>,
+    core: usize,
+    ext: usize,
+    vpid: usize,
+    gva: usize,
+) -> Result<(), CapaError>{
+    Ok(())
+}
+
+pub fn do_invept(
+    current: Handle<Domain>,
+    domain: LocalCapa,
+    vcpu: &mut ActiveVmcs<'static>,
+    core: usize,
+    ext: usize,
+    eptp: usize,
+    gpa: usize,
+) -> Result<(), CapaError> {
+    Ok(())
+}
+
+pub fn do_vmlaunch(
+    current: &mut Handle<Domain>,
+    domain: LocalCapa,
+    vcpu: &mut ActiveVmcs<'static>,
+    core: usize,
+) -> Result<(), CapaError> {
+    let mut engine = CAPA_ENGINE.lock();
+    let domain = engine.get_domain_capa(*current, domain)?;
+    let current_ctx = get_context(*current, core);
+    let next_ctx = get_context(domain, core);
+    let next_domain = get_domain(domain);
+
+    log::info!("switching the domain");
+    switch_domain(vcpu, current_ctx, next_ctx, next_domain)
+        .expect("Failed to perform the switch");
+    *current = domain;
+    log::info!("vmlaunch on vcpu: {:?}", vcpu);
+    if let Err(e) = vmlaunch(vcpu) {
+         log::error!("failed to vmlaunch: {:?}", e);
+         log::debug!("fresh vcpu: {:#?}", vcpu);
+    }
+    log::debug!("after vmlaunch");
+
+    Ok(())
+}
+
+fn vmcs_read(field: usize) -> Result<u64, VmxError> {
+    unsafe { vmx::raw::vmread(field as u64).map(|value| value as u64) }
+}
+
+fn vmcs_write(field: usize, value: usize) -> Result<(), VmxError> {
+    unsafe { vmx::raw::vmwrite(field as u64, value as u64) }
+}
+
+fn vmclear(addr: usize) -> Result<(), VmxError> {
+    unsafe { vmx::raw::vmclear(addr as u64) }
+}
+
+fn vmptrld(addr: usize) -> Result<(), VmxError> {
+    unsafe { vmx::raw::vmptrld(addr as u64) }
+}
+
+// TODO
+fn invpid() -> Result<(), VmxError> {
+    Ok(())
+}
+
+// TODO
+fn invept() -> Result<(), VmxError> {
+    Ok(())
+}
+
+fn vmlaunch(vcpu: &mut ActiveVmcs<'static>) -> Result<(), VmxError> {
+    unsafe { vmx::raw::vmlaunch(vcpu) }
 }
 
 /// TODO(aghosn) do we need to seal on all cores?
