@@ -74,9 +74,9 @@ endif
 loader: $(CODE_APP) $(HDRS_APP)
 	$(GCC) -DTYCHE_USER_SPACE=1 -g $(APP_INCLUDES) -o $@ $(CODE_APP)
 
-test-trt : loader trt-user
+test-trt: loader trt
 	cargo -C $(TYCHOOLS_PATH) install --path . --locked
-	tychools instrument -s manifests/user_kernel.json
+	tychools instrument -s manifests/config.json
 	chmod +x test-trt
 	rm -rf loader trt-user
 

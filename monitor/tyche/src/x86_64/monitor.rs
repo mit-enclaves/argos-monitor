@@ -161,6 +161,7 @@ pub fn init(manifest: &'static Manifest) {
                 start: (manifest.iommu + PAGE_SIZE) as usize,
                 end: manifest.poffset as usize,
                 ops: MEMOPS_ALL,
+                alias: None,
             },
         )
         .unwrap();
@@ -352,6 +353,7 @@ pub fn do_segment_region(
     end_2: usize,
     prot_2: usize,
 ) -> Result<(LocalCapa, LocalCapa), CapaError> {
+    //TODO introduce alias here.
     let prot_1 = MemOps::from_usize(prot_1)?;
     let prot_2 = MemOps::from_usize(prot_2)?;
     let mut engine = CAPA_ENGINE.lock();
@@ -359,11 +361,13 @@ pub fn do_segment_region(
         start: start_1,
         end: end_1,
         ops: prot_1,
+        alias: None,
     };
     let access_right = AccessRights {
         start: start_2,
         end: end_2,
         ops: prot_2,
+        alias: None,
     };
     let (left, right) = engine.segment_region(current, capa, access_left, access_right)?;
     apply_updates(&mut engine);
@@ -778,9 +782,14 @@ fn update_domain_ept(
                 flags |= EptEntryFlags::USER_EXECUTE;
             }
         }
+        let gpa = if let Some(alias) = range.alias {
+            alias
+        } else {
+            range.start
+        };
         mapper.map_range(
             allocator,
-            GuestPhysAddr::new(range.start),
+            GuestPhysAddr::new(gpa),
             HostPhysAddr::new(range.start),
             range.size(),
             flags,

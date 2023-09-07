@@ -46,6 +46,7 @@ fn scenario_1() {
                 start: 0,
                 end: 0x1000,
                 ops: MemOps::NONE,
+                alias: None,
             },
         )
         .unwrap();
@@ -68,11 +69,13 @@ fn scenario_1() {
                 start: 0,
                 end: 0x200,
                 ops: MemOps::NONE,
+                alias: None,
             },
             AccessRights {
                 start: 0x300,
                 end: 0x1000,
                 ops: MemOps::NONE,
+                alias: None,
             },
         )
         .unwrap();
@@ -95,11 +98,13 @@ fn scenario_1() {
                 start: 0,
                 end: 0x50,
                 ops: MemOps::NONE,
+                alias: None,
             },
             AccessRights {
                 start: 0x50,
                 end: 0x200,
                 ops: MemOps::NONE,
+                alias: None,
             },
         )
         .unwrap();
@@ -169,6 +174,7 @@ fn scenario_2() {
                 start: 0,
                 end: 0x1000,
                 ops: MemOps::NONE,
+                alias: None,
             },
         )
         .unwrap();
@@ -191,11 +197,13 @@ fn scenario_2() {
                 start: 0,
                 end: 0x200,
                 ops: MemOps::NONE,
+                alias: None,
             },
             AccessRights {
                 start: 0x300,
                 end: 0x1000,
                 ops: MemOps::NONE,
+                alias: None,
             },
         )
         .unwrap();
@@ -268,6 +276,7 @@ fn scenario_3() {
                 start: 0x0,
                 end: 0x10000,
                 ops: MemOps::NONE,
+                alias: None,
             },
         )
         .unwrap();
@@ -280,11 +289,13 @@ fn scenario_3() {
                 start: 0x0,
                 end: 0x1000,
                 ops: MemOps::NONE,
+                alias: None,
             },
             AccessRights {
                 start: 0x1000,
                 end: 0x10000,
                 ops: MemOps::NONE,
+                alias: None,
             },
         )
         .unwrap();
@@ -296,11 +307,13 @@ fn scenario_3() {
                 start: 0x1000,
                 end: 0x2000,
                 ops: MemOps::NONE,
+                alias: None,
             },
             AccessRights {
                 start: 0x2000,
                 end: 0x10000,
                 ops: MemOps::NONE,
+                alias: None,
             },
         )
         .unwrap();
@@ -313,11 +326,13 @@ fn scenario_3() {
                 start: 0x1000,
                 end: 0x1000,
                 ops: MemOps::NONE,
+                alias: None,
             },
             AccessRights {
                 start: 0x1000,
                 end: 0x2000,
                 ops: MemOps::NONE,
+                alias: None,
             },
         )
         .unwrap();
@@ -371,6 +386,7 @@ fn access_rights_test() {
                 start: 0,
                 end: 0x100000,
                 ops: MEMOPS_ALL,
+                alias: None,
             },
         )
         .unwrap();
@@ -389,11 +405,13 @@ fn access_rights_test() {
                 start: 0,
                 end: 0,
                 ops: MEMOPS_ALL,
+                alias: None,
             },
             AccessRights {
                 start: 0,
                 end: 0x100000,
                 ops: MEMOPS_ALL,
+                alias: None,
             },
         )
         .unwrap();
@@ -421,11 +439,13 @@ fn access_rights_test() {
                 start: 0,
                 end: 0x100000,
                 ops: MEMOPS_ALL,
+                alias: None,
             },
             AccessRights {
                 start: 0,
                 end: 0x100000,
                 ops: MEMOPS_ALL,
+                alias: None,
             },
         )
         .unwrap();
@@ -453,11 +473,13 @@ fn access_rights_test() {
                 start: 0,
                 end: 0x100000,
                 ops: MemOps::READ,
+                alias: None,
             },
             AccessRights {
                 start: 0,
                 end: 0x100000,
                 ops: MEMOPS_ALL,
+                alias: None,
             },
         )
         .unwrap();
@@ -478,11 +500,13 @@ fn access_rights_test() {
                 start: 0,
                 end: 0,
                 ops: MemOps::NONE,
+                alias: None,
             },
             AccessRights {
                 start: 0,
                 end: 0,
                 ops: MemOps::NONE,
+                alias: None,
             },
         )
         .unwrap();

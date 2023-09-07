@@ -569,9 +569,9 @@ pub(crate) fn activate_region(
     if dom.is_being_revoked {
         return Ok(());
     }
-    let change = dom
-        .regions
-        .add_region(access.start, access.end, access.ops, tracker)?;
+    let change =
+        dom.regions
+            .add_region(access.start, access.end, access.ops, access.alias, tracker)?;
     if let PermissionChange::Some = change {
         updates.push(Update::PermissionUpdate {
             domain,

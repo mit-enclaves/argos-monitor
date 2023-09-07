@@ -198,6 +198,28 @@ fn handle_exit(
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
+                calls::SEGMENT_NULL => {
+                    // This call performs a split where left is null and right is the same segment.
+                    // It further allows to relocate the segment with an alias if specified.
+                    log::trace!("In segment null region");
+                    todo!("Implement");
+                    let (left, right) = monitor::do_segment_region(
+                        *domain,
+                        LocalCapa::new(arg_1),
+                        0,
+                        0,
+                        0,
+                        arg_2,
+                        arg_3,
+                        arg_4, /*todo: alias*/
+                    )
+                    .expect("TODO");
+                    vs.vcpu.set(Register::Rdi, left.as_u64());
+                    vs.vcpu.set(Register::Rsi, right.as_u64());
+                    vs.vcpu.set(Register::Rax, 0);
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
                 calls::REVOKE => {
                     log::trace!("Revoke");
                     monitor::do_revoke(*domain, LocalCapa::new(arg_1)).expect("TODO");
