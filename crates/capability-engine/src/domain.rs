@@ -474,7 +474,7 @@ pub(crate) fn activate_region(
     }
     let change = dom
         .regions
-        .add_region(access.start, access.end, access.ops)?;
+        .add_region(access.start, access.end, access.ops, access.alias)?;
     if let PermissionChange::Some = change {
         dom.emit_shootdown(updates);
         updates.push(Update::PermissionUpdate { domain });

@@ -27,6 +27,7 @@ impl RegionCapa {
                 start: 0,
                 end: 0,
                 ops: MemOps::NONE,
+                alias: None,
             },
         }
     }
@@ -292,12 +293,14 @@ mod test {
             AccessRights {
                 start: 2,
                 end: 3,
-                ops: MemOps::NONE
+                ops: MemOps::NONE,
+                alias: None,
             },
             AccessRights {
                 start: 1,
                 end: 4,
-                ops: MemOps::NONE
+                ops: MemOps::NONE,
+                alias: None,
             }
         ));
         assert!(overlap(
@@ -305,11 +308,13 @@ mod test {
                 start: 1,
                 end: 4,
                 ops: MemOps::NONE,
+                alias: None,
             },
             AccessRights {
                 start: 2,
                 end: 3,
                 ops: MemOps::NONE,
+                alias: None,
             }
         ));
         assert!(overlap(
@@ -317,11 +322,13 @@ mod test {
                 start: 1,
                 end: 3,
                 ops: MemOps::NONE,
+                alias: None,
             },
             AccessRights {
                 start: 2,
                 end: 4,
                 ops: MemOps::NONE,
+                alias: None,
             }
         ));
         assert!(overlap(
@@ -329,11 +336,13 @@ mod test {
                 start: 2,
                 end: 4,
                 ops: MemOps::NONE,
+                alias: None,
             },
             AccessRights {
                 start: 1,
                 end: 3,
                 ops: MemOps::NONE,
+                alias: None,
             }
         ));
         assert!(!overlap(
@@ -341,11 +350,13 @@ mod test {
                 start: 1,
                 end: 3,
                 ops: MemOps::NONE,
+                alias: None,
             },
             AccessRights {
                 start: 4,
                 end: 6,
                 ops: MemOps::NONE,
+                alias: None,
             }
         ));
         assert!(!overlap(
@@ -353,11 +364,13 @@ mod test {
                 start: 4,
                 end: 6,
                 ops: MemOps::NONE,
+                alias: None,
             },
             AccessRights {
                 start: 1,
                 end: 3,
                 ops: MemOps::NONE,
+                alias: None,
             }
         ));
     }

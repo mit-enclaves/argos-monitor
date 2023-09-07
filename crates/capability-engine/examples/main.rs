@@ -17,11 +17,11 @@ fn main() {
 fn bar() {
     let mut pool = capa_engine::RegionTracker::new();
 
-    pool.add_region(0x200, 0x300, MEMOPS_ALL).unwrap();
+    pool.add_region(0x200, 0x300, MEMOPS_ALL, None).unwrap();
     println!("{}", &pool);
-    pool.add_region(0x300, 0x400, MEMOPS_ALL).unwrap();
+    pool.add_region(0x300, 0x400, MEMOPS_ALL, None).unwrap();
     println!("{}", &pool);
-    pool.add_region(0x100, 0x500, MEMOPS_ALL).unwrap();
+    pool.add_region(0x100, 0x500, MEMOPS_ALL, None).unwrap();
     println!("{}", &pool);
     pool.remove_region(0x200, 0x400, MEMOPS_ALL).unwrap();
     println!("{}", &pool);
@@ -38,6 +38,7 @@ fn foo() {
                 start: 0,
                 end: 0x1000,
                 ops: MemOps::NONE,
+                alias: None,
             },
         )
         .unwrap();
@@ -52,11 +53,13 @@ fn foo() {
                 start: 0,
                 end: 0x200,
                 ops: MemOps::NONE,
+                alias: None,
             },
             AccessRights {
                 start: 0x300,
                 end: 0x1000,
                 ops: MemOps::NONE,
+                alias: None,
             },
         )
         .unwrap();
@@ -70,11 +73,13 @@ fn foo() {
                 start: 0,
                 end: 0x50,
                 ops: MemOps::NONE,
+                alias: None,
             },
             AccessRights {
                 start: 0x50,
                 end: 0x200,
                 ops: MemOps::NONE,
+                alias: None,
             },
         )
         .unwrap();

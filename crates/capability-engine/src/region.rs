@@ -59,6 +59,7 @@ pub struct AccessRights {
     pub start: usize,
     pub end: usize,
     pub ops: MemOps,
+    pub alias: Option<usize>,
 }
 
 #[derive(Clone, Copy)]
@@ -86,11 +87,12 @@ pub struct Region {
     exec_count: usize,
     super_count: usize,
     ref_count: usize,
+    alias: Option<usize>,
     next: Option<Handle<Region>>,
 }
 
 impl Region {
-    fn new(start: usize, end: usize, ops: MemOps) -> Self {
+    fn new(start: usize, end: usize, ops: MemOps, alias: Option<usize>) -> Self {
         if start >= end {
             log::error!(
                 "Region start must be smaller than end, got start = {} and end = {}",
@@ -108,6 +110,7 @@ impl Region {
             exec_count: x,
             super_count: s,
             ref_count: 1,
+            alias,
             next: None,
         }
     }
@@ -164,6 +167,7 @@ impl RegionTracker {
             exec_count: 0,
             super_count: 0,
             ref_count: 0,
+            alias: None,
             next: None,
         };
 
@@ -272,12 +276,13 @@ impl RegionTracker {
         start: usize,
         end: usize,
         ops: MemOps,
+        alias: Option<usize>,
     ) -> Result<PermissionChange, CapaError> {
         log::trace!("Adding region [0x{:x}, 0x{:x}]", start, end);
 
         // There is no region yet, insert head and exit
         let Some(head) = self.head else {
-            self.insert_head(start, end, ops)?;
+            self.insert_head(start, end, ops, alias)?;
             return Ok(PermissionChange::Some);
         };
 
@@ -303,7 +308,7 @@ impl RegionTracker {
             } else {
                 let head = &self.regions[head];
                 let cursor = core::cmp::min(end, head.start);
-                let previous = self.insert_head(start, cursor, ops)?;
+                let previous = self.insert_head(start, cursor, ops, alias)?;
                 change = PermissionChange::Some;
                 (previous, cursor)
             };
@@ -406,6 +411,7 @@ impl RegionTracker {
             "Tried to split at an address that is not contained in the region"
         );
 
+        //TODO(aghosn) might need to handle aliasing.
         // Allocate the second half
         let second_half = Region {
             start: at,
@@ -415,6 +421,7 @@ impl RegionTracker {
             exec_count: region.exec_count,
             super_count: region.super_count,
             ref_count: region.ref_count,
+            alias: None,
             next: region.next,
         };
         let second_half_handle = self.regions.allocate(second_half).ok_or_else(|| {
@@ -448,9 +455,10 @@ impl RegionTracker {
             );
         }
 
+        //TODO(aghosn) might need to handle the aliasing.
         let handle = self
             .regions
-            .allocate(Region::new(start, end, ops).set_next(region.next))
+            .allocate(Region::new(start, end, ops, None).set_next(region.next))
             .ok_or_else(|| {
                 log::trace!("Unable to allocate new region!");
                 CapaError::OutOfMemory
@@ -467,6 +475,7 @@ impl RegionTracker {
         start: usize,
         end: usize,
         ops: MemOps,
+        alias: Option<usize>,
     ) -> Result<Handle<Region>, CapaError> {
         if let Some(head) = self.head {
             assert!(
@@ -475,7 +484,7 @@ impl RegionTracker {
             );
         }
 
-        let region = Region::new(start, end, ops).set_next(self.head);
+        let region = Region::new(start, end, ops, alias).set_next(self.head);
         let handle = self.regions.allocate(region).ok_or_else(|| {
             log::trace!("Unable to allocate new region!");
             CapaError::OutOfMemory
@@ -657,6 +666,7 @@ pub struct MemoryPermission {
     pub start: usize,
     pub end: usize,
     pub ops: MemOps,
+    pub alias: Option<usize>,
 }
 
 impl MemoryPermission {
@@ -684,9 +694,9 @@ impl<'a> Iterator for PermissionIterator<'a> {
             self.next = None; // makes next iteration faster
             return None;
         };
-        let (end, ops) = {
+        let (end, ops, alias) = {
             let reg = &self.tracker.regions[handle.unwrap()];
-            (reg.end, reg.get_ops())
+            (reg.end, reg.get_ops(), reg.alias)
         };
 
         let mut next = None;
@@ -698,7 +708,12 @@ impl<'a> Iterator for PermissionIterator<'a> {
         }
 
         self.next = next;
-        Some(MemoryPermission { start, end, ops })
+        Some(MemoryPermission {
+            start,
+            end,
+            ops,
+            alias,
+        })
     }
 }
 
@@ -725,6 +740,7 @@ mod tests {
             exec_count: 0,
             super_count: 0,
             ref_count: 0,
+            alias: None,
             next: None,
         };
 
@@ -738,7 +754,7 @@ mod tests {
     #[test]
     fn region_pool() {
         let mut regions = RegionTracker::new();
-        regions.add_region(0x100, 0x1000, MEMOPS_ALL).unwrap();
+        regions.add_region(0x100, 0x1000, MEMOPS_ALL, None).unwrap();
 
         // Should return None if there is no lower bound region
         assert_eq!(regions.find_lower_bound(0x50), (None, None));
@@ -752,9 +768,9 @@ mod tests {
     fn region_add() {
         // Region is added as head
         let mut pool = RegionTracker::new();
-        pool.add_region(0x300, 0x400, MEMOPS_ALL).unwrap();
+        pool.add_region(0x300, 0x400, MEMOPS_ALL, None).unwrap();
         snap("{[0x300, 0x400 | 1 (1 - 1 - 1 - 1)]}", &pool);
-        pool.add_region(0x100, 0x200, MEMOPS_ALL).unwrap();
+        pool.add_region(0x100, 0x200, MEMOPS_ALL, None).unwrap();
         snap(
             "{[0x100, 0x200 | 1 (1 - 1 - 1 - 1)] -> [0x300, 0x400 | 1 (1 - 1 - 1 - 1)]}",
             &pool,
@@ -762,9 +778,9 @@ mod tests {
 
         // Region is added as head, but overlap
         let mut pool = RegionTracker::new();
-        pool.add_region(0x200, 0x400, MEMOPS_ALL).unwrap();
+        pool.add_region(0x200, 0x400, MEMOPS_ALL, None).unwrap();
         snap("{[0x200, 0x400 | 1 (1 - 1 - 1 - 1)]}", &pool);
-        pool.add_region(0x100, 0x300, MEMOPS_ALL).unwrap();
+        pool.add_region(0x100, 0x300, MEMOPS_ALL, None).unwrap();
         snap(
             "{[0x100, 0x200 | 1 (1 - 1 - 1 - 1)] -> [0x200, 0x300 | 2 (2 - 2 - 2 - 2)] -> [0x300, 0x400 | 1 (1 - 1 - 1 - 1)]}",
             &pool,
@@ -772,9 +788,9 @@ mod tests {
 
         // Region is completely included
         let mut pool = RegionTracker::new();
-        pool.add_region(0x100, 0x400, MEMOPS_ALL).unwrap();
+        pool.add_region(0x100, 0x400, MEMOPS_ALL, None).unwrap();
         snap("{[0x100, 0x400 | 1 (1 - 1 - 1 - 1)]}", &pool);
-        pool.add_region(0x200, 0x300, MEMOPS_ALL).unwrap();
+        pool.add_region(0x200, 0x300, MEMOPS_ALL, None).unwrap();
         snap(
             "{[0x100, 0x200 | 1 (1 - 1 - 1 - 1)] -> [0x200, 0x300 | 2 (2 - 2 - 2 - 2)] -> [0x300, 0x400 | 1 (1 - 1 - 1 - 1)]}",
             &pool,
@@ -782,23 +798,23 @@ mod tests {
 
         // Region is bridging two existing one
         let mut pool = RegionTracker::new();
-        pool.add_region(0x100, 0x400, MEMOPS_ALL).unwrap();
+        pool.add_region(0x100, 0x400, MEMOPS_ALL, None).unwrap();
         snap("{[0x100, 0x400 | 1 (1 - 1 - 1 - 1)]}", &pool);
-        pool.add_region(0x500, 0x1000, MEMOPS_ALL).unwrap();
+        pool.add_region(0x500, 0x1000, MEMOPS_ALL, None).unwrap();
         snap(
             "{[0x100, 0x400 | 1 (1 - 1 - 1 - 1)] -> [0x500, 0x1000 | 1 (1 - 1 - 1 - 1)]}",
             &pool,
         );
-        pool.add_region(0x200, 0x600, MEMOPS_ALL).unwrap();
+        pool.add_region(0x200, 0x600, MEMOPS_ALL, None).unwrap();
         snap("{[0x100, 0x200 | 1 (1 - 1 - 1 - 1)] -> [0x200, 0x400 | 2 (2 - 2 - 2 - 2)] -> [0x400, 0x500 | 1 (1 - 1 - 1 - 1)] -> [0x500, 0x600 | 2 (2 - 2 - 2 - 2)] -> [0x600, 0x1000 | 1 (1 - 1 - 1 - 1)]}", &pool);
 
         // Region is overlapping two adjacent regions
         let mut pool = RegionTracker::new();
-        pool.add_region(0x200, 0x300, MEMOPS_ALL).unwrap();
+        pool.add_region(0x200, 0x300, MEMOPS_ALL, None).unwrap();
         snap("{[0x200, 0x300 | 1 (1 - 1 - 1 - 1)]}", &pool);
-        pool.add_region(0x300, 0x400, MEMOPS_ALL).unwrap();
+        pool.add_region(0x300, 0x400, MEMOPS_ALL, None).unwrap();
         snap("{[0x200, 0x400 | 1 (1 - 1 - 1 - 1)]}", &pool);
-        pool.add_region(0x100, 0x500, MEMOPS_ALL).unwrap();
+        pool.add_region(0x100, 0x500, MEMOPS_ALL, None).unwrap();
         snap(
             "{[0x100, 0x200 | 1 (1 - 1 - 1 - 1)] -> [0x200, 0x400 | 2 (2 - 2 - 2 - 2)] -> [0x400, 0x500 | 1 (1 - 1 - 1 - 1)]}",
             &pool,
@@ -806,16 +822,16 @@ mod tests {
 
         // Region is added twice
         let mut pool = RegionTracker::new();
-        pool.add_region(0x100, 0x200, MEMOPS_ALL).unwrap();
+        pool.add_region(0x100, 0x200, MEMOPS_ALL, None).unwrap();
         snap("{[0x100, 0x200 | 1 (1 - 1 - 1 - 1)]}", &pool);
-        pool.add_region(0x100, 0x200, MEMOPS_ALL).unwrap();
+        pool.add_region(0x100, 0x200, MEMOPS_ALL, None).unwrap();
         snap("{[0x100, 0x200 | 2 (2 - 2 - 2 - 2)]}", &pool);
 
         // Regions have the same end
         let mut pool = RegionTracker::new();
-        pool.add_region(0x200, 0x300, MEMOPS_ALL).unwrap();
+        pool.add_region(0x200, 0x300, MEMOPS_ALL, None).unwrap();
         snap("{[0x200, 0x300 | 1 (1 - 1 - 1 - 1)]}", &pool);
-        pool.add_region(0x100, 0x300, MEMOPS_ALL).unwrap();
+        pool.add_region(0x100, 0x300, MEMOPS_ALL, None).unwrap();
         snap(
             "{[0x100, 0x200 | 1 (1 - 1 - 1 - 1)] -> [0x200, 0x300 | 2 (2 - 2 - 2 - 2)]}",
             &pool,
@@ -825,9 +841,9 @@ mod tests {
     #[test]
     fn refcount() {
         let mut pool = RegionTracker::new();
-        pool.add_region(0x100, 0x300, MEMOPS_ALL).unwrap();
-        pool.add_region(0x600, 0x1000, MEMOPS_ALL).unwrap();
-        pool.add_region(0x200, 0x400, MEMOPS_ALL).unwrap();
+        pool.add_region(0x100, 0x300, MEMOPS_ALL, None).unwrap();
+        pool.add_region(0x600, 0x1000, MEMOPS_ALL, None).unwrap();
+        pool.add_region(0x200, 0x400, MEMOPS_ALL, None).unwrap();
         snap("{[0x100, 0x200 | 1 (1 - 1 - 1 - 1)] -> [0x200, 0x300 | 2 (2 - 2 - 2 - 2)] -> [0x300, 0x400 | 1 (1 - 1 - 1 - 1)] -> [0x600, 0x1000 | 1 (1 - 1 - 1 - 1)]}", &pool);
 
         assert_eq!(pool.get_refcount(0x0, 0x50), 0);
