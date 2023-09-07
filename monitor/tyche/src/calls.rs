@@ -17,4 +17,3 @@ pub const EXIT: usize = 10;
 pub const DEBUG: usize = 11;
 pub const CONFIGURE: usize = 12;
 pub const SET_ENTRY_ON_CORE: usize = 13;
-pub const SET_VMCS: usize = 14;

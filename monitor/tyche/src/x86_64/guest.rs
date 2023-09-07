@@ -157,24 +157,6 @@ fn handle_exit(
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
-                calls::SET_VMCS => {
-                    match monitor::do_set_vmcs(
-                        *domain,
-                        LocalCapa::new(arg_1),
-                        & mut vs.vcpu,
-                        arg_2,
-                        arg_3,
-                        arg_4,
-                    ) {
-                        Ok(()) => vs.vcpu.set(Register::Rax, 0),
-                        Err(e) => {
-                            log::error!("Unable to set vmcs field: {:?}", e);
-                            vs.vcpu.set(Register::Rax, 1);
-                        }
-                    }
-                    vs.vcpu.next_instruction()?;
-                    Ok(HandlerResult::Resume)
-                }
                 calls::SEAL_DOMAIN => {
                     log::trace!("Seal Domain");
                     let capa = monitor::do_seal(*domain, LocalCapa::new(arg_1)).expect("TODO");
