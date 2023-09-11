@@ -200,7 +200,7 @@ Hello World!
 ### How to run
 
 ```
-APP=MALICIOUS ./app
+APP=BREAKPOINT ./app
 ```
 
 ### What it does
