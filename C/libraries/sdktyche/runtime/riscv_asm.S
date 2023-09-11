@@ -15,6 +15,11 @@ riscv_asm_call_gate:
 .globl _start
 _start:
   mv a2, a3
+  .option push 
+  .option norelax
+  la gp, __global_pointer$ 
+  .option pop 
+  .option relax
   j trusted_main
   // Should never return here, call exit if we do.
   li a0, 0x1

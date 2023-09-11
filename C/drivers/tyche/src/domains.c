@@ -509,6 +509,13 @@ delete_dom_struct:
   }
 
   // Delete the domain memory region.
+  
+  void * allocation = phys_to_virt((phys_addr_t)(dom->phys_start)); 
+  for (int i = 0; i < (dom->size/PAGE_SIZE); i++) {
+    char* mem = ((char*)allocation) + i * PAGE_SIZE;
+    ClearPageReserved(virt_to_page((unsigned long)mem));
+  }
+
   free_pages_exact(phys_to_virt((phys_addr_t)(dom->phys_start)), dom->size);
   dll_remove(&domains, dom, list);
   kfree(dom->entries.entries);
