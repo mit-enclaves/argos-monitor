@@ -3,6 +3,7 @@ use core::{arch::asm};
 use capa_engine::{Bitmaps, LocalCapa, NextCapaToken, Domain, Handle};
 use qemu::println;
 use riscv_csrs::*;
+use riscv_pmp::clear_pmp;
 use riscv_sbi::ecall::ecall_handler;
 use riscv_utils::RegisterState;
     //, read_mscratch, read_satp, write_satp, write_ra, write_sp};
@@ -119,6 +120,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     let mut mie: usize = 0; 
     let mut mip: usize = 0;
     let mut mideleg: usize = 0;
+    let mut satp: usize = 0;
 
     unsafe {
         asm!("csrr {}, mcause", out(reg) mcause);
@@ -128,6 +130,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         asm!("csrr {}, mie", out(reg) mie);
         asm!("csrr {}, mideleg", out(reg) mideleg);
         asm!("csrr {}, mip", out(reg) mip);
+        asm!("csrr {}, satp", out(reg)satp);
     }
 
     // print trap related registers
@@ -137,7 +140,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     println!("mtval: {:x}", mtval); */
 
     println!(
-        "Trap arguments: mcause {:x}, mepc {:x} mstatus {:x} mtval {:x} mie {:x} mip {:x} mideleg {:x} ra {:x} a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x} ",
+        "Trap arguments: mcause {:x}, mepc {:x} mstatus {:x} mtval {:x} mie {:x} mip {:x} mideleg {:x} ra {:x} a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x} satp: {:x}",
         mcause, 
         mepc, 
         mstatus,
@@ -153,7 +156,8 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         reg_state.a4,
         reg_state.a5,
         reg_state.a6,
-        reg_state.a7
+        reg_state.a7,
+        satp
     ); 
 
     // Check which trap it is
@@ -176,14 +180,18 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         mcause::STORE_ACCESS_FAULT | mcause::LOAD_ACCESS_FAULT | mcause::INSTRUCTION_ACCESS_FAULT => { 
             panic!("PMP Access Fault!");
         }
+        mcause::INSTRUCTION_PAGE_FAULT | mcause::LOAD_PAGE_FAULT | mcause::STORE_PAGE_FAULT => {
+            log::info!("Page Fault Caught.");
+            //panic!("Page Fault!");
+        }
         _ => exit_handler_failed(),
         //Default - just print whatever information you can about the trap.
     }
-    unsafe {
+    /*unsafe {
         asm!("csrr {}, mepc", out(reg) mepc);
         asm!("mv {}, sp", out(reg) sp);
-    }
-    println!("Trap handler complete: returning from ecall {:x}, mepc: {:x} sp: {:x} a0: {:x}, a1: {:x}", ret, mepc, sp, reg_state.a0, reg_state.a1);
+    }*/
+    //println!("Trap handler complete: returning from ecall {:x}, mepc: {:x} sp: {:x} a0: {:x}, a1: {:x}", ret, mepc, sp, reg_state.a0, reg_state.a1);
 
     //monitor::apply_core_updates(current_domain, core_id);
 
@@ -202,13 +210,15 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
 }
 
 pub fn illegal_instruction_handler(mepc: usize, mstatus: usize) {
-    //let mut mepc_instr_opcode: usize = 0;
+    /* let mut mepc_instr_opcode: usize = 0;
 
     // Read the instruction which caused the trap. (mepc points to the VA of this instruction).
     // Need to set mprv before reading the instruction pointed to by mepc (to enable VA to PA
     // translation in M-mode. Reset mprv once done.
 
-    /* let mut mprv_index: usize = 1 << mstatus::MPRV;
+    let mut mprv_index: usize = 1 << mstatus::MPRV;
+
+    //clear_pmp();
 
     unsafe {
         asm!("csrs mstatus, {}", in(reg) mprv_index);
@@ -219,12 +229,12 @@ pub fn illegal_instruction_handler(mepc: usize, mstatus: usize) {
     }
 
     println!(
-        "Illegal instruction trap from {} mode, caused by instruction {:x}",
+        "Illegal instruction trap from {} mode, caused by instruction with opcode {:x}",
         ((mstatus >> mstatus::MPP_LOW) & mstatus::MPP_MASK),
         mepc_instr_opcode
-    ); */ 
+    ); */
 
-    println!("Illegal Instruction Trap! Returning!");
+    println!("Illegal Instruction Trap!");
 }
 
 pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
@@ -358,7 +368,9 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                 log::info!("Switch");
                 //Adding register state to context now? (not doing it at sealing, initialized to
                 //zero then). 
+                
                 monitor::do_switch(active_dom, LocalCapa::new(arg_1), cpuid, reg_state).expect("TODO");
+                
                 /* let (mut current_ctx, next_domain, next_ctx, next_context, return_capa) = monitor::do_switch(active_dom, active_ctx, LocalCapa::new(arg_1)).expect("TODO");
                 //TODO: Do we need ra explicitly? It's already stored in reg_state, right?  
                 current_ctx.reg_state = *reg_state;

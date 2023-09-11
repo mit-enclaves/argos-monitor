@@ -24,7 +24,7 @@ const XWR_PERM: usize = 7;
 
 pub struct DomainData {
     //Todo  
-    //Can add a PMP snapshot here, so PMP entries can be written directly without going
+    //Add a PMP snapshot here, so PMP entries can be written directly without going
     //through the pmp_write function every time! 
 } 
 
@@ -496,25 +496,11 @@ fn switch_domain(
     let mut engine = CAPA_ENGINE.lock();
     //log::info!("Args to update_permission: {}", domain);
     //do_debug();
+    
+    
     update_permission(domain, &mut engine);
 
     //clear_mideleg();
-
-    //TODO: update_permission(domain_handle, engine)??????? 
-    
-    // Save current context
-    /* current_ctx.cr3 = vcpu.get_cr(ControlRegister::Cr3);
-    current_ctx.rip = vcpu.get(Register::Rip) as usize;
-    current_ctx.rsp = vcpu.get(Register::Rsp) as usize;
-
-    // Switch domain
-    vcpu.set_cr(ControlRegister::Cr3, next_ctx.cr3)
-    vcpu.set(Register::Rip, next_ctx.rip as u64);
-    vcpu.set(Register::Rsp, next_ctx.rsp as u64);
-    vcpu.set_ept_ptr(HostPhysAddr::new(
-        next_domain.ept.unwrap().as_usize() | EPT_ROOT_FLAGS,
-    ))
-    .expect("Failed to update EPT"); */
 }
 
 fn create_domain(domain: Handle<Domain>) {
@@ -535,7 +521,12 @@ fn revoke_domain(_domain: Handle<Domain>) {
 fn update_permission(domain_handle: Handle<Domain> , engine: &mut MutexGuard<CapaEngine>) {
     //Update PMPs
     //log::info!("get_domain");
- 
+
+    // =============== ALERT: IMPORTANT: COMMENT the return below - it was added for debugging
+    // ============ 
+    // return;
+
+
     //let mut domain = get_domain(domain_handle); 
     //First clean current PMP settings - this should internally cause the appropriate flushes 
     log::info!("Clearing PMP");
@@ -545,7 +536,25 @@ fn update_permission(domain_handle: Handle<Domain> , engine: &mut MutexGuard<Cap
     let mut pmp_write_result: Result<PMPAddressingMode, PMPErrorCode>;
     let mut pmp_index = FROZEN_PMP_ENTRIES; 
     for range in engine[domain_handle].regions().permissions() {
-       
+      
+        if !range.ops.contains(MemOps::READ) {
+            log::error!("there is a region without read permission: {}", range);
+            continue;
+        }
+
+        //TODO: Use the flags to specify PMP permissions. 
+        /* let mut flags = EptEntryFlags::READ;
+        if range.ops.contains(MemOps::WRITE) {
+            flags |= EptEntryFlags::WRITE;
+        }
+        if range.ops.contains(MemOps::EXEC) {
+            if range.ops.contains(MemOps::SUPER) {
+                flags |= EptEntryFlags::SUPERVISOR_EXECUTE;
+            } else {
+                flags |= EptEntryFlags::USER_EXECUTE;
+            }
+        } */
+
         log::info!("Protecting Domain: {:x} {:x}", range.start, range.size());
  
         pmp_write_result = pmp_write(pmp_index, range.start, range.size(), XWR_PERM);
