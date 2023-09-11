@@ -97,7 +97,7 @@ where
 
 #[cfg(feature = "riscv_enabled")] 
     fn translate(&self, phys_addr: Self::PhysAddr) -> HostVirtAddr {
-        HostVirtAddr::new(phys_addr.as_usize() + self.host_offset)
+        HostVirtAddr::new(phys_addr.as_usize() + self.offset + self.host_offset)
     }
 
     fn root(&mut self) -> (Self::PhysAddr, Level) {
@@ -162,6 +162,7 @@ where
                     let raw_addr = ((*entry & level.mask()) >> PtFlag::flags_count()) << PAGE_OFFSET_WIDTH ;
                     let raw_addr_with_offset = raw_addr + (virt_addr.as_u64() & !level.mask());
                     phys_addr = Some(PhysAddr::from_u64(raw_addr_with_offset));
+                    //log::info!("phys_addr: {:x}", raw_addr_with_offset);
                     // We found an address, terminate the walk.
                     return WalkNext::Leaf;
                 }
@@ -202,6 +203,7 @@ where
                     }
 
                     let end = virt_addr.as_usize() + size;
+                    //log::info!("pa: {:x}, va: {:x}, addr: {:x}", phys_addr.as_u64(), virt_addr.as_u64(), addr.as_u64());
                     let phys = phys_addr.as_u64() + (addr.as_u64() - virt_addr.as_u64());
                     // Opportunity to map a 1GB region
                     if level == Level::L3 {
@@ -222,6 +224,7 @@ where
                         }
                     }
                     if level == Level::L1 {
+                        //log::info!("Phys: {:x}",phys);
                         assert!(phys % (PageSize::NORMAL.bits() as u64) == 0);
                         *entry = phys | prot.bits();
                         return WalkNext::Leaf;
@@ -249,7 +252,7 @@ where
         size: usize,
         prot: PtFlag,
     ) {
-        log::info!("riscv_map_range va: {:x}, pa: {:x}", virt_addr.as_u64(), phys_addr.as_u64());
+        log::info!("riscv_map_range va: {:x}, pa: {:x} prot: {:x}", virt_addr.as_u64(), phys_addr.as_u64(), prot.bits());
         // Align physical address first
         let phys_addr = PhysAddr::from_usize(phys_addr.as_usize() & PAGE_MASK);
         let offset = self.offset;
@@ -259,17 +262,24 @@ where
                 VirtAddr::from_usize(virt_addr.as_usize() + size),
                 &mut |addr, entry, level| {
                     // TODO(aghosn) handle rewrite of access rights.
+                    //log::info!("Mapping for entry: {:x} addr: {:x}", &entry, addr.as_u64());
+                    // Neelu: Only updating prots for leaf PTEs.
                    if (*entry & PtFlag::VALID.bits()) != 0 {
-                        *entry = *entry | prot.bits();  //TODO(neelu): Should prot.bits() be
+                        if level == Level::L1 { 
+                            *entry = *entry | prot.bits();  
+                            //TODO(neelu): Should prot.bits() be
                                                         //checked for RWX for non-leaf entries? 
                                                         //
                         //*entry = *entry & !PtFlag::EXEC_DISABLE.bits();
+                        } 
+                        //log::info!("Updated Prot: Entry: {:x}", *entry);
                         return WalkNext::Continue;
                     }
 
                     let end = virt_addr.as_usize() + size;
-                    log::info!("pa: {:x}, va: {:x}, addr: {:x}", phys_addr.as_u64(), addr.as_u64(), virt_addr.as_u64());
-                    let phys = phys_addr.as_u64() + (addr.as_u64() - virt_addr.as_u64());
+                    //log::info!("pa: {:x}, va: {:x}, addr: {:x}", phys_addr.as_u64(), virt_addr.as_u64(), addr.as_u64());
+                    let phys = phys_addr.as_u64() + (addr.as_u64() - virt_addr.as_u64()); 
+
                     // Opportunity to map a 1GB region
                     if level == Level::L3 {
                         if (addr.as_usize() + PageSize::GIANT.bits() <= end)
@@ -279,6 +289,7 @@ where
                             //denote a leaf PTE.
                             *entry = ((phys >> PAGE_OFFSET_WIDTH) << PtFlag::flags_count()) | prot.bits();
                             assert!(*entry & PtFlag::READ.bits() != 0 || *entry & PtFlag::EXECUTE.bits() != 0);
+                            //log::info!("L3 Giant Page: Entry: {:x}", *entry);
                             return WalkNext::Leaf;
                         }
                     }
@@ -289,14 +300,15 @@ where
                         {
                             *entry = ((phys >> PAGE_OFFSET_WIDTH) << PtFlag::flags_count()) | prot.bits();
                             assert!(*entry & PtFlag::READ.bits() != 0 || *entry & PtFlag::EXECUTE.bits() != 0);
+                            //log::info!("L2 Huge Page: Entry: {:x}", *entry);
                             return WalkNext::Leaf;
                         }
                     }
                     if level == Level::L1 {
-                        log::info!("Phys: {:x}",phys);
                         assert!(phys % (PageSize::NORMAL.bits() as u64) == 0);
                         *entry = ((phys >> PAGE_OFFSET_WIDTH) << PtFlag::flags_count()) | prot.bits();
                         assert!(*entry & PtFlag::READ.bits() != 0 || *entry & PtFlag::EXECUTE.bits() != 0);
+                        //log::info!("Leaf Entry: {:x}", *entry);
                         return WalkNext::Leaf;
                     }
                     // Create an entry
@@ -305,7 +317,9 @@ where
                         .expect("map_range: unable to allocate page table entry.")
                         .zeroed();
                     assert!(frame.phys_addr.as_u64() >= offset as u64);
-                    *entry = (frame.phys_addr.as_u64() - (offset as u64)) | DEFAULT_PROTS.bits();
+                    *entry = (((frame.phys_addr.as_u64() - (offset as u64)) >> PAGE_OFFSET_WIDTH ) << PtFlag::flags_count()) | DEFAULT_PROTS.bits();
+                    assert!(*entry & PtFlag::READ.bits() == 0 && *entry & PtFlag::EXECUTE.bits() == 0);
+                    //log::info!("Default: Entry: {:x}", *entry);
                     WalkNext::Continue
                 },
             )
