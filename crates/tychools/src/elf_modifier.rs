@@ -3,7 +3,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 
-use mmu::PtFlag;
+use mmu::{PtFlag};
 use object::read::elf::{FileHeader, ProgramHeader, SectionHeader};
 use object::{elf, Endianness, U16Bytes, U32Bytes, U64Bytes};
 use serde::{Deserialize, Serialize};
@@ -357,6 +357,7 @@ impl ModifiedELF {
             if *entry != 0 && (*entry & PtFlag::VALID.bits() == PtFlag::VALID.bits()) {
                 let ppn = (offset >> page_offset_width) + (*entry >> PtFlag::flags_count()); 
                 *entry = (*entry & !PT_PHYS_PAGE_MASK) | (ppn << PtFlag::flags_count()); 
+                log::debug!("Fixing page tables: entry: {:x} and ppn: {:x}", *entry, ppn);
             }
         }
     
@@ -402,17 +403,22 @@ impl ModifiedELF {
         //Write the header.
         let hdr_bytes = any_as_u8_slice(&self.header);
         writer.write(hdr_bytes);
+
+        //log::info!("hdr_bytes: {:x}", hdr_bytes.len());
         // Write the program headers.
         for seg in &self.segments {
             let seg_bytes = any_as_u8_slice(&seg.program_header);
             writer.write(seg_bytes);
+          //  log::info!("seg_bytes: {:x}", seg_bytes.len());
         }
         // Write program content.
         writer.write(&self.data);
+        //log::info!("data: {:x}", &self.data.len());
         // Sections.
         for sec in &self.sections {
             let sec_bytes = any_as_u8_slice(&sec.section_header);
             writer.write(sec_bytes);
+         //   log::info!("sec_bytes: {:x}", sec_bytes.len());
         }
         // Write secret data too.
         writer.write(&self.secret_data);
@@ -589,6 +595,7 @@ impl ModifiedELF {
         });
 
         for seg in &mut self.segments {
+            log::info!("Patching segment offset");
             seg.patch_offset(delta, affected);
         }
         for sec in &mut self.sections {
@@ -720,7 +727,9 @@ impl ModifiedSegment {
     /// is greater than the affected address.
     pub fn patch_offset(&mut self, delta: u64, affected: u64) {
         let offset = self.program_header.p_offset(DENDIAN);
-        if offset >= affected {
+        log::info!("p_offset: {:x} and delta: {:x} and affected: {:x}", offset, delta, affected);
+        //if offset >= affected {
+        if self.program_header.p_filesz(DENDIAN) > 0 {
             self.program_header.p_offset = U64Bytes::new(DENDIAN, offset + delta);
         }
     }
