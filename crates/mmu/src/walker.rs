@@ -18,11 +18,7 @@ const ADDRESS_MASK: u64 = 0x7fffffffff000;
 const PAGE_TABLE_INDEX_MASK: u64 = 0b111111111;
 const PAGE_TABLE_INDEX_LEN: u64 = 9; 
 
-#[cfg(not(feature = "riscv_enabled"))]
 const L1_INDEX_START: u64 = 12; 
-
-#[cfg(feature = "riscv_enabled")]
-const L1_INDEX_START: u64 = 10; 
 
 // —————————————————————————————— Page Levels ——————————————————————————————— //
 
@@ -56,7 +52,6 @@ impl Level {
         }
     }
 
-#[cfg(not(feature = "riscv_enabled"))]
     pub fn mask(self) -> u64 {
         match self {
             Level::L4 => !((1 << (L1_INDEX_START + 3*PAGE_TABLE_INDEX_LEN)) - 1),
@@ -66,15 +61,6 @@ impl Level {
         }
     }
 
-#[cfg(feature = "riscv_enabled")]
-    pub fn mask(self) -> u64 {
-        match self {
-            Level::L4 => !((1 << (L1_INDEX_START + 3*PAGE_TABLE_INDEX_LEN)) - 1),
-            Level::L3 => !((1 << (L1_INDEX_START + 2*PAGE_TABLE_INDEX_LEN)) - 1),
-            Level::L2 => !((1 << (L1_INDEX_START + PAGE_TABLE_INDEX_LEN)) - 1),
-            Level::L1 => !((1 << L1_INDEX_START) - 1),
-        }
-    }
 }
 
 // ——————————————————————————————— Addresses ———————————————————————————————— //
@@ -124,31 +110,6 @@ pub trait Address: Sized + Copy + Ord {
         ((self.as_u64() >> L1_INDEX_START) & PAGE_TABLE_INDEX_MASK) as usize
     }
 
-    /// Returns this address' L4 index.
- /*    #[inline]
-    fn riscv_l4_index(self) -> usize {
-        ((self.as_u64() >> (RISCV_L1_INDEX_START + 3*PAGE_TABLE_INDEX_LEN) ) & PAGE_TABLE_INDEX_MASK) as usize
-    }
-
-    /// Returns this address' L3 index.
-    #[inline]
-    fn riscv_l3_index(self) -> usize {
-        ((self.as_u64() >> (RISCV_L1_INDEX_START + 2*PAGE_TABLE_INDEX_LEN)) & PAGE_TABLE_INDEX_MASK) as usize
-    }
-
-    /// Returns this address' L2 index.
-    #[inline]
-    fn riscv_l2_index(self) -> usize {
-        ((self.as_u64() >> (RISCV_L1_INDEX_START + PAGE_TABLE_INDEX_LEN)) & PAGE_TABLE_INDEX_MASK) as usize
-    }
-
-    /// Returns this address' L1 index.
-    #[inline]
-    fn riscv_l1_index(self) -> usize {
-        ((self.as_u64() >> RISCV_L1_INDEX_START) & PAGE_TABLE_INDEX_MASK) as usize
-    } */
-
-
     /// Returns this address index for a given level.
     fn index(self, level: Level) -> usize {
         match level {
@@ -158,16 +119,6 @@ pub trait Address: Sized + Copy + Ord {
             Level::L1 => self.l1_index(),
         }
     }
-
- /*    /// Returns this address index for a given level.
-    fn riscv_index(self, level: Level) -> usize {
-        match level {
-            Level::L4 => self.riscv_l4_index(),
-            Level::L3 => self.riscv_l3_index(),
-            Level::L2 => self.riscv_l2_index(),
-            Level::L1 => self.riscv_l1_index(),
-        }
-    } */
 
 }
 
@@ -281,6 +232,7 @@ pub unsafe trait Walker {
                 return Ok(());
             };
             phys_addr = Self::PhysAddr::from_u64((*entry >> L1_INDEX_START) << PAGE_OFFSET_WIDTH);
+            log::info!("Phys_addr: {:x}", phys_addr.as_u64());
         }
     }
 
@@ -298,21 +250,6 @@ pub unsafe trait Walker {
         let page = as_page(self, self.translate(phys_addr));
         walk_range_rec(self, page, level, start, end, callback, &mut |_| {})
     }
-
-    /// Walk the page tables entries spanning the range between `start`and ènd`.
-    /* unsafe fn walk_range<F>(
-        &mut self,
-        start: Self::VirtAddr,
-        end: Self::VirtAddr,
-        callback: &mut F,
-    ) -> Result<(), ()>
-    where
-        F: FnMut(Self::VirtAddr, &mut u64, Level) -> WalkNext,
-    {
-        let (phys_addr, level) = self.root();
-        let page = as_page(self, self.translate(phys_addr));
-        walk_range_rec(self, page, level, start, end, callback, &mut |_| {})
-    } */
 
 
     /// Walk the page tables entries spanning the range between `start` and `end`. Call the cleanup
@@ -333,26 +270,6 @@ pub unsafe trait Walker {
         let page = as_page(self, self.translate(phys_addr));
         walk_range_rec(self, page, level, start, end, callback, cleanup)
     }
-
-    /// Walk the page tables entries spanning the range between `start` and `end`. Call the cleanup
-    /// function on all page whose covered range is included between `start` and `end`, except the
-    /// root.
-    /* unsafe fn riscv_cleanup_range<F, C>(
-        &mut self,
-        start: Self::VirtAddr,
-        end: Self::VirtAddr,
-        callback: &mut F,
-        cleanup: &mut C,
-    ) -> Result<(), ()>
-    where
-        F: FnMut(Self::VirtAddr, &mut u64, Level) -> WalkNext,
-        C: FnMut(HostVirtAddr),
-    {
-        let (phys_addr, level) = self.root();
-        let page = as_page(self, self.translate(phys_addr));
-        riscv_walk_range_rec(self, page, level, start, end, callback, cleanup)
-    } */
-
 
     unsafe fn as_page(&mut self, addr: HostVirtAddr) -> &mut [u64] {
         let ptr = addr.as_usize() as *mut u64;
@@ -383,9 +300,15 @@ where
     let level_offset = level.area_size();
     let level_mask = level.mask();
 
+    log::info!("idx: {:x} addr: {:x}, end: {:x}", idx, addr.as_u64(), end.as_u64());
+
     while addr < end && idx < NB_ENTRIES {
         // Process entry
         let entry = &mut page[idx];
+
+        log::info!("entry: {:x}", *entry);
+
+
         match callback(addr, entry, level) {
             WalkNext::Continue => {
                 // Recursively process next level entries, if any
@@ -404,7 +327,9 @@ where
                     }
                 }
             }
-            WalkNext::Leaf => (), // Proceed to the next entry at the same level
+            WalkNext::Leaf => {
+                //log::info!("Leaf: addr: {:x} entry: {:p}", addr.as_u64(), entry); 
+            }, // Proceed to the next entry at the same level
             WalkNext::Abort => return Err(()), // Abort walk
         }
 
@@ -415,6 +340,9 @@ where
             Some(addr) => addr,
         };
         idx += 1;
+
+        //log::info!("addr after: {:x} level_mask: {:x}, level_offset: {:x}", addr.as_u64(), level_mask, level_offset);
+
     }
 
     Ok(())
@@ -437,22 +365,36 @@ where
     F: FnMut(VirtAddr, &mut u64, Level) -> WalkNext,
     C: FnMut(HostVirtAddr),
 {
+    use log::info;
+
+    use crate::PtFlag;
+
     let mut idx = start.index(level);
     let mut addr = start;
     let next_level = level.next();
     let level_offset = level.area_size();
     let level_mask = level.mask();
 
+    log::info!("idx: {:x} addr: {:x}, end: {:x} page[idx]: {:x}", idx, addr.as_u64(), end.as_u64(), page[idx]);
+
     while addr < end && idx < NB_ENTRIES {
         // Process entry
         let entry = &mut page[idx];
+
+        log::info!("entry: {:x}", *entry);
+
         match callback(addr, entry, level) {
             WalkNext::Continue => {
+                log::info!("entry: {:x}", *entry);
                 // Recursively process next level entries, if any
                 if let Some(next) = next_level {
-                    let phys_addr = PhysAddr::from_u64((*entry >> L1_INDEX_START) << PAGE_OFFSET_WIDTH);
+                    //log::info!("Continue: addr: {:x} entry: {:p}", addr.as_u64(), entry);
+                    let phys_addr = PhysAddr::from_u64((*entry >> PtFlag::flags_count()) << PAGE_OFFSET_WIDTH);
                     let host_virt_addr = walker.translate(phys_addr);
+                    
                     let page = as_page(walker, host_virt_addr);
+                    log::info!("phys_addr: {:x}", phys_addr.as_u64());
+                    //log::info!("Page idx: {:x} addr: {:x} end: {:x} -- phys_addr: {:x}, host_virt_addr: {:x}", idx, addr.as_u64(), end.as_u64(), phys_addr.as_u64(), host_virt_addr.as_u64());
                     walk_range_rec(walker, page, next, addr, end, callback, cleanup)?;
 
                     // If the whole page is used, call the cleanup function after the page has been
@@ -464,7 +406,9 @@ where
                     }
                 }
             }
-            WalkNext::Leaf => (), // Proceed to the next entry at the same level
+            WalkNext::Leaf => {
+                log::info!("Leaf: addr: {:x} entry: {:x}", addr.as_u64(), *entry);
+            }, // Proceed to the next entry at the same level
             WalkNext::Abort => return Err(()), // Abort walk
         }
 
@@ -475,6 +419,9 @@ where
             Some(addr) => addr,
         };
         idx += 1;
+
+        //log::info!("addr after: {:x} level_mask: {:x}, level_offset: {:x}", addr.as_u64(), level_mask, level_offset);
+
     }
     Ok(())
 }
