@@ -39,6 +39,9 @@ const CPUID_ECX_VMX_MASK: u32 = 1 << 5;
 /// CPUID mask for INVPCID support
 pub const CPUID_EBX_X64_FEATURE_INVPCID: u32 = 1 << 10;
 
+/// CPUID mask for TPAUSE support
+pub const CPUID_ECX_X64_WAITPGK: u32 = 1 << 5;
+
 // ————————————————————————————— VMX Operations ————————————————————————————— //
 
 /// Basic VMX Information.
