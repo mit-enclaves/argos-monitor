@@ -70,9 +70,7 @@ fn default_vmcs_config(vmcs: &mut ActiveVmcs, info: &GuestInfo, switching: bool)
 
     let mut secondary_ctrls = SecondaryControls::ENABLE_RDTSCP
         | SecondaryControls::ENABLE_EPT
-        | SecondaryControls::UNRESTRICTED_GUEST
-        | SecondaryControls::ENABLE_USER_WAIT_PAUSE
-        | SecondaryControls::ENABLE_INVPCID;
+        | SecondaryControls::UNRESTRICTED_GUEST;
     if switching {
         secondary_ctrls |= SecondaryControls::ENABLE_VM_FUNCTIONS
     }
@@ -80,7 +78,8 @@ fn default_vmcs_config(vmcs: &mut ActiveVmcs, info: &GuestInfo, switching: bool)
         secondary_ctrls |= SecondaryControls::ENABLE_XSAVES_XRSTORS;
     }
     secondary_ctrls |= cpuid_secondary_controls();
-    log::info!("2'Ctrl: {:?}", vmcs.set_secondary_ctrls(secondary_ctrls));
+    vmcs.set_secondary_ctrls(secondary_ctrls)
+        .expect("Error setting secondary controls");
 }
 
 fn configure_msr() -> Result<(), VmxError> {
@@ -172,6 +171,9 @@ fn cpuid_secondary_controls() -> SecondaryControls {
     let cpuid = unsafe { platform::x86_64::__cpuid(7) };
     if cpuid.ebx & vmx::CPUID_EBX_X64_FEATURE_INVPCID != 0 {
         controls |= SecondaryControls::ENABLE_INVPCID;
+    }
+    if cpuid.ecx & vmx::CPUID_ECX_X64_WAITPGK != 0 {
+        controls |= SecondaryControls::ENABLE_USER_WAIT_PAUSE;
     }
     return controls;
 }
