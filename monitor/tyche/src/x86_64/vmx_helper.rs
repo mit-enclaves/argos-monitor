@@ -5,8 +5,7 @@ use core::arch::asm;
 
 use stage_two_abi::GuestInfo;
 use vmx::bitmaps::{
-    EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
-    SecondaryControls,
+    EntryControls, ExitControls, PinbasedControls, PrimaryControls, SecondaryControls,
 };
 use vmx::fields::traits::*;
 use vmx::{fields, secondary_controls_capabilities, ActiveVmcs, Register, VmxError};

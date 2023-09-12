@@ -17,5 +17,5 @@ pub const EXIT: usize = 10;
 pub const DEBUG: usize = 11;
 pub const CONFIGURE: usize = 12;
 pub const SET_ENTRY_ON_CORE: usize = 13;
-pub const ENCLAVE_ATTESTATION: usize = 14;
-pub const SEGMENT_NULL: usize = 15;
+pub const SEND_ALIASED: usize = 14;
+pub const ENCLAVE_ATTESTATION: usize = 50;
