@@ -18,9 +18,13 @@ use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
 use vmx::bitmaps::{EptEntryFlags, ExceptionBitmap};
 use vmx::errors::Trapnr;
 use vmx::msr::{IA32_LSTAR, IA32_STAR};
-use vmx::{ActiveVmcs, ControlRegister, Register, VmExitInterrupt, REGFILE_SIZE};
+use vmx::{
+    ActiveVmcs, ControlRegister, Register, Register, VmExitInterrupt, VmExitInterrupt,
+    REGFILE_CONTEXT_SIZE, REGFILE_SIZE,
+};
 use vtd::Iommu;
 
+use super::context::ContextData;
 use super::cpuid;
 use super::guest::VmxState;
 use super::init::NB_BOOTED_CORES;
@@ -133,6 +137,7 @@ const EMPTY_CONTEXT: Mutex<ContextData> = Mutex::new(ContextData {
     lstar: u64::max_value(),
     star: u64::max_value(),
     vmcs: Handle::<RCFrame>::new_invalid(),
+    regs: [u64::max_value(); REGFILE_CONTEXT_SIZE],
 });
 const EMPTY_CONTEXT_ARRAY: [Mutex<ContextData>; NB_CORES] = [EMPTY_CONTEXT; NB_CORES];
 static IOMMU: Mutex<Iommu> =
@@ -322,9 +327,9 @@ pub fn do_set_entry(
         log::error!("Set the switch type first!");
         return Err(CapaError::InvalidOperation);
     }
-    context.cr3 = cr3;
-    context.rip = rip;
-    context.rsp = rsp;
+    context.regs[Register::Cr3.as_usize()] = cr3 as u64;
+    context.regs[Register::Rip.as_usize()] = rip as u64;
+    context.regs[Register::Rsp.as_usize()] = rsp as u64;
     Ok(())
 }
 
@@ -731,7 +736,7 @@ fn switch_domain(
     }
     if current_ctx.vmcs != next_ctx.vmcs {
         current_ctx.save(vcpu);
-        next_ctx.restore(vcpu);
+        next_ctx.restore(&RC_VMCS, vcpu);
     } else {
         current_ctx.save_partial(vcpu);
         next_ctx.restore_partial(vcpu);

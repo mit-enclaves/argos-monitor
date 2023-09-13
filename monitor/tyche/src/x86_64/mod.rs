@@ -2,6 +2,7 @@
 
 mod apic;
 mod arch;
+mod context;
 pub mod guest;
 mod init;
 mod monitor;
