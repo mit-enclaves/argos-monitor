@@ -321,6 +321,54 @@ impl CapaEngine {
         Ok(())
     }
 
+    pub fn send_aliased(
+        &mut self,
+        domain: Handle<Domain>,
+        capa: LocalCapa,
+        to: LocalCapa,
+        alias: usize,
+    ) -> Result<(), CapaError> {
+        // Same as above, enforce permissions.
+        domain::has_config(
+            domain,
+            &self.domains,
+            domain::Bitmaps::PERMISSION,
+            permission::SEND,
+        )?;
+        let to = self.domains[domain].get(to)?.as_channel()?;
+        let capa = remove_capa(domain, capa, &mut self.domains)?;
+        match capa {
+            Capa::Region(region) => {
+                {
+                    let mut reg = self
+                        .regions
+                        .get_mut(region)
+                        .expect("Unable to access region");
+                    reg.access.alias = Some(alias);
+                }
+                region_capa::send(
+                    region,
+                    &mut self.regions,
+                    &mut self.domains,
+                    &mut self.updates,
+                    to,
+                )?;
+            }
+            _ => {
+                return Err(CapaError::WrongCapabilityType);
+            }
+        }
+        // Move the capa to the new domain
+        let Ok(_) = insert_capa(to, capa, &mut self.regions, &mut self.domains) else {
+            log::info!("Send failed, receiving domain is out of memory");
+            // Insert capa back, this should never fail as removed it just before
+            insert_capa(domain, capa, &mut self.regions, &mut self.domains).unwrap();
+            return Err(CapaError::OutOfMemory);
+        };
+
+        Ok(())
+    }
+
     pub fn set_child_config(
         &mut self,
         manager: Handle<Domain>,

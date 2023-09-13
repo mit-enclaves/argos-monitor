@@ -325,6 +325,18 @@ pub fn do_send(current: Handle<Domain>, capa: LocalCapa, to: LocalCapa) -> Resul
     Ok(())
 }
 
+pub fn do_send_aliased(
+    current: Handle<Domain>,
+    capa: LocalCapa,
+    to: LocalCapa,
+    alias: usize,
+) -> Result<(), CapaError> {
+    let mut engine = CAPA_ENGINE.lock();
+    engine.send_aliased(current, capa, to, alias)?;
+    apply_updates(&mut engine);
+    Ok(())
+}
+
 pub fn do_enumerate(
     current: Handle<Domain>,
     token: NextCapaToken,
