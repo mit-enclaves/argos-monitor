@@ -180,11 +180,16 @@ fn handle_exit(
                     Ok(HandlerResult::Resume)
                 }
                 calls::SEND_ALIASED => {
-                    // This call performs a split where left is null and right is the same segment.
-                    // It further allows to relocate the segment with an alias if specified.
-                    log::trace!("In segment null region");
-                    todo!("Implement this shit");
-
+                    // Send a region capa and adds an alias to it.
+                    // TODO: check it works.
+                    monitor::do_send_aliased(
+                        *domain,
+                        LocalCapa::new(arg_1),
+                        LocalCapa::new(arg_2),
+                        arg_3,
+                    )
+                    .expect("TODO");
+                    vs.vcpu.set(Register::Rax, 0);
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
