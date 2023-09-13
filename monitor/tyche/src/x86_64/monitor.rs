@@ -12,9 +12,9 @@ use stage_two_abi::Manifest;
 use utils::{GuestPhysAddr, HostPhysAddr};
 use vmx::bitmaps::{EptEntryFlags, ExceptionBitmap};
 use vmx::errors::Trapnr;
-use vmx::msr::IA32_LSTAR;
-use vmx::{ActiveVmcs, ControlRegister, Register, VmExitInterrupt, REGFILE_SIZE};
+use vmx::{ActiveVmcs, Register, VmExitInterrupt, REGFILE_CONTEXT_SIZE};
 
+use super::context::ContextData;
 use super::cpuid;
 use super::guest::VmxState;
 use super::init::NB_BOOTED_CORES;
@@ -33,49 +33,6 @@ static RC_VMCS: Mutex<RCFramePool> =
 
 pub struct DomainData {
     ept: Option<HostPhysAddr>,
-}
-
-pub struct ContextData {
-    pub cr3: usize,
-    pub rip: usize,
-    pub rsp: usize,
-    // General-purpose registers.
-    pub regs: [u64; REGFILE_SIZE],
-    // The MSR(s?) we need to save and restore.
-    pub lstar: u64,
-    /// Vcpu for this core.
-    pub vmcs: Handle<RCFrame>,
-}
-
-impl ContextData {
-    pub fn save_partial(&mut self, vcpu: &ActiveVmcs<'static>) {
-        self.cr3 = vcpu.get_cr(ControlRegister::Cr3);
-        self.rip = vcpu.get(Register::Rip) as usize;
-        self.rsp = vcpu.get(Register::Rsp) as usize;
-    }
-
-    pub fn save(&mut self, vcpu: &mut ActiveVmcs<'static>) {
-        self.save_partial(vcpu);
-        vcpu.dump_regs(&mut self.regs);
-        self.lstar = unsafe { IA32_LSTAR.read() };
-        vcpu.flush();
-    }
-
-    pub fn restore_partial(&self, vcpu: &mut ActiveVmcs<'static>) {
-        vcpu.set_cr(ControlRegister::Cr3, self.cr3);
-        vcpu.set(Register::Rip, self.rip as u64);
-        vcpu.set(Register::Rsp, self.rsp as u64);
-    }
-
-    pub fn restore(&self, vcpu: &mut ActiveVmcs<'static>) {
-        let locked = RC_VMCS.lock();
-        let rc_frame = locked.get(self.vmcs).unwrap();
-        vcpu.load_regs(&self.regs);
-        unsafe { vmx::msr::Msr::new(IA32_LSTAR.address()).write(self.lstar) };
-        vcpu.switch_frame(rc_frame.frame).unwrap();
-        // Restore partial must be called AFTER we set a valid frame.
-        self.restore_partial(vcpu);
-    }
 }
 
 #[repr(u64)]
@@ -99,12 +56,8 @@ impl InitVMCS {
 const EMPTY_DOMAIN: Mutex<DomainData> = Mutex::new(DomainData { ept: None });
 const EMPTY_UPDATE_BUFFER: Mutex<Buffer<CoreUpdate>> = Mutex::new(Buffer::new());
 const EMPTY_CONTEXT: Mutex<ContextData> = Mutex::new(ContextData {
-    cr3: usize::max_value(),
-    rip: usize::max_value(),
-    rsp: usize::max_value(),
-    regs: [0; REGFILE_SIZE],
-    lstar: u64::max_value(),
     vmcs: Handle::<RCFrame>::new_invalid(),
+    regs: [u64::max_value(); REGFILE_CONTEXT_SIZE],
 });
 const EMPTY_CONTEXT_ARRAY: [Mutex<ContextData>; NB_CORES] = [EMPTY_CONTEXT; NB_CORES];
 
@@ -272,9 +225,9 @@ pub fn do_set_entry(
         log::error!("Set the switch type first!");
         return Err(CapaError::InvalidOperation);
     }
-    context.cr3 = cr3;
-    context.rip = rip;
-    context.rsp = rsp;
+    context.regs[Register::Cr3.as_usize()] = cr3 as u64;
+    context.regs[Register::Rip.as_usize()] = rip as u64;
+    context.regs[Register::Rsp.as_usize()] = rsp as u64;
     Ok(())
 }
 
@@ -574,7 +527,7 @@ fn switch_domain(
     }
     if current_ctx.vmcs != next_ctx.vmcs {
         current_ctx.save(vcpu);
-        next_ctx.restore(vcpu);
+        next_ctx.restore(&RC_VMCS, vcpu);
     } else {
         current_ctx.save_partial(vcpu);
         next_ctx.restore_partial(vcpu);

@@ -293,7 +293,7 @@ impl<'vmx> VmcsRegion<'vmx> {
     pub fn get_regs(&self) -> &[u64; REGFILE_SIZE] {
         &self.regs
     }
-    pub fn set_regs(&mut self, src: &[u64; REGFILE_SIZE]) {
+    pub fn set_regs(&mut self, src: &[u64]) {
         self.regs.copy_from_slice(src);
     }
 }
@@ -305,11 +305,11 @@ impl<'vmx> ActiveVmcs<'vmx> {
         Ok(self.region)
     }
 
-    pub fn dump_regs(&self, dest: &mut [u64; REGFILE_SIZE]) {
-        dest.clone_from(self.region.get_regs());
+    pub fn dump_regs(&self, dest: &mut [u64]) {
+        dest.clone_from_slice(self.region.get_regs());
     }
 
-    pub fn load_regs(&mut self, src: &[u64; REGFILE_SIZE]) {
+    pub fn load_regs(&mut self, src: &[u64]) {
         self.region.set_regs(src);
     }
 
@@ -1116,6 +1116,16 @@ pub enum Register {
     // Stored in VMCS
     Rsp = 15,
     Rip = 16,
+    Cr3 = 17,
+    // Stored separatly by context.
+    Lstar = 18,
+    //TODO add more.
+}
+
+impl Register {
+    pub fn as_usize(&self) -> usize {
+        return *self as usize;
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1127,6 +1137,7 @@ pub enum ControlRegister {
 }
 
 pub const REGFILE_SIZE: usize = 15;
+pub const REGFILE_CONTEXT_SIZE: usize = 19;
 
 // —————————————————————————— Exit Qualifications ——————————————————————————— //
 

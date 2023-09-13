@@ -1,6 +1,7 @@
 //! x86_64 backend for stage 2
 
 mod arch;
+mod context;
 pub mod guest;
 mod init;
 mod monitor;
