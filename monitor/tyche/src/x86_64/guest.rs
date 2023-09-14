@@ -378,6 +378,7 @@ fn handle_exit(
             Ok(HandlerResult::Resume)
         }
         VmxExitReason::Cpuid => {
+            // TODO implement a filter for the cpuid.
             let input_eax = vs.vcpu.get(Register::Rax);
             let input_ecx = vs.vcpu.get(Register::Rcx);
             let eax: u64;
