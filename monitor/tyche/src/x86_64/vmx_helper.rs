@@ -77,6 +77,11 @@ fn default_vmcs_config(vmcs: &mut ActiveVmcs, info: &GuestInfo, switching: bool)
         secondary_ctrls |= SecondaryControls::ENABLE_XSAVES_XRSTORS;
     }
     secondary_ctrls |= cpuid_secondary_controls();
+    log::info!(
+        "2'Ctrl {:b}, {:b}",
+        secondary_ctrls,
+        vmx::secondary_controls_capabilities().expect("meh")
+    );
     vmcs.set_secondary_ctrls(secondary_ctrls)
         .expect("Error setting secondary controls");
 }
@@ -167,11 +172,17 @@ fn setup_guest(vcpu: &mut ActiveVmcs, info: &GuestInfo) -> Result<(), VmxError> 
 /// Returns optional secondary controls depending on the host cpuid.
 fn cpuid_secondary_controls() -> SecondaryControls {
     let mut controls = SecondaryControls::empty();
+    let capabilities = vmx::secondary_controls_capabilities()
+        .expect("Unable to read secondary controls capabilities");
     let cpuid = unsafe { platform::x86_64::__cpuid(7) };
-    if cpuid.ebx & vmx::CPUID_EBX_X64_FEATURE_INVPCID != 0 {
+    if (cpuid.ebx & vmx::CPUID_EBX_X64_FEATURE_INVPCID != 0)
+        && (capabilities.bits() & SecondaryControls::ENABLE_INVPCID.bits() != 0)
+    {
         controls |= SecondaryControls::ENABLE_INVPCID;
     }
-    if cpuid.ecx & vmx::CPUID_ECX_X64_WAITPGK != 0 {
+    if (cpuid.ecx & vmx::CPUID_ECX_X64_WAITPGK != 0)
+        && (capabilities.bits() & SecondaryControls::ENABLE_USER_WAIT_PAUSE.bits() != 0)
+    {
         controls |= SecondaryControls::ENABLE_USER_WAIT_PAUSE;
     }
     return controls;
