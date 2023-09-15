@@ -3,6 +3,7 @@
 #include <sys/mman.h>
 #include <sys/errno.h>
 #include "driver_ioctl.h"
+#include "tyche_api.h"
 #include "common.h"
 
 
@@ -38,8 +39,8 @@ failure:
 }
 
 int ioctl_set_traps(handle_t handle, usize traps) {
-  msg_set_perm_t perm = {traps}; 
-  if (ioctl(handle, TYCHE_SET_TRAPS, &perm) != SUCCESS) {
+  msg_set_perm_t perm = {TYCHE_CONFIG_TRAPS, traps}; 
+  if (ioctl(handle, TYCHE_SET_DOMAIN_CONFIGURATION, &perm) != SUCCESS) {
       ERROR("Failed to set traps for the domain %d", handle);
       goto failure;
     }
@@ -49,8 +50,8 @@ failure:
 }
 
 int ioctl_set_cores(handle_t handle, usize cores) {
-  msg_set_perm_t perm = {cores}; 
-  if (ioctl(handle, TYCHE_SET_CORES, &perm) != SUCCESS) {
+  msg_set_perm_t perm = {TYCHE_CONFIG_CORES, cores}; 
+  if (ioctl(handle, TYCHE_SET_DOMAIN_CONFIGURATION, &perm) != SUCCESS) {
       ERROR("Failed to set cores for the domain %d", handle);
       goto failure;
     }
@@ -60,8 +61,8 @@ failure:
 }
 
 int ioctl_set_perms(handle_t handle, usize perms) {
-  msg_set_perm_t perm = {perms}; 
-  if (ioctl(handle, TYCHE_SET_PERM, &perm) != SUCCESS) {
+  msg_set_perm_t perm = {TYCHE_CONFIG_PERMISSIONS, perms}; 
+  if (ioctl(handle, TYCHE_SET_DOMAIN_CONFIGURATION, &perm) != SUCCESS) {
       ERROR("Failed to set perms for the domain %d", handle);
       goto failure;
     }
@@ -72,7 +73,7 @@ failure:
 
 int ioctl_set_switch(handle_t handle, usize sw) {
   msg_set_perm_t perm = {sw}; 
-  if (ioctl(handle, TYCHE_SET_SWITCH, &perm) != SUCCESS) {
+  if (ioctl(handle, TYCHE_CONFIG_SWITCH, &perm) != SUCCESS) {
       ERROR("Failed to set switch for the domain %d", handle);
       goto failure;
     }

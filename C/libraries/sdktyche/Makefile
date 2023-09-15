@@ -11,12 +11,14 @@ endif
 $(info GCC="$(GCC)")
 
 # Dependencies for the build.
-LIB_PT=../pts
-DLL_LIB= ../dll
+DRIVER_PATH=../../../linux/drivers/tyche/
+LIB_PATH=$(DRIVER_PATH)/libraries/
+LIB_PT=$(LIB_PATH)/pts
+DLL_LIB= $(LIB_PATH)/dll
+CAPA_LIB=$(LIB_PATH)/capabilities
+COMMON_LIB=$(LIB_PATH)/common
 ELF_LIB=../elf64
-CAPA_LIB=../capabilities
-COMMON_LIB=../common
-TYCHE_DRIVER=../../drivers/tyche
+TYCHE_DRIVER=$(DRIVER_PATH)
 
 # Configuration for loader.
 CODE_LOADER = $(wildcard loader/*.c)
