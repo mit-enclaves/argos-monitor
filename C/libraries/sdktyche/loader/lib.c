@@ -180,7 +180,7 @@ int init_domain_with_cores_traps(
     switch_save_t switch_type)
 {
   if (domain == NULL || domain->parser.elf.memory.start == NULL) {
-    ERROR("Null argument provided: domain(%s)", domain);
+    ERROR("Null argument provided: domain(%p)", domain);
     goto failure;
   }
   domain->traps = traps;
@@ -486,7 +486,7 @@ int sdk_delete_domain(tyche_domain_t* domain)
   }
   // First call the driver.
   if (close(domain->handle) != SUCCESS) {
-    ERROR("Unable to delete the domain %lld", domain->handle);
+    ERROR("Unable to delete the domain %d", domain->handle);
     goto failure;
   }
   // Now collect everything else.

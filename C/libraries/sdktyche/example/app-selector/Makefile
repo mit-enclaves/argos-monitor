@@ -3,7 +3,7 @@ all: app_selector
 
 ## ————————————————————————————————— Paths —————————————————————————————————— ##
 LIB_PATH=../../../
-DRIVERS_PATH=../../../../drivers/
+DRIVERS_PATH=../../../../../linux/drivers
 
 ## ——————————————————————————————— Libraries ———————————————————————————————— ##
 SDK=$(LIB_PATH)/sdktyche

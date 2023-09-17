@@ -71,8 +71,8 @@ failure:
 }
 
 int ioctl_set_switch(handle_t handle, usize sw) {
-  msg_set_perm_t perm = {sw}; 
-  if (ioctl(handle, TYCHE_CONFIG_SWITCH, &perm) != SUCCESS) {
+  msg_set_perm_t perm = {TYCHE_CONFIG_SWITCH, sw}; 
+  if (ioctl(handle, TYCHE_SET_DOMAIN_CONFIGURATION, &perm) != SUCCESS) {
       ERROR("Failed to set switch for the domain %d", handle);
       goto failure;
     }
@@ -147,7 +147,7 @@ int ioctl_switch(handle_t handle, void* args)
 {
   msg_switch_t transition = {args};
   if (ioctl(handle, TYCHE_TRANSITION, &transition) != SUCCESS) {
-    ERROR("ioctl failed to switch to %lld", handle);
+    ERROR("ioctl failed to switch to %d", handle);
     goto failure;
   }
   return SUCCESS;

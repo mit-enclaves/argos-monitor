@@ -2,7 +2,7 @@ all: simple_enclave
 
 ## ————————————————————————————————— Paths —————————————————————————————————— ##
 LIB_PATH=../../../
-DRIVERS_PATH=../../../../drivers/
+DRIVERS_PATH=../../../../../linux/drivers/
 
 ## ——————————————————————————————— Libraries ———————————————————————————————— ##
 SDK=$(LIB_PATH)/sdktyche
