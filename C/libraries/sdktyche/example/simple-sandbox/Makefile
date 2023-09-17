@@ -3,7 +3,7 @@ all: app sandbox instrument
 
 ## ————————————————————————————————— Paths —————————————————————————————————— ##
 LIB_PATH=../../../
-DRIVERS_PATH=../../../../drivers/
+DRIVERS_PATH=../../../../../linux/drivers
 
 ## ——————————————————————————————— Libraries ———————————————————————————————— ##
 SDK=$(LIB_PATH)/sdktyche

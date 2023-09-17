@@ -8,10 +8,11 @@ endif
 
 ## ————————————————————————————————— Paths —————————————————————————————————— ##
 LIB_PATH=../
-DRIVERS_PATH=../../drivers/
 LIB_BRICKS_PATH = ../../../target/x86_64-unknown-linux-gnu/release
 BRICKS_PATH = ../../../crates/bricks
 BRICKS = bricks
+DRIVERS_PATH=../../../linux/drivers
+
 ## ——————————————————————————————— Libraries ———————————————————————————————— ##
 SDK=$(LIB_PATH)/sdktyche
 DLL_LIB= $(LIB_PATH)/dll

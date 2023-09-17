@@ -8,8 +8,8 @@ endif
 
 ## ————————————————————————————————— Paths —————————————————————————————————— ##
 LIB_PATH=../../../
-DRIVERS_PATH=../../../../drivers/
 LINKER_SCRIPT=../../../../../configs/riscv-linker-script-domain.x
+DRIVERS_PATH=../../../../../linux/drivers
 
 ## ——————————————————————————————— Libraries ———————————————————————————————— ##
 SDK=$(LIB_PATH)/sdktyche
