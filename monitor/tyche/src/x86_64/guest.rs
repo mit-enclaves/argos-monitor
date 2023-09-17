@@ -3,13 +3,13 @@
 use core::arch::asm;
 
 use capa_engine::{Bitmaps, Domain, Handle, LocalCapa, NextCapaToken};
-use vmx::bitmaps::{exit_qualification, SecondaryControls};
+use vmx::bitmaps::exit_qualification;
 use vmx::errors::Trapnr;
 use vmx::{
     ActiveVmcs, ControlRegister, InterruptionType, Register, VmExitInterrupt, VmxExitReason, Vmxon,
-    CPUID_ECX_X64_WAITPGK,
 };
 
+use super::cpuid_filter::{filter_mpk, filter_tpause};
 use super::{cpuid, monitor};
 use crate::calls;
 use crate::error::TycheError;
@@ -382,10 +382,10 @@ fn handle_exit(
             // TODO implement a filter for the cpuid.
             let input_eax = vs.vcpu.get(Register::Rax);
             let input_ecx = vs.vcpu.get(Register::Rcx);
-            let eax: u64;
-            let ebx: u64;
+            let mut eax: u64;
+            let mut ebx: u64;
             let mut ecx: u64;
-            let edx: u64;
+            let mut edx: u64;
 
             unsafe {
                 // Note: LLVM reserves %rbx for its internal use, so we need to use a scratch
@@ -402,21 +402,9 @@ fn handle_exit(
                     out("rsi") ebx
                 )
             }
-            // Some filtering according to supported native features and virtualization ones.
-            // For example, 13th Gen Intel(R) Core(TM) i5-1345U support tpause and invpcid natively
-            // but does not allow the secondary control bit 26 to allow tpause in guest.
-            // TODO: put that in a separate function.
-            if (input_eax == 0x7 && input_ecx == 0x0)
-                && (vmx::secondary_controls_capabilities()
-                    .expect("failed to get secondary capabilities")
-                    .bits()
-                    & SecondaryControls::ENABLE_USER_WAIT_PAUSE.bits()
-                    == 0)
-                && (ecx & (CPUID_ECX_X64_WAITPGK as u64) != 0)
-            {
-                // clear the cpuid tpause bit.
-                ecx = ecx ^ !(CPUID_ECX_X64_WAITPGK as u64);
-            }
+            //Apply cpuid filters.
+            filter_tpause(input_eax, input_ecx, &mut eax, &mut ebx, &mut ecx, &mut edx);
+            filter_mpk(input_eax, input_ecx, &mut eax, &mut ebx, &mut ecx, &mut edx);
 
             vs.vcpu.set(Register::Rax, eax);
             vs.vcpu.set(Register::Rbx, ebx);
