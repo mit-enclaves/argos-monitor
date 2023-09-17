@@ -2,6 +2,7 @@
 
 mod arch;
 mod context;
+mod cpuid_filter;
 pub mod guest;
 mod init;
 mod monitor;
