@@ -44,7 +44,7 @@ failure:
 /// It survives the illegal access and skips the instruction.
 void malicious_handler(int signo, siginfo_t *info, void *uap)
 {
-  LOG("Handler called for address %llx and signo %d", info->si_addr, signo);
+  LOG("Handler called for address %llx and signo %d", (usize)(info->si_addr), signo);
   ucontext_t *context = uap;
   //context->uc_mcontext.gregs[REG_RIP] += 6;
   has_faulted = SUCCESS;
@@ -73,7 +73,7 @@ void breakpoint_handler(int signal)
 {
   LOG("Breakpoint handler called %d", signal);
   if (sdk_delete_domain(enclave) != SUCCESS) {
-    ERROR("Unable to delete the enclave %lld", enclave->handle);
+    ERROR("Unable to delete the enclave %d", enclave->handle);
     exit(1);
   }
   // Just quit the program
@@ -112,21 +112,21 @@ int hello_world()
   hello_world_t* msg = (hello_world_t*)(&(shared->args));
   // Call the enclave.
   if (sdk_call_domain(enclave, NULL) != SUCCESS) {
-    ERROR("Unable to call the enclave %lld!", enclave->handle);
+    ERROR("Unable to call the enclave %d!", enclave->handle);
     goto failure;
   }
   LOG("First enclave message:\n%s", msg->reply);
 
   // Do a second call to the enclave.
   if (sdk_call_domain(enclave, NULL) != SUCCESS) {
-    ERROR("Unable to call the enclave a second time %lld!", enclave->handle);
+    ERROR("Unable to call the enclave a second time %d!", enclave->handle);
     goto failure;
   }
   LOG("Second enclave message:\n%s", msg->reply);
   
   // Clean up.
   if (sdk_delete_domain(enclave) != SUCCESS) {
-    ERROR("Unable to delete the enclave %lld", enclave->handle);
+    ERROR("Unable to delete the enclave %d", enclave->handle);
     goto failure;
   }
   LOG("All done!");
@@ -151,20 +151,20 @@ int transition_benchmark()
     for (int j = 0; j < INNER_LOOP_NB; j++) {
         // Call the enclave.
         if (sdk_call_domain(enclave, NULL) != SUCCESS) {
-          ERROR("Unable to call the enclave %lld!", enclave->handle);
+          ERROR("Unable to call the enclave %d!", enclave->handle);
           goto failure;
         }
     }
     clock_t end = clock();
     double time_spent = (double)(end-begin)/CLOCKS_PER_SEC;
     if (msg->counter != INNER_LOOP_NB) {
-      ERROR("We expected counter %llx, got %llx", INNER_LOOP_NB, msg->counter);
+      ERROR("We expected counter %d, got %lld", INNER_LOOP_NB, msg->counter);
     }
     LOG("Run %d: %d call-return in %.6f seconds", i, INNER_LOOP_NB, time_spent);
   }
   // Clean up.
   if (sdk_delete_domain(enclave) != SUCCESS) {
-    ERROR("Unable to delete the enclave %lld", enclave->handle);
+    ERROR("Unable to delete the enclave %d", enclave->handle);
     goto failure;
   }
   LOG("All done!");
@@ -203,7 +203,7 @@ int malicious()
 
  // Call the enclave.
   if (sdk_call_domain(enclave, NULL) != SUCCESS) {
-    ERROR("Unable to call the enclave %lld!", enclave->handle);
+    ERROR("Unable to call the enclave %d!", enclave->handle);
     goto failure;
   }
   LOG("First enclave message:\n%s", msg->reply);
@@ -240,7 +240,7 @@ int breakpoint()
   LOG("Calling the enclave now... good luck");
   // Call the enclave.
   if (sdk_call_domain(enclave, NULL) != SUCCESS) {
-    ERROR("Unable to call the enclave %lld!", enclave->handle);
+    ERROR("Unable to call the enclave %d!", enclave->handle);
     goto failure;
   }
   /// We always fail here.

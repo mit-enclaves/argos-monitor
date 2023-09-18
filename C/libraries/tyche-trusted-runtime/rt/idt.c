@@ -62,6 +62,7 @@ void idt_init(frame_t* frame)
 __attribute__((noreturn))
 void exception_handler() {
     __asm__ volatile ("cli; hlt");
+    while(1) {}
 }
 
 __attribute__((noreturn))
@@ -70,4 +71,5 @@ void divide_zero_handler() {
   int* shared = (int*) get_default_shared_buffer();
   *shared = 666;
   gate_call(ret_handle);
+  while(1){}
 }

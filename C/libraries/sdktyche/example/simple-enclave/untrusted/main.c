@@ -57,14 +57,14 @@ int hello_world()
 
   // Do a second call to the enclave.
   if (sdk_call_domain(enclave, NULL) != SUCCESS) {
-    ERROR("Unable to call the enclave a second time %lld!", enclave->handle);
+    ERROR("Unable to call the enclave a second time %d!", enclave->handle);
     goto failure;
   }
   LOG("Second enclave message:\n%s", msg->reply);
   
   // Clean up.
   if (sdk_delete_domain(enclave) != SUCCESS) {
-    ERROR("Unable to delete the enclave %lld", enclave->handle);
+    ERROR("Unable to delete the enclave %d", enclave->handle);
     goto failure;
   }
   LOG("All done!");
