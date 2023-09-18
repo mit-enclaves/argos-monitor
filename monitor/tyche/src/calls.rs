@@ -18,3 +18,4 @@ pub const DEBUG: usize = 11;
 pub const CONFIGURE: usize = 12;
 pub const SET_ENTRY_ON_CORE: usize = 13;
 pub const SEND_ALIASED: usize = 14;
+pub const CONFIGURE_CORE: usize = 15;
