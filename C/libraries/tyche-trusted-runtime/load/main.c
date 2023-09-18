@@ -100,11 +100,17 @@ int main(int argc, char* argv[])
         break;
     }
     cnt_sys++;
+
+  /// Call the enclave a first time.
+  LOG("About to call the enclave");
+  if (sdk_call_domain(&enclave, NULL) != SUCCESS) {
+    ERROR("Unable to call the enclave %d", enclave.handle);
+    goto failure;
   }
 
   /// Clean up.
   if (sdk_delete_domain(&enclave) != SUCCESS) {
-    ERROR("Unable to delete the enclave %lld", enclave.handle);
+    ERROR("Unable to delete the enclave %d", enclave.handle);
     goto failure;
   }
   

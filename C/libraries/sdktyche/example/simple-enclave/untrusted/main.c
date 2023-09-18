@@ -112,7 +112,7 @@ int hello_world()
   // Call to enclave, which will do attestation
   LOG("Calling enclave to execute attestation");
   if (sdk_call_domain(enclave, NULL) != SUCCESS) {
-    ERROR("Unable to call the enclave a second time %lld!", enclave->handle);
+    ERROR("Unable to call the enclave a second time %d!", enclave->handle);
     goto failure;
   }
   
@@ -123,7 +123,7 @@ int hello_world()
 
   // Clean up.
   if (sdk_delete_domain(enclave) != SUCCESS) {
-    ERROR("Unable to delete the enclave %lld", enclave->handle);
+    ERROR("Unable to delete the enclave %d", enclave->handle);
     goto failure;
   }
   LOG("All done!");
