@@ -67,7 +67,7 @@ pub fn pmp_read(csr_id: usize, csr_index: usize) -> Result<usize, PMPErrorCode> 
 
 //Returns PMP addressing mode and PMPErrorCode
 pub fn pmp_write(csr_index: usize, region_addr: usize, region_size:usize, region_perm: usize) -> Result<PMPAddressingMode, PMPErrorCode> { 
-    log::info!("Writing PMP with args: {}, {:x}, {:x}, {:x}", csr_index, region_addr, region_addr + region_size, region_perm);
+    log::debug!("Writing PMP with args: {}, {:x}, {:x}, {:x}", csr_index, region_addr, region_addr + region_size, region_perm);
     //This will ensure that the index is in expected range
     if csr_index < 0 || csr_index >= PMP_ENTRIES { 
         return Err(PMPErrorCode::InvalidIndex);
@@ -76,7 +76,7 @@ pub fn pmp_write(csr_index: usize, region_addr: usize, region_size:usize, region
     //To enforce that the region_addr is the start of a page and the region_size is a multiple of
     //page_size. 
     if ((region_addr & (RV64_PAGESIZE_MASK)) != region_addr) && ((region_size & (RV64_PAGESIZE_MASK)) != region_size) {
-        log::info!("PMP addr or size not page aligned!");
+        log::debug!("PMP addr or size not page aligned!");
         return Err(PMPErrorCode::NotPageAligned);
     }
 
@@ -102,7 +102,7 @@ pub fn pmp_write(csr_index: usize, region_addr: usize, region_size:usize, region
     //TODO 
     //if ((region_addr & (region_size - 1)) == 0) && ((region_size & (region_size - 1)) == 0) {
     if (addressing_mode == PMPAddressingMode::NAPOT) { 
-        log::info!("NAPOT Addressing Mode csr_index {} region_size: {:x} log_2_region_size: {:x} addr: {:x}", csr_index, region_size, log_2_region_size, region_addr);
+        log::debug!("NAPOT Addressing Mode csr_index {} region_size: {:x} log_2_region_size: {:x} addr: {:x}", csr_index, region_size, log_2_region_size, region_addr);
         let addrmask: usize = (1 << (log_2_region_size - 2)) - 1; //NAPOT encoding 
         pmpaddr = (region_addr >> 2) & !addrmask; 
         pmpaddr = pmpaddr | (addrmask >> 1);    //To add the 0 before the 1s.
@@ -114,7 +114,7 @@ pub fn pmp_write(csr_index: usize, region_addr: usize, region_size:usize, region
 
     }
     else { //TOR addressing mode    //TODO: NA4 addressing mode!  
-        log::info!("TOR Addressing Mode csr_index: {}", csr_index);
+        log::debug!("TOR Addressing Mode csr_index: {}", csr_index);
         if csr_index == (PMP_ENTRIES-1) {
             //Last PMP entry - Don't have enough PMP entries for protecting this region with TOR addressing mode. 
            return Err(PMPErrorCode::InvalidIndex);
@@ -127,7 +127,7 @@ pub fn pmp_write(csr_index: usize, region_addr: usize, region_size:usize, region
                                     //PMP granularity?
         addressing_mode = PMPAddressingMode::TOR;
         pmpcfg = region_perm | ((addressing_mode as usize) << 3);
-        log::info!("PMPADDR value {:x} for index {:x} PMPCFG value {:x}", pmpaddr, csr_index_2, pmpcfg);
+        log::debug!("PMPADDR value {:x} for index {:x} PMPCFG value {:x}", pmpaddr, csr_index_2, pmpcfg);
         pmpcfg_write(csr_index_2, pmpcfg);
         pmpaddr_csr_write(csr_index_2, pmpaddr >> 2);
         //unsafe { asm!("csrw pmpaddr{}, {}", in(reg) csr_index_2, in(reg) pmpaddr); }
@@ -136,7 +136,7 @@ pub fn pmp_write(csr_index: usize, region_addr: usize, region_size:usize, region
         pmpcfg = 0; 
         pmpaddr = region_addr; 
             //>> 2;
-        log::info!("PMPADDR value {:x} for index {:x} PMPCFG value {:x}", pmpaddr, csr_index, pmpcfg);
+        log::debug!("PMPADDR value {:x} for index {:x} PMPCFG value {:x}", pmpaddr, csr_index, pmpcfg);
         pmpcfg_write(csr_index, pmpcfg);
         pmpaddr_csr_write(csr_index, pmpaddr >> 2);
         //unsafe { asm!("csrw pmpaddr{}, {}", in(reg) csr_index, in(reg) pmpaddr); }
@@ -249,7 +249,7 @@ fn pmpcfg_write(index: usize, value: usize) -> PMPErrorCode {
     let pmpcfg_mask: usize =  0xff << (index_pos*8);
 
     /* if value & !(pmpcfg_mask)) != 0 {
-        log::info!("Invalid pmpcfg value!");
+        log::debug!("Invalid pmpcfg value!");
         return PMPErrorCode::InvalidCfg;
     } */
 
@@ -262,7 +262,7 @@ fn pmpcfg_write(index: usize, value: usize) -> PMPErrorCode {
     pmpcfg = pmpcfg | (value << (index_pos*8));
 
     //unsafe { asm!("csrw pmpcfg{}, {}", in(reg) pmpcfg_id, in(reg) pmpcfg); }
-    log::info!("Writing to pmpcfg_id: {} pmpcfg: {} value: {:x}", pmpcfg_id, pmpcfg, value);
+    log::debug!("Writing to pmpcfg_id: {} pmpcfg: {} value: {:x}", pmpcfg_id, pmpcfg, value);
     pmpcfg_csr_write(index, pmpcfg);
     //TODO: Should I read it back and double check or will that be redundant? 
 
