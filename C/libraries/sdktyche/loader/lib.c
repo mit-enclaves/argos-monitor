@@ -37,7 +37,7 @@ static memory_access_right_t translate_flags_to_tyche(Elf64_Word flags) {
   }
   //TODO do user?
   rights |= MEM_SUPER;
-  ERROR("Translating flags in: %llx out: %llx", flags, rights);
+  //ERROR("Translating flags in: %llx out: %llx", flags, rights);
   return rights;
 }
 
@@ -323,14 +323,14 @@ int load_domain(tyche_domain_t* domain)
 
   // Add the offset to the domain's page_table_root.
   domain->config.page_table_root += domain->map.physoffset;
-  ERROR("The domain's page_table_root is at %llx", domain->config.page_table_root);
+  //ERROR("The domain's page_table_root is at %llx", domain->config.page_table_root);
 
   // Copy the domain's content.
   phys_size = 0;
   for (int i = 0; i < domain->parser.header.e_phnum; i++) {
     Elf64_Phdr seg = domain->parser.segments[i];
     // The segment is not loadable.
-    ERROR("p_type: %lx p_offset %llx p_vaddr: %llx p_paddr: %llx, pmemsz: %llx, p_align: %llx.", seg.p_type, seg.p_offset, seg.p_vaddr,seg.p_paddr, seg.p_memsz, seg.p_align);
+    //ERROR("p_type: %lx p_offset %llx p_vaddr: %llx p_paddr: %llx, pmemsz: %llx, p_align: %llx.", seg.p_type, seg.p_offset, seg.p_vaddr,seg.p_paddr, seg.p_memsz, seg.p_align);
     if (!is_loadable(seg.p_type)) {
       continue;
     }
@@ -355,14 +355,14 @@ int load_domain(tyche_domain_t* domain)
       for (; start < end; start++) {
         if (*start != 0) {
 #if defined(CONFIG_X86) || defined(__x86_64__) 
-          ERROR("Fixing PTs: *start %llx", *start);
+          //ERROR("Fixing PTs: *start %llx", *start);
           *start += domain->map.physoffset;
-          ERROR("Fixed PTs: *start: %llx", *start);
+          //ERROR("Fixed PTs: *start: %llx", *start);
 #elif defined(CONFIG_RISCV) || defined(__riscv)
-          ERROR("Fixing PTs: *start %llx %p", *start, start);
+          //ERROR("Fixing PTs: *start %llx %p", *start, start);
           uint64_t ppn = (domain->map.physoffset >> PT_PAGE_WIDTH) + (*start >> PT_FLAGS_RESERVED);
           *start = (*start & ~PT_PHYS_PAGE_MASK) | (ppn << PT_FLAGS_RESERVED);
-          ERROR("Fixed PTs: *start: %llx %p", *start, start);
+          //ERROR("Fixed PTs: *start: %llx %p", *start, start);
 #endif
         }
       } 
