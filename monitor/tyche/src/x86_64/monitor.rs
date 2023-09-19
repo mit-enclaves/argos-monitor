@@ -168,8 +168,10 @@ pub fn do_configure_core(
     if switch_type == InitVMCS::Shared {
         return Err(CapaError::InvalidOperation);
     }
+
+    // TODO: Check whether this is a valid configuration index.
     // Attempt to change the configuration of the core.
-    todo!("Implement the write through + we should also have some checks");
+    todo!("Not implemented yet.");
     Ok(())
 }
 
