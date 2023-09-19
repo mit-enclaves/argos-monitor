@@ -395,7 +395,7 @@ int tyche_revoke(capa_index_t id)
   if (tyche_call(&frame) != SUCCESS) {
     goto failure;
   }
-  ERROR("Neelu: Tyche_call successful");
+  //ERROR("Neelu: Tyche_call successful");
   return SUCCESS;
 failure:
   return FAILURE;

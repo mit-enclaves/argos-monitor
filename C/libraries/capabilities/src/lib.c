@@ -934,9 +934,8 @@ int revoke_domain(domain_id_t id) {
   dll_remove(&(local_domain.children), child, list);
   local_domain.dealloc(child);
 
-  ERROR("[revoke_domain] success");
   return SUCCESS;
 failure:
-  ERROR("[revoke_domain] failure");
+  ERROR("failure");
   return FAILURE;
 }

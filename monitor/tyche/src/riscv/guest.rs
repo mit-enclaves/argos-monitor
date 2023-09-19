@@ -1,7 +1,7 @@
 use core::{arch::asm};
 
 use capa_engine::{Bitmaps, LocalCapa, NextCapaToken, Domain, Handle};
-use qemu::println;
+//use qemu::println;
 use riscv_csrs::*;
 use riscv_pmp::clear_pmp;
 use riscv_sbi::ecall::ecall_handler;
@@ -103,7 +103,7 @@ pub extern "C" fn machine_trap_handler() {
 pub extern "C" fn exit_handler_failed() {
     // TODO: Currently, interrupts must be getting redirected here too. Confirm this and then fix
     // it.
-    println!("Cannot handle this trap!");
+    log::info!("*******WARNING: Cannot handle this trap!*******");
 }
 
 // Exit handler - equivalent to x86 handle_exit for its guest.
@@ -139,7 +139,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     println!("mstatus: {:x}", mstatus);
     println!("mtval: {:x}", mtval); */
 
-    println!(
+    log::debug!(
         "Trap arguments: mcause {:x}, mepc {:x} mstatus {:x} mtval {:x} mie {:x} mip {:x} mideleg {:x} ra {:x} a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x} satp: {:x}",
         mcause, 
         mepc, 
@@ -181,7 +181,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             panic!("PMP Access Fault!");
         }
         mcause::INSTRUCTION_PAGE_FAULT | mcause::LOAD_PAGE_FAULT | mcause::STORE_PAGE_FAULT => {
-            log::info!("Page Fault Caught.");
+            log::debug!("Page Fault Caught.");
             //panic!("Page Fault!");
         }
         _ => exit_handler_failed(),
@@ -234,12 +234,12 @@ pub fn illegal_instruction_handler(mepc: usize, mstatus: usize) {
         mepc_instr_opcode
     ); */
 
-    println!("Illegal Instruction Trap!");
+    panic!("Illegal Instruction Trap!");
 }
 
 pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
 
-    println!("Misaligned_load!");
+    //println!("Misaligned_load!");
 
     if reg_state.a7 == 0x78ac5b {   //It's a Tyche Call
         let tyche_call: usize = reg_state.a0;
@@ -261,7 +261,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
 
         match tyche_call {
            calls::CREATE_DOMAIN => {
-                log::info!("Create Domain");
+                log::debug!("Create Domain");
                 let capa = monitor::do_create_domain(active_dom).expect("TODO");
                 reg_state.a0 = 0x0;
                 reg_state.a1 = capa.as_usize();
@@ -270,7 +270,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                 //not yet. Must be handled after addition of more exception handling in Tyche. 
            },
            calls::CONFIGURE => {
-                log::info!("Configure");
+                log::debug!("Configure");
                 if let Ok(bitmap) = Bitmaps::from_usize(arg_1) {
                     match monitor::do_set_config(
                         active_dom, 
@@ -293,7 +293,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                 }
            },
            calls::SET_ENTRY_ON_CORE => { 
-                log::info!("Set entry on core");
+                log::debug!("Set entry on core");
                 match monitor::do_set_entry(active_dom, LocalCapa::new(arg_1), arg_2, arg_3, arg_4, arg_5) {
                     Ok(()) => reg_state.a0 = 0x0,
                     Err(e) => {
@@ -303,24 +303,24 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                 }
            },
            calls::SEAL_DOMAIN => { 
-                log::info!("Seal Domain");
+                log::debug!("Seal Domain");
                 let capa = monitor::do_seal(active_dom, LocalCapa::new(arg_1)).expect("TODO");
                 reg_state.a0 = 0x0;
                 reg_state.a1 = capa.as_usize();
            }, 
            calls::SHARE => { 
-                log::info!("Share");
+                log::debug!("Share");
                 //let capa = monitor::.do_().expect("TODO");
                 reg_state.a0 = 0x0;
                 reg_state.a1 = 0x0;
            },
            calls::SEND => {
-                log::info!("Send");
+                log::debug!("Send");
                 monitor::do_send(active_dom, LocalCapa::new(arg_1), LocalCapa::new(arg_2)).expect("TODO");
                 reg_state.a0 = 0x0;
            },
            calls::SEGMENT_REGION => {    
-                log::info!("Segment Region");
+                log::debug!("Segment Region");
                 let (left, right) = monitor::do_segment_region(
                         active_dom,
                         LocalCapa::new(arg_1),
@@ -336,18 +336,18 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                 reg_state.a2 = right.as_usize(); 
            },
            calls::REVOKE => { 
-                log::info!("Revoke");
+                log::debug!("Revoke");
                 monitor::do_revoke(active_dom, LocalCapa::new(arg_1)).expect("TODO");
                 reg_state.a0 = 0x0;
            }, 
            calls::DUPLICATE => {
-                log::info!("Duplicate");
+                log::debug!("Duplicate");
                 let capa = monitor::do_duplicate(active_dom, LocalCapa::new(arg_1)).expect("TODO");
                 reg_state.a0 = 0x0;
                 reg_state.a1 = capa.as_usize();
            },
            calls::ENUMERATE => { 
-                log::info!("Enumerate");
+                log::debug!("Enumerate");
                 if let Some((info, next)) =
                     monitor::do_enumerate(active_dom, NextCapaToken::from_usize(arg_1))
                 {
@@ -356,16 +356,16 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                     reg_state.a2 = v2 as usize;
                     reg_state.a3 = v3 as usize;
                     reg_state.a4 = next.as_usize();
-                    //log::info!("do_enumerate response: {:x} {:x} {:x} {:x}", reg_state.a1, reg_state.a2, reg_state.a3, reg_state.a4);
+                    //log::debug!("do_enumerate response: {:x} {:x} {:x} {:x}", reg_state.a1, reg_state.a2, reg_state.a3, reg_state.a4);
                 } else {
                     // For now, this marks the end
                     reg_state.a4 = 0;
-                    //log::info!("do_enumerate response: {:x}", reg_state.a4);
+                    //log::debug!("do_enumerate response: {:x}", reg_state.a4);
                 }
                 reg_state.a0 = 0x0;
            }, 
            calls::SWITCH => { 
-                log::info!("Switch");
+                log::debug!("Switch");
                 //Adding register state to context now? (not doing it at sealing, initialized to
                 //zero then). 
                 
@@ -389,19 +389,19 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                 unsafe { set_active_dom_ctx(next_domain, next_ctx); } */ 
            }, 
            calls::DEBUG => { 
-                log::info!("Debug");
+                log::debug!("Debug");
                 monitor::do_debug();
                 reg_state.a0 = 0x0;
            },
            calls::EXIT => { 
-                log::info!("Tyche Call: Exit");
+                log::debug!("Tyche Call: Exit");
                 //TODO 
                 //let capa = monitor::.do_().expect("TODO");
                 reg_state.a0 = 0x0;
                 //reg_state.a1 = capa.as_usize();
            }
            _ => { /*TODO: Invalid Tyche Call*/ 
-                log::info!("Invalid Tyche Call: {:x}", reg_state.a0);
+                log::debug!("Invalid Tyche Call: {:x}", reg_state.a0);
                 todo!("Unknown Tyche Call.");
            },
         }

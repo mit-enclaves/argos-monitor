@@ -6,7 +6,7 @@ DISK="$2"
 
 #FILE_FORMAT="$4"
 
-mount_ubuntu() {
+mount_unbuntu() {
   if [ ! -f "$DISK" ]; then
     echo "The file $DISK does not exist"
     exit 1
@@ -54,7 +54,7 @@ if [ ! "$3" = "" ]; then
 fi
 
 if [ "$1" = "mount" ]; then
-  mount_ubuntu
+  mount_unbuntu
 elif [ "$1" = "umount" ]; then
   umount_unbuntu
 else 
