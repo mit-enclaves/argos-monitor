@@ -58,13 +58,28 @@ pub fn init() {
             domain,
             AccessRights {
                 start: 0x80200000, //Linux Root Region Start Address
-                end: 0x17fffffff,   //Linux Root Region End Address - it's currently based on early
+                end: 0x800000000,    //17fffffff,   //Linux Root Region End Address - it's currently based on early
                                    //memory node range detected by linux. 
                                    //TODO: It should be a part of the manifest.
+                                   //TODO: Dom0 needs 2 regions - ram region and pcie-mmio region
+                                   //(currently overprovisioning memory accesses)
+                                   //(check memory tree in QEMU).
                 ops: MEMOPS_ALL,
             },
         )
         .unwrap();
+    
+    engine
+        .create_root_region(
+            domain, 
+            AccessRights { 
+                start: SIFIVE_TEST_SYSCON_BASE_ADDRESS, 
+                end: PCI_BASE_ADDRESS + PCI_SIZE, //Optimization: Including both PLIC and PCI regions in a single PMP
+                                                  //entry 
+                ops: MEMOPS_ALL, 
+            },        
+        ).unwrap();
+
     apply_updates(&mut engine);
 
     // Save the initial domain
@@ -362,9 +377,13 @@ pub fn apply_core_updates(
             CoreUpdate::TlbShootdown => {
                 log::trace!("TLB Shootdown on core {}", core_id);
 
-                // Reload the EPTs
-                /* let domain = get_domain(*current_domain);
-                vcpu.set_ept_ptr(HostPhysAddr::new(
+                // Rewrite the PMPs
+                //let domain = get_domain(*current_domain);
+                do_debug();
+                let mut engine = CAPA_ENGINE.lock();
+                update_permission(*current_domain, &mut engine);
+                //do_debug();
+                /*vcpu.set_ept_ptr(HostPhysAddr::new(
                     domain.ept.unwrap().as_usize() | EPT_ROOT_FLAGS,
                 ))
                 .expect("VMX error, failed to set EPT pointer"); */
@@ -516,8 +535,13 @@ fn create_domain(domain: Handle<Domain>) {
 
 fn revoke_domain(_domain: Handle<Domain>) {
     //Todo 
+    //let mut engine = CAPA_ENGINE.lock();
+    //update_permission(_domain, &mut engine);
 }
 
+
+//Neelu: TODO: Make this function create more of a cache/snapshot of PMP entries - and later apply
+//it on switching or TLBShootDown to actually reflect in the PMP. 
 fn update_permission(domain_handle: Handle<Domain> , engine: &mut MutexGuard<CapaEngine>) {
     //Update PMPs
     //log::info!("get_domain");
@@ -525,6 +549,7 @@ fn update_permission(domain_handle: Handle<Domain> , engine: &mut MutexGuard<Cap
     // =============== ALERT: IMPORTANT: COMMENT the return below - it was added for debugging
     // ============ 
     // return;
+
 
 
     //let mut domain = get_domain(domain_handle); 
@@ -555,7 +580,7 @@ fn update_permission(domain_handle: Handle<Domain> , engine: &mut MutexGuard<Cap
             }
         } */
 
-        log::info!("Protecting Domain: {:x} {:x}", range.start, range.size());
+        log::info!("Protecting Domain: index: {:x} start: {:x} end: {:x}", pmp_index, range.start, range.start + range.size());
  
         pmp_write_result = pmp_write(pmp_index, range.start, range.size(), XWR_PERM);
         //Check the PMP addressing mode so the index can be advanced by 1
