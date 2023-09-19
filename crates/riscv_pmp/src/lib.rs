@@ -38,6 +38,18 @@ pub enum PMPErrorCode {
     InvalidIndex = 5,
 }
 
+fn compute_log2(num: usize) -> usize {
+    let mut result: usize = 0;
+    let mut value: usize = num;
+
+    while value > 1 { 
+        value = value >> 1;
+        result = result + 1;
+    }
+
+    result 
+}
+
 //The csr_id is explicitly providing support to only read either pmpcfg or pmpaddr. Todo: Is this useful? 
 pub fn pmp_read(csr_id: usize, csr_index: usize) -> Result<usize, PMPErrorCode> { 
     //This will ensure that the index is in expected range
@@ -74,21 +86,33 @@ pub fn pmp_write(csr_index: usize, region_addr: usize, region_size:usize, region
     let mut pmpaddr: usize = 0;
     let mut pmpcfg: usize = 0; 
     let mut addressing_mode: PMPAddressingMode = PMPAddressingMode::OFF; 
+    let mut log_2_region_size: usize = 0;  
+
+    if (region_size & (region_size - 1)) == 0 {
+        log_2_region_size = compute_log2(region_size); 
+        if (log_2_region_size > 0) && (region_addr & (log_2_region_size - 1) == 0) {
+            addressing_mode = PMPAddressingMode::NAPOT; 
+        }
+    } 
 
     //Determine addressing mode: 
     //NAPOT addressing mode conditions: The region_addr must contain enough trailing zeroes to encode the region_size in the
     //pmpaddr register together with the address and the region_size is a power of two. 
-    if ((region_addr & (region_size - 1)) == 0) && ((region_size & (region_size - 1)) == 0) {
-        log::info!("NAPOT Addressing Mode");
-        pmpaddr = region_addr | ((region_size - 1) >> 3);
-        addressing_mode = PMPAddressingMode::NAPOT; 
+    //TODO 
+    //if ((region_addr & (region_size - 1)) == 0) && ((region_size & (region_size - 1)) == 0) {
+    if (addressing_mode == PMPAddressingMode::NAPOT) { 
+        log::info!("NAPOT Addressing Mode region_size: {:x} log_2_region_size: {:x} addr: {:x}", region_size, log_2_region_size, region_addr);
+        let addrmask: usize = (1 << (log_2_region_size - 2)) - 1; //NAPOT encoding 
+        pmpaddr = (region_addr >> 2) & !addrmask; 
+        pmpaddr = pmpaddr | (addrmask >> 1);    //To add the 0 before the 1s.
+
         pmpcfg = region_perm | ((addressing_mode as usize) << 3);
         pmpcfg_write(csr_index, pmpcfg);
         pmpaddr_csr_write(csr_index, pmpaddr);
         //unsafe { asm!("csrw pmpaddr{idx}, {}", in(reg) pmpaddr, idx = const { csr_index }); }
 
     }
-    else { //TOR addressing mode 
+    else { //TOR addressing mode    //TODO: NA4 addressing mode!  
         log::info!("TOR Addressing Mode");
         if csr_index == (PMP_ENTRIES-1) {
             //Last PMP entry - Don't have enough PMP entries for protecting this region with TOR addressing mode. 
@@ -104,7 +128,7 @@ pub fn pmp_write(csr_index: usize, region_addr: usize, region_size:usize, region
         addressing_mode = PMPAddressingMode::TOR;
         pmpcfg = region_perm | ((addressing_mode as usize) << 3); 
         pmpcfg_write(csr_index_2, pmpcfg);
-        pmpaddr_csr_write(csr_index_2, pmpaddr);
+        pmpaddr_csr_write(csr_index_2, pmpaddr >> 2);
         //unsafe { asm!("csrw pmpaddr{}, {}", in(reg) csr_index_2, in(reg) pmpaddr); }
 
         //Second PMP entry (index i-1) contains the bottom address and pmpcfg = 0 
@@ -113,7 +137,7 @@ pub fn pmp_write(csr_index: usize, region_addr: usize, region_size:usize, region
             //>> 2;
         log::info!("PMPADDR value {:x} for index {:x}", pmpaddr, csr_index);
         pmpcfg_write(csr_index, pmpcfg);
-        pmpaddr_csr_write(csr_index, pmpaddr);
+        pmpaddr_csr_write(csr_index, pmpaddr >> 2);
         //unsafe { asm!("csrw pmpaddr{}, {}", in(reg) csr_index, in(reg) pmpaddr); }
     }
 
