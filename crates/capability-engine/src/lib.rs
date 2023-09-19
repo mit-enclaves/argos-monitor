@@ -416,6 +416,10 @@ impl CapaEngine {
         Ok(capa)
     }
 
+    pub fn is_sealed(&self, domain: Handle<Domain>) -> bool {
+        self.domains[domain].is_sealed()
+    }
+
     pub fn revoke(&mut self, domain: Handle<Domain>, capa: LocalCapa) -> Result<(), CapaError> {
         match self.domains[domain].get(capa)? {
             // Region are nor revoked, but restored.
