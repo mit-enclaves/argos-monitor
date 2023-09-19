@@ -133,6 +133,24 @@ fn handle_exit(
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
+                calls::CONFIGURE_CORE => {
+                    match monitor::do_configure_core(
+                        *domain,
+                        LocalCapa::new(arg_1),
+                        arg_2,
+                        arg_3,
+                        arg_4,
+                        &mut vs.vcpu,
+                    ) {
+                        Ok(()) => vs.vcpu.set(Register::Rax, 0),
+                        Err(e) => {
+                            log::error!("Configure core error: {:?}", e);
+                            vs.vcpu.set(Register::Rax, 1);
+                        }
+                    }
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
                 calls::SET_ENTRY_ON_CORE => {
                     log::trace!(
                         "Set entry on core {}, cr3 {:x}, rip {:x}, rsp {:x}",

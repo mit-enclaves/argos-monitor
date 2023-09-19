@@ -105,6 +105,7 @@ impl ContextData {
     }
 }
 
+#[derive(PartialEq)]
 #[repr(u64)]
 pub enum InitVMCS {
     Shared = 1,
@@ -238,6 +239,39 @@ pub fn do_set_config(
     let mut engine = CAPA_ENGINE.lock();
     engine.set_child_config(current, domain, bitmap, value)?;
     apply_updates(&mut engine);
+    Ok(())
+}
+
+pub fn do_configure_core(
+    current: Handle<Domain>,
+    domain: LocalCapa,
+    core: usize,
+    idx: usize,
+    value: usize,
+    vcpu: &mut ActiveVmcs,
+) -> Result<(), CapaError> {
+    let mut engine = CAPA_ENGINE.lock();
+    let domain = engine.get_domain_capa(current, domain)?;
+
+    // Check the domain is not seal.
+    if engine.is_sealed(domain) {
+        return Err(CapaError::AlreadySealed);
+    }
+
+    // Check this is a valid core for the operation.
+    let core_map = engine.get_domain_config(domain, Bitmaps::CORE);
+    if (1 << core) & core_map == 0 {
+        return Err(CapaError::InvalidCore);
+    }
+
+    // Check the domain has the correct vcpu type
+    let switch_type = engine.get_domain_config(domain, Bitmaps::SWITCH);
+    let switch_type = InitVMCS::from_u64(switch_type)?;
+    if switch_type == InitVMCS::Shared {
+        return Err(CapaError::InvalidOperation);
+    }
+    // Attempt to change the configuration of the core.
+    todo!("Implement the write through + we should also have some checks");
     Ok(())
 }
 
