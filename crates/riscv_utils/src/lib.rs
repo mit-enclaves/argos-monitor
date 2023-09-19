@@ -5,6 +5,18 @@ use core::arch::asm;
 //uart base address
 pub const SERIAL_PORT_BASE_ADDRESS: usize = 0x1000_0000;
 
+//SIFIVE TEST SYSCON 
+pub const SIFIVE_TEST_SYSCON_BASE_ADDRESS: usize = 0x100000;
+pub const SIFIVE_TEST_SYSCON_SIZE: usize = 0x1000;
+
+//plic address and size 
+pub const PLIC_BASE_ADDRESS: usize = 0xc000000;
+pub const PLIC_SIZE: usize = 0x600000; 
+
+//pci address and size 
+pub const PCI_BASE_ADDRESS: usize = 0x30000000;
+pub const PCI_SIZE: usize = 0x10000000; 
+
 pub const PAGING_MODE_SV48: usize = 0x9000000000000000;
 
 #[derive(Copy, Clone, Debug)]
