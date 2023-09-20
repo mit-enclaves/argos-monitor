@@ -1,8 +1,27 @@
+use core::marker::PhantomData;
+
+use capa_engine::CapaError;
 use vmx::fields::traits::VmcsField;
 use vmx::fields::{GuestState16, GuestState32, GuestState64, GuestStateNat};
+use vmx::{ActiveVmcs, ControlRegister, Register, VmxError};
 
 //TODO(@aghosn): I have some duplicated code for search.
 //Can we do a macro or a generic type to simply this?
+
+/// Array of control registers we expose to the client.
+pub const GUEST_STATE_CR: [ControlRegister; 3] = [
+    ControlRegister::Cr0,
+    ControlRegister::Cr3,
+    ControlRegister::Cr4,
+    //TODO should we expose cr8?
+];
+
+pub fn search_guest_cr(idx: usize) -> Option<ControlRegister> {
+    match GUEST_STATE_CR.iter().position(|item| *item as usize == idx) {
+        Some(id) => Some(GUEST_STATE_CR[id]),
+        _ => None,
+    }
+}
 
 /// Array of guest state 16 we expose for setup.
 /// @note: remove entries for fields we do not want to expose.
@@ -21,7 +40,7 @@ pub const GUEST_STATE_16: [GuestState16; 10] = [
 
 pub fn search_guest_16(idx: usize) -> Option<GuestState16> {
     match GUEST_STATE_16.iter().position(|item| *item as usize == idx) {
-        Some(id) => Some(GUEST_STATE_16[idx]),
+        Some(id) => Some(GUEST_STATE_16[id]),
         _ => None,
     }
 }
@@ -55,7 +74,7 @@ pub const GUEST_STATE_32: [GuestState32; 23] = [
 
 pub fn search_guest_32(idx: usize) -> Option<GuestState32> {
     match GUEST_STATE_32.iter().position(|item| *item as usize == idx) {
-        Some(id) => Some(GUEST_STATE_32[idx]),
+        Some(id) => Some(GUEST_STATE_32[id]),
         _ => None,
     }
 }
@@ -76,7 +95,7 @@ pub const GUEST_STATE_64: [GuestState64; 10] = [
 
 pub fn search_guest_64(idx: usize) -> Option<GuestState64> {
     match GUEST_STATE_64.iter().position(|item| *item as usize == idx) {
-        Some(id) => Some(GUEST_STATE_64[idx]),
+        Some(id) => Some(GUEST_STATE_64[id]),
         _ => None,
     }
 }
@@ -110,7 +129,130 @@ pub fn search_guest_nat(idx: usize) -> Option<GuestStateNat> {
         .iter()
         .position(|item| *item as usize == idx)
     {
-        Some(id) => Some(GUEST_STATE_NAT[idx]),
+        Some(id) => Some(GUEST_STATE_NAT[id]),
         _ => None,
+    }
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum GuestRegisterGroups {
+    GeneralPurpose = 0,
+    Controls = 1,
+    Reg16 = 2,
+    Reg32 = 3,
+    Reg64 = 4,
+    RegNat = 5,
+    //TODO add more.
+}
+
+impl GuestRegisterGroups {
+    pub fn from_usize(v: usize) -> Option<GuestRegisterGroups> {
+        match v {
+            0 => Some(Self::GeneralPurpose),
+            1 => Some(Self::Controls),
+            2 => Some(Self::Reg16),
+            3 => Some(Self::Reg32),
+            4 => Some(Self::Reg64),
+            5 => Some(Self::RegNat),
+            _ => None,
+        }
+    }
+}
+
+/// Abstract the search for the right register.
+pub struct GuestRegisters {}
+
+impl GuestRegisters {
+    pub fn is_valid(reg_group: GuestRegisterGroups, idx: usize) -> bool {
+        match reg_group {
+            GuestRegisterGroups::GeneralPurpose => Register::from_usize(idx).is_some(),
+            GuestRegisterGroups::Controls => search_guest_cr(idx).is_some(),
+            GuestRegisterGroups::Reg16 => search_guest_16(idx).is_some(),
+            GuestRegisterGroups::Reg32 => search_guest_32(idx).is_some(),
+            GuestRegisterGroups::Reg64 => search_guest_64(idx).is_some(),
+            GuestRegisterGroups::RegNat => search_guest_nat(idx).is_some(),
+            _ => false,
+        }
+    }
+
+    pub fn set_register(
+        vcpu: &mut ActiveVmcs,
+        reg_group: GuestRegisterGroups,
+        idx: usize,
+        value: usize,
+    ) -> Result<(), CapaError> {
+        if !GuestRegisters::is_valid(reg_group, idx) {
+            return Err(CapaError::InvalidOperation);
+        }
+        match reg_group {
+            GuestRegisterGroups::GeneralPurpose => {
+                let reg = Register::from_usize(idx).expect("RegGP should be valid");
+                vcpu.set(reg, value as u64);
+            }
+            GuestRegisterGroups::Controls => {
+                let reg = search_guest_cr(idx).expect("RegCtrl should be valid");
+                vcpu.set_cr(reg, value);
+            }
+            GuestRegisterGroups::Reg16 => {
+                let reg = search_guest_16(idx).expect("Reg16 should be valid");
+                vcpu.set16(reg, value as u16).expect("Unable to set reg16");
+            }
+            GuestRegisterGroups::Reg32 => {
+                let reg = search_guest_32(idx).expect("Reg32 should be valid");
+                vcpu.set32(reg, value as u32).expect("Unable to set reg32");
+            }
+            GuestRegisterGroups::Reg64 => {
+                let reg = search_guest_64(idx).expect("Reg64 should be valid");
+                vcpu.set64(reg, value as u64).expect("Unable to set reg64");
+            }
+            GuestRegisterGroups::RegNat => {
+                let reg = search_guest_nat(idx).expect("RegNat should be valid");
+                vcpu.set_nat(reg, value).expect("Unable to set regNat");
+            }
+            _ => {
+                todo!("Not done");
+            }
+        }
+        Ok(())
+    }
+
+    pub fn get_register(
+        vcpu: &mut ActiveVmcs,
+        reg_group: GuestRegisterGroups,
+        idx: usize,
+    ) -> Result<usize, CapaError> {
+        if !GuestRegisters::is_valid(reg_group, idx) {
+            return Err(CapaError::InvalidOperation);
+        }
+        let value = match reg_group {
+            GuestRegisterGroups::GeneralPurpose => {
+                let reg = Register::from_usize(idx).expect("RegGP should be valid");
+                vcpu.get(reg) as usize
+            }
+            GuestRegisterGroups::Controls => {
+                let reg = search_guest_cr(idx).expect("RegCtrl should be valid");
+                vcpu.get_cr(reg) as usize
+            }
+            GuestRegisterGroups::Reg16 => {
+                let reg = search_guest_16(idx).expect("Reg16 should be valid");
+                vcpu.get16(reg).expect("Unable to get reg16") as usize
+            }
+            GuestRegisterGroups::Reg32 => {
+                let reg = search_guest_32(idx).expect("Reg32 should be valid");
+                vcpu.get32(reg).expect("Unable to set reg32") as usize
+            }
+            GuestRegisterGroups::Reg64 => {
+                let reg = search_guest_64(idx).expect("Reg64 should be valid");
+                vcpu.get64(reg).expect("Unable to set reg64") as usize
+            }
+            GuestRegisterGroups::RegNat => {
+                let reg = search_guest_nat(idx).expect("RegNat should be valid");
+                vcpu.get_nat(reg).expect("Unable to set regNat") as usize
+            }
+            _ => {
+                todo!("Not done");
+            }
+        };
+        Ok(value)
     }
 }
