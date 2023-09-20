@@ -8,7 +8,7 @@ riscv_asm_call_gate:
     //mv a2, a1 
     ld a1, 0x0(a1)          //Question: why is ret_handle in a1 and not a0? 
     li a0, 0x9  
-    li a7, 0x78ac5b
+    li a7, 0x5479636865
     ecall 
     ret 
 
@@ -23,5 +23,5 @@ _start:
   j trusted_main
   // Should never return here, call exit if we do.
   li a0, 0x1
-  li a7, 0x78ac5b
+  li a7, 0x5479636865
   ecall 

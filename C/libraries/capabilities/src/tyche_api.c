@@ -51,7 +51,7 @@ int tyche_call(vmcall_frame_t* frame)
         "mv a6, %[sa6]\n\t"
         //"mv a0, %[sa0]\n\t"
         //"mv a7, %[sa7]\n\t"
-	    "li a7, 0x78ac5b\n\t"
+	    "li a7, 0x5479636865\n\t"
         //"ld t0, 0x1(x0)\n\t"
         "ecall\n\t"
         //"wfi"	//TODO: Update this to be usable by both U-mode and S-mode.
@@ -135,7 +135,7 @@ int tyche_call_cli(vmcall_frame_t* frame)
         "mv a6, %[sa6]\n\t"
         //"mv a0, %[sa0]\n\t"
         //"mv a7, %[sa7]\n\t"
-	    "li a7, 0x78ac5b\n\t"
+	    "li a7, 0x5479636865\n\t"
         //"ld t0, 0x1(x0)\n\t"
         "ecall\n\t"
         //"wfi"	//TODO: Update this to be usable by both U-mode and S-mode.
@@ -472,7 +472,7 @@ int tyche_switch(capa_index_t* transition_handle, void* args)
         "mv a2, %[sa2]\n\t"
         "mv a3, %[sa3]\n\t"
 	    //"wfi"	//TODO: Update this to be usable by both U-mode and S-mode. 
-        "li a7, 0x78ac5b\n\t"
+        "li a7, 0x5479636865\n\t"
         "ecall\n\t"
         //"ld t0, 0x1(x0)\n\t"
         "mv %[da0], a0\n\t"
