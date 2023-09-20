@@ -54,7 +54,7 @@ fn compute_log2(num: usize) -> usize {
 //The csr_id is explicitly providing support to only read either pmpcfg or pmpaddr. Todo: Is this useful? 
 pub fn pmp_read(csr_id: usize, csr_index: usize) -> Result<usize, PMPErrorCode> { 
     //This will ensure that the index is in expected range
-    if csr_index < 0 || csr_index >= PMP_ENTRIES  { 
+    if csr_index >= PMP_ENTRIES  { 
         return Err(PMPErrorCode::InvalidIndex); 
     }
 
@@ -69,7 +69,7 @@ pub fn pmp_read(csr_id: usize, csr_index: usize) -> Result<usize, PMPErrorCode> 
 pub fn pmp_write(csr_index: usize, region_addr: usize, region_size:usize, region_perm: usize) -> Result<PMPAddressingMode, PMPErrorCode> { 
     log::debug!("Writing PMP with args: {}, {:x}, {:x}, {:x}", csr_index, region_addr, region_addr + region_size, region_perm);
     //This will ensure that the index is in expected range
-    if csr_index < 0 || csr_index >= PMP_ENTRIES { 
+    if csr_index >= PMP_ENTRIES { 
         return Err(PMPErrorCode::InvalidIndex);
     }
    
@@ -80,12 +80,12 @@ pub fn pmp_write(csr_index: usize, region_addr: usize, region_size:usize, region
         return Err(PMPErrorCode::NotPageAligned);
     }
 
-    if (region_perm & XWR_MASK != XWR_MASK) {
+    if region_perm & XWR_MASK != XWR_MASK {
         return Err(PMPErrorCode::InvalidPermissions);
     }
 
-    let mut pmpaddr: usize = 0;
-    let mut pmpcfg: usize = 0; 
+    let mut pmpaddr: usize;
+    let mut pmpcfg: usize; 
     let mut addressing_mode: PMPAddressingMode = PMPAddressingMode::OFF; 
     let mut log_2_region_size: usize = 0;  
 
@@ -101,7 +101,7 @@ pub fn pmp_write(csr_index: usize, region_addr: usize, region_size:usize, region
     //pmpaddr register together with the address and the region_size is a power of two. 
     //TODO 
     //if ((region_addr & (region_size - 1)) == 0) && ((region_size & (region_size - 1)) == 0) {
-    if (addressing_mode == PMPAddressingMode::NAPOT) { 
+    if addressing_mode == PMPAddressingMode::NAPOT { 
         log::debug!("NAPOT Addressing Mode csr_index {} region_size: {:x} log_2_region_size: {:x} addr: {:x}", csr_index, region_size, log_2_region_size, region_addr);
         let addrmask: usize = (1 << (log_2_region_size - 2)) - 1; //NAPOT encoding 
         pmpaddr = (region_addr >> 2) & !addrmask; 
@@ -122,7 +122,7 @@ pub fn pmp_write(csr_index: usize, region_addr: usize, region_size:usize, region
         let csr_index_2: usize = csr_index + 1;
         //Initialize two PMP entries 
         //First PMP entry (index i) contains the top address and pmpcfg value
-        pmpaddr = (region_addr + region_size); 
+        pmpaddr = region_addr + region_size; 
             //>> 2; //TODO: Does this need to be generic or can we assume a fixed
                                     //PMP granularity?
         addressing_mode = PMPAddressingMode::TOR;
@@ -154,7 +154,7 @@ pub fn pmpcfg_update_perm(csr_index: usize, region_perm: usize) -> PMPErrorCode 
 
     pmpcfg = pmpcfg & (!XWR_MASK); 
 
-    if (region_perm & XWR_MASK != XWR_MASK) {
+    if region_perm & XWR_MASK != XWR_MASK {
         return PMPErrorCode::InvalidPermissions;
     }
  
@@ -191,7 +191,7 @@ pub fn tbdeprecated_pmpaddr_write(addr: usize, log2len: usize) -> usize {
 
 //Returns read value 
 fn pmpaddr_read(index: usize) -> usize { 
-    let mut pmpaddr: usize; 
+    let pmpaddr: usize; 
     pmpaddr = pmpaddr_csr_read(index);
     //unsafe { asm!("csrr {}, pmpaddr{}", out(reg) pmpaddr, index); } 
     return pmpaddr;
@@ -200,36 +200,12 @@ fn pmpaddr_read(index: usize) -> usize {
 //Returns read value from pmpcfg[n] 
 fn pmpcfg_read(index: usize) -> usize { 
     
-    let mut ret: usize = 0; 
-    let mut pmpcfg: usize = 0;
+    let mut pmpcfg: usize;
 
-    //The following code supports 64 PMP entries regardless of the value of PMP_ENTRIES. The
-    //check in pmp_read is what will ensure that the index is valid. The following code should
-    //execute only if that check passes, and thus should not access an index which shouldn't be supported. 
-  
-
-    /* if index >= 0 && index <= 7 { 
-        unsafe { asm!("csrr {}, pmpcfg0", out(reg) pmpcfg);} 
-    } else if index >= 8 && index <= 15 { 
-        unsafe { asm!("csrr {}, pmpcfg2", out(reg) pmpcfg);}
-    } else if index >= 16 && index <= 23 { 
-        unsafe { asm!("csrr {}, pmpcfg4", out(reg) pmpcfg);}
-    } else if index >= 24 && index <= 31 { 
-        unsafe { asm!("csrr {}, pmpcfg6", out(reg) pmpcfg);}
-    } else if index >= 32 && index <= 39 {
-        unsafe { asm!("csrr {}, pmpcfg8", out(reg) pmpcfg);}
-    } else if index >= 40 && index <= 47 {
-        unsafe { asm!("csrr {}, pmpcfg10", out(reg) pmpcfg);}
-    } else if index >= 48 && index <= 55 {
-        unsafe { asm!("csrr {}, pmpcfg12", out(reg) pmpcfg);}
-    } else if index >= 56 && index <= 63 {
-        unsafe { asm!("csrr {}, pmpcfg14", out(reg) pmpcfg);}
-    }*/
-  
     //Need to extract the pmpcfg value based on the index. Assumes 8 bit pmpcfg as specified in the
     //RV Specification Vol 2 - Privileged Arch. 
 
-    let pmpcfg_id: usize = (index/8)*2;
+    //let pmpcfg_id: usize = (index/8)*2;
 
     pmpcfg = pmpcfg_csr_read(index);
     //unsafe { asm!("csrr {}, pmpcfg{}", out(reg) pmpcfg, in(reg) pmpcfg_id);}
@@ -244,7 +220,7 @@ fn pmpcfg_read(index: usize) -> usize {
 
 fn pmpcfg_write(index: usize, value: usize) -> PMPErrorCode { 
     let mut pmpcfg: usize; 
-    let pmpcfg_id: usize = (index/8)*2;
+    //let pmpcfg_id: usize = (index/8)*2;
     let index_pos: usize = index % 8; 
     let pmpcfg_mask: usize =  0xff << (index_pos*8);
 
@@ -253,7 +229,6 @@ fn pmpcfg_write(index: usize, value: usize) -> PMPErrorCode {
         return PMPErrorCode::InvalidCfg;
     } */
 
-    //unsafe { asm!("csrr {}, pmpcfg{}", out(reg) pmpcfg, in(reg) pmpcfg_id);}
 
     pmpcfg = pmpcfg_csr_read(index);
 
@@ -261,10 +236,8 @@ fn pmpcfg_write(index: usize, value: usize) -> PMPErrorCode {
 
     pmpcfg = pmpcfg | (value << (index_pos*8));
 
-    //unsafe { asm!("csrw pmpcfg{}, {}", in(reg) pmpcfg_id, in(reg) pmpcfg); }
-    log::debug!("Writing to pmpcfg_id: {} pmpcfg: {} value: {:x}", pmpcfg_id, pmpcfg, value);
+    log::debug!("Writing to index: {:x} pmpcfg: {} value: {:x}", index, pmpcfg, value);
     pmpcfg_csr_write(index, pmpcfg);
-    //TODO: Should I read it back and double check or will that be redundant? 
 
     //Sfence after writing the PMP. 
     unsafe { asm!("sfence.vma"); }
@@ -274,13 +247,9 @@ fn pmpcfg_write(index: usize, value: usize) -> PMPErrorCode {
 }
 
 pub fn clear_pmp() { 
-    let pmpcfg: usize = 0; 
-    let pmpaddr: usize = 0; 
 
     for n in FROZEN_PMP_ENTRIES..PMP_ENTRIES { 
         pmpaddr_csr_write(n, 0);
         pmpcfg_csr_write(n, 0);
-        //unsafe { asm!("csrw pmpcfg{}, {}", in(reg) n, in(reg) pmpcfg); }
-        //unsafe { asm!("csrw pmpaddr{}, {}", in(reg) n, in(reg) pmpaddr); }
     }
 }
