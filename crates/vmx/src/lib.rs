@@ -1129,6 +1129,31 @@ impl Register {
     pub fn as_usize(&self) -> usize {
         return *self as usize;
     }
+
+    pub fn from_usize(v: usize) -> Option<Register> {
+        match v {
+            0 => Some(Self::Rax),
+            1 => Some(Self::Rbx),
+            2 => Some(Self::Rcx),
+            3 => Some(Self::Rdx),
+            4 => Some(Self::Rbp),
+            5 => Some(Self::Rsi),
+            6 => Some(Self::Rdi),
+            7 => Some(Self::R8),
+            8 => Some(Self::R9),
+            9 => Some(Self::R10),
+            10 => Some(Self::R11),
+            11 => Some(Self::R12),
+            12 => Some(Self::R13),
+            13 => Some(Self::R14),
+            14 => Some(Self::R15),
+            15 => Some(Self::Rsp),
+            16 => Some(Self::Rip),
+            17 => Some(Self::Cr3),
+            18 => Some(Self::Lstar),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
