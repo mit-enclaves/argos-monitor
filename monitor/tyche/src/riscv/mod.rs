@@ -6,12 +6,12 @@
 
 mod arch;
 pub mod guest;
-mod monitor; 
-mod init; 
+mod init;
+mod monitor;
 use core::arch::asm;
 
+pub use init::arch_entry_point;
 use mmu::FrameAllocator;
-pub use init::arch_entry_point; 
 use riscv_csrs::mstatus;
 
 use crate::debug::qemu::ExitCode;
@@ -107,6 +107,6 @@ pub fn init() {
 }
 
 pub fn cpuid() -> usize {
-    return 0;   //Works only for 1 core implementation
-    //todo!();
+    return 0; //Works only for 1 core implementation
+              //todo!();
 }

@@ -2,8 +2,8 @@
 #![no_std]
 
 pub mod frame_allocator;
-pub mod ptmapper;
 pub mod ioptmapper;
+pub mod ptmapper;
 pub mod walker;
 
 pub use frame_allocator::{FrameAllocator, RangeAllocator};

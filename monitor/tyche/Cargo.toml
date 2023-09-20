@@ -13,8 +13,8 @@ spin = { workspace = true }
 utils = { path = "../../crates/utils/" }
 debug = { version = "0.1.0", path = "../../crates/debug" }
 logger = { path = "../../crates/logger/" }
-mmu = { version = "0.1.0", path = "../../crates/mmu" }
 stage_two_abi = { path = "../../crates/stage_two_abi" }
+mmu = { version = "0.1.0", path = "../../crates/mmu" }
 vga = { path = "../../crates/vga/", optional = true }
 arena = {path = "../../crates/arena"}
 capa-engine = {path = "../../crates/capability-engine/"}
