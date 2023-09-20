@@ -140,6 +140,7 @@ fn handle_exit(
                         arg_2,
                         arg_3,
                         arg_4,
+                        arg_5,
                         &mut vs.vcpu,
                     ) {
                         Ok(()) => vs.vcpu.set(Register::Rax, 0),
