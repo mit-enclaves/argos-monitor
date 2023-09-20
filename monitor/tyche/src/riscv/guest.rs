@@ -355,13 +355,86 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
             }
             calls::SWITCH => {
                 log::debug!("Switch");
-                //Adding register state to context now? (not doing it at sealing, initialized to
-                //zero then).
-
                 monitor::do_switch(active_dom, LocalCapa::new(arg_1), cpuid, reg_state)
                     .expect("TODO");
             }
-            calls::DEBUG => {
+            calls::ENCLAVE_ATTESTATION => {
+                log::trace!("Get attestation!");
+                if let Some(report) = monitor::do_domain_attestation(active_dom, arg_1, arg_2) {
+                    reg_state.a0 = 0;
+                    if arg_2 == 0 {
+                        reg_state.a1 = 
+                        usize::from_le_bytes(
+                                report.public_key.as_slice()[0..8].try_into().unwrap(),
+                            );
+                        reg_state.a2 = 
+                        usize::from_le_bytes(
+                                report.public_key.as_slice()[8..16].try_into().unwrap(),
+                            );
+                        reg_state.a3 = 
+                        usize::from_le_bytes(
+                                report.public_key.as_slice()[16..24].try_into().unwrap(),
+                            ) as usize;
+                        reg_state.a4 = 
+                        usize::from_le_bytes(
+                                report.public_key.as_slice()[24..32].try_into().unwrap(),
+                            ) as usize;
+                        reg_state.a5 = 
+                        usize::from_le_bytes(
+                                report.signed_enclave_data.as_slice()[0..8]
+                                    .try_into()
+                                    .unwrap(),
+                            ) as usize;
+                        reg_state.a6 = 
+                        usize::from_le_bytes(
+                                report.signed_enclave_data.as_slice()[8..16]
+                                    .try_into()
+                                    .unwrap(),
+                            ) as usize;
+                    } else if arg_2 == 1 {
+                        reg_state.a1 = 
+                        usize::from_le_bytes(
+                                report.signed_enclave_data.as_slice()[16..24]
+                                    .try_into()
+                                    .unwrap(),
+                            );
+                        reg_state.a2 = 
+                        usize::from_le_bytes(
+                                report.signed_enclave_data.as_slice()[24..32]
+                                    .try_into()
+                                    .unwrap(),
+                            );
+                        reg_state.a3 = 
+                        usize::from_le_bytes(
+                                report.signed_enclave_data.as_slice()[32..40]
+                                    .try_into()
+                                    .unwrap(),
+                            );
+                        reg_state.a4 = 
+                        usize::from_le_bytes(
+                                report.signed_enclave_data.as_slice()[40..48]
+                                    .try_into()
+                                    .unwrap(),
+                            );
+                        reg_state.a5 = 
+                        usize::from_le_bytes(
+                                report.signed_enclave_data.as_slice()[48..56]
+                                    .try_into()
+                                    .unwrap(),
+                            );
+                        reg_state.a6 = 
+                        usize::from_le_bytes(
+                                report.signed_enclave_data.as_slice()[56..64]
+                                    .try_into()
+                                    .unwrap(),
+                            );
+                    }
+                } else {
+                    log::trace!("Attestation error");
+                    reg_state.a0 = 1;
+                }
+            }
+            calls::DEBUG => { 
                 log::debug!("Debug");
                 monitor::do_debug();
                 reg_state.a0 = 0x0;

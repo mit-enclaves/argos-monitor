@@ -141,7 +141,7 @@ build-linux-x86:
 	@just _build-linux-common x86
 
 build-linux-riscv:
-	@just _build-linux-common riscv CROSS_COMPILE=riscv64-linux-gnu-
+	@just _build-linux-common riscv CROSS_COMPILE=riscv64-unknown-linux-gnu-
 
 _build-linux-common ARCH CROSS_COMPILE=extra_arg:
 	@just _setup-linux-config {{ARCH}}
@@ -168,8 +168,8 @@ build-busybox-x86:
 	@just _build-busybox-common x86
 
 build-busybox-riscv:
-	@just _build-linux-header-common riscv CROSS_COMPILE=riscv64-linux-gnu-
-	@just _build-busybox-common riscv CROSS_COMPILE=riscv64-linux-gnu-
+	@just _build-linux-header-common riscv CROSS_COMPILE=riscv64-unknown-linux-gnu-
+	@just _build-busybox-common riscv CROSS_COMPILE=riscv64-unknown-linux-gnu-
 
 _build-busybox-common ARCH CROSS_COMPILE=extra_arg:
 	mkdir -p ./builds/busybox-{{ARCH}}
@@ -255,7 +255,6 @@ run_riscv_gdb:
 	
 riscv_monitor_gdb:
 	riscv64-unknown-linux-gnu-gdb -q -ex "file {{bios-riscv-gdb}}" -ex "target remote localhost:1234" -ex "b parse_and_load_elf" -ex "c" 
-
 
 # The following line gives highlighting on vim
 # vim: set ft=make :
