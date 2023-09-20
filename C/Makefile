@@ -1,5 +1,5 @@
 $(info ARCH="$(ARCH)")
-
+$(info CROSS_COMPILE="$(CROSS_COMPILE)")
 ifeq ($(ARCH), x86)
 	DISK = "../ubuntu.qcow2"
 	MOUNT_DIR = "/tmp/mount"
@@ -39,8 +39,9 @@ TYCHOOLS_LOCAL_BIN_PATH ?= ../target/release
 
 update_disk: 
 	sudo chown --recursive $(shell whoami) /tmp/ubuntu_riscv_mount/tyche
-	make ARCH=riscv -B -C drivers/tyche install_disk 
+	make CROSS_COMPILE=$(CROSS_COMPILE) ARCH=riscv -B -C drivers/tyche install_disk 
 	make ARCH=riscv -B -C libraries/sdktyche/example/app-selector install_disk
+	make ARCH=riscv -B -C libraries/sdktyche/example/simple-enclave install_disk
 	cp scripts/riscv64_install_drivers.sh /tmp/ubuntu_riscv_mount/tyche
 	cp scripts/run_eapp.sh /tmp/ubuntu_riscv_mount/tyche
 	cp $(TYCHOOLS_LOCAL_BIN_PATH)/tychools $(PROGRAMGS_PATH)/tychools 
