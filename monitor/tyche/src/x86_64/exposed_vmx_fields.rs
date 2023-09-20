@@ -1,9 +1,6 @@
-use core::marker::PhantomData;
-
 use capa_engine::CapaError;
-use vmx::fields::traits::VmcsField;
 use vmx::fields::{GuestState16, GuestState32, GuestState64, GuestStateNat};
-use vmx::{ActiveVmcs, ControlRegister, Register, VmxError};
+use vmx::{ActiveVmcs, ControlRegister, Register};
 
 //TODO(@aghosn): I have some duplicated code for search.
 //Can we do a macro or a generic type to simply this?
@@ -134,7 +131,7 @@ pub fn search_guest_nat(idx: usize) -> Option<GuestStateNat> {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum GuestRegisterGroups {
     GeneralPurpose = 0,
     Controls = 1,
@@ -171,7 +168,6 @@ impl GuestRegisters {
             GuestRegisterGroups::Reg32 => search_guest_32(idx).is_some(),
             GuestRegisterGroups::Reg64 => search_guest_64(idx).is_some(),
             GuestRegisterGroups::RegNat => search_guest_nat(idx).is_some(),
-            _ => false,
         }
     }
 
@@ -209,9 +205,6 @@ impl GuestRegisters {
                 let reg = search_guest_nat(idx).expect("RegNat should be valid");
                 vcpu.set_nat(reg, value).expect("Unable to set regNat");
             }
-            _ => {
-                todo!("Not done");
-            }
         }
         Ok(())
     }
@@ -248,9 +241,6 @@ impl GuestRegisters {
             GuestRegisterGroups::RegNat => {
                 let reg = search_guest_nat(idx).expect("RegNat should be valid");
                 vcpu.get_nat(reg).expect("Unable to set regNat") as usize
-            }
-            _ => {
-                todo!("Not done");
             }
         };
         Ok(value)

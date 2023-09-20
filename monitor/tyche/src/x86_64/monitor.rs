@@ -20,6 +20,7 @@ use super::guest::VmxState;
 use super::init::NB_BOOTED_CORES;
 use crate::allocator::allocator;
 use crate::rcframe::{drop_rc, RCFrame, RCFramePool, EMPTY_RCFRAME};
+use crate::x86_64::exposed_vmx_fields::{GuestRegisterGroups, GuestRegisters};
 
 // ————————————————————————— Statics & Backend Data ————————————————————————— //
 
@@ -144,9 +145,10 @@ pub fn do_configure_core(
     current: Handle<Domain>,
     domain: LocalCapa,
     core: usize,
+    group: usize,
     idx: usize,
     value: usize,
-    vcpu: &mut ActiveVmcs,
+    vcpu: &mut ActiveVmcs<'static>,
 ) -> Result<(), CapaError> {
     let mut engine = CAPA_ENGINE.lock();
     let domain = engine.get_domain_capa(current, domain)?;
@@ -169,9 +171,53 @@ pub fn do_configure_core(
         return Err(CapaError::InvalidOperation);
     }
 
-    // TODO: Check whether this is a valid configuration index.
-    // Attempt to change the configuration of the core.
-    todo!("Not implemented yet.");
+    // Check this is a valid group.
+    let group = match GuestRegisterGroups::from_usize(group) {
+        Some(g) => g,
+        _ => {
+            log::error!("Invalid register group.");
+            return Err(CapaError::InvalidOperation);
+        }
+    };
+
+    // Check this is a valid idx for the group.
+    if !GuestRegisters::is_valid(group, idx) {
+        log::error!("Attempt to set an invalid register! {:?}@{:x}", group, idx);
+        return Err(CapaError::InvalidOperation);
+    }
+
+    // Now we have a complex dance to set a value on the target context.
+    // TODO: I do it in a block to lazily return the error. Poor style, let's make it clean when it
+    // works.
+    {
+        let mut current_ctx = get_context(current, cpuid());
+        let mut target_ctx = get_context(domain, core);
+        if current_ctx.vmcs.is_invalid() || target_ctx.vmcs.is_invalid() {
+            log::error!(
+                "VMCs are none during a configure core: curr{:?}, tgt:{:?}",
+                current_ctx.vmcs.is_invalid(),
+                target_ctx.vmcs.is_invalid()
+            );
+            return Err(CapaError::InvalidOperation);
+        }
+
+        // 1. save the current context.
+        current_ctx.save(vcpu);
+
+        // 2. switch to the target one.
+        target_ctx.restore(&RC_VMCS, vcpu);
+
+        // 3. set the value.
+        let err = GuestRegisters::set_register(vcpu, group, idx, value);
+
+        // 4. save the target context.
+        target_ctx.save(vcpu);
+
+        // 5. switch back to the original one.
+        current_ctx.restore(&RC_VMCS, vcpu);
+        err
+    }?;
+
     Ok(())
 }
 
