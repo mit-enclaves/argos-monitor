@@ -9,6 +9,7 @@ endif
 ## ————————————————————————————————— Paths —————————————————————————————————— ##
 LIB_PATH=../../../
 DRIVERS_PATH=../../../../drivers/
+LINKER_SCRIPT=../../../../../configs/riscv-linker-script-domain.x
 
 ## ——————————————————————————————— Libraries ———————————————————————————————— ##
 SDK=$(LIB_PATH)/sdktyche
@@ -90,10 +91,9 @@ install_disk: all
 
 else ifeq ($(ARCH), riscv)
 
-#This one is because the load segments starting virtual address is not page aligned, without specifying the section-start as done below. 
-#Todo (neelu): one way to do this is to write a linker script, as this particular fix may only work for some examples.  
 enclave: $(CODE_DOMAIN) $(HDRS_DOMAIN)
-	$(GCC) -DTYCHE_USER_SPACE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_DOMAIN) -Wl,--section-start=.data=0x11000
+	echo $(GCC)
+	$(GCC) -T $(LINKER_SCRIPT) -fno-pie -DTYCHE_USER_SPACE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_DOMAIN)
 
 app_selector: app enclave
 	echo "Building app_selector for RISCV"

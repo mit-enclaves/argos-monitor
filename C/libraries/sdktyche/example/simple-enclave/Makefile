@@ -1,5 +1,11 @@
 all: attestation_enclave
 
+ifeq ($(ARCH), x86)
+        GCC = gcc
+else ifeq ($(ARCH), riscv)
+        GCC = riscv64-unknown-linux-gnu-gcc
+endif
+
 ## ————————————————————————————————— Paths —————————————————————————————————— ##
 LIB_PATH=../../../
 DRIVERS_PATH=../../../../drivers/
@@ -22,8 +28,13 @@ CODE_TRUSTED=$(wildcard trusted/*.c)
 HDRS_TRUSTED=$(wildcard include/*.h)
 
 ## ———————————————————————— Runtime code and headers ———————————————————————— ##
-CODE_RUNTIME=$(wildcard $(SDK)/runtime/*.c) $(wildcard $(SDK)/runtime/*.S)
-HDRS_RUNTIME= $(wildcard $(SDK)/include/*.h)
+ifeq ($(ARCH), x86)
+CODE_RUNTIME = $(wildcard $(SDK)/runtime/*.c) $(wildcard $(SDK)/runtime/asm.S)
+HDRS_RUNTIME = $(wildcard $(SDK)/include/*.h) 
+else ifeq ($(ARCH), riscv)
+CODE_RUNTIME = $(wildcard $(SDK)/runtime/*.c) $(wildcard $(SDK)/runtime/riscv_asm.S)
+HDRS_RUNTIME = $(wildcard $(SDK)/include/*.h)
+endif
 
 ## ———————————————————————— Loader code and headers ————————————————————————— ##
 CODE_LOADER=$(wildcard $(SDK)/loader/*.c) $(wildcard $(SDK)/loader/*.S)
@@ -53,7 +64,11 @@ COMMON_INCLUDES = -Iinclude -I$(CAPA_LIB)/include -I$(COMMON_LIB)/include -I$(DL
 APP_INCLUDES = $(COMMON_INCLUDES) -I$(ELF64)/include -I$(PTS)/include -I$(DRIVER)/include
 
 ## ————————————————————— Configuration for the install —————————————————————— ##
+ifeq ($(ARCH), x86)
 DISK_PATH ?= /tmp/mount/tyche/programs 
+else ifeq ($(ARCH), riscv)
+DISK_PATH ?= /tmp/ubuntu_riscv_mount/tyche/programs
+endif
 
 TYCHOOLS_PATH ?= ../../../../../crates/tychools/ 
 
@@ -62,28 +77,55 @@ TYCHOOLS_PATH ?= ../../../../../crates/tychools/
 app: $(CODE_APP) $(HDRS_APP) 
 	gcc -DTYCHE_USER_SPACE=1 -g $(APP_INCLUDES) -o $@ $(CODE_APP)
 
+ifeq ($(ARCH), x86)
 enclave: $(CODE_ENCLAVE) $(HDRS_ENCLAVE)
-	gcc -DTYCHE_USER_SPACE=1 -DTYCHE_ENCLAVE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_ENCLAVE)
-
-simple_enclave: app enclave
-	cargo -C $(TYCHOOLS_PATH) install --path .
-	tychools instrument -s manifests/default.json 
-	chmod +x simple_enclave
-	rm app enclave
+	$(GCC) -DTYCHE_USER_SPACE=1 -DTYCHE_ENCLAVE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_ENCLAVE)
 
 enclave_iso: app enclave
-	cargo -C $(TYCHOOLS_PATH) install --path .
+	cargo -C $(TYCHOOLS_PATH) install --path . --locked
 	tychools instrument -s manifests/enclave_iso.json 
 	chmod +x enclave_iso
+	rm app enclave
+
+simple_enclave: app enclave
+	cargo -C $(TYCHOOLS_PATH) install --path . --locked
+	tychools instrument -s manifests/default.json 
+	chmod +x simple_enclave
 	rm app enclave
 
 attestation_enclave: app enclave
-	cargo -C $(TYCHOOLS_PATH) install --path .
+	cargo -C $(TYCHOOLS_PATH) install --path . --locked
 	tychools instrument -s manifests/default.json 
 	chmod +x simple_enclave
 	tychools instrument -s manifests/enclave_iso.json 
 	chmod +x enclave_iso
 	rm app enclave
+
+else ifeq ($(ARCH), riscv)
+enclave: $(CODE_ENCLAVE) $(HDRS_ENCLAVE)
+	$(GCC) -DTYCHE_USER_SPACE=1 -DTYCHE_ENCLAVE=1 -DCONFIG_RISCV=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_ENCLAVE) -Wl,--section-start=.data=0x16000
+
+enclave_iso: app enclave
+	cargo -C $(TYCHOOLS_PATH) install --features="riscv_enabled" --path . --locked
+	tychools instrument -s manifests/enclave_iso.json 
+	chmod +x enclave_iso
+	rm app enclave
+
+simple_enclave: app enclave
+	cargo -C $(TYCHOOLS_PATH) install --features="riscv_enabled" --path . --locked
+	tychools instrument -s manifests/default.json 
+	chmod +x simple_enclave
+	rm app enclave
+
+attestation_enclave: app enclave
+	echo "Building attestation enclave for RISCV"
+	cargo -C $(TYCHOOLS_PATH) install --features="riscv_enabled" --path . --locked
+	tychools instrument -s manifests/default.json 
+	chmod +x simple_enclave
+	tychools instrument -s manifests/enclave_iso.json 
+	chmod +x enclave_iso
+	rm app enclave
+endif
 
 install_disk: all 
 	mkdir -p $(DISK_PATH)

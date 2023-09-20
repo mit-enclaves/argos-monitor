@@ -24,12 +24,12 @@ default_dbg         := "/tmp/dbg-" + env_var('USER')
 default_smp         := "1"
 extra_arg           := ""
 
-qemu-riscv			:= "/home/neelu/qemu/build/riscv64-softmmu/qemu-system-riscv64"
-drive-riscv			:= "/home/neelu/vmxvmm/ubuntu-22.04.3-preinstalled-server-riscv64+unmatched.img"
-kernel-riscv		:= "/home/neelu/vmxvmm/builds/linux-riscv/arch/riscv/boot/Image"
-bios-riscv			:= "/home/neelu/riscv-hmode-setup/opensbi/build/platform/generic/firmware/fw_jump.bin"
+qemu-riscv			:= "../qemu-riscv/qemu-system-riscv64"
+drive-riscv			:= "ubuntu_riscv_drive.img"
+kernel-riscv		:= "builds/linux-riscv/arch/riscv/boot/Image"
+bios-riscv			:= "opensbi-stage1/build/platform/generic/firmware/fw_payload.bin"
 dev-riscv			:= "-device virtio-rng-pci" 
-
+bios-riscv-gdb		:= "opensbi-stage1/build/platform/generic/firmware/fw_jump.elf"
 
 # Print list of commands
 help:
@@ -137,7 +137,7 @@ build-linux-x86:
 	@just _build-linux-common x86
 
 build-linux-riscv:
-	@just _build-linux-common riscv CROSS_COMPILE=riscv64-linux-gnu-
+	@just _build-linux-common riscv CROSS_COMPILE=riscv64-unknown-linux-gnu-
 
 _build-linux-common ARCH CROSS_COMPILE=extra_arg:
 	@just _setup-linux-config {{ARCH}}
@@ -164,8 +164,8 @@ build-busybox-x86:
 	@just _build-busybox-common x86
 
 build-busybox-riscv:
-	@just _build-linux-header-common riscv CROSS_COMPILE=riscv64-linux-gnu-
-	@just _build-busybox-common riscv CROSS_COMPILE=riscv64-linux-gnu-
+	@just _build-linux-header-common riscv CROSS_COMPILE=riscv64-unknown-linux-gnu-
+	@just _build-busybox-common riscv CROSS_COMPILE=riscv64-unknown-linux-gnu-
 
 _build-busybox-common ARCH CROSS_COMPILE=extra_arg:
 	mkdir -p ./builds/busybox-{{ARCH}}
@@ -254,7 +254,9 @@ run_riscv:
 
 run_riscv_gdb: 
 	{{qemu-riscv}} -nographic -drive "file={{drive-riscv}},format=raw,if=virtio" -cpu rv64,h=true -M virt -m 4G -bios {{bios-riscv}} -kernel {{kernel-riscv}} -append "root=/dev/vda1 rw console=ttyS0 earlycon=sbi quiet" -smp 1 {{dev-riscv}} -gdb tcp::1234 -S 
-	
+
+riscv_monitor_gdb:
+	riscv64-unknown-linux-gnu-gdb -q -ex "file {{bios-riscv-gdb}}" -ex "target remote localhost:1234" -ex "b parse_and_load_elf" -ex "c" 
 
 # The following line gives highlighting on vim
 # vim: set ft=make :
