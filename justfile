@@ -27,9 +27,10 @@ extra_arg           := ""
 qemu-riscv			:= "/home/neelu/qemu/build/riscv64-softmmu/qemu-system-riscv64"
 drive-riscv			:= "/home/neelu/vmxvmm/ubuntu-22.04.3-preinstalled-server-riscv64+unmatched.img"
 kernel-riscv		:= "/home/neelu/vmxvmm/builds/linux-riscv/arch/riscv/boot/Image"
-bios-riscv			:= "/home/neelu/riscv-hmode-setup/opensbi/build/platform/generic/firmware/fw_jump.bin"
+#bios-riscv			:= "/home/neelu/riscv-hmode-setup/opensbi/build/platform/generic/firmware/fw_jump.bin"
+bios-riscv			:= "/home/neelu/vmxvmm/opensbi-stage1/build/platform/generic/firmware/fw_jump.bin"
 dev-riscv			:= "-device virtio-rng-pci" 
-
+bios-riscv-gdb		:= "/home/neelu/vmxvmm/opensbi-stage1/build/platform/generic/firmware/fw_jump.elf"
 
 # Print list of commands
 help:
@@ -255,6 +256,9 @@ run_riscv:
 run_riscv_gdb: 
 	{{qemu-riscv}} -nographic -drive "file={{drive-riscv}},format=raw,if=virtio" -cpu rv64,h=true -M virt -m 4G -bios {{bios-riscv}} -kernel {{kernel-riscv}} -append "root=/dev/vda1 rw console=ttyS0 earlycon=sbi quiet" -smp 1 {{dev-riscv}} -gdb tcp::1234 -S 
 	
+riscv_monitor_gdb:
+	riscv64-unknown-linux-gnu-gdb -q -ex "file {{bios-riscv-gdb}}" -ex "target remote localhost:1234" -ex "b parse_and_load_elf" -ex "c" 
+
 
 # The following line gives highlighting on vim
 # vim: set ft=make :

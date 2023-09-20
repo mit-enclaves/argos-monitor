@@ -1,21 +1,21 @@
 #![no_std]
 
-use core::arch::asm; 
+use core::arch::asm;
 
 //uart base address
 pub const SERIAL_PORT_BASE_ADDRESS: usize = 0x1000_0000;
 
-//SIFIVE TEST SYSCON 
+//SIFIVE TEST SYSCON
 pub const SIFIVE_TEST_SYSCON_BASE_ADDRESS: usize = 0x100000;
 pub const SIFIVE_TEST_SYSCON_SIZE: usize = 0x1000;
 
-//plic address and size 
+//plic address and size
 pub const PLIC_BASE_ADDRESS: usize = 0xc000000;
-pub const PLIC_SIZE: usize = 0x600000; 
+pub const PLIC_SIZE: usize = 0x600000;
 
-//pci address and size 
+//pci address and size
 pub const PCI_BASE_ADDRESS: usize = 0x30000000;
-pub const PCI_SIZE: usize = 0x10000000; 
+pub const PCI_SIZE: usize = 0x10000000;
 
 pub const PAGING_MODE_SV48: usize = 0x9000000000000000;
 
@@ -95,49 +95,49 @@ impl RegisterState {
 }
 
 pub fn read_mscratch() -> usize {
-    let mut mscratch: usize; 
+    let mut mscratch: usize;
 
-    unsafe { 
+    unsafe {
         asm!("csrr {}, mscratch", out(reg) mscratch);
     }
 
-    return mscratch; 
+    return mscratch;
 }
 
 pub fn write_mscratch(mscratch: usize) {
-    unsafe { 
+    unsafe {
         asm!("csrw mscratch, {}", in(reg) mscratch);
     }
 }
 
 pub fn read_mepc() -> usize {
-    let mut mepc: usize; 
+    let mut mepc: usize;
 
-    unsafe { 
-        asm!("csrr {}, mepc", out(reg) mepc); 
+    unsafe {
+        asm!("csrr {}, mepc", out(reg) mepc);
     }
 
-    return mepc; 
+    return mepc;
 }
 
 pub fn write_mepc(mepc: usize) {
-    unsafe { 
+    unsafe {
         asm!("csrw mepc, {}", in(reg) mepc);
     }
 }
 
 pub fn read_satp() -> usize {
-    let mut satp: usize; 
+    let mut satp: usize;
 
-    unsafe { 
-        asm!("csrr {}, satp", out(reg) satp); 
+    unsafe {
+        asm!("csrr {}, satp", out(reg) satp);
     }
 
-    return satp; 
+    return satp;
 }
 
 pub fn write_satp(satp: usize) {
-    unsafe { 
+    unsafe {
         asm!("csrw satp, {}", in(reg) satp);
         asm!("sfence.vma");
     }
@@ -163,11 +163,11 @@ pub fn clear_mstatus_xie() {
             "csrr t2, mstatus",
             "and t2, t2, t1",
             "csrw mstatus, t2",
-        //asm!("csrrci t0, mstatus, 0x2");
-            //"clear_sie: 
-             //"csrrci t0, mstatus, 0x2"
-             //bnez t0, clear_sie",
-             //options(nostack)
+            //asm!("csrrci t0, mstatus, 0x2");
+            //"clear_sie:
+            //"csrrci t0, mstatus, 0x2"
+            //bnez t0, clear_sie",
+            //options(nostack)
         );
     }
 }
@@ -180,16 +180,13 @@ pub fn clear_mstatus_spie() {
             "csrr t2, mstatus",
             "and t2, t2, t1",
             "csrw mstatus, t2",
-            );
+        );
     }
 }
 
 pub fn clear_mideleg() {
     unsafe {
-        asm!( 
-            "li t0, 0",
-            "csrw mideleg, t0",
-        );
+        asm!("li t0, 0", "csrw mideleg, t0",);
     }
 }
 
@@ -210,8 +207,8 @@ pub fn disable_supervisor_interrupts() {
     }
 }
 
-pub fn toggle_supervisor_interrupts() { 
-    unsafe { 
+pub fn toggle_supervisor_interrupts() {
+    unsafe {
         asm!(
             "li t0, 0x222",
             "csrr t1, mie",
@@ -222,27 +219,23 @@ pub fn toggle_supervisor_interrupts() {
 }
 
 pub fn clear_medeleg() {
-    unsafe { 
-        asm!(
-            "li t0, 0",
-            "csrw medeleg, t0",
-        );
+    unsafe {
+        asm!("li t0, 0", "csrw medeleg, t0",);
     }
 }
 
 pub fn read_medeleg() -> usize {
-    let mut medeleg: usize; 
+    let mut medeleg: usize;
 
-    unsafe { 
-        asm!("csrr {}, medeleg", out(reg) medeleg); 
+    unsafe {
+        asm!("csrr {}, medeleg", out(reg) medeleg);
     }
 
-    return medeleg; 
+    return medeleg;
 }
 
 pub fn write_medeleg(medeleg: usize) {
-    unsafe { 
+    unsafe {
         asm!("csrw medeleg, {}", in(reg) medeleg);
     }
 }
-

@@ -28,7 +28,7 @@ APP=TRANSITION_BENCHMARK ./app_selector
 
 The application loads the enclave and performs multiple transitions while measuring the execution time.
 
-### Sample output
+### Sample output on x86
 
 ```
 dev@tyche:/tyche/programs$ APP=TRANSITION_BENCHMARK ./app_selector
@@ -52,6 +52,30 @@ dev@tyche:/tyche/programs$ APP=TRANSITION_BENCHMARK ./app_selector
 
 ```
 
+### Sample output on riscv
+
+```
+[LOG @../../..//sdktyche/loader/lib.c:279 parse_domain] Parsed tychools binary
+[LOG @../../..//sdktyche/loader/driver_ioctl.c:22 ioctl_getphysoffset] Physical offset of the enclave is 10ead0000
+[LOG @untrusted/main.c:289 main] The binary TRANSITION_BENCHMARK has been loaded!
+[LOG @untrusted/main.c:299 main] Calling the application 'TRANSITION_BENCHMARK', good luck!
+[LOG @untrusted/main.c:144 transition_benchmark] Executing TRANSITION_BENCHMARK enclave
+
+[LOG @untrusted/main.c:163 transition_benchmark] Run 0: 1000 call-return in 0.278892 seconds
+[LOG @untrusted/main.c:163 transition_benchmark] Run 1: 1000 call-return in 0.278968 seconds
+[LOG @untrusted/main.c:163 transition_benchmark] Run 2: 1000 call-return in 0.278698 seconds
+[LOG @untrusted/main.c:163 transition_benchmark] Run 3: 1000 call-return in 0.278591 seconds
+[LOG @untrusted/main.c:163 transition_benchmark] Run 4: 1000 call-return in 0.278174 seconds
+[LOG @untrusted/main.c:163 transition_benchmark] Run 5: 1000 call-return in 0.278435 seconds
+[LOG @untrusted/main.c:163 transition_benchmark] Run 6: 1000 call-return in 0.278820 seconds
+[LOG @untrusted/main.c:163 transition_benchmark] Run 7: 1000 call-return in 0.276163 seconds
+[LOG @untrusted/main.c:163 transition_benchmark] Run 8: 1000 call-return in 0.274838 seconds
+[LOG @untrusted/main.c:163 transition_benchmark] Run 9: 1000 call-return in 0.274198 seconds
+[LOG @untrusted/main.c:170 transition_benchmark] All done!
+[LOG @untrusted/main.c:304 main] Done, have a good day!
+
+```
+
 ## Hello World
 
 ### How to run
@@ -66,7 +90,7 @@ APP=HELLO_WORLD ./app
 
 The application loads the enclave and performs two calls to it, printing two different messages.
 
-### Sample output
+### Sample output (The same on x86 and riscv)
 
 ```
 dev@tyche:/tyche/programs$ APP=HELLO_WORLD ./app_selector
@@ -101,7 +125,7 @@ Afterwards, it attempts to read confidential memory.
 This should fail, trigger a call to the registered handler.
 The handler performs a second call to the enclave to get the second message (proving the enclave is unaffected) and exits.
 
-### Sample output
+### Sample output on x86
 
 ```
 dev@tyche:/tyche/programs$ APP=MALICIOUS ./app_selector
@@ -193,6 +217,39 @@ Hello World!
 [LOG @untrusted/main.c:57 malicious_handler] Recovered. Second message: Bye Bye! :)!
 
 [LOG @untrusted/main.c:64 malicious_handler] It's a success, let's exit.
+```
+
+### Sample output on riscv 
+
+Currently the recovery from a PMP access fault is not implemented - so the registered handler is not called after the fault. 
+
+```
+[LOG @../../..//sdktyche/loader/lib.c:279 parse_domain] Parsed tychools binary
+[LOG @../../..//sdktyche/loader/driver_ioctl.c:22 ioctl_getphysoffset] Physical offset of the enclave is 10ea60000
+[LOG @untrusted/main.c:289 main] The binary MALICIOUS has been loaded!
+[LOG @untrusted/main.c:299 main] Calling the application 'MALICIOUS', good luck!
+[LOG @untrusted/main.c:187 malicious] Executing MALICIOUS enclave
+
+[LOG @untrusted/main.c:191 malicious] Setting a handler
+[LOG @untrusted/main.c:209 malicious] First enclave message:
+Hello World!
+[LOG @untrusted/main.c:211 malicious] Address we try to read: ffffff80276000
+CPU 0: Panicked
+PanicInfo {
+    payload: Any { .. },
+    message: Some(
+        PMP Access Fault! mcause: 5 mepc: 13f84 mtval: ffffff80276000,
+    ),
+    location: Location {
+        file: "monitor/tyche/src/riscv/guest.rs",
+        line: 174,
+        col: 13,
+    },
+    can_unwind: true,
+}
+========= Exiting Second Stage =========
+Failure
+========================================
 ```
 
 ## Breakpoint
