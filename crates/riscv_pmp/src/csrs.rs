@@ -2,7 +2,7 @@
 use core::arch::asm;
 
 pub fn pmpaddr_csr_read(index: usize) -> usize {
-    let mut pmpaddr: usize; 
+    let pmpaddr: usize; 
     unsafe {
             match index {
                 0 => asm!("csrr {}, pmpaddr0", out(reg) pmpaddr),
@@ -156,18 +156,7 @@ pub fn pmpcfg_csr_read(index: usize) -> usize {
     //check in pmp_read is what will ensure that the index is valid. The following code should
     //execute only if that check passes, and thus should not access an index which shouldn't be supported.
 
-    let mut pmpcfg: usize;
-    /* match index { 
-        0 => unsafe { asm!("csrr {}, pmpcfg0", out(reg) pmpcfg); }, 
-        2 => unsafe { asm!("csrr {}, pmpcfg2", out(reg) pmpcfg); },  
-        4 => unsafe { asm!("csrr {}, pmpcfg4", out(reg) pmpcfg); },
-        6 => unsafe { asm!("csrr {}, pmpcfg6", out(reg) pmpcfg); }, 
-        8 => unsafe { asm!("csrr {}, pmpcfg8", out(reg) pmpcfg); }, 
-        10 => unsafe { asm!("csrr {}, pmpcfg10", out(reg) pmpcfg); }, 
-        12 => unsafe { asm!("csrr {}, pmpcfg12", out(reg) pmpcfg); }, 
-        14 => unsafe { asm!("csrr {}, pmpcfg14", out(reg) pmpcfg); },
-        _ => pmpcfg = 0, 
-    } */
+    let pmpcfg: usize;
     //log::info!("index {}", index);
     match index { 
         0..=7 => { /*log::info!("Matched 0");*/ unsafe { asm!("csrr {}, pmpcfg0", out(reg) pmpcfg); }}, 
@@ -180,23 +169,11 @@ pub fn pmpcfg_csr_read(index: usize) -> usize {
         56..=63 => unsafe { asm!("csrr {}, pmpcfg14", out(reg) pmpcfg); },
         _ => {log::info!("Matched None");  pmpcfg = 0;}, 
     } 
-
     return pmpcfg;
 }
 
 pub fn pmpcfg_csr_write(index: usize, pmpcfg: usize) { 
    
-    /* match index { 
-        0 => unsafe { asm!("csrw pmpcfg0, {}", in(reg) pmpcfg); }, 
-        2 => unsafe { asm!("csrw pmpcfg2, {}", in(reg) pmpcfg); },  
-        4 => unsafe { asm!("csrw pmpcfg4, {}", in(reg) pmpcfg); },
-        6 => unsafe { asm!("csrw pmpcfg6, {}", in(reg) pmpcfg); }, 
-        8 => unsafe { asm!("csrw pmpcfg8, {}", in(reg) pmpcfg); }, 
-        10 => unsafe { asm!("csrw pmpcfg10, {}", in(reg) pmpcfg); }, 
-        12 => unsafe { asm!("csrw pmpcfg12, {}", in(reg) pmpcfg); }, 
-        14 => unsafe { asm!("csrw pmpcfg14, {}", in(reg) pmpcfg); },
-        _ => (), 
-    } */
     //log::info!("index {}", index);
    match index { 
         0..=7 => {/*log::info!("Matched 0 writing: {:x}", pmpcfg);*/  unsafe { asm!("csrw pmpcfg0, {}", in(reg) pmpcfg); }}, 
@@ -209,7 +186,5 @@ pub fn pmpcfg_csr_write(index: usize, pmpcfg: usize) {
         56..=63 => unsafe { asm!("csrw pmpcfg14, {}", in(reg) pmpcfg); },
         _ => {log::info!("Matched None"); }, 
     } 
-
-
 }
 

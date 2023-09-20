@@ -95,7 +95,7 @@ impl RegisterState {
 }
 
 pub fn read_mscratch() -> usize {
-    let mut mscratch: usize = 0; 
+    let mut mscratch: usize; 
 
     unsafe { 
         asm!("csrr {}, mscratch", out(reg) mscratch);
@@ -111,7 +111,7 @@ pub fn write_mscratch(mscratch: usize) {
 }
 
 pub fn read_mepc() -> usize {
-    let mut mepc: usize = 0; 
+    let mut mepc: usize; 
 
     unsafe { 
         asm!("csrr {}, mepc", out(reg) mepc); 
@@ -127,7 +127,7 @@ pub fn write_mepc(mepc: usize) {
 }
 
 pub fn read_satp() -> usize {
-    let mut satp: usize = 0; 
+    let mut satp: usize; 
 
     unsafe { 
         asm!("csrr {}, satp", out(reg) satp); 
@@ -231,7 +231,7 @@ pub fn clear_medeleg() {
 }
 
 pub fn read_medeleg() -> usize {
-    let mut medeleg: usize = 0; 
+    let mut medeleg: usize; 
 
     unsafe { 
         asm!("csrr {}, medeleg", out(reg) medeleg); 
