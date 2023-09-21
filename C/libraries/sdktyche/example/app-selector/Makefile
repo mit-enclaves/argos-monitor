@@ -92,7 +92,7 @@ else ifeq ($(ARCH), riscv)
 
 enclave: $(CODE_DOMAIN) $(HDRS_DOMAIN)
 	echo $(GCC)
-	$(GCC) -T $(LINKER_SCRIPT) -fno-pie -DTYCHE_USER_SPACE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_DOMAIN)
+	$(GCC) -DTYCHE_USER_SPACE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_DOMAIN) -Wl,--section-start=.data=0x16000
 
 app_selector: app enclave
 	echo "Building app_selector for RISCV"
