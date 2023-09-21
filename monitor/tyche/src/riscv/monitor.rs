@@ -59,7 +59,7 @@ pub fn init() {
         .create_root_region(
             domain,
             AccessRights {
-                start: 0x80200000, //Linux Root Region Start Address
+                start: 0x80400000, //Linux Root Region Start Address
                 end: 0x800000000,    //17fffffff,   //Linux Root Region End Address - it's currently based on early
                                    //memory node range detected by linux. 
                                    //TODO: It should be a part of the manifest.
