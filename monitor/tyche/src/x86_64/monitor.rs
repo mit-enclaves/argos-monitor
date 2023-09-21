@@ -200,6 +200,11 @@ pub fn do_configure_core(
             );
             return Err(CapaError::InvalidOperation);
         }
+        // Check they are different.
+        if current_ctx.vmcs == target_ctx.vmcs {
+            log::error!("Attempting to configure runnning core");
+            return Err(CapaError::InvalidOperation);
+        }
 
         // 1. save the current context.
         current_ctx.save(vcpu);

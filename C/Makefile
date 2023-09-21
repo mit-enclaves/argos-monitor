@@ -9,7 +9,6 @@ ubuntu_umount:
 # Make sure you mount the disk first
 update_disk:
 	sudo chown --recursive $(shell whoami) /tmp/mount/tyche
-	make -B -C drivers/tyche install_disk
 	make -B -C libraries/sdktyche/example/app-selector install_disk
 	make -B -C libraries/sdktyche/example/simple-enclave install_disk
 	make -B -C libraries/sdktyche/example/simple-sandbox install_disk

@@ -3,7 +3,7 @@ all: sdk_tyche_loader.so sdk_tyche_runtime.so
 # Dependencies for the build.
 DRIVER_PATH=../../../linux/drivers/tyche/
 LIB_PATH=$(DRIVER_PATH)/libraries/
-LIB_PT=$(LIB_PATH)/pts
+LIB_PT=../pts
 DLL_LIB= $(LIB_PATH)/dll
 CAPA_LIB=$(LIB_PATH)/capabilities
 COMMON_LIB=$(LIB_PATH)/common

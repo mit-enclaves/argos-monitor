@@ -1,16 +1,17 @@
 all: simple_enclave
 
 ## ————————————————————————————————— Paths —————————————————————————————————— ##
-LIB_PATH=../../../
-DRIVERS_PATH=../../../../../linux/drivers/
+LOCAL_LIB=../../../
+DRIVERS_PATH=../../../../../linux/drivers
+DRIVER_LIB=$(DRIVERS_PATH)/tyche/libraries
 
 ## ——————————————————————————————— Libraries ———————————————————————————————— ##
-SDK=$(LIB_PATH)/sdktyche
-DLL_LIB= $(LIB_PATH)/dll
-CAPA_LIB=$(LIB_PATH)/capabilities
-COMMON_LIB=$(LIB_PATH)/common
-ELF64=$(LIB_PATH)/elf64
-PTS=$(LIB_PATH)/pts
+SDK=$(LOCAL_LIB)/sdktyche
+DLL_LIB= $(DRIVER_LIB)/dll
+CAPA_LIB=$(DRIVER_LIB)/capabilities
+COMMON_LIB=$(DRIVER_LIB)/common
+ELF64=$(LOCAL_LIB)/elf64
+PTS=$(LOCAL_LIB)/pts
 DRIVER=$(DRIVERS_PATH)/tyche
 
 ## ——————————————————————— Untrusted code and headers ——————————————————————— ##
