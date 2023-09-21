@@ -266,13 +266,6 @@ pub fn do_configure_core(
         return Err(CapaError::InvalidCore);
     }
 
-    // Check the domain has the correct vcpu type
-    let switch_type = engine.get_domain_config(domain, Bitmaps::SWITCH);
-    let switch_type = InitVMCS::from_u64(switch_type)?;
-    if switch_type == InitVMCS::Shared {
-        return Err(CapaError::InvalidOperation);
-    }
-
     // Check this is a valid group.
     let group = match GuestRegisterGroups::from_usize(group) {
         Some(g) => g,
@@ -281,6 +274,14 @@ pub fn do_configure_core(
             return Err(CapaError::InvalidOperation);
         }
     };
+
+    // Check the domain has the correct vcpu type
+    let switch_type = engine.get_domain_config(domain, Bitmaps::SWITCH);
+    let switch_type = InitVMCS::from_u64(switch_type)?;
+    if switch_type == InitVMCS::Shared && group != GuestRegisterGroups::GeneralPurpose {
+        log::error!("Trying to non GP register on a shared vcpu.");
+        return Err(CapaError::InvalidOperation);
+    }
 
     // Check this is a valid idx for the group.
     if !GuestRegisters::is_valid(group, idx) {
@@ -302,27 +303,29 @@ pub fn do_configure_core(
             );
             return Err(CapaError::InvalidOperation);
         }
-        // Check they are different.
+
         if current_ctx.vmcs == target_ctx.vmcs {
-            log::error!("Attempting to configure runnning core");
-            return Err(CapaError::InvalidOperation);
+            // Set the value without doing a switch, the value is a GP written
+            // directly inside the context.
+            let err = GuestRegisters::set_register(None, &mut target_ctx, group, idx, value);
+            err
+        } else {
+            // 1. save the current context.
+            current_ctx.save(vcpu);
+
+            // 2. switch to the target one.
+            target_ctx.restore(&RC_VMCS, vcpu);
+
+            // 3. set the value.
+            let err = GuestRegisters::set_register(Some(vcpu), &mut target_ctx, group, idx, value);
+
+            // 4. save the target context.
+            target_ctx.save(vcpu);
+
+            // 5. switch back to the original one.
+            current_ctx.restore(&RC_VMCS, vcpu);
+            err
         }
-
-        // 1. save the current context.
-        current_ctx.save(vcpu);
-
-        // 2. switch to the target one.
-        target_ctx.restore(&RC_VMCS, vcpu);
-
-        // 3. set the value.
-        let err = GuestRegisters::set_register(vcpu, group, idx, value);
-
-        // 4. save the target context.
-        target_ctx.save(vcpu);
-
-        // 5. switch back to the original one.
-        current_ctx.restore(&RC_VMCS, vcpu);
-        err
     }?;
 
     Ok(())
@@ -393,31 +396,6 @@ pub fn do_init_child_contexts(
             }
         }
     }
-}
-
-pub fn do_set_entry(
-    current: Handle<Domain>,
-    domain: LocalCapa,
-    core: usize,
-    cr3: usize,
-    rip: usize,
-    rsp: usize,
-) -> Result<(), CapaError> {
-    let mut engine = CAPA_ENGINE.lock();
-    let domain = engine.get_domain_capa(current, domain)?;
-    let cores = engine.get_domain_config(domain, Bitmaps::CORE);
-    if (1 << core) & cores == 0 {
-        return Err(CapaError::InvalidCore);
-    }
-    let context = &mut get_context(domain, core);
-    if context.vmcs.is_invalid() {
-        log::error!("Set the switch type first!");
-        return Err(CapaError::InvalidOperation);
-    }
-    context.regs[Register::Cr3.as_usize()] = cr3 as u64;
-    context.regs[Register::Rip.as_usize()] = rip as u64;
-    context.regs[Register::Rsp.as_usize()] = rsp as u64;
-    Ok(())
 }
 
 /// TODO(aghosn) do we need to seal on all cores?

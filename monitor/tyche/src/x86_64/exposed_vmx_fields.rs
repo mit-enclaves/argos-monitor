@@ -2,6 +2,8 @@ use capa_engine::CapaError;
 use vmx::fields::{GuestState16, GuestState32, GuestState64, GuestStateNat};
 use vmx::{ActiveVmcs, ControlRegister, Register};
 
+use super::context::ContextData;
+
 //TODO(@aghosn): I have some duplicated code for search.
 //Can we do a macro or a generic type to simply this?
 
@@ -177,7 +179,8 @@ impl GuestRegisters {
     }
 
     pub fn set_register(
-        vcpu: &mut ActiveVmcs,
+        vcpu: Option<&mut ActiveVmcs>,
+        context: &mut ContextData,
         reg_group: GuestRegisterGroups,
         idx: usize,
         value: usize,
@@ -188,25 +191,30 @@ impl GuestRegisters {
         match reg_group {
             GuestRegisterGroups::GeneralPurpose => {
                 let reg = Register::from_usize(idx).expect("RegGP should be valid");
-                vcpu.set(reg, value as u64);
+                context.set_register(reg, value as u64);
             }
             GuestRegisterGroups::Controls => {
+                let vcpu = vcpu.expect("Cannot be None");
                 let reg = search_guest_cr(idx).expect("RegCtrl should be valid");
                 vcpu.set_cr(reg, value);
             }
             GuestRegisterGroups::Reg16 => {
+                let vcpu = vcpu.expect("Cannot be None");
                 let reg = search_guest_16(idx).expect("Reg16 should be valid");
                 vcpu.set16(reg, value as u16).expect("Unable to set reg16");
             }
             GuestRegisterGroups::Reg32 => {
+                let vcpu = vcpu.expect("Cannot be None");
                 let reg = search_guest_32(idx).expect("Reg32 should be valid");
                 vcpu.set32(reg, value as u32).expect("Unable to set reg32");
             }
             GuestRegisterGroups::Reg64 => {
+                let vcpu = vcpu.expect("Cannot be None");
                 let reg = search_guest_64(idx).expect("Reg64 should be valid");
                 vcpu.set64(reg, value as u64).expect("Unable to set reg64");
             }
             GuestRegisterGroups::RegNat => {
+                let vcpu = vcpu.expect("Cannot be None");
                 let reg = search_guest_nat(idx).expect("RegNat should be valid");
                 vcpu.set_nat(reg, value).expect("Unable to set regNat");
             }
