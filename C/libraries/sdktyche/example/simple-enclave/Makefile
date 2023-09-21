@@ -1,5 +1,7 @@
 all: attestation_enclave
 
+$(info ARCH="$(ARCH)")
+
 ifeq ($(ARCH), x86)
         GCC = gcc
 else ifeq ($(ARCH), riscv)
@@ -75,10 +77,11 @@ TYCHOOLS_PATH ?= ../../../../../crates/tychools/
 ## ———————————————————————————————— Targets ————————————————————————————————— ##
 
 app: $(CODE_APP) $(HDRS_APP) 
-	gcc -DTYCHE_USER_SPACE=1 -g $(APP_INCLUDES) -o $@ $(CODE_APP)
+	$(GCC) -DTYCHE_USER_SPACE=1 -g $(APP_INCLUDES) -o $@ $(CODE_APP)
 
 ifeq ($(ARCH), x86)
 enclave: $(CODE_ENCLAVE) $(HDRS_ENCLAVE)
+	echo "x86"
 	$(GCC) -DTYCHE_USER_SPACE=1 -DTYCHE_ENCLAVE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_ENCLAVE)
 
 enclave_iso: app enclave
@@ -102,7 +105,12 @@ attestation_enclave: app enclave
 	rm app enclave
 
 else ifeq ($(ARCH), riscv)
+
+#cargo build --release --target=riscv64gc-unknown-linux-gnu --config target.riscv64gc-unknown-linux-gnu.linker=\"riscv64-unknown-linux-gnu-gcc\" --features="riscv_enabled"
+
 enclave: $(CODE_ENCLAVE) $(HDRS_ENCLAVE)
+	echo "riscv"
+	echo $(GCC)
 	$(GCC) -DTYCHE_USER_SPACE=1 -DTYCHE_ENCLAVE=1 -DCONFIG_RISCV=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_ENCLAVE) -Wl,--section-start=.data=0x16000
 
 enclave_iso: app enclave
