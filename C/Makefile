@@ -26,6 +26,8 @@ update_disk:
 	
 else ifeq ($(ARCH), riscv)
 
+TYCHOOLS_RISCV_PATH ?= ../target/riscv64gc-unknown-linux-gnu/release
+
 .PHONY: all 
 
 all: ubuntu_mount compile_riscv_and_update_disk ubuntu_umount 
@@ -46,7 +48,7 @@ compile_riscv_and_update_disk:
 	make ARCH=riscv -B -C libraries/sdktyche/example/simple-enclave install_disk
 	cp scripts/riscv64_install_drivers.sh /tmp/ubuntu_riscv_mount/tyche
 	cp scripts/run_eapp.sh /tmp/ubuntu_riscv_mount/tyche
-	cp $(TYCHOOLS_LOCAL_BIN_PATH)/tychools $(PROGRAMGS_PATH)/tychools 
+	cp $(TYCHOOLS_RISCV_PATH)/tychools $(PROGRAMGS_PATH)/tychools 
 
 # Use this when you see errors like the following during the boot: 
 # EXT4-fs error (device vda1): ext4_validate_block_bitmap:390: comm ext4lazyinit: bg 30: bad block bitmap checksum

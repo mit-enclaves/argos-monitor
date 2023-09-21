@@ -2,6 +2,7 @@
 
 use attestation::signature::{get_attestation_keys, EnclaveReport, ATTESTATION_DATA_SZ};
 use attestation::{hashing, signature};
+use hashing::TycheHasher;
 use capa_engine::config::{NB_DOMAINS,NB_CORES};
 use capa_engine::{
     permission, AccessRights, Bitmaps, CapaEngine, CapaError, CapaInfo, Domain, Handle, LocalCapa,
@@ -175,6 +176,11 @@ pub fn do_seal(
     let mut engine = CAPA_ENGINE.lock();
     let capa = engine.seal(current, cpuid, domain)?;
     
+    if let Ok(domain_capa) = engine.get_domain_capa(current, domain) {
+        log::trace!("Calculating attestation hash");
+        calculate_attestation_hash(&mut engine, domain_capa);
+    }
+
     //let domain_capa = engine
     //    .get_domain_capa(current, domain)
     //    .expect("Should be a domain capa");
@@ -327,6 +333,73 @@ pub fn do_domain_attestation(
         log::trace!("Wrong mode");
         None
     }
+}
+
+fn hash_access_right(hasher: &mut TycheHasher, access_rights: u8, mask: u8) {
+    if access_rights & mask != 0 {
+        hashing::hash_segment(hasher, &u8::to_le_bytes(1 as u8));
+    } else {
+        hashing::hash_segment(hasher, &u8::to_le_bytes(0 as u8));
+    }
+}
+
+fn hash_capa_info(
+    hasher: &mut TycheHasher,
+    engine: &mut MutexGuard<'_, CapaEngine>,
+    domain: Handle<Domain>,
+) {
+    let mut next_capa = NextCapaToken::new();
+    while let Some((info, next_next_capa)) = engine.enumerate(domain, next_capa) {
+        next_capa = next_next_capa;
+        match info {
+            CapaInfo::Region {
+                start,
+                end,
+                active,
+                confidential,
+                ops,
+            } => {
+                if ops.contains(MemOps::HASH) && active {
+                    // Hashing start - end of region
+                    hashing::hash_segment(hasher, &(usize::to_le_bytes(start)));
+                    hashing::hash_segment(hasher, &(usize::to_le_bytes(end)));
+
+                    // Hashing access rights
+                    let access_rights = ops.bits();
+                    hash_access_right(hasher, access_rights, MemOps::HASH.bits());
+                    hash_access_right(hasher, access_rights, MemOps::EXEC.bits());
+                    hash_access_right(hasher, access_rights, MemOps::WRITE.bits());
+                    hash_access_right(hasher, access_rights, MemOps::READ.bits());
+
+                    // Hash conf/shared info
+                    let conf_info = if confidential { 1 as u8 } else { 0 as u8 };
+                    hashing::hash_segment(hasher, &(u8::to_le_bytes(conf_info)));
+
+                    // Hashing region data info
+                    let mut addr = start;
+                    let addr_end = end;
+                    while addr < addr_end {
+                        unsafe {
+                            let byte_data = *(addr as *const u8);
+                            let byte_arr: [u8; 1] = [byte_data as u8];
+                            hashing::hash_segment(hasher, &byte_arr);
+                            addr = addr + 1;
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn calculate_attestation_hash(engine: &mut MutexGuard<'_, CapaEngine>, domain: Handle<Domain>) {
+    let mut hasher = hashing::get_hasher();
+
+    hash_capa_info(&mut hasher, engine, domain);
+
+    log::trace!("Finished calculating the hash!");
+    engine.set_hash(domain, hashing::get_hash(&mut hasher));
 }
 
 // ———————————————————————————————— Updates ————————————————————————————————— //
