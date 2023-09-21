@@ -152,31 +152,6 @@ fn handle_exit(
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
-                calls::SET_ENTRY_ON_CORE => {
-                    log::trace!(
-                        "Set entry on core {}, cr3 {:x}, rip {:x}, rsp {:x}",
-                        arg_2,
-                        arg_3,
-                        arg_4,
-                        arg_5
-                    );
-                    match monitor::do_set_entry(
-                        *domain,
-                        LocalCapa::new(arg_1),
-                        arg_2, // core
-                        arg_3, // cr3
-                        arg_4, // rip
-                        arg_5, // rsp
-                    ) {
-                        Ok(()) => vs.vcpu.set(Register::Rax, 0),
-                        Err(e) => {
-                            log::error!("Unable to set entry: {:?}", e);
-                            vs.vcpu.set(Register::Rax, 1);
-                        }
-                    }
-                    vs.vcpu.next_instruction()?;
-                    Ok(HandlerResult::Resume)
-                }
                 calls::SEAL_DOMAIN => {
                     log::trace!("Seal Domain");
                     let capa = monitor::do_seal(*domain, LocalCapa::new(arg_1)).expect("TODO");

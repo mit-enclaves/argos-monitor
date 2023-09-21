@@ -35,6 +35,10 @@ impl ContextData {
         vcpu.set(Register::Rsp, self.regs[Register::Rsp.as_usize()]);
     }
 
+    pub fn set_register(&mut self, reg: Register, value: u64) {
+        self.regs[reg.as_usize()] = value;
+    }
+
     pub fn restore(&self, rc_vmcs: &Mutex<RCFramePool>, vcpu: &mut ActiveVmcs<'static>) {
         let locked = rc_vmcs.lock();
         let rc_frame = locked.get(self.vmcs).unwrap();

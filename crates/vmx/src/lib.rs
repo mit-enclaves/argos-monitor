@@ -361,7 +361,8 @@ impl<'vmx> ActiveVmcs<'vmx> {
         }
     }
 
-    ///s Set a given register.
+    /// Set a given register.
+    /// TODO(@aghosn): can we handle rsp and rip from the array instead?
     pub fn set(&mut self, register: Register, value: u64) {
         match register {
             // SAFETY: We know that these registers always exits and that there is an active VMCS.
