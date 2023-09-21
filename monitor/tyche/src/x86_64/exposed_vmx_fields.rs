@@ -131,6 +131,11 @@ pub fn search_guest_nat(idx: usize) -> Option<GuestStateNat> {
     }
 }
 
+/// Group configurable registers by type/size.
+/// This requires one extra argument to be passed to the monitor call,
+/// but facilitates the logic on the monitor side for now.
+/// TODO: we should refactor crates/vmx and do the dispatch there,
+/// hide everything behind a single "set" and "get".
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum GuestRegisterGroups {
     GeneralPurpose = 0,
