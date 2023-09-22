@@ -561,7 +561,6 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
     //First clean current PMP settings - this should internally cause the appropriate flushes
     log::debug!("Clearing PMP");
     clear_pmp();
-
     let mut pmp_write_result: Result<PMPAddressingMode, PMPErrorCode>;
     let mut pmp_index = FROZEN_PMP_ENTRIES;
     for range in engine[domain_handle].regions().permissions() {
