@@ -3,7 +3,6 @@ use std::process::abort;
 
 use mmu::walker::{Level, WalkNext, Walker};
 use mmu::{FrameAllocator, PtFlag, PtMapper};
-
 use object::read::elf::ProgramHeader;
 use object::{elf, Endianness};
 use utils::{HostPhysAddr, HostVirtAddr};
@@ -18,10 +17,10 @@ pub fn align_address(addr: usize) -> usize {
     (PAGE_SIZE + addr) & !(PAGE_SIZE - 1)
 }
 
-#[cfg(not(feature = "riscv_enabled"))] 
+#[cfg(not(feature = "riscv_enabled"))]
 fn translate_flags(flags: u32, segtype: u32) -> PtFlag {
     log::info!("x86_translate_flags");
-    let mut ptflags: PtFlag; 
+    let mut ptflags: PtFlag;
     ptflags = PtFlag::PRESENT;
     if flags & elf::PF_W == elf::PF_W {
         ptflags = ptflags.union(PtFlag::WRITE);
@@ -35,21 +34,21 @@ fn translate_flags(flags: u32, segtype: u32) -> PtFlag {
     ptflags
 }
 
-#[cfg(feature = "riscv_enabled")] 
+#[cfg(feature = "riscv_enabled")]
 fn translate_flags(flags: u32, segtype: u32) -> PtFlag {
     log::info!("riscv_translate_flags");
     let mut ptflags: PtFlag;
-    ptflags = PtFlag::VALID;  
+    ptflags = PtFlag::VALID;
     if flags & elf::PF_R == elf::PF_R {
-        ptflags = ptflags.union(PtFlag::READ); 
+        ptflags = ptflags.union(PtFlag::READ);
     }
-    if flags & elf::PF_W == elf::PF_W { 
+    if flags & elf::PF_W == elf::PF_W {
         ptflags = ptflags.union(PtFlag::WRITE);
     }
-    if flags & elf::PF_X == elf::PF_X { 
+    if flags & elf::PF_X == elf::PF_X {
         ptflags = ptflags.union(PtFlag::EXECUTE);
     }
-    //TODO: User flag is not enabled for now, should be enabled after TRT support is available for RV. 
+    //TODO: User flag is not enabled for now, should be enabled after TRT support is available for RV.
     ptflags
 }
 
@@ -93,7 +92,12 @@ pub fn generate_page_tables(melf: &ModifiedELF) -> (Vec<u8>, usize, usize) {
         let virt = HostVirtAddr::new(vaddr);
         let size = align_address(mem_size);
         let flags = translate_flags(ph.program_header.p_flags(Endianness::Little), segtype);
-        log::info!("virt: {:x}, phys: {:x}, size: {:x}", virt.as_u64(), curr_phys, size);
+        log::info!(
+            "virt: {:x}, phys: {:x}, size: {:x}",
+            virt.as_u64(),
+            curr_phys,
+            size
+        );
         mapper.map_range(&allocator, virt, HostPhysAddr::new(curr_phys), size, flags);
         curr_phys += size;
     }
@@ -169,7 +173,7 @@ pub fn print_page_tables(file: &PathBuf) {
                     let flags = PtFlag::from_bits_truncate(*entry);
                     let phys = *entry & ((1 << 63) - 1) & (page_mask as u64);
 
-#[cfg(not(feature = "riscv_enabled"))]
+                    #[cfg(not(feature = "riscv_enabled"))]
                     // Print if present
                     if flags.contains(PtFlag::PRESENT) {
                         let padding = match level {
@@ -191,7 +195,7 @@ pub fn print_page_tables(file: &PathBuf) {
                         WalkNext::Leaf
                     }
 
-#[cfg(feature = "riscv_enabled")]
+                    #[cfg(feature = "riscv_enabled")]
                     // Print if present
                     if flags.contains(PtFlag::VALID) {
                         let padding = match level {
@@ -212,7 +216,6 @@ pub fn print_page_tables(file: &PathBuf) {
                     } else {
                         WalkNext::Leaf
                     }
-
                 },
             )
             .expect("Failed to dump pts");

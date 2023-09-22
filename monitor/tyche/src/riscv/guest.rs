@@ -1,18 +1,18 @@
-use core::{arch::asm};
+use core::arch::asm;
 
-use capa_engine::{Bitmaps, LocalCapa, NextCapaToken, Domain, Handle};
+use capa_engine::{Bitmaps, Domain, Handle, LocalCapa, NextCapaToken};
 //use qemu::println;
 use riscv_csrs::*;
 use riscv_pmp::clear_pmp;
 use riscv_sbi::ecall::ecall_handler;
 use riscv_utils::RegisterState;
-    //, read_mscratch, read_satp, write_satp, write_ra, write_sp};
-use crate::calls;
+
 use super::monitor;
-
 use crate::arch::cpuid;
+//, read_mscratch, read_satp, write_satp, write_ra, write_sp};
+use crate::calls;
 
-static mut ACTIVE_DOMAIN: Option<Handle<Domain>> = None; 
+static mut ACTIVE_DOMAIN: Option<Handle<Domain>> = None;
 //static mut ACTIVE_CONTEXT: Option<Handle<Context>> = None;
 
 // M-mode trap handler
@@ -117,7 +117,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     let mut mstatus: usize;
     let mut mtval: usize;
     let mut sp: usize = 0;
-    let mut mie: usize = 0; 
+    let mut mie: usize = 0;
     let mut mip: usize = 0;
     let mut mideleg: usize = 0;
     let mut satp: usize = 0;
@@ -141,12 +141,12 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
 
     log::debug!(
         "Trap arguments: mcause {:x}, mepc {:x} mstatus {:x} mtval {:x} mie {:x} mip {:x} mideleg {:x} ra {:x} a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x} satp: {:x}",
-        mcause, 
-        mepc, 
+        mcause,
+        mepc,
         mstatus,
         mtval,
         mie,
-        mip, 
+        mip,
         mideleg,
         reg_state.ra,
         reg_state.a0,
@@ -158,7 +158,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         reg_state.a6,
         reg_state.a7,
         satp
-    ); 
+    );
 
     // Check which trap it is
     // mcause register holds the cause of the machine mode trap
@@ -168,8 +168,8 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         }
         mcause::ECALL_FROM_SMODE => {
             if reg_state.a7 == 0x78ac5b {
-               //Tyche call 
-               misaligned_load_handler(reg_state);
+                //Tyche call
+                misaligned_load_handler(reg_state);
             } else {
                 ecall_handler(&mut ret, &mut err, reg_state.a0, reg_state.a6, reg_state.a7);
             }
@@ -177,7 +177,9 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         mcause::LOAD_ADDRESS_MISALIGNED => {
             misaligned_load_handler(reg_state);
         }
-        mcause::STORE_ACCESS_FAULT | mcause::LOAD_ACCESS_FAULT | mcause::INSTRUCTION_ACCESS_FAULT => { 
+        mcause::STORE_ACCESS_FAULT
+        | mcause::LOAD_ACCESS_FAULT
+        | mcause::INSTRUCTION_ACCESS_FAULT => {
             panic!("PMP Access Fault!");
         }
         mcause::INSTRUCTION_PAGE_FAULT | mcause::LOAD_PAGE_FAULT | mcause::STORE_PAGE_FAULT => {
@@ -197,7 +199,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
 
     // Return to the next instruction after the trap.
     // i.e. mepc += 4
-    // TODO: This shouldn't happen in case of switch. 
+    // TODO: This shouldn't happen in case of switch.
     unsafe {
         asm!("csrr t0, mepc");
         asm!("addi t0, t0, 0x4");
@@ -238,115 +240,124 @@ pub fn illegal_instruction_handler(mepc: usize, mstatus: usize) {
 }
 
 pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
-
     //println!("Misaligned_load!");
 
-    if reg_state.a7 == 0x78ac5b {   //It's a Tyche Call
+    if reg_state.a7 == 0x78ac5b {
+        //It's a Tyche Call
         let tyche_call: usize = reg_state.a0;
-        let arg_1: usize = reg_state.a1; 
-        let arg_2: usize = reg_state.a2; 
-        let arg_3: usize = reg_state.a3; 
-        let arg_4: usize = reg_state.a4; 
-        let arg_5: usize = reg_state.a5; 
-        let arg_6: usize = reg_state.a6; 
+        let arg_1: usize = reg_state.a1;
+        let arg_2: usize = reg_state.a2;
+        let arg_3: usize = reg_state.a3;
+        let arg_4: usize = reg_state.a4;
+        let arg_5: usize = reg_state.a5;
+        let arg_6: usize = reg_state.a6;
 
         let mut active_dom: Handle<Domain>;
         //let active_ctx: Handle<Context>;
-        let cpuid = cpuid(); 
-        unsafe { 
+        let cpuid = cpuid();
+        unsafe {
             active_dom = get_active_dom();
-        //    active_domain.unwrap();
-        //    active_ctx = active_context.unwrap(); 
+            //    active_domain.unwrap();
+            //    active_ctx = active_context.unwrap();
         }
 
         match tyche_call {
-           calls::CREATE_DOMAIN => {
+            calls::CREATE_DOMAIN => {
                 log::debug!("Create Domain");
                 let capa = monitor::do_create_domain(active_dom).expect("TODO");
                 reg_state.a0 = 0x0;
                 reg_state.a1 = capa.as_usize();
                 //TODO: Ok(HandlerResult::Resume) There is no main loop to check what happened
                 //here, do we need a wrapper to determine when we crash? For all cases except Exit,
-                //not yet. Must be handled after addition of more exception handling in Tyche. 
-           },
-           calls::CONFIGURE => {
+                //not yet. Must be handled after addition of more exception handling in Tyche.
+            }
+            calls::CONFIGURE => {
                 log::debug!("Configure");
                 if let Ok(bitmap) = Bitmaps::from_usize(arg_1) {
                     match monitor::do_set_config(
-                        active_dom, 
+                        active_dom,
                         LocalCapa::new(arg_2),
-                        bitmap, 
+                        bitmap,
                         arg_3 as u64,
-                    ) { 
+                    ) {
                         Ok(_) => {
-                            //TODO: do_init_child_contexts is not yet implemented on RISC-V. 
-                            reg_state.a0 = 0x0; 
-                        }, 
+                            //TODO: do_init_child_contexts is not yet implemented on RISC-V.
+                            reg_state.a0 = 0x0;
+                        }
                         Err(e) => {
                             log::error!("Configuration error: {:?}", e);
-                            reg_state.a0 = 0x1; 
+                            reg_state.a0 = 0x1;
                         }
                     }
                 } else {
                     log::error!("Invalid configuration target");
-                    reg_state.a0 = 0x1; 
+                    reg_state.a0 = 0x1;
                 }
-           },
-           calls::SET_ENTRY_ON_CORE => { 
+            }
+            calls::SET_ENTRY_ON_CORE => {
                 log::debug!("Set entry on core");
-                match monitor::do_set_entry(active_dom, LocalCapa::new(arg_1), arg_2, arg_3, arg_4, arg_5) {
+                match monitor::do_set_entry(
+                    active_dom,
+                    LocalCapa::new(arg_1),
+                    arg_2,
+                    arg_3,
+                    arg_4,
+                    arg_5,
+                ) {
                     Ok(()) => reg_state.a0 = 0x0,
                     Err(e) => {
                         log::error!("Unable to set entry: {:?}", e);
-                        reg_state.a0 = 0x1; 
+                        reg_state.a0 = 0x1;
                     }
                 }
-           },
-           calls::SEAL_DOMAIN => { 
+            }
+            calls::SEAL_DOMAIN => {
                 log::debug!("Seal Domain");
                 let capa = monitor::do_seal(active_dom, LocalCapa::new(arg_1)).expect("TODO");
                 reg_state.a0 = 0x0;
                 reg_state.a1 = capa.as_usize();
-           }, 
-           calls::SHARE => { 
+            }
+            calls::SHARE => {
                 log::debug!("Share");
                 //let capa = monitor::.do_().expect("TODO");
                 reg_state.a0 = 0x0;
                 reg_state.a1 = 0x0;
-           },
-           calls::SEND => {
+            }
+            calls::SEND => {
                 log::debug!("Send");
-                monitor::do_send(active_dom, LocalCapa::new(arg_1), LocalCapa::new(arg_2)).expect("TODO");
+                monitor::do_send(active_dom, LocalCapa::new(arg_1), LocalCapa::new(arg_2))
+                    .expect("TODO");
                 reg_state.a0 = 0x0;
-           },
-           calls::SEGMENT_REGION => {    
+            }
+            calls::SEGMENT_REGION => {
                 log::debug!("Segment Region");
                 let (left, right) = monitor::do_segment_region(
-                        active_dom,
-                        LocalCapa::new(arg_1),
-                        arg_2, 
-                        arg_3,
-                        arg_6 >> 32, 
-                        arg_4, 
-                        arg_5, 
-                        (arg_6 << 32) >> 32, 
-                    ).expect("TODO");
+                    active_dom,
+                    LocalCapa::new(arg_1),
+                    arg_2,
+                    arg_3,
+                    arg_6 >> 32,
+                    arg_4,
+                    arg_5,
+                    (arg_6 << 32) >> 32,
+                )
+                .expect("TODO");
                 reg_state.a0 = 0x0;
                 reg_state.a1 = left.as_usize();
-                reg_state.a2 = right.as_usize(); 
-           },
-           calls::REVOKE => { 
+                reg_state.a2 = right.as_usize();
+            }
+            calls::REVOKE => {
                 log::debug!("Revoke");
                 monitor::do_revoke(active_dom, LocalCapa::new(arg_1)).expect("TODO");
                 reg_state.a0 = 0x0;
-           }, 
-           calls::DUPLICATE => {
+            }
+            calls::DUPLICATE => {
                 log::debug!("Duplicate");
                 let capa = monitor::do_duplicate(active_dom, LocalCapa::new(arg_1)).expect("TODO");
                 reg_state.a0 = 0x0;
                 reg_state.a1 = capa.as_usize();
-           },
-           calls::ENUMERATE => { 
+            }
+            calls::ENUMERATE => {
                 log::debug!("Enumerate");
                 if let Some((info, next)) =
                     monitor::do_enumerate(active_dom, NextCapaToken::from_usize(arg_1))
@@ -363,16 +374,17 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                     //log::debug!("do_enumerate response: {:x}", reg_state.a4);
                 }
                 reg_state.a0 = 0x0;
-           }, 
-           calls::SWITCH => { 
+            }
+            calls::SWITCH => {
                 log::debug!("Switch");
                 //Adding register state to context now? (not doing it at sealing, initialized to
-                //zero then). 
-                
-                monitor::do_switch(active_dom, LocalCapa::new(arg_1), cpuid, reg_state).expect("TODO");
-                
+                //zero then).
+
+                monitor::do_switch(active_dom, LocalCapa::new(arg_1), cpuid, reg_state)
+                    .expect("TODO");
+
                 /* let (mut current_ctx, next_domain, next_ctx, next_context, return_capa) = monitor::do_switch(active_dom, active_ctx, LocalCapa::new(arg_1)).expect("TODO");
-                //TODO: Do we need ra explicitly? It's already stored in reg_state, right?  
+                //TODO: Do we need ra explicitly? It's already stored in reg_state, right?
                 current_ctx.reg_state = *reg_state;
                 current_ctx.ra = reg_state.ra;
                 current_ctx.sp = read_mscratch();   //Recall: Saved the previous SP there first thing in
@@ -386,114 +398,102 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
 
                 reg_state.a0 = 0x0;
                 reg_state.a1 = return_capa.as_usize();
-                unsafe { set_active_dom_ctx(next_domain, next_ctx); } */ 
-           },
-           calls::ENCLAVE_ATTESTATION => {
+                unsafe { set_active_dom_ctx(next_domain, next_ctx); } */
+            }
+            calls::ENCLAVE_ATTESTATION => {
                 log::trace!("Get attestation!");
                 if let Some(report) = monitor::do_domain_attestation(active_dom, arg_1, arg_2) {
                     reg_state.a0 = 0;
                     if arg_2 == 0 {
-                        reg_state.a1 = 
-                        usize::from_le_bytes(
-                                report.public_key.as_slice()[0..8].try_into().unwrap(),
-                            );
-                        reg_state.a2 = 
-                        usize::from_le_bytes(
-                                report.public_key.as_slice()[8..16].try_into().unwrap(),
-                            );
-                        reg_state.a3 = 
-                        usize::from_le_bytes(
-                                report.public_key.as_slice()[16..24].try_into().unwrap(),
-                            ) as usize;
-                        reg_state.a4 = 
-                        usize::from_le_bytes(
-                                report.public_key.as_slice()[24..32].try_into().unwrap(),
-                            ) as usize;
-                        reg_state.a5 = 
-                        usize::from_le_bytes(
-                                report.signed_enclave_data.as_slice()[0..8]
-                                    .try_into()
-                                    .unwrap(),
-                            ) as usize;
-                        reg_state.a6 = 
-                        usize::from_le_bytes(
-                                report.signed_enclave_data.as_slice()[8..16]
-                                    .try_into()
-                                    .unwrap(),
-                            ) as usize;
+                        reg_state.a1 = usize::from_le_bytes(
+                            report.public_key.as_slice()[0..8].try_into().unwrap(),
+                        );
+                        reg_state.a2 = usize::from_le_bytes(
+                            report.public_key.as_slice()[8..16].try_into().unwrap(),
+                        );
+                        reg_state.a3 = usize::from_le_bytes(
+                            report.public_key.as_slice()[16..24].try_into().unwrap(),
+                        ) as usize;
+                        reg_state.a4 = usize::from_le_bytes(
+                            report.public_key.as_slice()[24..32].try_into().unwrap(),
+                        ) as usize;
+                        reg_state.a5 = usize::from_le_bytes(
+                            report.signed_enclave_data.as_slice()[0..8]
+                                .try_into()
+                                .unwrap(),
+                        ) as usize;
+                        reg_state.a6 = usize::from_le_bytes(
+                            report.signed_enclave_data.as_slice()[8..16]
+                                .try_into()
+                                .unwrap(),
+                        ) as usize;
                     } else if arg_2 == 1 {
-                        reg_state.a1 = 
-                        usize::from_le_bytes(
-                                report.signed_enclave_data.as_slice()[16..24]
-                                    .try_into()
-                                    .unwrap(),
-                            );
-                        reg_state.a2 = 
-                        usize::from_le_bytes(
-                                report.signed_enclave_data.as_slice()[24..32]
-                                    .try_into()
-                                    .unwrap(),
-                            );
-                        reg_state.a3 = 
-                        usize::from_le_bytes(
-                                report.signed_enclave_data.as_slice()[32..40]
-                                    .try_into()
-                                    .unwrap(),
-                            );
-                        reg_state.a4 = 
-                        usize::from_le_bytes(
-                                report.signed_enclave_data.as_slice()[40..48]
-                                    .try_into()
-                                    .unwrap(),
-                            );
-                        reg_state.a5 = 
-                        usize::from_le_bytes(
-                                report.signed_enclave_data.as_slice()[48..56]
-                                    .try_into()
-                                    .unwrap(),
-                            );
-                        reg_state.a6 = 
-                        usize::from_le_bytes(
-                                report.signed_enclave_data.as_slice()[56..64]
-                                    .try_into()
-                                    .unwrap(),
-                            );
+                        reg_state.a1 = usize::from_le_bytes(
+                            report.signed_enclave_data.as_slice()[16..24]
+                                .try_into()
+                                .unwrap(),
+                        );
+                        reg_state.a2 = usize::from_le_bytes(
+                            report.signed_enclave_data.as_slice()[24..32]
+                                .try_into()
+                                .unwrap(),
+                        );
+                        reg_state.a3 = usize::from_le_bytes(
+                            report.signed_enclave_data.as_slice()[32..40]
+                                .try_into()
+                                .unwrap(),
+                        );
+                        reg_state.a4 = usize::from_le_bytes(
+                            report.signed_enclave_data.as_slice()[40..48]
+                                .try_into()
+                                .unwrap(),
+                        );
+                        reg_state.a5 = usize::from_le_bytes(
+                            report.signed_enclave_data.as_slice()[48..56]
+                                .try_into()
+                                .unwrap(),
+                        );
+                        reg_state.a6 = usize::from_le_bytes(
+                            report.signed_enclave_data.as_slice()[56..64]
+                                .try_into()
+                                .unwrap(),
+                        );
                     }
                 } else {
                     log::trace!("Attestation error");
                     reg_state.a0 = 1;
                 }
             }
-            calls::DEBUG => { 
+            calls::DEBUG => {
                 log::debug!("Debug");
                 monitor::do_debug();
                 reg_state.a0 = 0x0;
-           },
-           calls::EXIT => { 
+            }
+            calls::EXIT => {
                 log::debug!("Tyche Call: Exit");
-                //TODO 
+                //TODO
                 //let capa = monitor::.do_().expect("TODO");
                 reg_state.a0 = 0x0;
                 //reg_state.a1 = capa.as_usize();
-           }
-           _ => { /*TODO: Invalid Tyche Call*/ 
+            }
+            _ => {
+                /*TODO: Invalid Tyche Call*/
                 log::debug!("Invalid Tyche Call: {:x}", reg_state.a0);
                 todo!("Unknown Tyche Call.");
-           },
+            }
         }
         monitor::apply_core_updates(&mut active_dom, cpuid, reg_state);
         //Updating the state
-        unsafe { 
-            set_active_dom(active_dom); 
+        unsafe {
+            set_active_dom(active_dom);
         }
     }
-    //TODO: ELSE NOT TYCHE CALL 
+    //TODO: ELSE NOT TYCHE CALL
     //Handle Illegal Instruction Trap
-
 }
 
-pub unsafe fn get_active_dom() -> (Handle<Domain>) { 
-    return ACTIVE_DOMAIN.unwrap(); 
+pub unsafe fn get_active_dom() -> (Handle<Domain>) {
+    return ACTIVE_DOMAIN.unwrap();
 }
 
 pub unsafe fn set_active_dom(domain: Handle<Domain>) {

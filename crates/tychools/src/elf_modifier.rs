@@ -3,7 +3,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 
-use mmu::{PtFlag};
+use mmu::PtFlag;
 use object::read::elf::{FileHeader, ProgramHeader, SectionHeader};
 use object::{elf, Endianness, U16Bytes, U32Bytes, U64Bytes};
 use serde::{Deserialize, Serialize};
@@ -15,8 +15,7 @@ use crate::page_table_mapper::{align_address, generate_page_tables};
 pub static PF_H: u32 = 1 << 3;
 
 #[cfg(feature = "riscv_enabled")]
-const PT_PHYS_PAGE_MASK: u64 = ((1 << 44) - 1) << PtFlag::flags_count();    //TODO(neelu): This is specific for SV48. 
-
+const PT_PHYS_PAGE_MASK: u64 = ((1 << 44) - 1) << PtFlag::flags_count(); //TODO(neelu): This is specific for SV48.
 
 // —————————————————————————————— Local Enums ——————————————————————————————— //
 
@@ -331,13 +330,13 @@ impl ModifiedELF {
             std::slice::from_raw_parts_mut(slice_bytes.as_ptr() as *mut u64, slice_bytes.len() / 8)
         };
 
-        let page_offset_width: u64 = 12; //TODO(neelu): Generalize this, it assumes 4 KB pages. 
+        let page_offset_width: u64 = 12; //TODO(neelu): Generalize this, it assumes 4 KB pages.
         let page_offset_mask: u64 = 0x1000 - 1;
         if (offset & !page_offset_mask) != offset {
             panic!("The offset is not page aligned.");
         }
 
-#[cfg(not(feature = "riscv_enabled"))]        
+        #[cfg(not(feature = "riscv_enabled"))]
         // TODO(aghosn) I am lazy, is it correct to do a simple add?
         for entry in tables.iter_mut() {
             if *entry != 0 && (*entry & PtFlag::PRESENT.bits() == PtFlag::PRESENT.bits()) {
@@ -345,15 +344,14 @@ impl ModifiedELF {
             }
         }
 
-#[cfg(feature = "riscv_enabled")]         
+        #[cfg(feature = "riscv_enabled")]
         for entry in tables.iter_mut() {
             if *entry != 0 && (*entry & PtFlag::VALID.bits() == PtFlag::VALID.bits()) {
-                let ppn = (offset >> page_offset_width) + (*entry >> PtFlag::flags_count()); 
-                *entry = (*entry & !PT_PHYS_PAGE_MASK) | (ppn << PtFlag::flags_count()); 
+                let ppn = (offset >> page_offset_width) + (*entry >> PtFlag::flags_count());
+                *entry = (*entry & !PT_PHYS_PAGE_MASK) | (ppn << PtFlag::flags_count());
                 log::debug!("Fixing page tables: entry: {:x} and ppn: {:x}", *entry, ppn);
             }
         }
-    
     }
 
     /// Dumps the content of the ELF into a file.
@@ -402,7 +400,7 @@ impl ModifiedELF {
         for seg in &self.segments {
             let seg_bytes = any_as_u8_slice(&seg.program_header);
             writer.write(seg_bytes);
-          //  log::info!("seg_bytes: {:x}", seg_bytes.len());
+            //  log::info!("seg_bytes: {:x}", seg_bytes.len());
         }
         // Write program content.
         writer.write(&self.data);
@@ -411,7 +409,7 @@ impl ModifiedELF {
         for sec in &self.sections {
             let sec_bytes = any_as_u8_slice(&sec.section_header);
             writer.write(sec_bytes);
-         //   log::info!("sec_bytes: {:x}", sec_bytes.len());
+            //   log::info!("sec_bytes: {:x}", sec_bytes.len());
         }
         // Write secret data too.
         writer.write(&self.secret_data);
@@ -715,7 +713,12 @@ impl ModifiedSegment {
     /// is greater than the affected address.
     pub fn patch_offset(&mut self, delta: u64, affected: u64) {
         let offset = self.program_header.p_offset(DENDIAN);
-        log::info!("p_offset: {:x} and delta: {:x} and affected: {:x}", offset, delta, affected);
+        log::info!(
+            "p_offset: {:x} and delta: {:x} and affected: {:x}",
+            offset,
+            delta,
+            affected
+        );
         //if offset >= affected {
         if self.program_header.p_filesz(DENDIAN) > 0 {
             self.program_header.p_offset = U64Bytes::new(DENDIAN, offset + delta);

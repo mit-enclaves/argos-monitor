@@ -16,9 +16,9 @@ pub mod mcause {
     pub const LOAD_ADDRESS_MISALIGNED: usize = 4;
     pub const LOAD_ACCESS_FAULT: usize = 5;
     pub const ECALL_FROM_UMODE: usize = 8;
-    pub const STORE_ACCESS_FAULT: usize = 7; 
+    pub const STORE_ACCESS_FAULT: usize = 7;
     pub const ECALL_FROM_SMODE: usize = 9;
-    pub const INSTRUCTION_PAGE_FAULT: usize = 12; 
-    pub const LOAD_PAGE_FAULT: usize = 13; 
-    pub const STORE_PAGE_FAULT: usize = 15; 
+    pub const INSTRUCTION_PAGE_FAULT: usize = 12;
+    pub const LOAD_PAGE_FAULT: usize = 13;
+    pub const STORE_PAGE_FAULT: usize = 15;
 }
