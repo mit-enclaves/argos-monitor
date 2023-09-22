@@ -11,7 +11,6 @@ use utils::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
 const NB_ENTRIES: usize = 512;
 /// Size of a single page.
 const PAGE_SIZE: u64 = 0x1000;
-
 /// Mask for the last 9 bits, corresponding to the size of page table indexes.
 const PAGE_TABLE_INDEX_MASK: u64 = 0b111111111;
 const PAGE_TABLE_INDEX_LEN: u64 = 9;
