@@ -106,8 +106,6 @@ attestation_enclave: app enclave
 
 else ifeq ($(ARCH), riscv)
 
-#cargo build --release --target=riscv64gc-unknown-linux-gnu --config target.riscv64gc-unknown-linux-gnu.linker=\"riscv64-unknown-linux-gnu-gcc\" --features="riscv_enabled"
-
 enclave: $(CODE_ENCLAVE) $(HDRS_ENCLAVE)
 	echo "riscv"
 	echo $(GCC)
