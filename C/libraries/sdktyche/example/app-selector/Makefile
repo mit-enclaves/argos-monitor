@@ -29,11 +29,11 @@ HDRS_TRUSTED=$(wildcard include/*.h)
 
 # Configuration for runtime.
 ifeq ($(ARCH), x86)
-CODE_RUNTIME = $(wildcard $(SDK)/runtime/*.c) $(wildcard $(SDK)/runtime/asm.S)
-HDRS_RUNTIME = $(wildcard $(SDK)/include/*.h) 
+	CODE_RUNTIME = $(wildcard $(SDK)/runtime/*.c) $(wildcard $(SDK)/runtime/asm.S)
+	HDRS_RUNTIME = $(wildcard $(SDK)/include/*.h) 
 else ifeq ($(ARCH), riscv)
-CODE_RUNTIME = $(wildcard $(SDK)/runtime/*.c) $(wildcard $(SDK)/runtime/riscv_asm.S)
-HDRS_RUNTIME = $(wildcard $(SDK)/include/*.h)
+	CODE_RUNTIME = $(wildcard $(SDK)/runtime/*.c) $(wildcard $(SDK)/runtime/riscv_asm.S)
+	HDRS_RUNTIME = $(wildcard $(SDK)/include/*.h)
 endif
 
 ## ———————————————————————— Loader code and headers ————————————————————————— ##
@@ -62,10 +62,9 @@ APP_INCLUDES = $(COMMON_INCLUDES) -I$(ELF64)/include -I$(PTS)/include -I$(DRIVER
 
 ## ————————————————————— Configuration for the install —————————————————————— ##
 ifeq ($(ARCH), x86)
-DISK_PATH ?= /tmp/mount/tyche/programs 
+	DISK_PATH ?= /tmp/mount/tyche/programs 
 else ifeq ($(ARCH), riscv)
-#DISK_PATH ?= /home/neelu/vmxvmm/builds/ramfs-riscv/tyche/programs/
-DISK_PATH ?= /tmp/ubuntu_riscv_mount/tyche/programs
+	DISK_PATH ?= /tmp/ubuntu_riscv_mount/tyche/programs
 endif
 TYCHOOLS_PATH ?= ../../../../../crates/tychools/
 ## ———————————————————————————————— Targets ————————————————————————————————— ##
@@ -90,8 +89,8 @@ install_disk: all
 
 else ifeq ($(ARCH), riscv)
 
-#This one is because the load segments starting virtual address is not page aligned, without specifying the section-start as done below. 
-#Todo (neelu): one way to do this is to write a linker script, as this particular fix may only work for some examples.  
+# This one is because the load segments starting virtual address is not page aligned, without specifying the section-start as done below. 
+# TODO (neelu): one way to do this is to write a linker script, as this particular fix may only work for some examples.  
 enclave: $(CODE_DOMAIN) $(HDRS_DOMAIN)
 	$(GCC) -DTYCHE_USER_SPACE=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_DOMAIN) -Wl,--section-start=.data=0x11000
 

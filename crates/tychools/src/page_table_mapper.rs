@@ -2,7 +2,9 @@ use std::path::PathBuf;
 use std::process::abort;
 use std::sync::atomic::Ordering;
 
+#[cfg(not(feature = "riscv_enabled"))]
 use mmu::ptmapper::MAP_PAGE_TABLE;
+
 use mmu::walker::{Level, WalkNext, Walker};
 use mmu::{FrameAllocator, PtFlag, PtMapper};
 use object::read::elf::ProgramHeader;
@@ -113,6 +115,7 @@ pub fn generate_page_tables(
         "Done mapping all the segments, we consummed {} extra pages",
         ADDR_IDX.load(Ordering::Relaxed)
     );
+#[cfg(not(feature = "riscv_enabled"))]
     if map_op {
         let mut virt_page_addr: usize = virt_addr_start;
         log::debug!("Now mapping the pages for page tables");
