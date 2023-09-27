@@ -1,14 +1,22 @@
 $(info ARCH="$(ARCH)")
 
 ifeq ($(ARCH), x86)
+	DISK = "../ubuntu.qcow2"
+	MOUNT_DIR = "/tmp/mount"
+else ifeq ($(ARCH), riscv)
+	DISK = "../ubuntu-22.04.3-preinstalled-server-riscv64+unmatched.img"
+	MOUNT_DIR = "/tmp/ubuntu_riscv_mount/"
+endif 
 
 all:
 
 ubuntu_mount:
-	sudo ./scripts/mount_ubuntu.sh mount ../ubuntu.qcow2 /tmp/mount qcow2
+	sudo ./scripts/mount_ubuntu.sh mount $(DISK) $(MOUNT_DIR) $(ARCH)
 
 ubuntu_umount:
-	sudo ./scripts/mount_ubuntu.sh umount ../ubuntu.qcow2 /tmp/mount
+	sudo ./scripts/mount_ubuntu.sh umount $(DISK) $(MOUNT_DIR) $(ARCH)
+
+ifeq ($(ARCH), x86)
 
 PROGRAMGS_PATH ?= /tmp/mount/tyche/programs
 TYCHOOLS_LOCAL_BIN_PATH ?= ../target/release
@@ -26,33 +34,16 @@ update_disk:
 	
 else ifeq ($(ARCH), riscv)
 
-.PHONY: all 
-
-all: ubuntu_mount compile_riscv_and_update_disk ubuntu_umount 
-
-ubuntu_mount: 
-	sudo ./scripts/mount_ubuntu_riscv64.sh mount ../ubuntu-22.04.3-preinstalled-server-riscv64+unmatched.img /tmp/ubuntu_riscv_mount 
-
-ubuntu_umount: 
-	sudo ./scripts/mount_ubuntu_riscv64.sh umount ../ubuntu-22.04.3-preinstalled-server-riscv64+unmatched.img /tmp/ubuntu_riscv_mount
-
 PROGRAMGS_PATH ?= /tmp/ubuntu_riscv_mount/tyche/programs
 TYCHOOLS_LOCAL_BIN_PATH ?= ../target/release
 
-compile_riscv_and_update_disk: 
+update_disk: 
 	sudo chown --recursive $(shell whoami) /tmp/ubuntu_riscv_mount/tyche
 	make ARCH=riscv -B -C drivers/tyche install_disk 
 	make ARCH=riscv -B -C libraries/sdktyche/example/app-selector install_disk
-	#make ARCH=riscv -B -C libraries/sdkenclave/example/enclave install_disk
-	#make ARCH=riscv -B -B libraries/sdkenclave/example/debug install_disk
-	#make ARCH=riscv -B -C libraries/trt
-	#cp scripts/install_drivers.sh /home/neelu/vmxvmm/builds/ramfs-riscv/
-	#cp scripts/run_eapp.sh /home/neelu/vmxvmm/builds/ramfs-riscv/
-	#cp libraries/sdkenclave/*.so /home/neelu/vmxvmm/builds/ramfs-riscv/
 	cp scripts/riscv64_install_drivers.sh /tmp/ubuntu_riscv_mount/tyche
 	cp scripts/run_eapp.sh /tmp/ubuntu_riscv_mount/tyche
 	cp $(TYCHOOLS_LOCAL_BIN_PATH)/tychools $(PROGRAMGS_PATH)/tychools 
-	#cp libraries/sdkenclave/*.so /tmp/ubuntu_riscv_mount/tyche/programs
 
 # Use this when you see errors like the following during the boot: 
 # EXT4-fs error (device vda1): ext4_validate_block_bitmap:390: comm ext4lazyinit: bg 30: bad block bitmap checksum

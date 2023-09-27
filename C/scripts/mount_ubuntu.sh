@@ -4,6 +4,29 @@ MOUNT_POINT="/tmp/mount_ubuntu_tyche"
 
 DISK="$2"
 
+mount_ubuntu_riscv() { 
+  if [ ! -f "$DISK" ]; then
+    echo "The file $DISK does not exist"
+    exit 1
+  fi
+
+  modprobe loop max_part=8
+
+  losetup -P /dev/loop0 $DISK
+
+  LOC=`fdisk /dev/loop0 -l | grep "G Linux" | awk '{print $1}'`
+  mount $LOC $MOUNT_POINT
+}
+
+umount_ubuntu_riscv() {
+  if [ ! -d "$MOUNT_POINT" ]; then
+    echo "The folder $MOUNT_POINT does not exist."
+    exit 1
+  fi
+  umount $MOUNT_POINT
+  sudo losetup -d /dev/loop0
+}
+
 mount_ubuntu() {
   if [ ! -f "$DISK" ]; then
     echo "The file $DISK does not exist"
@@ -49,7 +72,11 @@ if [ ! "$3" = "" ]; then
   MOUNT_POINT="$3"
 fi
 
-if [ "$1" = "mount" ]; then
+if [ "$1" = "mount" ] && [ "$4" = "riscv" ]; then 
+  mount_ubuntu_riscv
+elif [ "$1" = "umount" ] && [ "$4" = "riscv" ]; then
+  umount_ubuntu_riscv
+elif [ "$1" = "mount" ]; then
   mount_ubuntu
 elif [ "$1" = "umount" ]; then
   umount_unbuntu

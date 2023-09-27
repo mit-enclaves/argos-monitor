@@ -75,6 +75,7 @@ impl PtFlag {
 pub const HIGH_BITS_MASK: u64 = !(0b111111111111 << 52);
 #[cfg(not(feature = "riscv_enabled"))]
 pub const DEFAULT_PROTS: PtFlag = PtFlag::PRESENT.union(PtFlag::WRITE).union(PtFlag::USER);
+#[cfg(not(feature = "riscv_enabled"))]
 pub const MAP_PAGE_TABLE: PtFlag = PtFlag::PRESENT.union(PtFlag::WRITE);
 
 #[cfg(feature = "riscv_enabled")]
