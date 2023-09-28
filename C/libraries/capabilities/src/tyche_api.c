@@ -29,10 +29,7 @@ int tyche_call(vmcall_frame_t* frame)
     : "rm" (frame->vmcall), "rm" (frame->arg_1), "rm" (frame->arg_2), "rm" (frame->arg_3), "rm" (frame->arg_4), "rm" (frame->arg_5), "rm" (frame->arg_6) 
     : "rax", "rdi", "rsi", "rdx", "rcx", "r8", "r9", "memory");
 #elif defined(CONFIG_RISCV) || defined(__riscv)
-  //TODO(neelu)
-  //TEST(0);
     asm volatile(
-        //"mv t0, a0\n\t"
         "addi sp, sp, -9*8\n\t"
         "sd a0, 0*8(sp)\n\t"
         "sd a1, 1*8(sp)\n\t"
@@ -49,13 +46,8 @@ int tyche_call(vmcall_frame_t* frame)
         "mv a4, %[sa4]\n\t"
         "mv a5, %[sa5]\n\t" 
         "mv a6, %[sa6]\n\t"
-        //"mv a0, %[sa0]\n\t"
-        //"mv a7, %[sa7]\n\t"
 	    "li a7, 0x5479636865\n\t"
-        //"ld t0, 0x1(x0)\n\t"
         "ecall\n\t"
-        //"wfi"	//TODO: Update this to be usable by both U-mode and S-mode.
-        //"csrs sstatus, %[mask]\n\t"
         "mv %[da0], a0\n\t"
         "mv %[da1], a1\n\t"
         "mv %[da2], a2\n\t"
@@ -73,11 +65,8 @@ int tyche_call(vmcall_frame_t* frame)
         "ld a7, 7*8(sp)\n\t"
         "addi sp, sp, 9*8\n\t"
 
-        //"mv a0, t0\n\t"
         : [da0]"=r" (result), [da1]"=r" (frame->value_1), [da2]"=r" (frame->value_2), [da3]"=r" (frame->value_3), [da4]"=r" (frame->value_4), [da5]"=r" (frame->value_5), [da6]"=r" (frame->value_6)
         :  [sa0]"r" (frame->vmcall), [sa1]"r" (frame->arg_1), [sa2]"r" (frame->arg_2), [sa3]"r" (frame->arg_3), [sa4]"r" (frame->arg_4), [sa5]"r" (frame->arg_5), [sa6]"r" (frame->arg_6)   
-           //, [sa7]"r" (frame->arg_7)
-           //, [mask]"r" (1 << 18)
 	    : "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"
     );
 #endif
@@ -113,10 +102,7 @@ int tyche_call_cli(vmcall_frame_t* frame)
     : "rm" (frame->vmcall), "rm" (frame->arg_1), "rm" (frame->arg_2), "rm" (frame->arg_3), "rm" (frame->arg_4), "rm" (frame->arg_5), "rm" (frame->arg_6) 
     : "rax", "rdi", "rsi", "rdx", "rcx", "r8", "r9", "memory");
 #elif defined(CONFIG_RISCV) || defined(__riscv)
-  //TODO(neelu)
-  //TEST(0);
   asm volatile(
-        //"mv t0, a0\n\t"
         "addi sp, sp, -9*8\n\t"
         "sd a0, 0*8(sp)\n\t"
         "sd a1, 1*8(sp)\n\t"
@@ -133,13 +119,8 @@ int tyche_call_cli(vmcall_frame_t* frame)
         "mv a4, %[sa4]\n\t"
         "mv a5, %[sa5]\n\t" 
         "mv a6, %[sa6]\n\t"
-        //"mv a0, %[sa0]\n\t"
-        //"mv a7, %[sa7]\n\t"
 	    "li a7, 0x5479636865\n\t"
-        //"ld t0, 0x1(x0)\n\t"
         "ecall\n\t"
-        //"wfi"	//TODO: Update this to be usable by both U-mode and S-mode.
-        //"csrs sstatus, %[mask]\n\t"
         "mv %[da0], a0\n\t"
         "mv %[da1], a1\n\t"
         "mv %[da2], a2\n\t"
@@ -157,11 +138,8 @@ int tyche_call_cli(vmcall_frame_t* frame)
         "ld a7, 7*8(sp)\n\t"
         "addi sp, sp, 9*8\n\t"
 
-        //"mv a0, t0\n\t"
         : [da0]"=r" (result), [da1]"=r" (frame->value_1), [da2]"=r" (frame->value_2), [da3]"=r" (frame->value_3), [da4]"=r" (frame->value_4), [da5]"=r" (frame->value_5), [da6]"=r" (frame->value_6)
         :  [sa0]"r" (frame->vmcall), [sa1]"r" (frame->arg_1), [sa2]"r" (frame->arg_2), [sa3]"r" (frame->arg_3), [sa4]"r" (frame->arg_4), [sa5]"r" (frame->arg_5), [sa6]"r" (frame->arg_6)   
-           //, [sa7]"r" (frame->arg_7)
-           //, [mask]"r" (1 << 18)
 	    : "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"
     );
 
@@ -459,7 +437,6 @@ int tyche_switch(capa_index_t* transition_handle, void* args)
   // Set the return handle as the one used to do the switch got consummed.
   *transition_handle = frame.value_1;
 #elif defined(CONFIG_RISCV) || defined(__riscv)
-  //TODO(neelu)
   asm volatile(
         "addi sp, sp, -6*8\n\t"
         "sd a0, 0*8(sp)\n\t"
@@ -471,10 +448,8 @@ int tyche_switch(capa_index_t* transition_handle, void* args)
         "mv a1, %[sa1]\n\t"
         "mv a2, %[sa2]\n\t"
         "mv a3, %[sa3]\n\t"
-	    //"wfi"	//TODO: Update this to be usable by both U-mode and S-mode. 
         "li a7, 0x5479636865\n\t"
         "ecall\n\t"
-        //"ld t0, 0x1(x0)\n\t"
         "mv %[da0], a0\n\t"
         "mv %[da1], a1\n\t"
         "ld a0, 0*8(sp)\n\t"

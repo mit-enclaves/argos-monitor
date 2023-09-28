@@ -1,8 +1,10 @@
+#if defined(CONFIG_RISCV) || defined(__riscv)
+
 .text
 
 // Take a capa_index_t* and a void** 
-.globl riscv_asm_call_gate
-riscv_asm_call_gate:
+.globl asm_call_gate
+asm_call_gate:
     //ld a2, 0x0(a1)      //loading the args - TODO: Make sure this is correct!! Because the tyche call id is supposed to be in a0. 
     //ld a1, 0x0(a0)
     //mv a2, a1 
@@ -25,3 +27,5 @@ _start:
   li a0, 0x1
   li a7, 0x5479636865
   ecall 
+
+#endif 

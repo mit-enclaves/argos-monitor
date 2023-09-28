@@ -26,17 +26,6 @@ sha2 = "0.6.0"
 clap-num = "1.0.2"
 ed25519-compact = {path = "../../vendor/forked_signature"}
 
-#[target.'cfg(riscv_enabled)'.dependencies]
-#mmu = { version = "0.1.0", path = "../mmu", features = ["riscv_enabled"]}
-
-#[target.'cfg(not(riscv_enabled))'.dependencies]
-#mmu = { version = "0.1.0", path = "../mmu", features = ["riscv_enabled"] }
-
 [features] 
 riscv_enabled = [] 
-#[target.riscv64gc-unknown-linux-gnu]
-#linker = "rust-lld"
-#[target.'cfg(target_arch = "riscv64")'.build]
-#rustflags = ["-C", "link-arg=-fuse-ld=rust-lld,-Wl,--verbose"]
-#rustflags = ["-C", "link-arg=-Wl,--verbose"]
 

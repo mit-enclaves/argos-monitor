@@ -16,6 +16,7 @@ const PAGE_SIZE: u64 = 0x1000;
 const PAGE_OFFSET_WIDTH: u64 = 12;
 
 /// A mask for extracting an address from a page table entry.
+#[cfg(not(feature = "riscv_enabled"))]
 const ADDRESS_MASK: u64 = 0x7fffffffff000;
 /// Mask for the last 9 bits, corresponding to the size of page table indexes.
 const PAGE_TABLE_INDEX_MASK: u64 = 0b111111111;
@@ -236,7 +237,6 @@ pub unsafe trait Walker {
                 return Ok(());
             };
             phys_addr = Self::PhysAddr::from_u64((*entry >> L1_INDEX_START) << PAGE_OFFSET_WIDTH);
-            log::info!("Phys_addr: {:x}", phys_addr.as_u64());
         }
     }
 
@@ -303,18 +303,9 @@ where
     let level_offset = level.area_size();
     let level_mask = level.mask();
 
-    log::info!(
-        "idx: {:x} addr: {:x}, end: {:x}",
-        idx,
-        addr.as_u64(),
-        end.as_u64()
-    );
-
     while addr < end && idx < NB_ENTRIES {
         // Process entry
         let entry = &mut page[idx];
-
-        log::info!("entry: {:x}", *entry);
 
         match callback(addr, entry, level) {
             WalkNext::Continue => {
@@ -334,9 +325,7 @@ where
                     }
                 }
             }
-            WalkNext::Leaf => {
-                //log::info!("Leaf: addr: {:x} entry: {:p}", addr.as_u64(), entry);
-            } // Proceed to the next entry at the same level
+            WalkNext::Leaf => (), // Proceed to the next entry at the same level
             WalkNext::Abort => return Err(()), // Abort walk
         }
 
@@ -347,8 +336,6 @@ where
             Some(addr) => addr,
         };
         idx += 1;
-
-        //log::info!("addr after: {:x} level_mask: {:x}, level_offset: {:x}", addr.as_u64(), level_mask, level_offset);
     }
 
     Ok(())
@@ -371,8 +358,6 @@ where
     F: FnMut(VirtAddr, &mut u64, Level) -> WalkNext,
     C: FnMut(HostVirtAddr),
 {
-    use log::info;
-
     use crate::PtFlag;
 
     let mut idx = start.index(level);
@@ -381,33 +366,19 @@ where
     let level_offset = level.area_size();
     let level_mask = level.mask();
 
-    log::info!(
-        "idx: {:x} addr: {:x}, end: {:x} page[idx]: {:x}",
-        idx,
-        addr.as_u64(),
-        end.as_u64(),
-        page[idx]
-    );
-
     while addr < end && idx < NB_ENTRIES {
         // Process entry
         let entry = &mut page[idx];
 
-        log::info!("entry: {:x}", *entry);
-
         match callback(addr, entry, level) {
             WalkNext::Continue => {
-                log::info!("entry: {:x}", *entry);
                 // Recursively process next level entries, if any
                 if let Some(next) = next_level {
-                    //log::info!("Continue: addr: {:x} entry: {:p}", addr.as_u64(), entry);
                     let phys_addr =
                         PhysAddr::from_u64((*entry >> PtFlag::flags_count()) << PAGE_OFFSET_WIDTH);
                     let host_virt_addr = walker.translate(phys_addr);
 
                     let page = as_page(walker, host_virt_addr);
-                    log::info!("phys_addr: {:x}", phys_addr.as_u64());
-                    //log::info!("Page idx: {:x} addr: {:x} end: {:x} -- phys_addr: {:x}, host_virt_addr: {:x}", idx, addr.as_u64(), end.as_u64(), phys_addr.as_u64(), host_virt_addr.as_u64());
                     walk_range_rec(walker, page, next, addr, end, callback, cleanup)?;
 
                     // If the whole page is used, call the cleanup function after the page has been
@@ -419,9 +390,7 @@ where
                     }
                 }
             }
-            WalkNext::Leaf => {
-                log::info!("Leaf: addr: {:x} entry: {:x}", addr.as_u64(), *entry);
-            } // Proceed to the next entry at the same level
+            WalkNext::Leaf => (), // Proceed to the next entry at the same level
             WalkNext::Abort => return Err(()), // Abort walk
         }
 
@@ -432,8 +401,6 @@ where
             Some(addr) => addr,
         };
         idx += 1;
-
-        //log::info!("addr after: {:x} level_mask: {:x}, level_offset: {:x}", addr.as_u64(), level_mask, level_offset);
     }
     Ok(())
 }

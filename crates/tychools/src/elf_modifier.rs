@@ -402,21 +402,17 @@ impl ModifiedELF {
         let hdr_bytes = any_as_u8_slice(&self.header);
         writer.write(hdr_bytes);
 
-        //log::info!("hdr_bytes: {:x}", hdr_bytes.len());
         // Write the program headers.
         for seg in &self.segments {
             let seg_bytes = any_as_u8_slice(&seg.program_header);
             writer.write(seg_bytes);
-            //  log::info!("seg_bytes: {:x}", seg_bytes.len());
         }
         // Write program content.
         writer.write(&self.data);
-        //log::info!("data: {:x}", &self.data.len());
         // Sections.
         for sec in &self.sections {
             let sec_bytes = any_as_u8_slice(&sec.section_header);
             writer.write(sec_bytes);
-            //   log::info!("sec_bytes: {:x}", sec_bytes.len());
         }
         // Write secret data too.
         writer.write(&self.secret_data);
@@ -593,7 +589,6 @@ impl ModifiedELF {
         });
 
         for seg in &mut self.segments {
-            log::info!("Patching segment offset");
             seg.patch_offset(delta, affected);
         }
         for sec in &mut self.sections {
@@ -723,15 +718,8 @@ impl ModifiedELF {
 impl ModifiedSegment {
     /// Patches the offset inside a segment with delta if the offset
     /// is greater than the affected address.
-    pub fn patch_offset(&mut self, delta: u64, affected: u64) {
+    pub fn patch_offset(&mut self, delta: u64, _affected: u64) {
         let offset = self.program_header.p_offset(DENDIAN);
-        log::info!(
-            "p_offset: {:x} and delta: {:x} and affected: {:x}",
-            offset,
-            delta,
-            affected
-        );
-        //if offset >= affected {
         if self.program_header.p_filesz(DENDIAN) > 0 {
             self.program_header.p_offset = U64Bytes::new(DENDIAN, offset + delta);
         }

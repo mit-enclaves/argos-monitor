@@ -66,7 +66,7 @@ trt-user: $(CODE_TRT) $(HDRS_TRT) $(RELOC)
 	gcc --entry=user_main_wrapper -DTYCHE_USER_SPACE=1 -T $(RELOC) -g $(TRT_INCLUDES) -Xlinker --no-relax -nostdlib -static -o $@ $(CODE_TRT)
 	chmod +x trt-user
 
-else ifeq ($(ARCH), x86)
+else ifeq ($(ARCH), riscv)
 trt: $(CODE_TRT) $(CODE_RUNTIME) $(HDRS_TRT) $(HDRS_RUNTIME) $(RELOC)
 	$(GCC) -DTYCHE_USER_SPACE=1 -T $(RELOC) -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_RUNTIME) $(CODE_TRT)
 endif 
