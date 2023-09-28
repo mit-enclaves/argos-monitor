@@ -4,7 +4,6 @@ use std::sync::atomic::Ordering;
 
 #[cfg(not(feature = "riscv_enabled"))]
 use mmu::ptmapper::MAP_PAGE_TABLE;
-
 use mmu::walker::{Level, WalkNext, Walker};
 use mmu::{FrameAllocator, PtFlag, PtMapper};
 use object::read::elf::ProgramHeader;
@@ -24,7 +23,6 @@ pub fn align_address(addr: usize) -> usize {
 
 #[cfg(not(feature = "riscv_enabled"))]
 fn translate_flags(flags: u32, segtype: u32) -> PtFlag {
-    log::info!("x86_translate_flags");
     let mut ptflags: PtFlag;
     ptflags = PtFlag::PRESENT;
     if flags & elf::PF_W == elf::PF_W {
@@ -40,8 +38,7 @@ fn translate_flags(flags: u32, segtype: u32) -> PtFlag {
 }
 
 #[cfg(feature = "riscv_enabled")]
-fn translate_flags(flags: u32, segtype: u32) -> PtFlag {
-    log::info!("riscv_translate_flags");
+fn translate_flags(flags: u32, _segtype: u32) -> PtFlag {
     let mut ptflags: PtFlag;
     ptflags = PtFlag::VALID;
     if flags & elf::PF_R == elf::PF_R {
@@ -57,7 +54,6 @@ fn translate_flags(flags: u32, segtype: u32) -> PtFlag {
     ptflags
 }
 
-//#[allow(dead_code)]   Neelu: Commenting.
 pub fn generate_page_tables(
     melf: &ModifiedELF,
     map_page_tables: &Option<MappingPageTables>,
@@ -103,11 +99,6 @@ pub fn generate_page_tables(
         let size = align_address(mem_size);
         let flags = translate_flags(ph.program_header.p_flags(Endianness::Little), segtype);
 
-        log::debug!("virt addr {:#x}", virt.as_u64());
-        log::debug!("phys addr {:#x}", curr_phys);
-        log::debug!("size {:#x}", size);
-        log::debug!("flags {:#x}", flags);
-
         mapper.map_range(&allocator, virt, HostPhysAddr::new(curr_phys), size, flags);
         curr_phys += size;
     }
@@ -115,7 +106,7 @@ pub fn generate_page_tables(
         "Done mapping all the segments, we consummed {} extra pages",
         ADDR_IDX.load(Ordering::Relaxed)
     );
-#[cfg(not(feature = "riscv_enabled"))]
+    #[cfg(not(feature = "riscv_enabled"))]
     if map_op {
         let mut virt_page_addr: usize = virt_addr_start;
         log::debug!("Now mapping the pages for page tables");
@@ -124,9 +115,6 @@ pub fn generate_page_tables(
             let virt_addr = virt_page_addr;
             let phys_addr = curr_phys;
             let size: usize = PAGE_SIZE;
-            log::debug!("virt addr {:#x}", virt_addr);
-            log::debug!("phys addr {:#x}", phys_addr);
-            log::debug!("size {:#x}", size);
             mapper.map_range(
                 &allocator,
                 HostVirtAddr::new(virt_addr),
@@ -138,11 +126,11 @@ pub fn generate_page_tables(
             virt_page_addr += size;
             cnt += 1;
         }
+        log::debug!(
+            "Done mapping all pages for the page tables, we consummed {} extra pages",
+            bump.idx
+        );
     }
-    log::debug!(
-        "Done mapping all pages for the page tables, we consummed {} extra pages",
-        bump.idx
-    );
     // Transform everything into a vec array.
     let mut result: Vec<u8> = Vec::new();
     for i in 0..bump.idx {

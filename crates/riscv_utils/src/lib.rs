@@ -163,11 +163,6 @@ pub fn clear_mstatus_xie() {
             "csrr t2, mstatus",
             "and t2, t2, t1",
             "csrw mstatus, t2",
-            //asm!("csrrci t0, mstatus, 0x2");
-            //"clear_sie:
-            //"csrrci t0, mstatus, 0x2"
-            //bnez t0, clear_sie",
-            //options(nostack)
         );
     }
 }
@@ -198,11 +193,6 @@ pub fn disable_supervisor_interrupts() {
             "csrr t2, mie",
             "and t2, t2, t1",
             "csrw mie, t2",
-            //"csrci mie, 0x2",
-            //"li t0, 0x20",
-            //"csrrci t0, mie, t0",
-            //"li t0, 0x200",
-            //"csrrci t0, mie, t0",
         );
     }
 }
