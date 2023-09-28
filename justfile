@@ -9,7 +9,6 @@ build_features      := "-Zbuild-std-features=compiler-builtins-mem"
 cargo_args          := build_std + " " + build_features
 x86-linker-script   := "RUSTFLAGS='-C link-arg=-Tconfigs/x86-linker-script.x'"
 riscv-linker-script := "RUSTFLAGS='-C link-arg=-Tconfigs/riscv-linker-script.x'"
-#riscv-user-space	:= "RUSTFLAGS='-C target-feature=+crt-static'"
 first-stage         := "--package s1 --features=s1/second-stage"
 tyche               := "--package tyche"
 rawc                := "--features=s1/guest_rawc"
@@ -24,13 +23,12 @@ default_dbg         := "/tmp/dbg-" + env_var('USER')
 default_smp         := "1"
 extra_arg           := ""
 
-qemu-riscv			:= "/home/neelu/qemu/build/riscv64-softmmu/qemu-system-riscv64"
-drive-riscv			:= "/home/neelu/vmxvmm/ubuntu-22.04.3-preinstalled-server-riscv64+unmatched.img"
-kernel-riscv		:= "/home/neelu/vmxvmm/builds/linux-riscv/arch/riscv/boot/Image"
-#bios-riscv			:= "/home/neelu/riscv-hmode-setup/opensbi/build/platform/generic/firmware/fw_jump.bin"
-bios-riscv			:= "/home/neelu/vmxvmm/opensbi-stage1/build/platform/generic/firmware/fw_jump.bin"
+qemu-riscv			:= "../qemu/build/riscv64-softmmu/qemu-system-riscv64"
+drive-riscv			:= "ubuntu-22.04.3-preinstalled-server-riscv64+unmatched.img"
+kernel-riscv		:= "builds/linux-riscv/arch/riscv/boot/Image"
+bios-riscv			:= "opensbi-stage1/build/platform/generic/firmware/fw_jump.bin"
 dev-riscv			:= "-device virtio-rng-pci" 
-bios-riscv-gdb		:= "/home/neelu/vmxvmm/opensbi-stage1/build/platform/generic/firmware/fw_jump.elf"
+bios-riscv-gdb		:= "opensbi-stage1/build/platform/generic/firmware/fw_jump.elf"
 
 # Print list of commands
 help:
@@ -231,12 +229,6 @@ _common-metal TARGET:
 # Build user-space programs
 user-space:
 	cargo build --package libtyche --target=x86_64-unknown-linux-musl --release
-
-# Build user-space programs for risc-v 
-#{{riscv-user-space}} cargo build -Z build-std --package libtyche --target=riscv64gc-unknown-linux-musl --release
-#user-space-riscv:
-#	{{riscv-user-space}} cargo build {{cargo_args}} --package libtyche {{riscv}} --release
-	
 
 # Start the software TPM emulator, if not already running
 _tpm:

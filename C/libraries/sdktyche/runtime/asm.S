@@ -1,3 +1,5 @@
+#if defined CONFIG_X86  || defined(__x86_64__)
+
 .text
 
 // Take a capa_index_t* and a void**, expected to be in rdi, rsi.
@@ -48,3 +50,5 @@ _start:
   // Should never return here, call exit if we do.
   movq $1, %rax
   vmcall
+
+#endif 

@@ -12,10 +12,6 @@ domain_t local_domain;
 
 // ———————————————————————— Private helper functions ———————————————————————— //
 
-/* void log_capa_info(capability_t* capa) {
-    ERROR("Logging capa: %llx parent: %llx parent->left: %llx parent->right: %llx \n", capa, capa->parent, capa->parent->left, capa->parent->right); 
-} */
-
 void local_memcpy(void *dest, void *src, unsigned long n) {
   unsigned long i = 0;
   char *csrc = (char *)src;
@@ -68,12 +64,8 @@ int init(capa_alloc_t allocator, capa_dealloc_t deallocator) {
   while (1) {
     capability_t tmp_capa;
     tmp_capa.parent = NULL; 
-    //ERROR("Done setting parent");
     tmp_capa.left = NULL;
-    //ERROR("Done setting left");
     tmp_capa.right = NULL;
-    //ERROR("Done setting right");
-    //local_memset(&tmp_capa, sizeof(capability_t));
     capability_t *capa = NULL;
     if (enumerate_capa(next, &next, &tmp_capa) != SUCCESS || next == 0) {
       // Failed to read or no more capa
@@ -87,15 +79,8 @@ int init(capa_alloc_t allocator, capa_dealloc_t deallocator) {
       ERROR("Unable to allocate a capability!\n");
       goto failure;
     }
-    //capa->parent = NULL;    //Neelu
-    //ERROR("Logging capa: %llx parent: %llx parent->left: %llx parent->right: %llx \n", tmp_capa, tmp_capa.parent, tmp_capa.parent->left, tmp_capa.parent->right); 
     // Copy the capability into the dynamically allocated one.
     local_memcpy(capa, &tmp_capa, sizeof(capability_t));
-    //Neelu: 
-    //log_capa_info(capa);
-
-    //ERROR("Logging capa: %llx parent: %llx left: %llx right: %llx \n", capa, capa->parent, capa->left, capa->right); 
- 
 
     dll_init_elem(capa, list);
 
@@ -367,8 +352,6 @@ int segment_region_capa(
     goto failure;
   }
 
-  //printk("%s %llu\n", __func__, capa->local_id);
-
   // Attempt to allocate left and right.
   *left = (capability_t *)local_domain.alloc(sizeof(capability_t));
   if (*left == NULL) {
@@ -380,8 +363,6 @@ int segment_region_capa(
     ERROR("Right alloc failed.");
     goto fail_left;
   }
-
-  //printk("%s %llu, s1: %x, e1: %x, s2: %x, e2: %x prot: %x\n", __func__, capa->local_id, start1, end1, start2, end2, (prot1 << 32 | prot2));
   
    // Call duplicate.
   if (tyche_segment_region(
@@ -394,8 +375,6 @@ int segment_region_capa(
     goto fail_right;
   }
   
-   //printk("\n%s Done with tyche_segment_region call", __func__);
-
   // Update the capability.
   if (enumerate_capa(capa->local_id, NULL, capa) != SUCCESS) {
     ERROR("We failed to enumerate the root of a duplicate!");
@@ -403,8 +382,6 @@ int segment_region_capa(
   }
   capa->left = *left;
   capa->right = *right;
-
-  //log_capa_info(capa);
 
   // Initialize the left.
   if (enumerate_capa((*left)->local_id, NULL, *left) != SUCCESS) {
@@ -417,8 +394,6 @@ int segment_region_capa(
   (*left)->left = NULL;
   (*left)->right = NULL;
 
-  //log_capa_info(*left);
-
   // Initialize the right.
   if (enumerate_capa((*right)->local_id, NULL, (*right)) != SUCCESS) {
     ERROR("We failed to enumerate the right of duplicate!");
@@ -429,8 +404,6 @@ int segment_region_capa(
   (*right)->parent = capa;
   (*right)->left = NULL;
   (*right)->right = NULL;
-
-  //log_capa_info(*right);
 
   // All done!
   return SUCCESS;
@@ -728,54 +701,8 @@ int internal_revoke(child_domain_t *child, capability_t *capa) {
       ERROR("Error[internal_revoke]: unable to enumerate after the merge.");
       goto failure;
     }
-    //ERROR("About to write the capa. %llx with parent %llx",capa, parent);
     capa = parent;
-    //ERROR("Done writing the capa. capa->parent: %llx", capa->parent);
 
-    /* if(capa->parent == NULL) {
-        ERROR("capa->parent is null");
-    }
-    else {
-        ERROR("capa->parent not null");
-        if(capa->parent->left == NULL) {
-            ERROR("Left = Null");
-        }
-        else {
-            ERROR("capa->parent->left not null");
-        }
-
-        if (capa->parent->right == NULL) {  
-            ERROR("Right == null");
-        }
-        else {
-            ERROR("capa->parent->right not null");
-        }
-
-    } */
-
-
-    /*if (capa->parent->right == capa && capa->parent->left != NULL &&
-           capa->parent->left->capa_type == Region &&
-           (capa->parent->left->info.region.flags & MEM_ACTIVE) == MEM_ACTIVE)
-    {
-        ERROR("Condition 1 is true");
-    }
-    else 
-    {
-        ERROR("Condition 1 is not true");
-    }
-    
-    if (capa->parent->left == capa && capa->parent->right != NULL &&
-           capa->parent->right->capa_type == Region && 
-           (capa->parent->right->info.region.flags & MEM_ACTIVE) == MEM_ACTIVE) 
-    {
-        ERROR("Condition 2 is true");
-    }
-    else 
-    {
-        ERROR("Condition 2 is not true");
-    } */
- 
   }
 
   // All done!

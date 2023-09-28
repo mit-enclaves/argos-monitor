@@ -15,31 +15,19 @@ const pt_profile_t riscv64_sv48_profile = {
 /// Example how function that asks to visit present leaves.
 callback_action_t riscv48_how_visit_leaves(entry_t* entry, level_t level, pt_profile_t* profile)
 {
-  DEBUG("Entry: %lx\n", *entry);
   // Not an entry.
   if ((*entry & PT_V) != PT_V){
-    DEBUG("Skipping\n");
     return SKIP; 
   }
   // Invalid entry.
   if ((*entry & PT_R) == 0 && (*entry & PT_W) != 0) {
-    DEBUG("Error\n");
     return ERROR;
   }
   // Not a leaf
   if ((*entry & (PT_R | PT_W | PT_X)) == 0) {
-  //if ((level == LVL1) || (level == LVL2) || (level == LVL3)) { 
-    DEBUG("Walking\n");
     return WALK;
   }
 
-  /* if (level == LVL0) {
-    DEBUG("Visiting\n");
-    return VISIT;
-  }
-
-  DEBUG("Error\n");
-  return ERROR; */
   return VISIT;
 }
 
@@ -47,15 +35,12 @@ callback_action_t riscv48_how_visit_leaves(entry_t* entry, level_t level, pt_pro
 callback_action_t riscv48_how_visit_present(entry_t* entry, level_t level, pt_profile_t* profile)
 {
   if ((*entry & PT_V) != PT_V) {
-    DEBUG("Skipping\n");
     return SKIP; 
   }
   // Invalid entry.
   if ((*entry & PT_R) == 0 && (*entry & PT_W) != 0) {
-    DEBUG("Error\n");
     return ERROR;
   }
-  DEBUG("Visiting\n");
   return VISIT;
 }
 
@@ -63,15 +48,12 @@ callback_action_t riscv48_how_visit_present(entry_t* entry, level_t level, pt_pr
 callback_action_t riscv48_how_map(entry_t* entry, level_t level, pt_profile_t* profile)
 {
   if ((*entry & PT_V) != PT_V) {
-    DEBUG("Mapping\n");
     return MAP; 
   }
   // Invalid entry.
   if ((*entry & PT_R) == 0 && (*entry & PT_W) != 0) {
-    DEBUG("Error\n");
     return ERROR;
   }
-  DEBUG("Walking\n");
   return WALK;
 }
 
@@ -84,7 +66,5 @@ index_t riscv48_get_index(addr_t addr, level_t level, pt_profile_t* profile)
 
 entry_t riscv48_next(entry_t entry, level_t curr_level) 
 {
-  //return (entry & PT_PHYS_PAGE_MASK);  
-      //((entry & PT_PHYS_PAGE_MASK) >> PT_FLAGS_RESERVED) << PT_PAGE_WIDTH;
     return (entry >> PT_FLAGS_RESERVED) << PT_PAGE_WIDTH; 
 }
