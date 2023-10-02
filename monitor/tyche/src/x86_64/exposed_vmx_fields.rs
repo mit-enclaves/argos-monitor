@@ -1,5 +1,8 @@
 use capa_engine::CapaError;
-use vmx::fields::{GuestState16, GuestState32, GuestState64, GuestStateNat};
+use vmx::fields::traits::{VmcsField32, VmcsField64, VmcsFieldNat};
+use vmx::fields::{
+    Ctrl32, Ctrl64, CtrlNat, GuestState16, GuestState32, GuestState64, GuestStateNat,
+};
 use vmx::{ActiveVmcs, ControlRegister, Register};
 
 use super::context::ContextData;
@@ -133,6 +136,92 @@ pub fn search_guest_nat(idx: usize) -> Option<GuestStateNat> {
     }
 }
 
+/// Control32 fields we expose.
+/// TODO(@aghosn): for the moment I put all of them but we need to hide some.
+pub const CTRL_32: [Ctrl32; 18] = [
+    Ctrl32::PinBasedExecCtrls,
+    Ctrl32::PrimaryProcBasedExecCtrls,
+    Ctrl32::ExceptionBitmap,
+    Ctrl32::PageFaultErrCodeMask,
+    Ctrl32::PageFaultErrCodeMatch,
+    Ctrl32::Cr3TargetCount,
+    Ctrl32::VmExitCtrls,
+    Ctrl32::VmExitMsrStoreCount,
+    Ctrl32::VmExitMsrLoadCount,
+    Ctrl32::VmEntryCtrls,
+    Ctrl32::VmEntryMsrLoadCount,
+    Ctrl32::VmEntryIntInfoField,
+    Ctrl32::VmEntryExceptErrCode,
+    Ctrl32::VmEntryInstrLength,
+    Ctrl32::TprThreshold,
+    Ctrl32::SecondaryProcBasedVmExecCtrls,
+    Ctrl32::PleGap,
+    Ctrl32::PleWindow,
+];
+
+pub fn search_ctrl_32(idx: usize) -> Option<Ctrl32> {
+    match CTRL_32.iter().position(|item| *item as usize == idx) {
+        Some(id) => Some(CTRL_32[id]),
+        _ => None,
+    }
+}
+
+/// Control64 fields we expose.
+/// TODO(@aghosn): for the moment I put all of them but we need to hide some of them.
+pub const CTRL_64: [Ctrl64; 24] = [
+    Ctrl64::IoBitmapA,
+    Ctrl64::IoBitmapB,
+    Ctrl64::MsrBitmaps,
+    Ctrl64::VmExitMsrStoreAddr,
+    Ctrl64::VmExitMsrLoadAddr,
+    Ctrl64::VmEntryMsrLoadAddr,
+    Ctrl64::ExecVmcsPtr,
+    Ctrl64::PmlAddr,
+    Ctrl64::TscOffset,
+    Ctrl64::VirtApicAddr,
+    Ctrl64::ApicAccessAddr,
+    Ctrl64::PostedIntDescAddr,
+    Ctrl64::VmFuncCtrls,
+    Ctrl64::EptPtr,
+    Ctrl64::EoiExitBitmap0,
+    Ctrl64::EoiExitBitmap1,
+    Ctrl64::EoiExitBitmap2,
+    Ctrl64::EoiExitBitmap3,
+    Ctrl64::EptpListAddr,
+    Ctrl64::VmreadBitmapAddr,
+    Ctrl64::VmwriteBitmapAddr,
+    Ctrl64::VirtExceptInfAddr,
+    Ctrl64::XssExitBitmap,
+    Ctrl64::EnclsExitBitmap,
+];
+
+pub fn search_ctrl_64(idx: usize) -> Option<Ctrl64> {
+    match CTRL_64.iter().position(|item| *item as usize == idx) {
+        Some(id) => Some(CTRL_64[id]),
+        _ => None,
+    }
+}
+
+/// ControlNat fields we expose.
+/// TODO(@aghosn): for the moment I put all of them but we need to hide some.
+pub const CTRL_NAT: [CtrlNat; 8] = [
+    CtrlNat::Cr0Mask,
+    CtrlNat::Cr4Mask,
+    CtrlNat::Cr0ReadShadow,
+    CtrlNat::Cr4ReadShadow,
+    CtrlNat::Cr3TargetValue0,
+    CtrlNat::Cr3TargetValue1,
+    CtrlNat::Cr3TargetValue2,
+    CtrlNat::Cr3TargetValue3,
+];
+
+pub fn search_ctrl_nat(idx: usize) -> Option<CtrlNat> {
+    match CTRL_NAT.iter().position(|item| *item as usize == idx) {
+        Some(id) => Some(CTRL_NAT[id]),
+        _ => None,
+    }
+}
+
 /// Group configurable registers by type/size.
 /// This requires one extra argument to be passed to the monitor call,
 /// but facilitates the logic on the monitor side for now.
@@ -146,7 +235,9 @@ pub enum GuestRegisterGroups {
     Reg32 = 3,
     Reg64 = 4,
     RegNat = 5,
-    //TODO add more.
+    Ctrl32 = 6,
+    Ctrl64 = 7,
+    CtrlNat = 8,
 }
 
 impl GuestRegisterGroups {
@@ -158,6 +249,9 @@ impl GuestRegisterGroups {
             3 => Some(Self::Reg32),
             4 => Some(Self::Reg64),
             5 => Some(Self::RegNat),
+            6 => Some(Self::Ctrl32),
+            7 => Some(Self::Ctrl64),
+            8 => Some(Self::CtrlNat),
             _ => None,
         }
     }
@@ -175,6 +269,9 @@ impl GuestRegisters {
             GuestRegisterGroups::Reg32 => search_guest_32(idx).is_some(),
             GuestRegisterGroups::Reg64 => search_guest_64(idx).is_some(),
             GuestRegisterGroups::RegNat => search_guest_nat(idx).is_some(),
+            GuestRegisterGroups::Ctrl32 => search_guest_32(idx).is_some(),
+            GuestRegisterGroups::Ctrl64 => search_ctrl_64(idx).is_some(),
+            GuestRegisterGroups::CtrlNat => search_ctrl_nat(idx).is_some(),
         }
     }
 
@@ -218,6 +315,23 @@ impl GuestRegisters {
                 let reg = search_guest_nat(idx).expect("RegNat should be valid");
                 vcpu.set_nat(reg, value).expect("Unable to set regNat");
             }
+            GuestRegisterGroups::Ctrl32 => {
+                let _vcpu = vcpu.expect("Cannot be None");
+                let reg = search_ctrl_32(idx).expect("Ctrl32 does not exist");
+                //TODO(aghosn) we need to make a cleaner version of this.
+                unsafe { reg.vmwrite(value as u32) }.expect("Ctrl32 unsafe failed");
+            }
+            GuestRegisterGroups::Ctrl64 => {
+                let _vcpu = vcpu.expect("Cannot be None");
+                let reg = search_ctrl_64(idx).expect("Ctrl64 does not exist");
+                //TODO(aghosn) we need to make a cleaner version of this.
+                unsafe { reg.vmwrite(value as u64) }.expect("Ctrl64 unsafe failed");
+            }
+            GuestRegisterGroups::CtrlNat => {
+                let _vcpu = vcpu.expect("Cannot be None");
+                let reg = search_guest_nat(idx).expect("CtrlNat should be valid");
+                unsafe { reg.vmwrite(value) }.expect("CtrlNat unsafe failed");
+            }
         }
         Ok(())
     }
@@ -254,6 +368,18 @@ impl GuestRegisters {
             GuestRegisterGroups::RegNat => {
                 let reg = search_guest_nat(idx).expect("RegNat should be valid");
                 vcpu.get_nat(reg).expect("Unable to set regNat") as usize
+            }
+            GuestRegisterGroups::Ctrl32 => {
+                let reg = search_ctrl_32(idx).expect("Ctrl32 does not exist");
+                unsafe { reg.vmread() }.expect("Unable to read u32") as usize
+            }
+            GuestRegisterGroups::Ctrl64 => {
+                let reg = search_ctrl_64(idx).expect("Ctrl64 does not exist");
+                unsafe { reg.vmread() }.expect("Unable to read u64") as usize
+            }
+            GuestRegisterGroups::CtrlNat => {
+                let reg = search_ctrl_nat(idx).expect("CtrlNat does not exist");
+                unsafe { reg.vmread() }.expect("Unable to read ctrlnat") as usize
             }
         };
         Ok(value)
