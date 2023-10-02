@@ -144,7 +144,7 @@ int main(int argc, char *argv[]) {
   // Init the enclave.
     if (sdk_create_domain(
           enclave, argv[0],
-          DEFAULT_CORES, ALL_TRAPS, DEFAULT_PERM, CopyVCPU) != SUCCESS) {
+          DEFAULT_CORES, ALL_TRAPS, DEFAULT_PERM, SharedVCPU) != SUCCESS) {
       ERROR("Unable to parse the enclave");
       goto failure;
     }
