@@ -67,15 +67,15 @@ sandbox: $(CODE_SANDBOX) $(HDRS_SANDBOX)
 instrument: app sandbox 
 	cargo -C $(TYCHOOLS_PATH) install --path . --locked
 	tychools instrument -s manifests/default.json 
-	chmod +x application_with_sandbox
+	chmod +x simple_sandbox
 	rm app sandbox
 
 install_disk: all 
 	mkdir -p $(DISK_PATH)
-	cp -t $(DISK_PATH) application_with_sandbox 
+	cp -t $(DISK_PATH) simple_sandbox 
 
 
 .PHONY: clean
 
 clean:
-	rm -rf app sandbox application_with_sandbox
+	rm -rf app sandbox simple_sandbox
