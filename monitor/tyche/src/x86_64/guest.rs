@@ -495,7 +495,7 @@ fn handle_exit(
         }
         VmxExitReason::Rdmsr => {
             let ecx = vs.vcpu.get(Register::Rcx);
-            log::info!("rdmsr");
+            log::trace!("rdmsr");
             if ecx == 0xc0011029 || (ecx >= 0xc0010200 && ecx <= 0xc001020b) {
                 // Reading an AMD specific register, just ignore it
                 // The other interval seems to be related to pmu...
@@ -504,9 +504,8 @@ fn handle_exit(
                 Ok(HandlerResult::Resume)
             } else {
                 let msr_reg = vmx::msr::Msr::new(ecx as u32);
-                log::info!("right before {:x}", ecx);
                 let (low, high) = unsafe { msr_reg.read_raw() };
-                log::info!("Emulated read of msr {:x} = h:{:x};l:{:x}", ecx, high, low);
+                log::trace!("Emulated read of msr {:x} = h:{:x};l:{:x}", ecx, high, low);
                 vs.vcpu.set(Register::Rax, low as u64);
                 vs.vcpu.set(Register::Rdx, high as u64);
                 vs.vcpu.next_instruction()?;
