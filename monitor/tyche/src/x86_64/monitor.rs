@@ -195,7 +195,8 @@ pub fn do_configure_core(
         let mut target_ctx = get_context(domain, core);
         if current_ctx.vmcs.is_invalid() || target_ctx.vmcs.is_invalid() {
             log::error!(
-                "VMCs are none during a configure core: curr{:?}, tgt:{:?}",
+                "VMCs are none during a configure core {}: curr:{:?}, tgt:{:?}",
+                core,
                 current_ctx.vmcs.is_invalid(),
                 target_ctx.vmcs.is_invalid()
             );

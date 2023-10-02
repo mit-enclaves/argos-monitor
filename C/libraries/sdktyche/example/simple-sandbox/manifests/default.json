@@ -25,5 +25,5 @@
   },
   "security": "Sandbox", 
   "generate_pts": true,
-  "output": "application_with_sandbox"
+  "output": "simple_sandbox"
 }
