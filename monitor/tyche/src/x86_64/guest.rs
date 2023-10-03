@@ -152,6 +152,26 @@ fn handle_exit(
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
+                calls::GET_CONFIG_CORE => {
+                    match monitor::do_get_config_core(
+                        *domain,
+                        LocalCapa::new(arg_1),
+                        arg_2,
+                        arg_3,
+                        arg_4,
+                        &mut vs.vcpu,
+                    ) {
+                        Ok(v) => {
+                            vs.vcpu.set(Register::Rdi, v as u64);
+                            vs.vcpu.set(Register::Rax, 0);
+                        }
+                        Err(e) => {
+                            log::error!("Get config core error: {:?}", e);
+                            vs.vcpu.set(Register::Rax, 1);
+                        }
+                    }
+                    Ok(HandlerResult::Resume)
+                }
                 calls::SEAL_DOMAIN => {
                     log::trace!("Seal Domain");
                     let capa = monitor::do_seal(*domain, LocalCapa::new(arg_1)).expect("TODO");
