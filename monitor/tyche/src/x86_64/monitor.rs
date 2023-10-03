@@ -230,6 +230,17 @@ pub fn do_configure_core(
     Ok(())
 }
 
+pub fn do_get_config_core(
+    current: Handle<Domain>,
+    domain: LocalCapa,
+    core: usize,
+    group: usize,
+    idx: usize,
+    vcpu: &mut ActiveVmcs<'static>,
+) -> Result<usize, CapaError> {
+    todo!("Implement this")
+}
+
 pub fn do_init_child_contexts(
     current: Handle<Domain>,
     domain: LocalCapa,
