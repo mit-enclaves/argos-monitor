@@ -308,8 +308,7 @@ pub fn do_configure_core(
         if current_ctx.vmcs == target_ctx.vmcs {
             // Set the value without doing a switch, the value is a GP written
             // directly inside the context.
-            let err = GuestRegisters::set_register(None, &mut target_ctx, group, idx, value);
-            err
+            GuestRegisters::set_register(None, &mut target_ctx, group, idx, value)
         } else {
             // 1. save the current context.
             current_ctx.save(vcpu);
@@ -340,7 +339,83 @@ pub fn do_get_config_core(
     idx: usize,
     vcpu: &mut ActiveVmcs<'static>,
 ) -> Result<usize, CapaError> {
-    todo!("Implement this")
+    let mut engine = CAPA_ENGINE.lock();
+    let domain = engine.get_domain_capa(current, domain)?;
+
+    // Check the domain is not seal.
+    if engine.is_sealed(domain) {
+        return Err(CapaError::AlreadySealed);
+    }
+
+    // Check this is a valid core for the operation.
+    let core_map = engine.get_domain_config(domain, Bitmaps::CORE);
+    if (1 << core) & core_map == 0 {
+        return Err(CapaError::InvalidCore);
+    }
+
+    // Check this is a valid group.
+    let group = match GuestRegisterGroups::from_usize(group) {
+        Some(g) => g,
+        _ => {
+            log::error!("Invalid register group.");
+            return Err(CapaError::InvalidOperation);
+        }
+    };
+
+    // Check the domain has the correct vcpu type
+    let switch_type = engine.get_domain_config(domain, Bitmaps::SWITCH);
+    let switch_type = InitVMCS::from_u64(switch_type)?;
+    if switch_type == InitVMCS::Shared && group != GuestRegisterGroups::GeneralPurpose {
+        log::error!("Trying to non GP register on a shared vcpu.");
+        return Err(CapaError::InvalidOperation);
+    }
+
+    // Check this is a valid idx for the group.
+    if !GuestRegisters::is_valid(group, idx) {
+        log::error!("Attempt to set an invalid register! {:?}@{:x}", group, idx);
+        return Err(CapaError::InvalidOperation);
+    }
+
+    // Now we have a complex dance to get a value on the target context.
+    // TODO: I do it in a block to lazily return the error. Poor style, let's make it clean when it
+    // works.
+    let res = {
+        let mut current_ctx = get_context(current, cpuid());
+        let mut target_ctx = get_context(domain, core);
+        if current_ctx.vmcs.is_invalid() || target_ctx.vmcs.is_invalid() {
+            log::error!(
+                "VMCs are none during a configure core {}: curr:{:?}, tgt:{:?}",
+                core,
+                current_ctx.vmcs.is_invalid(),
+                target_ctx.vmcs.is_invalid()
+            );
+            return Err(CapaError::InvalidOperation);
+        }
+
+        if current_ctx.vmcs == target_ctx.vmcs {
+            // Set the value without doing a switch, the value is a GP written
+            // directly inside the context.
+            GuestRegisters::get_register(vcpu, group, idx)
+        } else {
+            // 1. save the current context.
+            current_ctx.save(vcpu);
+
+            // 2. switch to the target one.
+            target_ctx.restore(&RC_VMCS, vcpu);
+
+            // 3. set the value.
+            let err = GuestRegisters::get_register(vcpu, group, idx);
+
+            // 4. save the target context.
+            target_ctx.save(vcpu);
+
+            // 5. switch back to the original one.
+            current_ctx.restore(&RC_VMCS, vcpu);
+            err
+        }
+    }?;
+
+    Ok(res)
 }
 
 pub fn do_init_child_contexts(
