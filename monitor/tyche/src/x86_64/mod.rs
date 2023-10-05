@@ -3,7 +3,7 @@
 mod arch;
 mod context;
 mod cpuid_filter;
-mod exposed_vmx_fields;
+mod filtered_fields;
 pub mod guest;
 mod init;
 mod monitor;

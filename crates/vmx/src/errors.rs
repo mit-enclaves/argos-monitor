@@ -299,7 +299,11 @@ impl VmExitInterrupt {
         res |= itype.as_u32() << 8;
         if code.is_some()
             && itype == InterruptionType::HardwareException
-            && (vcpu.get_cr(crate::ControlRegister::Cr0) & 1 == 1)
+            && (vcpu
+                .get(crate::fields::VmcsField::GuestCr0)
+                .expect("Unable to read cr0")
+                & 1
+                == 1)
             && unsafe { msr::VMX_BASIC.read() & (1 << 56) == 0 }
             && (vector == Trapnr::DoubleFault
                 || vector == Trapnr::InvalidTSS

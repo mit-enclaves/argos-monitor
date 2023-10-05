@@ -5,9 +5,8 @@ use core::arch::asm;
 use capa_engine::{Bitmaps, Domain, Handle, LocalCapa, NextCapaToken};
 use vmx::bitmaps::exit_qualification;
 use vmx::errors::Trapnr;
-use vmx::{
-    ActiveVmcs, ControlRegister, InterruptionType, Register, VmExitInterrupt, VmxExitReason, Vmxon,
-};
+use vmx::fields::VmcsField;
+use vmx::{ActiveVmcs, InterruptionType, VmExitInterrupt, VmxExitReason, Vmxon};
 
 use super::cpuid_filter::{filter_mpk, filter_tpause};
 use super::{cpuid, monitor};
@@ -69,10 +68,10 @@ fn handle_exit(
 ) -> Result<HandlerResult, TycheError> {
     //let vcpu = &mut vmx_state.vcpu;
     let dump = |vcpu: &mut ActiveVmcs| {
-        let rip = vcpu.get(Register::Rip);
-        let rax = vcpu.get(Register::Rax);
-        let rcx = vcpu.get(Register::Rcx);
-        let rbp = vcpu.get(Register::Rbp);
+        let rip = vcpu.get(VmcsField::GuestRip).unwrap();
+        let rax = vcpu.get(VmcsField::GuestRax).unwrap();
+        let rcx = vcpu.get(VmcsField::GuestRcx).unwrap();
+        let rbp = vcpu.get(VmcsField::GuestRbp).unwrap();
         log::info!(
             "VM Exit: {:?} - rip: 0x{:x} - rbp: 0x{:x} - rax: 0x{:x} - rcx: 0x{:x}",
             reason,
@@ -85,19 +84,19 @@ fn handle_exit(
 
     match reason {
         VmxExitReason::Vmcall => {
-            let vmcall = vs.vcpu.get(Register::Rax) as usize;
-            let arg_1 = vs.vcpu.get(Register::Rdi) as usize;
-            let arg_2 = vs.vcpu.get(Register::Rsi) as usize;
-            let arg_3 = vs.vcpu.get(Register::Rdx) as usize;
-            let arg_4 = vs.vcpu.get(Register::Rcx) as usize;
-            let arg_5 = vs.vcpu.get(Register::R8) as usize;
-            let arg_6 = vs.vcpu.get(Register::R9) as usize;
+            let vmcall = vs.vcpu.get(VmcsField::GuestRax)?;
+            let arg_1 = vs.vcpu.get(VmcsField::GuestRdi)?;
+            let arg_2 = vs.vcpu.get(VmcsField::GuestRsi)?;
+            let arg_3 = vs.vcpu.get(VmcsField::GuestRdx)?;
+            let arg_4 = vs.vcpu.get(VmcsField::GuestRcx)?;
+            let arg_5 = vs.vcpu.get(VmcsField::GuestR8)?;
+            let arg_6 = vs.vcpu.get(VmcsField::GuestR9)?;
             match vmcall {
                 calls::CREATE_DOMAIN => {
                     log::trace!("Create Domain");
                     let capa = monitor::do_create_domain(*domain).expect("TODO");
-                    vs.vcpu.set(Register::Rdi, capa.as_u64());
-                    vs.vcpu.set(Register::Rax, 0);
+                    vs.vcpu.set(VmcsField::GuestRdi, capa.as_usize())?;
+                    vs.vcpu.set(VmcsField::GuestRax, 0)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
@@ -119,16 +118,16 @@ fn handle_exit(
                                         &mut vs.vcpu,
                                     )
                                 }
-                                vs.vcpu.set(Register::Rax, 0);
+                                vs.vcpu.set(VmcsField::GuestRax, 0)?;
                             }
                             Err(e) => {
                                 log::error!("Configuration error: {:?}", e);
-                                vs.vcpu.set(Register::Rax, 1);
+                                vs.vcpu.set(VmcsField::GuestRax, 1)?;
                             }
                         }
                     } else {
                         log::error!("Invalid configuration target");
-                        vs.vcpu.set(Register::Rax, 1);
+                        vs.vcpu.set(VmcsField::GuestRax, 1)?;
                     }
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
@@ -140,13 +139,12 @@ fn handle_exit(
                         arg_2,
                         arg_3,
                         arg_4,
-                        arg_5,
                         &mut vs.vcpu,
                     ) {
-                        Ok(()) => vs.vcpu.set(Register::Rax, 0),
+                        Ok(()) => vs.vcpu.set(VmcsField::GuestRax, 0)?,
                         Err(e) => {
                             log::error!("Configure core error: {:?}", e);
-                            vs.vcpu.set(Register::Rax, 1);
+                            vs.vcpu.set(VmcsField::GuestRax, 1)?;
                         }
                     }
                     vs.vcpu.next_instruction()?;
@@ -158,16 +156,15 @@ fn handle_exit(
                         LocalCapa::new(arg_1),
                         arg_2,
                         arg_3,
-                        arg_4,
                         &mut vs.vcpu,
                     ) {
                         Ok(v) => {
-                            vs.vcpu.set(Register::Rdi, v as u64);
-                            vs.vcpu.set(Register::Rax, 0);
+                            vs.vcpu.set(VmcsField::GuestRdi, v)?;
+                            vs.vcpu.set(VmcsField::GuestRax, 0)?;
                         }
                         Err(e) => {
                             log::error!("Get config core error: {:?}", e);
-                            vs.vcpu.set(Register::Rax, 1);
+                            vs.vcpu.set(VmcsField::GuestRax, 1)?;
                         }
                     }
                     Ok(HandlerResult::Resume)
@@ -175,8 +172,8 @@ fn handle_exit(
                 calls::SEAL_DOMAIN => {
                     log::trace!("Seal Domain");
                     let capa = monitor::do_seal(*domain, LocalCapa::new(arg_1)).expect("TODO");
-                    vs.vcpu.set(Register::Rdi, capa.as_u64());
-                    vs.vcpu.set(Register::Rax, 0);
+                    vs.vcpu.set(VmcsField::GuestRdi, capa.as_usize())?;
+                    vs.vcpu.set(VmcsField::GuestRax, 0)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
@@ -190,7 +187,7 @@ fn handle_exit(
                     log::trace!("Send");
                     monitor::do_send(*domain, LocalCapa::new(arg_1), LocalCapa::new(arg_2))
                         .expect("TODO");
-                    vs.vcpu.set(Register::Rax, 0);
+                    vs.vcpu.set(VmcsField::GuestRax, 0)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
@@ -204,7 +201,7 @@ fn handle_exit(
                         arg_3,
                     )
                     .expect("TODO");
-                    vs.vcpu.set(Register::Rax, 0);
+                    vs.vcpu.set(VmcsField::GuestRax, 0)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
@@ -221,24 +218,24 @@ fn handle_exit(
                         (arg_6 << 32) >> 32, // prot2
                     )
                     .expect("TODO");
-                    vs.vcpu.set(Register::Rdi, left.as_u64());
-                    vs.vcpu.set(Register::Rsi, right.as_u64());
-                    vs.vcpu.set(Register::Rax, 0);
+                    vs.vcpu.set(VmcsField::GuestRdi, left.as_usize())?;
+                    vs.vcpu.set(VmcsField::GuestRsi, right.as_usize())?;
+                    vs.vcpu.set(VmcsField::GuestRax, 0)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
                 calls::REVOKE => {
                     log::trace!("Revoke");
                     monitor::do_revoke(*domain, LocalCapa::new(arg_1)).expect("TODO");
-                    vs.vcpu.set(Register::Rax, 0);
+                    vs.vcpu.set(VmcsField::GuestRax, 0)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
                 calls::DUPLICATE => {
                     log::trace!("Duplicate");
                     let capa = monitor::do_duplicate(*domain, LocalCapa::new(arg_1)).expect("TODO");
-                    vs.vcpu.set(Register::Rdi, capa.as_u64());
-                    vs.vcpu.set(Register::Rax, 0);
+                    vs.vcpu.set(VmcsField::GuestRdi, capa.as_usize())?;
+                    vs.vcpu.set(VmcsField::GuestRax, 0)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
@@ -248,15 +245,15 @@ fn handle_exit(
                         monitor::do_enumerate(*domain, NextCapaToken::from_usize(arg_1))
                     {
                         let (v1, v2, v3) = info.serialize();
-                        vs.vcpu.set(Register::Rdi, v1 as u64);
-                        vs.vcpu.set(Register::Rsi, v2 as u64);
-                        vs.vcpu.set(Register::Rdx, v3 as u64);
-                        vs.vcpu.set(Register::Rcx, next.as_u64());
+                        vs.vcpu.set(VmcsField::GuestRdi, v1)?;
+                        vs.vcpu.set(VmcsField::GuestRsi, v2)?;
+                        vs.vcpu.set(VmcsField::GuestRdx, v3 as usize)?;
+                        vs.vcpu.set(VmcsField::GuestRcx, next.as_usize())?;
                     } else {
                         // For now, this marks the end
-                        vs.vcpu.set(Register::Rcx, 0);
+                        vs.vcpu.set(VmcsField::GuestRcx, 0)?;
                     }
-                    vs.vcpu.set(Register::Rax, 0);
+                    vs.vcpu.set(VmcsField::GuestRax, 0)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
@@ -269,7 +266,7 @@ fn handle_exit(
                 calls::DEBUG => {
                     log::trace!("Debug");
                     monitor::do_debug();
-                    vs.vcpu.set(Register::Rax, 0);
+                    vs.vcpu.set(VmcsField::GuestRax, 0)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
@@ -286,12 +283,12 @@ fn handle_exit(
         }
         VmxExitReason::Cpuid => {
             // TODO implement a filter for the cpuid.
-            let input_eax = vs.vcpu.get(Register::Rax);
-            let input_ecx = vs.vcpu.get(Register::Rcx);
-            let mut eax: u64;
-            let mut ebx: u64;
-            let mut ecx: u64;
-            let mut edx: u64;
+            let input_eax = vs.vcpu.get(VmcsField::GuestRax)?;
+            let input_ecx = vs.vcpu.get(VmcsField::GuestRcx)?;
+            let mut eax: usize;
+            let mut ebx: usize;
+            let mut ecx: usize;
+            let mut edx: usize;
 
             unsafe {
                 // Note: LLVM reserves %rbx for its internal use, so we need to use a scratch
@@ -312,10 +309,10 @@ fn handle_exit(
             filter_tpause(input_eax, input_ecx, &mut eax, &mut ebx, &mut ecx, &mut edx);
             filter_mpk(input_eax, input_ecx, &mut eax, &mut ebx, &mut ecx, &mut edx);
 
-            vs.vcpu.set(Register::Rax, eax);
-            vs.vcpu.set(Register::Rbx, ebx);
-            vs.vcpu.set(Register::Rcx, ecx);
-            vs.vcpu.set(Register::Rdx, edx);
+            vs.vcpu.set(VmcsField::GuestRax, eax as usize)?;
+            vs.vcpu.set(VmcsField::GuestRbx, ebx as usize)?;
+            vs.vcpu.set(VmcsField::GuestRcx, ecx as usize)?;
+            vs.vcpu.set(VmcsField::GuestRdx, edx as usize)?;
             vs.vcpu.next_instruction()?;
             Ok(HandlerResult::Resume)
         }
@@ -323,13 +320,17 @@ fn handle_exit(
             let qualification = vs.vcpu.exit_qualification()?.control_register_accesses();
             match qualification {
                 exit_qualification::ControlRegisterAccesses::MovToCr(cr, reg) => {
-                    if cr != ControlRegister::Cr4 {
+                    if !cr.is_guest_cr() {
+                        log::error!("Invalid register: {:x?}", cr);
+                        panic!("VmExit reason for access to control register is not a control register.");
+                    }
+                    if cr != VmcsField::GuestCr4 {
                         todo!("Handle {:?}", cr);
                     }
-                    let value = vs.vcpu.get(reg) as usize;
-                    vs.vcpu.set_cr4_shadow(value)?;
+                    let value = vs.vcpu.get(reg)? as usize;
+                    vs.vcpu.set(VmcsField::Cr4ReadShadow, value)?;
                     let real_value = value | (1 << 13); // VMXE
-                    vs.vcpu.set_cr(cr, real_value);
+                    vs.vcpu.set(cr, real_value)?;
 
                     vs.vcpu.next_instruction()?;
                 }
@@ -370,9 +371,9 @@ fn handle_exit(
             Ok(HandlerResult::Crash)
         }
         VmxExitReason::Xsetbv => {
-            let ecx = vs.vcpu.get(Register::Rcx);
-            let eax = vs.vcpu.get(Register::Rax);
-            let edx = vs.vcpu.get(Register::Rdx);
+            let ecx = vs.vcpu.get(VmcsField::GuestRcx)?;
+            let eax = vs.vcpu.get(VmcsField::GuestRax)?;
+            let edx = vs.vcpu.get(VmcsField::GuestRdx)?;
 
             let xrc_id = ecx & 0xFFFFFFFF; // Ignore 32 high-order bits
             if xrc_id != 0 {
@@ -393,7 +394,7 @@ fn handle_exit(
             Ok(HandlerResult::Resume)
         }
         VmxExitReason::Wrmsr => {
-            let ecx = vs.vcpu.get(Register::Rcx);
+            let ecx = vs.vcpu.get(VmcsField::GuestRcx)?;
             if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
                 // Custom MSR range, used by KVM
                 // See https://docs.kernel.org/virt/kvm/x86/msr.html
@@ -406,7 +407,7 @@ fn handle_exit(
             }
         }
         VmxExitReason::Rdmsr => {
-            let ecx = vs.vcpu.get(Register::Rcx);
+            let ecx = vs.vcpu.get(VmcsField::GuestRcx)?;
             log::trace!("rdmsr");
             if ecx == 0xc0011029 || (ecx >= 0xc0010200 && ecx <= 0xc001020b) {
                 // Reading an AMD specific register, just ignore it
@@ -418,8 +419,8 @@ fn handle_exit(
                 let msr_reg = vmx::msr::Msr::new(ecx as u32);
                 let (low, high) = unsafe { msr_reg.read_raw() };
                 log::trace!("Emulated read of msr {:x} = h:{:x};l:{:x}", ecx, high, low);
-                vs.vcpu.set(Register::Rax, low as u64);
-                vs.vcpu.set(Register::Rdx, high as u64);
+                vs.vcpu.set(VmcsField::GuestRax, low as usize)?;
+                vs.vcpu.set(VmcsField::GuestRdx, high as usize)?;
                 vs.vcpu.next_instruction()?;
                 Ok(HandlerResult::Resume)
             }
