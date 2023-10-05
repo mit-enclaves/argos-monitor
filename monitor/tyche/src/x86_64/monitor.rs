@@ -17,10 +17,11 @@ use stage_two_abi::Manifest;
 use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
 use vmx::bitmaps::{EptEntryFlags, ExceptionBitmap};
 use vmx::errors::Trapnr;
+use vmx::fields::{VmcsField, REGFILE_SIZE};
 use vmx::msr::{IA32_LSTAR, IA32_STAR};
 use vmx::{
-    ActiveVmcs, ControlRegister, Register, Register, VmExitInterrupt, VmExitInterrupt,
-    REGFILE_CONTEXT_SIZE, REGFILE_SIZE,
+    ActiveVmcs, ActiveVmcs, ControlRegister, Register, Register, VmExitInterrupt, VmExitInterrupt,
+    VmExitInterrupt, REGFILE_CONTEXT_SIZE, REGFILE_SIZE,
 };
 use vtd::Iommu;
 
@@ -33,6 +34,8 @@ use crate::attestation_domain::{attest_domain, calculate_attestation_hash};
 use crate::rcframe::{drop_rc, RCFrame, RCFramePool, EMPTY_RCFRAME};
 use crate::x86_64::apic;
 use crate::x86_64::exposed_vmx_fields::{GuestRegisterGroups, GuestRegisters};
+use crate::x86_64::filtered_fields::FilteredFields;
+
 // ————————————————————————— Statics & Backend Data ————————————————————————— //
 
 static CAPA_ENGINE: Mutex<CapaEngine> = Mutex::new(CapaEngine::new());
@@ -139,7 +142,10 @@ const EMPTY_CONTEXT: Mutex<ContextData> = Mutex::new(ContextData {
     lstar: u64::max_value(),
     star: u64::max_value(),
     vmcs: Handle::<RCFrame>::new_invalid(),
-    regs: [u64::max_value(); REGFILE_CONTEXT_SIZE],
+    regs: [usize::max_value(); REGFILE_SIZE],
+    cr3: usize::max_value(),
+    rip: usize::max_value(),
+    rsp: usize::max_value(),
 });
 const EMPTY_CONTEXT_ARRAY: [Mutex<ContextData>; NB_CORES] = [EMPTY_CONTEXT; NB_CORES];
 static IOMMU: Mutex<Iommu> =
@@ -205,6 +211,10 @@ pub fn init_vcpu(vcpu: &mut ActiveVmcs<'static>) -> Handle<Domain> {
         .allocate(RCFrame::new(*vcpu.frame()))
         .expect("Unable to allocate rcframe");
     ctxt.vmcs = rcframe;
+    log::info!(
+        "The EPT pointer: {:x?}",
+        HostPhysAddr::new(domain.ept.unwrap().as_usize() | EPT_ROOT_FLAGS)
+    );
     vcpu.set_ept_ptr(HostPhysAddr::new(
         domain.ept.unwrap().as_usize() | EPT_ROOT_FLAGS,
     ))
@@ -247,7 +257,6 @@ pub fn do_configure_core(
     current: Handle<Domain>,
     domain: LocalCapa,
     core: usize,
-    group: usize,
     idx: usize,
     value: usize,
     vcpu: &mut ActiveVmcs<'static>,
@@ -266,26 +275,19 @@ pub fn do_configure_core(
         return Err(CapaError::InvalidCore);
     }
 
-    // Check this is a valid group.
-    let group = match GuestRegisterGroups::from_usize(group) {
-        Some(g) => g,
-        _ => {
-            log::error!("Invalid register group.");
-            return Err(CapaError::InvalidOperation);
-        }
-    };
+    // Check this is a valid idx for a field.
+    if !FilteredFields::is_valid(idx) {
+        log::error!("Attempt to set an invalid register: {:x}", idx);
+        return Err(CapaError::InvalidOperation);
+    }
+    let field = VmcsField::from_u32(idx as u32).unwrap();
 
     // Check the domain has the correct vcpu type
     let switch_type = engine.get_domain_config(domain, Bitmaps::SWITCH);
     let switch_type = InitVMCS::from_u64(switch_type)?;
-    if switch_type == InitVMCS::Shared && group != GuestRegisterGroups::GeneralPurpose {
-        log::error!("Trying to non GP register on a shared vcpu.");
-        return Err(CapaError::InvalidOperation);
-    }
 
-    // Check this is a valid idx for the group.
-    if !GuestRegisters::is_valid(group, idx) {
-        log::error!("Attempt to set an invalid register! {:?}@{:x}", group, idx);
+    if switch_type == InitVMCS::Shared && !field.is_gp_register() && !field.is_context_register() {
+        log::error!("Trying to set non-GP/non-Context register on a shared vcpu.");
         return Err(CapaError::InvalidOperation);
     }
 
@@ -305,27 +307,21 @@ pub fn do_configure_core(
             return Err(CapaError::InvalidOperation);
         }
 
-        if current_ctx.vmcs == target_ctx.vmcs {
-            // Set the value without doing a switch, the value is a GP written
-            // directly inside the context.
-            GuestRegisters::set_register(None, &mut target_ctx, group, idx, value)
-        } else {
-            // 1. save the current context.
-            current_ctx.save(vcpu);
+        // 1. save the current context.
+        current_ctx.save(vcpu);
 
-            // 2. switch to the target one.
-            target_ctx.restore(&RC_VMCS, vcpu);
+        // 2. switch to the target one.
+        target_ctx.restore(&RC_VMCS, vcpu);
 
-            // 3. set the value.
-            let err = GuestRegisters::set_register(Some(vcpu), &mut target_ctx, group, idx, value);
+        // 3. set the value.
+        let err = FilteredFields::set_register(vcpu, field, value);
 
-            // 4. save the target context.
-            target_ctx.save(vcpu);
+        // 4. save the target context.
+        target_ctx.save(vcpu);
 
-            // 5. switch back to the original one.
-            current_ctx.restore(&RC_VMCS, vcpu);
-            err
-        }
+        // 5. switch back to the original one.
+        current_ctx.restore(&RC_VMCS, vcpu);
+        err
     }?;
 
     Ok(())
@@ -335,7 +331,6 @@ pub fn do_get_config_core(
     current: Handle<Domain>,
     domain: LocalCapa,
     core: usize,
-    group: usize,
     idx: usize,
     vcpu: &mut ActiveVmcs<'static>,
 ) -> Result<usize, CapaError> {
@@ -353,26 +348,19 @@ pub fn do_get_config_core(
         return Err(CapaError::InvalidCore);
     }
 
-    // Check this is a valid group.
-    let group = match GuestRegisterGroups::from_usize(group) {
-        Some(g) => g,
-        _ => {
-            log::error!("Invalid register group.");
-            return Err(CapaError::InvalidOperation);
-        }
-    };
+    // Check this is a valid idx for a field.
+    if !FilteredFields::is_valid(idx) {
+        log::error!("Attempt to set an invalid register: {:x}", idx);
+        return Err(CapaError::InvalidOperation);
+    }
+    let field = VmcsField::from_u32(idx as u32).unwrap();
 
     // Check the domain has the correct vcpu type
     let switch_type = engine.get_domain_config(domain, Bitmaps::SWITCH);
     let switch_type = InitVMCS::from_u64(switch_type)?;
-    if switch_type == InitVMCS::Shared && group != GuestRegisterGroups::GeneralPurpose {
-        log::error!("Trying to non GP register on a shared vcpu.");
-        return Err(CapaError::InvalidOperation);
-    }
 
-    // Check this is a valid idx for the group.
-    if !GuestRegisters::is_valid(group, idx) {
-        log::error!("Attempt to set an invalid register! {:?}@{:x}", group, idx);
+    if switch_type == InitVMCS::Shared && !field.is_gp_register() {
+        log::error!("Trying to set non GP register on a shared vcpu.");
         return Err(CapaError::InvalidOperation);
     }
 
@@ -392,27 +380,21 @@ pub fn do_get_config_core(
             return Err(CapaError::InvalidOperation);
         }
 
-        if current_ctx.vmcs == target_ctx.vmcs {
-            // Set the value without doing a switch, the value is a GP written
-            // directly inside the context.
-            GuestRegisters::get_register(vcpu, group, idx)
-        } else {
-            // 1. save the current context.
-            current_ctx.save(vcpu);
+        // 1. save the current context.
+        current_ctx.save(vcpu);
 
-            // 2. switch to the target one.
-            target_ctx.restore(&RC_VMCS, vcpu);
+        // 2. switch to the target one.
+        target_ctx.restore(&RC_VMCS, vcpu);
 
-            // 3. set the value.
-            let err = GuestRegisters::get_register(vcpu, group, idx);
+        // 3. set the value.
+        let err = FilteredFields::get_register(vcpu, field);
 
-            // 4. save the target context.
-            target_ctx.save(vcpu);
+        // 4. save the target context.
+        target_ctx.save(vcpu);
 
-            // 5. switch back to the original one.
-            current_ctx.restore(&RC_VMCS, vcpu);
-            err
-        }
+        // 5. switch back to the original one.
+        current_ctx.restore(&RC_VMCS, vcpu);
+        err
     }?;
 
     Ok(res)
@@ -811,8 +793,9 @@ pub fn apply_core_updates(
                     .expect("Failed to perform the switch");
 
                 // Set switch return values
-                vcpu.set(Register::Rax, 0);
-                vcpu.set(Register::Rdi, return_capa.as_u64());
+                vcpu.set(VmcsField::GuestRax, 0).unwrap();
+                vcpu.set(VmcsField::GuestRdi, return_capa.as_usize())
+                    .unwrap();
 
                 // Update the current domain and context handle
                 *current_domain = domain;

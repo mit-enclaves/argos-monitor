@@ -6,7 +6,8 @@ use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use allocator::FrameAllocator;
 use capa_engine::{Domain, Handle};
 use stage_two_abi::{GuestInfo, Manifest};
-pub use vmx::{ActiveVmcs, ControlRegister};
+use vmx::fields::VmcsField;
+pub use vmx::{ActiveVmcs, ActiveVmcs, ControlRegister, VmxError as BackendError};
 
 use super::guest::VmxState;
 use super::{arch, cpuid, launch_guest, monitor, vmx_helper};
@@ -152,9 +153,10 @@ unsafe fn wait_on_mailbox(manifest: &Manifest, vcpu: &mut ActiveVmcs<'static>, c
     );
 
     // Set RIP entry point
-    vcpu.set_nat(vmx::fields::GuestStateNat::Rip, wakeup_vector as usize)
-        .ok();
-    vcpu.set_cr(ControlRegister::Cr3, manifest.smp.wakeup_cr3 as usize);
+    vcpu.set(VmcsField::GuestRip, wakeup_vector as usize)
+        .unwrap();
+    vcpu.set(VmcsField::GuestCr3, manifest.smp.wakeup_cr3 as usize)
+        .unwrap();
 
     (mp_mailbox as *mut u16).write_volatile(0);
 }
