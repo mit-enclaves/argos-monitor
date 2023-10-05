@@ -1,7 +1,10 @@
 use capa_engine::CapaError;
-use vmx::fields::traits::{VmcsField32, VmcsField64, VmcsFieldNat};
+use vmx::fields::traits::{
+    VmcsField32, VmcsField32Ro, VmcsField64, VmcsField64Ro, VmcsFieldNat, VmcsFieldNatRo,
+};
 use vmx::fields::{
-    Ctrl32, Ctrl64, CtrlNat, GuestState16, GuestState32, GuestState64, GuestStateNat,
+    Ctrl32, Ctrl64, CtrlNat, GuestState16, GuestState32, GuestState32Ro, GuestState64,
+    GuestState64Ro, GuestStateNat, GuestStateNatRo,
 };
 use vmx::{ActiveVmcs, ControlRegister, Register};
 
@@ -222,6 +225,52 @@ pub fn search_ctrl_nat(idx: usize) -> Option<CtrlNat> {
     }
 }
 
+/// GuestState32Ro fields we expose.
+pub const GUEST_32_RO: [GuestState32Ro; 8] = [
+    GuestState32Ro::VmInstructionError,
+    GuestState32Ro::ExitReason,
+    GuestState32Ro::VmExitInterruptInfo,
+    GuestState32Ro::VmExitInterruptErrCode,
+    GuestState32Ro::IdtVecoringInfoField,
+    GuestState32Ro::IdtVectoringErrCode,
+    GuestState32Ro::VmExitInstructionLength,
+    GuestState32Ro::VmExitInstructionInfo,
+];
+
+pub fn search_32_ro(idx: usize) -> Option<GuestState32Ro> {
+    match GUEST_32_RO.iter().position(|item| *item as usize == idx) {
+        Some(id) => Some(GUEST_32_RO[id]),
+        _ => None,
+    }
+}
+
+///  GuestState64Ro fields we expose.
+pub const GUEST_64_RO: [GuestState64Ro; 1] = [GuestState64Ro::GuestPhysAddr];
+
+pub fn search_64_ro(idx: usize) -> Option<GuestState64Ro> {
+    match GUEST_64_RO.iter().position(|item| *item as usize == idx) {
+        Some(id) => Some(GUEST_64_RO[id]),
+        _ => None,
+    }
+}
+
+/// GuestStateNatRo fields we expose.
+pub const GUEST_NAT_RO: [GuestStateNatRo; 6] = [
+    GuestStateNatRo::ExitQualification,
+    GuestStateNatRo::IoRcx,
+    GuestStateNatRo::IoRsi,
+    GuestStateNatRo::IoRdi,
+    GuestStateNatRo::IoRip,
+    GuestStateNatRo::GuestLinearAddr,
+];
+
+pub fn search_nat_ro(idx: usize) -> Option<GuestStateNatRo> {
+    match GUEST_NAT_RO.iter().position(|item| *item as usize == idx) {
+        Some(id) => Some(GUEST_NAT_RO[id]),
+        _ => None,
+    }
+}
+
 /// Group configurable registers by type/size.
 /// This requires one extra argument to be passed to the monitor call,
 /// but facilitates the logic on the monitor side for now.
@@ -238,6 +287,9 @@ pub enum GuestRegisterGroups {
     Ctrl32 = 6,
     Ctrl64 = 7,
     CtrlNat = 8,
+    Reg32Ro = 9,
+    Reg64Ro = 10,
+    RegNatRo = 11,
 }
 
 impl GuestRegisterGroups {
@@ -252,6 +304,9 @@ impl GuestRegisterGroups {
             6 => Some(Self::Ctrl32),
             7 => Some(Self::Ctrl64),
             8 => Some(Self::CtrlNat),
+            9 => Some(Self::Reg32Ro),
+            10 => Some(Self::Reg64Ro),
+            11 => Some(Self::RegNatRo),
             _ => None,
         }
     }
@@ -272,6 +327,9 @@ impl GuestRegisters {
             GuestRegisterGroups::Ctrl32 => search_guest_32(idx).is_some(),
             GuestRegisterGroups::Ctrl64 => search_ctrl_64(idx).is_some(),
             GuestRegisterGroups::CtrlNat => search_ctrl_nat(idx).is_some(),
+            GuestRegisterGroups::Reg32Ro => search_32_ro(idx).is_some(),
+            GuestRegisterGroups::Reg64Ro => search_64_ro(idx).is_some(),
+            GuestRegisterGroups::RegNatRo => search_nat_ro(idx).is_some(),
         }
     }
 
@@ -332,6 +390,18 @@ impl GuestRegisters {
                 let reg = search_guest_nat(idx).expect("CtrlNat should be valid");
                 unsafe { reg.vmwrite(value) }.expect("CtrlNat unsafe failed");
             }
+            GuestRegisterGroups::Reg32Ro => {
+                log::error!("Attempt to set Reg32Ro register!");
+                return Err(CapaError::InvalidOperation);
+            }
+            GuestRegisterGroups::Reg64Ro => {
+                log::error!("Attempt to set Reg64Ro register!");
+                return Err(CapaError::InvalidOperation);
+            }
+            GuestRegisterGroups::RegNatRo => {
+                log::error!("Attempt to set a RegNatRo register!");
+                return Err(CapaError::InvalidOperation);
+            }
         }
         Ok(())
     }
@@ -380,6 +450,18 @@ impl GuestRegisters {
             GuestRegisterGroups::CtrlNat => {
                 let reg = search_ctrl_nat(idx).expect("CtrlNat does not exist");
                 unsafe { reg.vmread() }.expect("Unable to read ctrlnat") as usize
+            }
+            GuestRegisterGroups::Reg32Ro => {
+                let reg = search_32_ro(idx).expect("Reg32Ro does not exist");
+                unsafe { reg.vmread() }.expect("Unable to read u32 ro") as usize
+            }
+            GuestRegisterGroups::Reg64Ro => {
+                let reg = search_64_ro(idx).expect("Reg64Ro does not exist");
+                unsafe { reg.vmread() }.expect("Unable to read u64 ro") as usize
+            }
+            GuestRegisterGroups::RegNatRo => {
+                let reg = search_nat_ro(idx).expect("RegNatRo does not exist");
+                unsafe { reg.vmread() }.expect("Unable to read nat ro") as usize
             }
         };
         Ok(value)
