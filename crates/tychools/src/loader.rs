@@ -106,7 +106,7 @@ pub fn extract_bin(src: &PathBuf, dst: &PathBuf) {
     );
 }
 
-pub fn parse_and_run(file: &PathBuf) {
+pub fn parse_and_run(file: &PathBuf, riscv_enabled: bool) {
     let data = std::fs::read(file).expect("Unable to read source file");
     let mut enclave = Enclave {
         elf: ModifiedELF::new(&data),
@@ -120,14 +120,14 @@ pub fn parse_and_run(file: &PathBuf) {
         phys_offset: 0,
     };
     // Load the enclave.
-    load(&mut enclave);
+    load(&mut enclave, riscv_enabled);
 
     //TODO run the enclave
 }
 
 /// load an instrumented binary.
 /// //TODO(aghosn) this only handles enclaves for now.
-pub fn load(encl: &mut Enclave) {
+pub fn load(encl: &mut Enclave, riscv_enabled: bool) {
     let mut memsize: usize = usize::MIN;
     for seg in &encl.elf.segments {
         if !ModifiedSegment::is_loadable(seg.program_header.p_type(DENDIAN)) {
@@ -165,7 +165,8 @@ pub fn load(encl: &mut Enclave) {
     log::debug!("The physoffset is {:x}", msg.physoffset);
 
     // Let's fix the page tables now.
-    encl.elf.fix_page_tables(msg.physoffset as u64);
+    encl.elf
+        .fix_page_tables(msg.physoffset as u64, riscv_enabled);
     log::debug!("Fixed page tables with offset {:x}", msg.physoffset);
 
     // Set the cr3 in the enclave.

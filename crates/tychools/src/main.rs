@@ -42,12 +42,16 @@ struct SrcDestArgs {
     src: PathBuf,
     #[arg(short, long, value_name = "DST")]
     dst: PathBuf,
+    #[arg(short, long, value_name = "RISCV_ENABLED")]
+    riscv_enabled: bool,
 }
 
 #[derive(Args)]
 struct FilePath {
     #[arg(short, long, value_name = "SRC")]
     src: PathBuf,
+    #[arg(short, long, value_name = "RISCV_ENABLED")]
+    riscv_enabled: bool,
 }
 
 #[derive(Args)]
@@ -56,6 +60,8 @@ struct FileAndOffset {
     src: PathBuf,
     #[arg(short, long, value_name = "OFFSET", value_parser=maybe_hex::<u64>)]
     offset: u64,
+    #[arg(short, long, value_name = "RISCV_ENABLED")]
+    riscv_enabled: bool,
 }
 
 #[derive(Args)]
@@ -68,6 +74,8 @@ struct AttestationArgs {
     offset: u64,
     #[arg(short, long, value_name = "NONCE", value_parser=maybe_hex::<u64>)]
     nonce: u64,
+    #[arg(short, long, value_name = "RISCV_ENABLED")]
+    riscv_enabled: bool,
 }
 
 fn main() {
@@ -75,28 +83,34 @@ fn main() {
     let cli = Cli::parse();
     match &cli.command {
         Commands::TychefyBinary(args) => {
-            modify_binary(&args.src, &args.dst);
+            modify_binary(&args.src, &args.dst, args.riscv_enabled);
         }
         Commands::Instrument(manifest) => {
-            instrument_with_manifest(&manifest.src);
+            instrument_with_manifest(&manifest.src, manifest.riscv_enabled);
         }
         Commands::PrintPts(args) => {
-            print_page_tables(&args.src);
+            print_page_tables(&args.src, args.riscv_enabled);
         }
         Commands::Run(args) => {
-            parse_and_run(&args.src);
+            parse_and_run(&args.src, args.riscv_enabled);
         }
         Commands::PrintEnum => {
             print_enum();
         }
         Commands::Hash(args) => {
-            attest(&args.src, args.offset);
+            attest(&args.src, args.offset, args.riscv_enabled);
         }
         Commands::Extract(args) => {
             extract_bin(&args.src, &args.dst);
         }
         Commands::Attestation(args) => {
-            attestation_check(&args.src_bin, &args.att_src, args.offset, args.nonce);
+            attestation_check(
+                &args.src_bin,
+                &args.att_src,
+                args.offset,
+                args.nonce,
+                args.riscv_enabled,
+            );
         }
     }
 }

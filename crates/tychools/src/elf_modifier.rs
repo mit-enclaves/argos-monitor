@@ -3,7 +3,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 
-use mmu::PtFlag;
+use mmu::{PtFlag, RVPtFlag};
 use object::read::elf::{FileHeader, ProgramHeader, SectionHeader};
 use object::{elf, Endianness, U16Bytes, U32Bytes, U64Bytes};
 use serde::{Deserialize, Serialize};
@@ -14,8 +14,7 @@ use crate::page_table_mapper::{align_address, generate_page_tables};
 
 pub static PF_H: u32 = 1 << 3;
 
-#[cfg(feature = "riscv_enabled")]
-const PT_PHYS_PAGE_MASK: u64 = ((1 << 44) - 1) << PtFlag::flags_count(); //TODO(neelu): This is specific for SV48.
+const PT_PHYS_PAGE_MASK: u64 = ((1 << 44) - 1) << RVPtFlag::flags_count(); //TODO(neelu): This is specific for SV48.
 
 // —————————————————————————————— Local Enums ——————————————————————————————— //
 
@@ -284,8 +283,9 @@ impl ModifiedELF {
         &mut self,
         security: Security,
         map_page_tables: &Option<MappingPageTables>,
+        riscv_enabled: bool,
     ) {
-        let (pts, nb_pages, cr3) = generate_page_tables(self, map_page_tables);
+        let (pts, nb_pages, cr3) = generate_page_tables(self, map_page_tables, riscv_enabled);
         let tpe = if security == Security::Confidential {
             TychePhdrTypes::PageTablesConf
         } else {
@@ -315,7 +315,7 @@ impl ModifiedELF {
 
     /// Adds offset to all non-empty entries in the page table.
     /// This is used by the loader at run time.
-    pub fn fix_page_tables(&mut self, offset: u64) {
+    pub fn fix_page_tables(&mut self, offset: u64, riscv_enabled: bool) {
         let mut page_seg: Option<&mut ModifiedSegment> = None;
         {
             for seg in &mut self.segments {
@@ -343,20 +343,20 @@ impl ModifiedELF {
             panic!("The offset is not page aligned.");
         }
 
-        #[cfg(not(feature = "riscv_enabled"))]
-        // TODO(aghosn) I am lazy, is it correct to do a simple add?
-        for entry in tables.iter_mut() {
-            if *entry != 0 && (*entry & PtFlag::PRESENT.bits() == PtFlag::PRESENT.bits()) {
-                *entry += offset;
+        if !riscv_enabled {
+            // TODO(aghosn) I am lazy, is it correct to do a simple add?
+            for entry in tables.iter_mut() {
+                if *entry != 0 && (*entry & PtFlag::PRESENT.bits() == PtFlag::PRESENT.bits()) {
+                    *entry += offset;
+                }
             }
-        }
-
-        #[cfg(feature = "riscv_enabled")]
-        for entry in tables.iter_mut() {
-            if *entry != 0 && (*entry & PtFlag::VALID.bits() == PtFlag::VALID.bits()) {
-                let ppn = (offset >> page_offset_width) + (*entry >> PtFlag::flags_count());
-                *entry = (*entry & !PT_PHYS_PAGE_MASK) | (ppn << PtFlag::flags_count());
-                log::debug!("Fixing page tables: entry: {:x} and ppn: {:x}", *entry, ppn);
+        } else {
+            for entry in tables.iter_mut() {
+                if *entry != 0 && (*entry & RVPtFlag::VALID.bits() == RVPtFlag::VALID.bits()) {
+                    let ppn = (offset >> page_offset_width) + (*entry >> RVPtFlag::flags_count());
+                    *entry = (*entry & !PT_PHYS_PAGE_MASK) | (ppn << RVPtFlag::flags_count());
+                    log::debug!("Fixing page tables: entry: {:x} and ppn: {:x}", *entry, ppn);
+                }
             }
         }
     }
@@ -371,7 +371,7 @@ impl ModifiedELF {
             .open(output)
             .expect("Unable to open output file.");
         file.write(&*content).expect("Unable to dump the content");
-        log::debug!("Done writting the binary");
+        log::debug!("Done writing the binary");
     }
     /// Writes a ModifiedELF into a vector of bytes and returns it.
     pub fn dump(&mut self, sort: bool) -> Vec<u8> {

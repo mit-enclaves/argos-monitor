@@ -72,11 +72,11 @@ fn hash_segments_info(enclave: &Box<ModifiedELF>, hasher: &mut Sha256, offset: u
     }
 }
 
-pub fn attest(src: &PathBuf, offset: u64) -> (u128, u128) {
+pub fn attest(src: &PathBuf, offset: u64, riscv_enabled: bool) -> (u128, u128) {
     let data = std::fs::read(src).expect("Unable to read source file");
     let mut hasher = Sha256::default();
     let mut enclave = ModifiedELF::new(&data);
-    enclave.fix_page_tables(offset);
+    enclave.fix_page_tables(offset, riscv_enabled);
 
     hash_segments_info(&enclave, &mut hasher, offset);
 
@@ -102,7 +102,13 @@ fn copy_arr(dst: &mut [u8], src: &[u8], index: usize) {
     }
 }
 
-pub fn attestation_check(src_bin: &PathBuf, src_att: &PathBuf, offset: u64, nonce: u64) {
+pub fn attestation_check(
+    src_bin: &PathBuf,
+    src_att: &PathBuf,
+    offset: u64,
+    nonce: u64,
+    riscv_enabled: bool,
+) {
     log::trace!("Tychools attestation check");
     log::trace!("Binary path {}", src_bin.display());
     log::trace!("Attestation data path {}", src_att.display());
@@ -130,7 +136,7 @@ pub fn attestation_check(src_bin: &PathBuf, src_att: &PathBuf, offset: u64, nonc
 
     let mut message: [u8; MSG_SZ] = [0; MSG_SZ];
 
-    let (hash_high, hash_low) = attest(src_bin, offset);
+    let (hash_high, hash_low) = attest(src_bin, offset, riscv_enabled);
     //fill the bytes of the message to be checked
     copy_arr(&mut message, &u128::to_le_bytes(hash_low), 0);
     copy_arr(&mut message, &u128::to_le_bytes(hash_high), 16);
