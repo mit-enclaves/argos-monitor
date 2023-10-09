@@ -8,28 +8,27 @@ use super::walker::{Address, Level, WalkNext, Walker};
 
 static PAGE_MASK: usize = !(0x1000 - 1);
 
-pub const ADDRESS_MASK: u64 = 0x7fffffffff000;
+static PAGE_OFFSET_WIDTH: usize = 12;
 
-pub struct PtMapper<PhysAddr, VirtAddr> {
+pub struct RVPtMapper<PhysAddr, VirtAddr> {
     /// Offset between host physical memory and virtual memory.
     host_offset: usize,
     /// Offset between host physical and guest physical.
     offset: usize,
     root: PhysAddr,
-    _virt: PhantomData<VirtAddr>,
+    _virt: PhantomData<VirtAddr>, //Neelu: What is this used for?
 }
 
 bitflags! {
-    pub struct PtFlag: u64 {
-        const PRESENT = 1 << 0;
-        const WRITE = 1 << 1;
-        const USER = 1 << 2;
-        const PAGE_WRITE_THROUGH = 1 << 3;
-        const PAGE_CACHE_DISABLE = 1 << 4;
-        const ACCESS = 1 << 5;
-        const PSIZE = 1 << 7;
-        const HALT = 1 << 11;
-        const EXEC_DISABLE = 1 << 63;
+    pub struct RVPtFlag: u64 {
+        const VALID = 1 << 0;
+        const READ = 1 << 1;
+        const WRITE = 1 << 2;
+        const EXECUTE = 1 << 3;
+        const USER = 1 << 4;
+        const GLOBAL = 1 << 5;
+        const ACCESSED = 1 << 6;
+        const DIRTY = 1 << 7;
     }
 
     pub struct PageSize: usize {
@@ -39,12 +38,19 @@ bitflags! {
     }
 }
 
-/// Mask to remove the top 12 bits, containing PKU keys and Exec disable bits.
-pub const HIGH_BITS_MASK: u64 = !(0b111111111111 << 52);
-pub const DEFAULT_PROTS: PtFlag = PtFlag::PRESENT.union(PtFlag::WRITE).union(PtFlag::USER);
-pub const MAP_PAGE_TABLE: PtFlag = PtFlag::PRESENT.union(PtFlag::WRITE);
+impl RVPtFlag {
+    const FLAGS_COUNT: usize = 10;
 
-unsafe impl<PhysAddr, VirtAddr> Walker for PtMapper<PhysAddr, VirtAddr>
+    pub const fn flags_count() -> usize {
+        Self::FLAGS_COUNT
+    }
+}
+
+/// Mask to remove the top 10 bits, containing N/PBMT/Reserved fields in the PTE.
+const HIGH_BITS_MASK: u64 = !(0b1111111111 << 54);
+const DEFAULT_PROTS: RVPtFlag = RVPtFlag::VALID;
+
+unsafe impl<PhysAddr, VirtAddr> Walker for RVPtMapper<PhysAddr, VirtAddr>
 where
     PhysAddr: Address,
     VirtAddr: Address,
@@ -61,11 +67,13 @@ where
     }
 
     fn get_phys_addr(entry: u64) -> Option<Self::PhysAddr> {
-        Some(Self::PhysAddr::from_u64(entry & ADDRESS_MASK))
+        Some(Self::PhysAddr::from_u64(
+            (entry >> RVPtFlag::flags_count()) << PAGE_OFFSET_WIDTH,
+        ))
     }
 }
 
-impl<PhysAddr, VirtAddr> PtMapper<PhysAddr, VirtAddr>
+impl<PhysAddr, VirtAddr> RVPtMapper<PhysAddr, VirtAddr>
 where
     PhysAddr: Address,
     VirtAddr: Address,
@@ -85,17 +93,23 @@ where
         let mut phys_addr = None;
         unsafe {
             self.walk(virt_addr, &mut |entry, level| {
-                if *entry & PtFlag::PRESENT.bits() == 0 {
+                if *entry & RVPtFlag::VALID.bits() == 0 {
                     // Terminate the walk, no mapping exists
                     return WalkNext::Leaf;
                 }
-                if level == Level::L1 || *entry & PtFlag::PSIZE.bits() != 0 {
-                    let raw_addr = *entry & level.mask() & HIGH_BITS_MASK;
+
+                if level == Level::L1
+                    || *entry & RVPtFlag::READ.bits() != 0
+                    || *entry & RVPtFlag::EXECUTE.bits() != 0
+                {
+                    let raw_addr =
+                        ((*entry & level.mask()) >> RVPtFlag::flags_count()) << PAGE_OFFSET_WIDTH;
                     let raw_addr_with_offset = raw_addr + (virt_addr.as_u64() & !level.mask());
                     phys_addr = Some(PhysAddr::from_u64(raw_addr_with_offset));
                     // We found an address, terminate the walk.
                     return WalkNext::Leaf;
                 }
+
                 // Continue to walk if not yet on a leaf
                 return WalkNext::Continue;
             })
@@ -111,7 +125,7 @@ where
         virt_addr: VirtAddr,
         phys_addr: PhysAddr,
         size: usize,
-        prot: PtFlag,
+        prot: RVPtFlag,
     ) {
         // Align physical address first
         let phys_addr = PhysAddr::from_usize(phys_addr.as_usize() & PAGE_MASK);
@@ -122,20 +136,32 @@ where
                 VirtAddr::from_usize(virt_addr.as_usize() + size),
                 &mut |addr, entry, level| {
                     // TODO(aghosn) handle rewrite of access rights.
-                    if (*entry & PtFlag::PRESENT.bits()) != 0 {
-                        *entry = *entry | prot.bits();
-                        *entry = *entry & !PtFlag::EXEC_DISABLE.bits();
+                    // Neelu: Only updating prots for leaf PTEs.
+                    if (*entry & RVPtFlag::VALID.bits()) != 0 {
+                        if level == Level::L1 {
+                            *entry = *entry | prot.bits();
+                            //TODO(neelu): Should prot.bits() be
+                            //checked for RWX for non-leaf entries?
+                        }
                         return WalkNext::Continue;
                     }
 
                     let end = virt_addr.as_usize() + size;
                     let phys = phys_addr.as_u64() + (addr.as_u64() - virt_addr.as_u64());
+
                     // Opportunity to map a 1GB region
                     if level == Level::L3 {
                         if (addr.as_usize() + PageSize::GIANT.bits() <= end)
                             && (phys % (PageSize::GIANT.bits() as u64) == 0)
                         {
-                            *entry = phys | PtFlag::PSIZE.bits() | prot.bits();
+                            //Make sure protection bits have either read or execute set - to
+                            //denote a leaf PTE.
+                            *entry = ((phys >> PAGE_OFFSET_WIDTH) << RVPtFlag::flags_count())
+                                | prot.bits();
+                            assert!(
+                                *entry & RVPtFlag::READ.bits() != 0
+                                    || *entry & RVPtFlag::EXECUTE.bits() != 0
+                            );
                             return WalkNext::Leaf;
                         }
                     }
@@ -144,13 +170,23 @@ where
                         if (addr.as_usize() + PageSize::HUGE.bits() <= end)
                             && (phys % (PageSize::HUGE.bits() as u64) == 0)
                         {
-                            *entry = phys | PtFlag::PSIZE.bits() | prot.bits();
+                            *entry = ((phys >> PAGE_OFFSET_WIDTH) << RVPtFlag::flags_count())
+                                | prot.bits();
+                            assert!(
+                                *entry & RVPtFlag::READ.bits() != 0
+                                    || *entry & RVPtFlag::EXECUTE.bits() != 0
+                            );
                             return WalkNext::Leaf;
                         }
                     }
                     if level == Level::L1 {
                         assert!(phys % (PageSize::NORMAL.bits() as u64) == 0);
-                        *entry = phys | prot.bits();
+                        *entry =
+                            ((phys >> PAGE_OFFSET_WIDTH) << RVPtFlag::flags_count()) | prot.bits();
+                        assert!(
+                            *entry & RVPtFlag::READ.bits() != 0
+                                || *entry & RVPtFlag::EXECUTE.bits() != 0
+                        );
                         return WalkNext::Leaf;
                     }
                     // Create an entry
@@ -159,7 +195,13 @@ where
                         .expect("map_range: unable to allocate page table entry.")
                         .zeroed();
                     assert!(frame.phys_addr.as_u64() >= offset as u64);
-                    *entry = (frame.phys_addr.as_u64() - (offset as u64)) | DEFAULT_PROTS.bits();
+                    *entry = (((frame.phys_addr.as_u64() - (offset as u64)) >> PAGE_OFFSET_WIDTH)
+                        << RVPtFlag::flags_count())
+                        | DEFAULT_PROTS.bits();
+                    assert!(
+                        *entry & RVPtFlag::READ.bits() == 0
+                            && *entry & RVPtFlag::EXECUTE.bits() == 0
+                    );
                     WalkNext::Continue
                 },
             )
@@ -174,8 +216,8 @@ where
                 virt_addr,
                 VirtAddr::from_usize(virt_addr.as_usize() + size),
                 &mut |addr, entry, level| {
-                    let flags = PtFlag::from_bits_truncate(*entry);
-                    let phys = *entry & ((1 << 63) - 1) & (PAGE_MASK as u64);
+                    let flags = RVPtFlag::from_bits_truncate(*entry);
+                    let phys = (*entry >> RVPtFlag::flags_count()) << PAGE_OFFSET_WIDTH;
 
                     // Do not go too deep
                     match (dept, level) {
@@ -188,7 +230,7 @@ where
                     };
 
                     // Print if present
-                    if flags.contains(PtFlag::PRESENT) {
+                    if flags.contains(RVPtFlag::VALID) {
                         let padding = match level {
                             Level::L4 => "",
                             Level::L3 => "  ",

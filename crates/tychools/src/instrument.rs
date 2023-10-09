@@ -135,14 +135,14 @@ pub fn decode_map(map: &Option<MappingPageTables>) -> (bool, usize) {
     (should_we_map(map), map_page_table_virt_addr(map))
 }
 
-pub fn modify_binary(src: &PathBuf, dst: &PathBuf) {
+pub fn modify_binary(src: &PathBuf, dst: &PathBuf, riscv_enabled: bool) {
     let data = std::fs::read(src).expect("Unable to read source file");
     info!("We read {} bytes from the file", data.len());
     let mut elf = ModifiedELF::new(&*data);
 
     // Create page tables.
     // TODO do we need an option to choose mapping of page tables here
-    let (pts, nb_pages, cr3) = generate_page_tables(&*elf, &None);
+    let (pts, nb_pages, cr3) = generate_page_tables(&*elf, &None, riscv_enabled);
     elf.append_data_segment(
         Some(cr3 as u64),
         TychePhdrTypes::PageTablesConf as u32,
@@ -155,14 +155,14 @@ pub fn modify_binary(src: &PathBuf, dst: &PathBuf) {
     elf.dump_to_file(dst, true);
 }
 
-pub fn instrument_with_manifest(src: &PathBuf) {
+pub fn instrument_with_manifest(src: &PathBuf, riscv_enabled: bool) {
     // Parse the manifest.
     let manifest: Manifest = {
         let data = std::fs::read(src).expect("Unable to read source file");
         let content = String::from_utf8(data).expect("Unable to convert data to string");
         serde_json::from_str(&content).expect("Failed to parse JSON")
     };
-    instrument_binary(&manifest);
+    instrument_binary(&manifest, riscv_enabled);
 }
 
 /// Parse singular binary instrumentation description and applies its operations.
@@ -251,7 +251,7 @@ pub fn parse_binary(
     elf
 }
 
-pub fn instrument_binary(manifest: &Manifest) {
+pub fn instrument_binary(manifest: &Manifest, riscv_enabled: bool) {
     // Parse the untrusted part of the application.
     let mut untrusted_elf = if let Some(untrusted) = &manifest.untrusted_bin {
         let bin = parse_binary(untrusted, &None);
@@ -294,17 +294,17 @@ pub fn instrument_binary(manifest: &Manifest) {
         kern.set_attestation_hash();
         user.merge(kern);
         if manifest.generate_pts {
-            user.generate_page_tables(manifest.security, &manifest.map_page_tables);
+            user.generate_page_tables(manifest.security, &manifest.map_page_tables, riscv_enabled);
         }
         user
     } else if let Some(ref mut user) = &mut user_elf {
         if manifest.generate_pts {
-            user.generate_page_tables(manifest.security, &manifest.map_page_tables);
+            user.generate_page_tables(manifest.security, &manifest.map_page_tables, riscv_enabled);
         }
         user
     } else if let Some(ref mut kern) = &mut kern_elf {
         if manifest.generate_pts {
-            kern.generate_page_tables(manifest.security, &manifest.map_page_tables);
+            kern.generate_page_tables(manifest.security, &manifest.map_page_tables, riscv_enabled);
         }
         kern.set_attestation_hash();
         kern

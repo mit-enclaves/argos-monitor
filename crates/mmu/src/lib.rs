@@ -4,11 +4,13 @@
 pub mod frame_allocator;
 pub mod ioptmapper;
 pub mod ptmapper;
+pub mod riscv_ptmapper;
 pub mod walker;
 
 pub use frame_allocator::{FrameAllocator, RangeAllocator};
 pub use ioptmapper::{IoPtFlag, IoPtMapper};
 pub use ptmapper::{PtFlag, PtMapper};
+pub use riscv_ptmapper::{RVPtFlag, RVPtMapper};
 
 // ————————————————————————————————— x86_64 ————————————————————————————————— //
 
