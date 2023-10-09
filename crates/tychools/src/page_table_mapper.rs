@@ -2,10 +2,9 @@ use std::path::PathBuf;
 use std::process::abort;
 use std::sync::atomic::Ordering;
 
-#[cfg(not(feature = "riscv_enabled"))]
 use mmu::ptmapper::MAP_PAGE_TABLE;
 use mmu::walker::{Level, WalkNext, Walker};
-use mmu::{FrameAllocator, PtFlag, PtMapper};
+use mmu::{FrameAllocator, PtFlag, PtMapper, RVPtFlag, RVPtMapper};
 use object::read::elf::ProgramHeader;
 use object::{elf, Endianness};
 use utils::{HostPhysAddr, HostVirtAddr};
@@ -21,7 +20,16 @@ pub fn align_address(addr: usize) -> usize {
     (PAGE_SIZE + addr) & !(PAGE_SIZE - 1)
 }
 
-#[cfg(not(feature = "riscv_enabled"))]
+enum FlagFormat {
+    RV(RVPtFlag),
+    X86(PtFlag),
+}
+
+enum Mapper {
+    RVMapper(RVPtMapper<HostPhysAddr, HostVirtAddr>),
+    X86Mapper(PtMapper<HostPhysAddr, HostVirtAddr>),
+}
+
 fn translate_flags(flags: u32, segtype: u32) -> PtFlag {
     let mut ptflags: PtFlag;
     ptflags = PtFlag::PRESENT;
@@ -37,18 +45,17 @@ fn translate_flags(flags: u32, segtype: u32) -> PtFlag {
     ptflags
 }
 
-#[cfg(feature = "riscv_enabled")]
-fn translate_flags(flags: u32, _segtype: u32) -> PtFlag {
-    let mut ptflags: PtFlag;
-    ptflags = PtFlag::VALID;
+fn riscv_translate_flags(flags: u32, _segtype: u32) -> RVPtFlag {
+    let mut ptflags: RVPtFlag;
+    ptflags = RVPtFlag::VALID;
     if flags & elf::PF_R == elf::PF_R {
-        ptflags = ptflags.union(PtFlag::READ);
+        ptflags = ptflags.union(RVPtFlag::READ);
     }
     if flags & elf::PF_W == elf::PF_W {
-        ptflags = ptflags.union(PtFlag::WRITE);
+        ptflags = ptflags.union(RVPtFlag::WRITE);
     }
     if flags & elf::PF_X == elf::PF_X {
-        ptflags = ptflags.union(PtFlag::EXECUTE);
+        ptflags = ptflags.union(RVPtFlag::EXECUTE);
     }
     //TODO: User flag is not enabled for now, should be enabled after TRT support is available for RV.
     ptflags
@@ -57,6 +64,7 @@ fn translate_flags(flags: u32, _segtype: u32) -> PtFlag {
 pub fn generate_page_tables(
     melf: &ModifiedELF,
     map_page_tables: &Option<MappingPageTables>,
+    riscv_enabled: bool,
 ) -> (Vec<u8>, usize, usize) {
     let (map_op, virt_addr_start) = decode_map(map_page_tables);
 
@@ -86,7 +94,19 @@ pub fn generate_page_tables(
     let offset = bump.get_virt_offset() - memsz;
     let allocator = Allocator::new(&mut bump);
     let root = allocator.allocate_frame().unwrap();
-    let mut mapper = PtMapper::<HostPhysAddr, HostVirtAddr>::new(offset, 0, root.phys_addr);
+    let mut mapper: Mapper = if !riscv_enabled {
+        Mapper::X86Mapper(PtMapper::<HostPhysAddr, HostVirtAddr>::new(
+            offset,
+            0,
+            root.phys_addr,
+        ))
+    } else {
+        Mapper::RVMapper(RVPtMapper::<HostPhysAddr, HostVirtAddr>::new(
+            offset,
+            0,
+            root.phys_addr,
+        ))
+    };
     let mut curr_phys: usize = 0;
     for ph in &melf.segments {
         let segtype = ph.program_header.p_type(Endianness::Little);
@@ -97,39 +117,98 @@ pub fn generate_page_tables(
         let vaddr = ph.program_header.p_vaddr(Endianness::Little) as usize;
         let virt = HostVirtAddr::new(vaddr);
         let size = align_address(mem_size);
-        let flags = translate_flags(ph.program_header.p_flags(Endianness::Little), segtype);
-
-        mapper.map_range(&allocator, virt, HostPhysAddr::new(curr_phys), size, flags);
+        let flags: FlagFormat = if !riscv_enabled {
+            FlagFormat::X86(translate_flags(
+                ph.program_header.p_flags(Endianness::Little),
+                segtype,
+            ))
+        } else {
+            FlagFormat::RV(riscv_translate_flags(
+                ph.program_header.p_flags(Endianness::Little),
+                segtype,
+            ))
+        };
+        match flags {
+            FlagFormat::RV(rv_flags) => {
+                //We could remove the flags match by making map_range do the flag translation - but
+                //then the mmu lib needs to understand the elf flags format.
+                match mapper {
+                    Mapper::RVMapper(ref mut rv_mapper) => {
+                        rv_mapper.map_range(
+                            &allocator,
+                            virt,
+                            HostPhysAddr::new(curr_phys),
+                            size,
+                            rv_flags,
+                        );
+                    }
+                    Mapper::X86Mapper(_) => {
+                        log::error!(
+                            "The mapper and flags are created for different architectures."
+                        );
+                        abort();
+                    }
+                }
+            }
+            FlagFormat::X86(x86_flags) => match mapper {
+                Mapper::X86Mapper(ref mut x86_mapper) => {
+                    x86_mapper.map_range(
+                        &allocator,
+                        virt,
+                        HostPhysAddr::new(curr_phys),
+                        size,
+                        x86_flags,
+                    );
+                }
+                Mapper::RVMapper(_) => {
+                    log::error!("The mapper and flags are created for different architectures.");
+                    abort();
+                }
+            },
+        }
         curr_phys += size;
     }
     log::debug!(
         "Done mapping all the segments, we consummed {} extra pages",
         ADDR_IDX.load(Ordering::Relaxed)
     );
-    #[cfg(not(feature = "riscv_enabled"))]
-    if map_op {
-        let mut virt_page_addr: usize = virt_addr_start;
-        log::debug!("Now mapping the pages for page tables");
-        let mut cnt = 0;
-        while cnt < ADDR_IDX.load(Ordering::Relaxed) {
-            let virt_addr = virt_page_addr;
-            let phys_addr = curr_phys;
-            let size: usize = PAGE_SIZE;
-            mapper.map_range(
-                &allocator,
-                HostVirtAddr::new(virt_addr),
-                HostPhysAddr::new(phys_addr),
-                size,
-                MAP_PAGE_TABLE,
+    if !riscv_enabled {
+        if map_op {
+            let mut virt_page_addr: usize = virt_addr_start;
+            log::debug!("Now mapping the pages for page tables");
+            let mut cnt = 0;
+            while cnt < ADDR_IDX.load(Ordering::Relaxed) {
+                let virt_addr = virt_page_addr;
+                let phys_addr = curr_phys;
+                let size: usize = PAGE_SIZE;
+
+                match mapper {
+                    Mapper::X86Mapper(ref mut x86_mapper) => {
+                        x86_mapper.map_range(
+                            &allocator,
+                            HostVirtAddr::new(virt_addr),
+                            HostPhysAddr::new(phys_addr),
+                            size,
+                            MAP_PAGE_TABLE,
+                        );
+                    }
+                    Mapper::RVMapper(_) => {
+                        log::error!(
+                            "The mapper hasn't been created for the expected architecture."
+                        );
+                        abort();
+                    }
+                }
+
+                curr_phys += size;
+                virt_page_addr += size;
+                cnt += 1;
+            }
+            log::debug!(
+                "Done mapping all pages for the page tables, we consummed {} extra pages",
+                bump.idx
             );
-            curr_phys += size;
-            virt_page_addr += size;
-            cnt += 1;
         }
-        log::debug!(
-            "Done mapping all pages for the page tables, we consummed {} extra pages",
-            bump.idx
-        );
     }
     // Transform everything into a vec array.
     let mut result: Vec<u8> = Vec::new();
@@ -158,7 +237,7 @@ unsafe impl Walker for Dumper<'_> {
     }
 }
 
-pub fn print_page_tables(file: &PathBuf) {
+pub fn print_page_tables(file: &PathBuf, riscv_enabled: bool) {
     let data = std::fs::read(PathBuf::from(&file)).expect("Unable to read the binary");
     let elf = ModifiedELF::new(&data);
     let mut memsize: usize = 0;
@@ -196,51 +275,52 @@ pub fn print_page_tables(file: &PathBuf) {
                 HostVirtAddr::new(0),
                 HostVirtAddr::new(align_address(elf.layout.max_addr as usize)),
                 &mut |addr, entry, level| {
-                    let flags = PtFlag::from_bits_truncate(*entry);
                     let phys = *entry & ((1 << 63) - 1) & (page_mask as u64);
 
-                    #[cfg(not(feature = "riscv_enabled"))]
-                    // Print if present
-                    if flags.contains(PtFlag::PRESENT) {
-                        let padding = match level {
-                            Level::L4 => "",
-                            Level::L3 => "  ",
-                            Level::L2 => "    ",
-                            Level::L1 => "      ",
-                        };
-                        log::info!(
-                            "{}{:?} Virt: 0x{:x} - Phys: 0x{:x} - {:?}\n",
-                            padding,
-                            level,
-                            addr.as_usize(),
-                            phys,
-                            flags
-                        );
-                        WalkNext::Continue
+                    if !riscv_enabled {
+                        let flags = PtFlag::from_bits_truncate(*entry);
+                        // Print if present
+                        if flags.contains(PtFlag::PRESENT) {
+                            let padding = match level {
+                                Level::L4 => "",
+                                Level::L3 => "  ",
+                                Level::L2 => "    ",
+                                Level::L1 => "      ",
+                            };
+                            log::info!(
+                                "{}{:?} Virt: 0x{:x} - Phys: 0x{:x} - {:?}\n",
+                                padding,
+                                level,
+                                addr.as_usize(),
+                                phys,
+                                flags
+                            );
+                            WalkNext::Continue
+                        } else {
+                            WalkNext::Leaf
+                        }
                     } else {
-                        WalkNext::Leaf
-                    }
-
-                    #[cfg(feature = "riscv_enabled")]
-                    // Print if present
-                    if flags.contains(PtFlag::VALID) {
-                        let padding = match level {
-                            Level::L4 => "",
-                            Level::L3 => "  ",
-                            Level::L2 => "    ",
-                            Level::L1 => "      ",
-                        };
-                        log::info!(
-                            "{}{:?} Virt: 0x{:x} - Phys: 0x{:x} - {:?}\n",
-                            padding,
-                            level,
-                            addr.as_usize(),
-                            phys,
-                            flags
-                        );
-                        WalkNext::Continue
-                    } else {
-                        WalkNext::Leaf
+                        let flags = RVPtFlag::from_bits_truncate(*entry);
+                        // Print if present
+                        if flags.contains(RVPtFlag::VALID) {
+                            let padding = match level {
+                                Level::L4 => "",
+                                Level::L3 => "  ",
+                                Level::L2 => "    ",
+                                Level::L1 => "      ",
+                            };
+                            log::info!(
+                                "{}{:?} Virt: 0x{:x} - Phys: 0x{:x} - {:?}\n",
+                                padding,
+                                level,
+                                addr.as_usize(),
+                                phys,
+                                flags
+                            );
+                            WalkNext::Continue
+                        } else {
+                            WalkNext::Leaf
+                        }
                     }
                 },
             )

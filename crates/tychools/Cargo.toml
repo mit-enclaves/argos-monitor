@@ -14,7 +14,8 @@ log = "0.4.17"
 simple_logger = "4.1.0"
 xmas-elf = "0.8.0"
 utils = {path = "../utils"}
-mmu = { version = "0.1.0", path = "../mmu", features = ["riscv_enabled"]}
+mmu = { version = "0.1.0", path = "../mmu"}
+#, features = ["riscv_enabled"]}
 object = {version = "0.31.0", features =["write", "std"]}
 serde = { version ="1.0.163", features = ["derive"]}
 serde_json = "1.0.96"
@@ -27,5 +28,5 @@ clap-num = "1.0.2"
 ed25519-compact = {path = "../../vendor/forked_signature"}
 
 [features] 
-riscv_enabled = [] 
+# riscv_enabled = [] 
 
