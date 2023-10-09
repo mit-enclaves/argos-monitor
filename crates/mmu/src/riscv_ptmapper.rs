@@ -47,7 +47,6 @@ impl RVPtFlag {
 }
 
 /// Mask to remove the top 10 bits, containing N/PBMT/Reserved fields in the PTE.
-const HIGH_BITS_MASK: u64 = !(0b1111111111 << 54);
 const DEFAULT_PROTS: RVPtFlag = RVPtFlag::VALID;
 
 unsafe impl<PhysAddr, VirtAddr> Walker for RVPtMapper<PhysAddr, VirtAddr>
