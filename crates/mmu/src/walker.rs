@@ -177,7 +177,7 @@ pub unsafe trait Walker {
     fn root(&mut self) -> (Self::PhysAddr, Level);
 
     /// A mask for extracting an address from a page table entry.
-    fn get_phys_addr(entry: u64) -> Option<Self::PhysAddr> {
+    fn get_phys_addr(_entry: u64) -> Option<Self::PhysAddr> {
         log::debug!("Default implementation.");
         None
     }
