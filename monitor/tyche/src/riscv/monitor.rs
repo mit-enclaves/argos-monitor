@@ -2,7 +2,7 @@
 
 use attestation::signature::{get_attestation_keys, EnclaveReport, ATTESTATION_DATA_SZ};
 use attestation::{hashing, signature};
-use capa_engine::config::{NB_DOMAINS,NB_CORES};
+use capa_engine::config::{NB_CORES, NB_DOMAINS};
 use capa_engine::{
     permission, AccessRights, Bitmaps, Buffer, CapaEngine, CapaError, CapaInfo, Domain, Handle,
     LocalCapa, MemOps, NextCapaToken, MEMOPS_ALL,
