@@ -26,9 +26,9 @@ extra_arg           := ""
 qemu-riscv			:= "../qemu/build/riscv64-softmmu/qemu-system-riscv64"
 drive-riscv			:= "ubuntu-22.04.3-preinstalled-server-riscv64+unmatched.img"
 kernel-riscv		:= "builds/linux-riscv/arch/riscv/boot/Image"
-bios-riscv			:= "opensbi-stage1/build/platform/generic/firmware/fw_jump.bin"
+bios-riscv			:= "opensbi-stage1/build/platform/generic/firmware/fw_payload.bin"
 dev-riscv			:= "-device virtio-rng-pci" 
-bios-riscv-gdb		:= "opensbi-stage1/build/platform/generic/firmware/fw_jump.elf"
+bios-riscv-gdb		:= "opensbi-stage1/build/platform/generic/firmware/fw_payload.elf"
 
 # Print list of commands
 help:
