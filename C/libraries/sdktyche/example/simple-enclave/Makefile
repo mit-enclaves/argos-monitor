@@ -112,23 +112,23 @@ enclave: $(CODE_ENCLAVE) $(HDRS_ENCLAVE)
 	$(GCC) -DTYCHE_USER_SPACE=1 -DTYCHE_ENCLAVE=1 -DCONFIG_RISCV=1 -g $(COMMON_INCLUDES) -nostdlib -static -o $@ $(CODE_ENCLAVE) -Wl,--section-start=.data=0x16000
 
 enclave_iso: app enclave
-	cargo -C $(TYCHOOLS_PATH) install --features="riscv_enabled" --path . --locked
-	tychools instrument -s manifests/enclave_iso.json 
+	cargo -C $(TYCHOOLS_PATH) install --path . --locked
+	tychools instrument -s manifests/enclave_iso.json --riscv-enabled  
 	chmod +x enclave_iso
 	rm app enclave
 
 simple_enclave: app enclave
-	cargo -C $(TYCHOOLS_PATH) install --features="riscv_enabled" --path . --locked
-	tychools instrument -s manifests/default.json 
+	cargo -C $(TYCHOOLS_PATH) install --path . --locked
+	tychools instrument -s manifests/default.json --riscv-enabled 
 	chmod +x simple_enclave
 	rm app enclave
 
 attestation_enclave: app enclave
 	echo "Building attestation enclave for RISCV"
-	cargo -C $(TYCHOOLS_PATH) install --features="riscv_enabled" --path . --locked
-	tychools instrument -s manifests/default.json 
+	cargo -C $(TYCHOOLS_PATH) install --path . --locked 
+	tychools instrument -s manifests/default.json --riscv-enabled    
 	chmod +x simple_enclave
-	tychools instrument -s manifests/enclave_iso.json 
+	tychools instrument -s manifests/enclave_iso.json --riscv-enabled 
 	chmod +x enclave_iso
 	rm app enclave
 endif
