@@ -44,7 +44,7 @@ update_disk:
 	make ARCH=riscv -B -C drivers/tyche install_disk 
 	make ARCH=riscv -B -C libraries/sdktyche/example/app-selector install_disk
 	echo "Building tychools"
-	cargo build --manifest-path $(TYCHOOLS_PATH)/Cargo.toml --release --target=riscv64gc-unknown-linux-gnu --config target.riscv64gc-unknown-linux-gnu.linker=\"riscv64-unknown-linux-gnu-gcc\" --features="riscv_enabled"
+	cargo build --manifest-path $(TYCHOOLS_PATH)/Cargo.toml --release --target=riscv64gc-unknown-linux-gnu --config target.riscv64gc-unknown-linux-gnu.linker=\"riscv64-unknown-linux-gnu-gcc\" 
 	make ARCH=riscv -B -C libraries/sdktyche/example/simple-enclave install_disk
 	cp scripts/riscv64_install_drivers.sh /tmp/ubuntu_riscv_mount/tyche
 	cp scripts/run_eapp.sh /tmp/ubuntu_riscv_mount/tyche

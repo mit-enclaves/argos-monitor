@@ -1,12 +1,12 @@
 //! Architecture specific monitor state
 
+use attestation::hashing::TycheHasher;
 use attestation::signature::EnclaveReport;
 use capa_engine::config::{NB_CORES, NB_DOMAINS};
 use capa_engine::{
     permission, AccessRights, Bitmaps, Buffer, CapaEngine, CapaError, CapaInfo, Domain, Handle,
     LocalCapa, MemOps, NextCapaToken, MEMOPS_ALL,
 };
-use hashing::TycheHasher;
 use riscv_csrs::pmpcfg;
 use riscv_pmp::{
     clear_pmp, pmp_write, PMPAddressingMode, PMPErrorCode, FROZEN_PMP_ENTRIES, PMP_ENTRIES,
