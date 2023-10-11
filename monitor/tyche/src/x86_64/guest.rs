@@ -131,6 +131,7 @@ fn handle_exit(
                         LocalCapa::new(arg_1),
                         arg_2,
                         &mut vs.vcpu,
+                        &vs.vmxon,
                     ) {
                         Ok(_) => {
                             vs.vcpu.set(VmcsField::GuestRax, 0)?;
@@ -144,6 +145,7 @@ fn handle_exit(
                     Ok(HandlerResult::Resume)
                 }
                 calls::CONFIGURE_CORE => {
+                    log::trace!("Configure Core");
                     match monitor::do_configure_core(
                         *domain,
                         LocalCapa::new(arg_1),
@@ -178,6 +180,7 @@ fn handle_exit(
                             vs.vcpu.set(VmcsField::GuestRax, 1)?;
                         }
                     }
+                    vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
                 calls::SEAL_DOMAIN => {

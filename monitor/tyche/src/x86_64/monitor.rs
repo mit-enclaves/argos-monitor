@@ -13,7 +13,7 @@ use utils::{GuestPhysAddr, HostPhysAddr};
 use vmx::bitmaps::{EptEntryFlags, ExceptionBitmap};
 use vmx::errors::Trapnr;
 use vmx::fields::{VmcsField, REGFILE_SIZE};
-use vmx::{ActiveVmcs, VmExitInterrupt};
+use vmx::{ActiveVmcs, VmExitInterrupt, Vmxon};
 
 use super::context::ContextData;
 use super::cpuid;
@@ -306,6 +306,7 @@ pub fn do_init_child_context(
     domain: LocalCapa,
     core: usize,
     vcpu: &mut ActiveVmcs<'static>,
+    vmxon: &Vmxon,
 ) -> Result<(), CapaError> {
     let mut engine = CAPA_ENGINE.lock();
     let domain = engine
@@ -352,8 +353,9 @@ pub fn do_init_child_context(
                 .allocate_frame()
                 .expect("Unable to allocate frame");
             let rc = RCFrame::new(frame);
-            //TODO do an init;
             dest.vmcs = rcvmcs.allocate(rc).expect("Unable to allocate rc frame");
+            //Init the frame, it needs the identifier.
+            vmxon.init_frame(frame);
         }
     }
     Ok(())
