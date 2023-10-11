@@ -21,7 +21,7 @@ use vmx::fields::{VmcsField, REGFILE_SIZE};
 use vmx::msr::{IA32_LSTAR, IA32_STAR};
 use vmx::{
     ActiveVmcs, ActiveVmcs, ControlRegister, Register, Register, VmExitInterrupt, VmExitInterrupt,
-    VmExitInterrupt, REGFILE_CONTEXT_SIZE, REGFILE_SIZE,
+    VmExitInterrupt, VmExitInterrupt, Vmxon, REGFILE_CONTEXT_SIZE, REGFILE_SIZE,
 };
 use vtd::Iommu;
 
@@ -410,6 +410,7 @@ pub fn do_init_child_context(
     domain: LocalCapa,
     core: usize,
     vcpu: &mut ActiveVmcs<'static>,
+    vmxon: &Vmxon,
 ) -> Result<(), CapaError> {
     let mut engine = CAPA_ENGINE.lock();
     let domain = engine
@@ -456,8 +457,9 @@ pub fn do_init_child_context(
                 .allocate_frame()
                 .expect("Unable to allocate frame");
             let rc = RCFrame::new(frame);
-            //TODO do an init;
             dest.vmcs = rcvmcs.allocate(rc).expect("Unable to allocate rc frame");
+            //Init the frame, it needs the identifier.
+            vmxon.init_frame(frame);
         }
     }
     Ok(())

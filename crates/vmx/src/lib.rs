@@ -346,7 +346,17 @@ impl<'vmx> ActiveVmcs<'vmx> {
         // Save the state of the current VM.
         self.flush();
         self.region.set_frame(dest);
-        unsafe { raw::vmptrld(self.region.frame().phys_addr.as_u64())? };
+        match unsafe { raw::vmptrld(self.region.frame().phys_addr.as_u64()) } {
+            Err(e) => {
+                log::error!(
+                    "Failed switch frame {:?}: {:x?} ",
+                    e,
+                    self.region.frame().phys_addr.as_u64()
+                );
+                Err(e)
+            }
+            Ok(()) => Ok(()),
+        }?;
         self.launched = false;
         Ok(())
     }
