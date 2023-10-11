@@ -110,14 +110,6 @@ fn handle_exit(
                             arg_3 as u64,
                         ) {
                             Ok(_) => {
-                                // Check if we need to initialize context.
-                                if bitmap == Bitmaps::SWITCH {
-                                    monitor::do_init_child_contexts(
-                                        *domain,
-                                        LocalCapa::new(arg_2),
-                                        &mut vs.vcpu,
-                                    )
-                                }
                                 vs.vcpu.set(VmcsField::GuestRax, 0)?;
                             }
                             Err(e) => {
@@ -129,6 +121,25 @@ fn handle_exit(
                         log::error!("Invalid configuration target");
                         vs.vcpu.set(VmcsField::GuestRax, 1)?;
                     }
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
+                calls::ALLOC_CORE_CONTEXT => {
+                    log::trace!("Alloc core context");
+                    match monitor::do_init_child_context(
+                        *domain,
+                        LocalCapa::new(arg_1),
+                        arg_2,
+                        &mut vs.vcpu,
+                    ) {
+                        Ok(_) => {
+                            vs.vcpu.set(VmcsField::GuestRax, 0)?;
+                        }
+                        Err(e) => {
+                            log::error!("Allocating core context error: {:?}", e);
+                            vs.vcpu.set(VmcsField::GuestRax, 1)?;
+                        }
+                    };
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }

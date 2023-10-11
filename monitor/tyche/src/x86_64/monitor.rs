@@ -168,6 +168,11 @@ pub fn do_configure_core(
     // Check this is a valid core for the operation.
     let core_map = engine.get_domain_config(domain, Bitmaps::CORE);
     if (1 << core) & core_map == 0 {
+        log::error!(
+            "Invalid core {} for coremap {:b} in configure core",
+            1 << core,
+            core_map
+        );
         return Err(CapaError::InvalidCore);
     }
 
@@ -296,71 +301,62 @@ pub fn do_get_config_core(
     Ok(res)
 }
 
-pub fn do_init_child_contexts(
+pub fn do_init_child_context(
     current: Handle<Domain>,
     domain: LocalCapa,
+    core: usize,
     vcpu: &mut ActiveVmcs<'static>,
-) {
+) -> Result<(), CapaError> {
     let mut engine = CAPA_ENGINE.lock();
     let domain = engine
         .get_domain_capa(current, domain)
         .expect("Unable to access child");
     let value = engine.get_domain_config(domain, Bitmaps::SWITCH);
-    let value = InitVMCS::from_u64(value).unwrap();
+    let value = InitVMCS::from_u64(value)?;
     let allocator = allocator();
-    // Init on all the cores.
-    let cpus = 0..(NB_BOOTED_CORES.load(core::sync::atomic::Ordering::SeqCst) + 1);
+    let max_cpus = NB_BOOTED_CORES.load(core::sync::atomic::Ordering::SeqCst) + 1;
     let mut rcvmcs = RC_VMCS.lock();
     let cores = engine.get_domain_config(domain, Bitmaps::CORE);
+    // Check whether the domain is allowed on that core.
+    if core > max_cpus || (1 << core) & cores == 0 {
+        log::error!("Attempt to set context on unallowed core.");
+        return Err(CapaError::InvalidCore);
+    }
     match value {
         InitVMCS::Shared => {
             // Easy case, increase ref on all cores shared by the two domains.
-            for c in cpus {
-                if (1 << c) & cores == 0 {
-                    continue;
-                }
-                let orig = get_context(current, c);
-                let dest = &mut get_context(domain, c);
-                rcvmcs
-                    .get_mut(orig.vmcs)
-                    .expect("No vmcs on original")
-                    .acquire();
-                if !dest.vmcs.is_invalid() {
-                    drop_rc(&mut rcvmcs, dest.vmcs);
-                }
-                dest.vmcs = orig.vmcs;
+            let orig = get_context(current, core);
+            let dest = &mut get_context(domain, core);
+            rcvmcs
+                .get_mut(orig.vmcs)
+                .expect("No vmcs on original")
+                .acquire();
+            if !dest.vmcs.is_invalid() {
+                drop_rc(&mut rcvmcs, dest.vmcs);
             }
+            dest.vmcs = orig.vmcs;
         }
         InitVMCS::Copy => {
             // Flush the current vcpu.
-            for c in cpus {
-                if (1 << c) & cores == 0 {
-                    continue;
-                }
-                let dest = &mut get_context(domain, c);
-                let frame = allocator
-                    .allocate_frame()
-                    .expect("Unable to allocate frame");
-                let rc = RCFrame::new(frame);
-                dest.vmcs = rcvmcs.allocate(rc).expect("Unable to allocate rc frame");
-                vcpu.copy_into(frame);
-            }
+            let dest = &mut get_context(domain, core);
+            let frame = allocator
+                .allocate_frame()
+                .expect("Unable to allocate frame");
+            let rc = RCFrame::new(frame);
+            dest.vmcs = rcvmcs.allocate(rc).expect("Unable to allocate rc frame");
+            vcpu.copy_into(frame);
         }
         InitVMCS::Fresh => {
-            for c in cpus {
-                if (1 << c) & cores == 0 {
-                    continue;
-                }
-                let dest = &mut get_context(domain, c);
-                let frame = allocator
-                    .allocate_frame()
-                    .expect("Unable to allocate frame");
-                let rc = RCFrame::new(frame);
-                //TODO do an init;
-                dest.vmcs = rcvmcs.allocate(rc).expect("Unable to allocate rc frame");
-            }
+            let dest = &mut get_context(domain, core);
+            let frame = allocator
+                .allocate_frame()
+                .expect("Unable to allocate frame");
+            let rc = RCFrame::new(frame);
+            //TODO do an init;
+            dest.vmcs = rcvmcs.allocate(rc).expect("Unable to allocate rc frame");
         }
     }
+    Ok(())
 }
 
 /// TODO(aghosn) do we need to seal on all cores?

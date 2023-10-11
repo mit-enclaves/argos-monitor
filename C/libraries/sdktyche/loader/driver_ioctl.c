@@ -59,6 +59,14 @@ failure:
   return FAILURE;
 }
 
+int ioctl_alloc_core_context(handle_t handle, usize core) {
+  if (ioctl(handle, TYCHE_ALLOC_CONTEXT, core) != SUCCESS) {
+    ERROR("Failed to allocate core context for domain %d.", handle);
+    return FAILURE;
+  }
+  return SUCCESS;
+}
+
 int ioctl_set_perms(handle_t handle, usize perms) {
   msg_set_perm_t perm = {TYCHE_CONFIG_PERMISSIONS, perms}; 
   if (ioctl(handle, TYCHE_SET_DOMAIN_CONFIGURATION, &perm) != SUCCESS) {

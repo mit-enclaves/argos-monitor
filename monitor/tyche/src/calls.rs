@@ -19,3 +19,4 @@ pub const CONFIGURE: usize = 12;
 pub const SEND_ALIASED: usize = 13;
 pub const CONFIGURE_CORE: usize = 14;
 pub const GET_CONFIG_CORE: usize = 15;
+pub const ALLOC_CORE_CONTEXT: usize = 16;
