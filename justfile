@@ -4,6 +4,7 @@
 toolchain           := "nightly-2023-03-01"
 x86_64              := "--target configs/x86_64-unknown-kernel.json"
 riscv               := "--target configs/riscv-unknown-kernel.json"
+x86_64_musl         := "--target x86_64-unknown-linux-musl"
 build_std           := "-Zbuild-std=core,alloc"
 build_features      := "-Zbuild-std-features=compiler-builtins-mem"
 cargo_args          := build_std + " " + build_features
@@ -11,6 +12,7 @@ x86-linker-script   := "RUSTFLAGS='-C link-arg=-Tconfigs/x86-linker-script.x'"
 riscv-linker-script := "RUSTFLAGS='-C link-arg=-Tconfigs/riscv-linker-script.x'"
 first-stage         := "--package s1 --features=s1/second-stage"
 tyche               := "--package tyche"
+libtyche            := "--package libtyche"
 rawc                := "--features=s1/guest_rawc"
 linux               := "--features=s1/guest_linux"
 no-guest            := "--features=s1/no_guest"
@@ -36,6 +38,7 @@ check:
 	# Checking code...
 	cargo check {{cargo_args}} {{x86_64}} {{first-stage}}
 	cargo check {{cargo_args}} {{x86_64}} {{tyche}}
+	cargo check {{cargo_args}} {{x86_64_musl}} {{libtyche}}
 	cargo check {{cargo_args}} {{riscv}}  {{tyche}}
 
 	# Checking formatting...
@@ -199,9 +202,9 @@ _init-ramfs-common ARCH:
 # Build the ramfs, packing all the userspace binaries
 build-ramfs:
 	cargo build --package libtyche --target=x86_64-unknown-linux-musl --release
-	cp target/x86_64-unknown-linux-musl/release/tyche linux-image/builds/initramfs/x86-busybox/bin/
+	cp target/x86_64-unknown-linux-musl/release/tyche {{build_path}}/ramfs-x86/
 
-	@just build-linux
+	@just build-linux-x86
 
 # Build the monitor for bare metal platform
 build-metal-no-guest:
