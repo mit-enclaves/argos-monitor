@@ -25,6 +25,7 @@ pub enum CapaInfo {
     Region {
         start: usize,
         end: usize,
+        alias: Option<usize>,
         active: bool,
         confidential: bool,
         ops: MemOps,
@@ -42,9 +43,10 @@ pub enum CapaInfo {
 }
 
 impl CapaInfo {
-    pub fn serialize(&self) -> (usize, usize, u16) {
+    pub fn serialize(&self) -> (usize, usize, u16, usize) {
         let v1;
         let mut v2 = 0;
+        let mut v4 = 0;
         let capa_type: u8;
         let mut flags: u8 = 0;
 
@@ -52,6 +54,7 @@ impl CapaInfo {
             CapaInfo::Region {
                 start,
                 end,
+                alias,
                 active,
                 confidential,
                 ops,
@@ -66,6 +69,7 @@ impl CapaInfo {
                 }
                 flags |= ops.bits() << 2;
                 capa_type = capa_type::REGION;
+                v4 = alias.unwrap_or(0);
             }
             CapaInfo::Management { domain_id, sealed } => {
                 v1 = *domain_id;
@@ -87,11 +91,11 @@ impl CapaInfo {
         }
 
         let v3 = capa_type as u16 + ((flags as u16) << 8);
-        (v1, v2, v3)
+        (v1, v2, v3, v4)
     }
 
     // TODO: write some tests
-    pub fn deserialize(v1: usize, v2: usize, v3: u16) -> Result<Self, CapaError> {
+    pub fn deserialize(v1: usize, v2: usize, v3: u16, v4: usize) -> Result<Self, CapaError> {
         let capa_type = (v3 & 0xFF) as u8;
         let flags = v3 >> 8;
         let capa_info = match capa_type {
@@ -102,6 +106,7 @@ impl CapaInfo {
                 Self::Region {
                     start: v1,
                     end: v2,
+                    alias: Some(v4),
                     active,
                     confidential,
                     ops,
@@ -179,6 +184,7 @@ impl Capa {
                 Some(CapaInfo::Region {
                     start: region.access.start,
                     end: region.access.end,
+                    alias: region.access.alias,
                     active: region.is_active,
                     confidential: region.is_confidential,
                     ops: region.access.ops,
@@ -232,6 +238,7 @@ impl fmt::Display for CapaInfo {
             CapaInfo::Region {
                 start,
                 end,
+                alias,
                 active,
                 confidential,
                 ops,
@@ -240,8 +247,8 @@ impl fmt::Display for CapaInfo {
                 let c = if *confidential { 'C' } else { '_' };
                 write!(
                     f,
-                    "Region([0x{:x}, 0x{:x} | {}{}{}])",
-                    start, end, a, c, ops
+                    "Region([0x{:x}, 0x{:x} | ({:?}){}{}{}])",
+                    start, end, alias, a, c, ops
                 )
             }
             CapaInfo::Management { domain_id, sealed } => {

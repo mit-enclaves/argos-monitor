@@ -258,11 +258,12 @@ fn handle_exit(
                     if let Some((info, next)) =
                         monitor::do_enumerate(*domain, NextCapaToken::from_usize(arg_1))
                     {
-                        let (v1, v2, v3) = info.serialize();
+                        let (v1, v2, v3, v4) = info.serialize();
                         vs.vcpu.set(VmcsField::GuestRdi, v1)?;
                         vs.vcpu.set(VmcsField::GuestRsi, v2)?;
                         vs.vcpu.set(VmcsField::GuestRdx, v3 as usize)?;
-                        vs.vcpu.set(VmcsField::GuestRcx, next.as_usize())?;
+                        vs.vcpu.set(VmcsField::GuestRcx, v4 as usize)?;
+                        vs.vcpu.set(VmcsField::GuestR8, next.as_usize())?;
                     } else {
                         // For now, this marks the end
                         vs.vcpu.set(VmcsField::GuestRcx, 0)?;
