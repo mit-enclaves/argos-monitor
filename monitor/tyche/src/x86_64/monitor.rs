@@ -19,6 +19,7 @@ use super::context::ContextData;
 use super::cpuid;
 use super::guest::VmxState;
 use super::init::NB_BOOTED_CORES;
+use super::vmx_helper::{dump_host_state, load_host_state};
 use crate::allocator::allocator;
 use crate::rcframe::{drop_rc, RCFrame, RCFramePool, EMPTY_RCFRAME};
 use crate::x86_64::filtered_fields::FilteredFields;
@@ -367,6 +368,28 @@ pub fn do_init_child_context(
             dest.vmcs = rcvmcs.allocate(rc).expect("Unable to allocate rc frame");
             //Init the frame, it needs the identifier.
             vmxon.init_frame(frame);
+            // Init the host state:
+            {
+                let mut current_ctxt = get_context(current, cpuid());
+                let mut values: [usize; 13] = [0; 13];
+                dump_host_state(vcpu, &mut values).or(Err(CapaError::InvalidSwitch))?;
+
+                // 1. Save.
+                current_ctxt.save(vcpu);
+
+                // 2. Switch.
+                dest.restore_locked(&rcvmcs.get(dest.vmcs).expect("Access error"), vcpu);
+
+                // 3. Set the host state.
+                load_host_state(vcpu, &mut values).or(Err(CapaError::InvalidSwitch))?;
+
+                // 4. Save again.
+                dest.save(vcpu);
+
+                // 5. Restore the previous.
+                current_ctxt
+                    .restore_locked(&rcvmcs.get(current_ctxt.vmcs).expect("Access error"), vcpu);
+            }
         }
     }
     Ok(())

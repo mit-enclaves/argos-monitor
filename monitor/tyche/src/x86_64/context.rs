@@ -41,6 +41,10 @@ impl ContextData {
     pub fn restore(&self, rc_vmcs: &Mutex<RCFramePool>, vcpu: &mut ActiveVmcs<'static>) {
         let locked = rc_vmcs.lock();
         let rc_frame = locked.get(self.vmcs).unwrap();
+        self.restore_locked(rc_frame, vcpu);
+    }
+
+    pub fn restore_locked(&self, rc_frame: &RCFrame, vcpu: &mut ActiveVmcs<'static>) {
         vcpu.load_regs(&self.regs[0..REGFILE_SIZE]);
         unsafe {
             vmx::msr::Msr::new(IA32_LSTAR.address()).write(self.regs[GPF::Lstar as usize] as u64)
