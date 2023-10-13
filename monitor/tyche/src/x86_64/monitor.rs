@@ -158,12 +158,16 @@ pub fn do_configure_core(
     vcpu: &mut ActiveVmcs<'static>,
 ) -> Result<(), CapaError> {
     let mut engine = CAPA_ENGINE.lock();
+    let local_capa = domain;
     let domain = engine.get_domain_capa(current, domain)?;
 
+    //TODO(aghosn): check how we could differentiate between registers
+    //that can be changed and others. For the moment allow modifications
+    //post sealing too.
     // Check the domain is not seal.
-    if engine.is_sealed(domain) {
+    /*if engine.is_sealed(domain) {
         return Err(CapaError::AlreadySealed);
-    }
+    }*/
 
     // Check this is a valid core for the operation.
     let core_map = engine.get_domain_config(domain, Bitmaps::CORE);
@@ -182,6 +186,11 @@ pub fn do_configure_core(
         return Err(CapaError::InvalidOperation);
     }
     let field = VmcsField::from_u32(idx as u32).unwrap();
+    if field == VmcsField::ExceptionBitmap {
+        engine
+            .set_child_config(current, local_capa, Bitmaps::TRAP, !(value as u64))
+            .expect("Unable to set the bitmap");
+    }
 
     // Check the domain has the correct vcpu type
     let switch_type = engine.get_domain_config(domain, Bitmaps::SWITCH);
@@ -239,9 +248,11 @@ pub fn do_get_config_core(
     let domain = engine.get_domain_capa(current, domain)?;
 
     // Check the domain is not seal.
-    if engine.is_sealed(domain) {
+    //TODO(aghosn) we will need a way to differentiate between what's readable
+    //and what's not readable once the domain is sealed.
+    /*if engine.is_sealed(domain) {
         return Err(CapaError::AlreadySealed);
-    }
+    }*/
 
     // Check this is a valid core for the operation.
     let core_map = engine.get_domain_config(domain, Bitmaps::CORE);
