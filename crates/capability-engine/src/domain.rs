@@ -143,6 +143,7 @@ impl Configuration {
     pub fn is_inited(&self) -> bool {
         for i in self.initialized.iter() {
             if !i {
+                log::error!("The initialized table {:?}", self.initialized);
                 return false;
             }
         }
@@ -304,6 +305,7 @@ impl Domain {
         if self.is_sealed {
             Err(CapaError::AlreadySealed)
         } else if !self.config.is_inited() {
+            log::error!("Domain is not inited.");
             Err(CapaError::InvalidOperation)
         } else {
             self.is_sealed = true;
