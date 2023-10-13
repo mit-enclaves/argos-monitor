@@ -247,3 +247,51 @@ fn save_host_state<'vmx>(_vmcs: &mut ActiveVmcs<'vmx>, info: &GuestInfo) -> Resu
         VmcsField::HostCr4.vmwrite(cr4)
     }
 }
+
+/// Use this to dump the state.
+/// TODO: make this whole thing cleaner. We have duplicated code.
+pub fn dump_host_state<'vmx>(
+    _vmcs: &mut ActiveVmcs<'vmx>,
+    values: &mut [usize; 13],
+) -> Result<(), VmxError> {
+    // NOTE: See section 24.5 of volume 3C.
+    unsafe {
+        values[0] = VmcsField::HostCsSelector.vmread()?;
+        values[1] = VmcsField::HostDsSelector.vmread()?;
+        values[2] = VmcsField::HostEsSelector.vmread()?;
+        values[3] = VmcsField::HostFsSelector.vmread()?;
+        values[4] = VmcsField::HostGsSelector.vmread()?;
+        values[5] = VmcsField::HostSsSelector.vmread()?;
+        values[6] = VmcsField::HostTrSelector.vmread()?;
+        values[7] = VmcsField::HostIdtrBase.vmread()?;
+        values[8] = VmcsField::HostGdtrBase.vmread()?;
+        values[9] = VmcsField::HostIa32Efer.vmread()?;
+        values[10] = VmcsField::HostCr0.vmread()?;
+        values[11] = VmcsField::HostCr3.vmread()?;
+        values[12] = VmcsField::HostCr4.vmread()?;
+    }
+    Ok(())
+}
+
+/// Saves the host state (control registers, segments...), so that they are restored on VM Exit.
+pub fn load_host_state<'vmx>(
+    _vmcs: &mut ActiveVmcs<'vmx>,
+    values: &mut [usize; 13],
+) -> Result<(), VmxError> {
+    // NOTE: See section 24.5 of volume 3C.
+    unsafe {
+        VmcsField::HostCsSelector.vmwrite(values[0])?;
+        VmcsField::HostDsSelector.vmwrite(values[1])?;
+        VmcsField::HostEsSelector.vmwrite(values[2])?;
+        VmcsField::HostFsSelector.vmwrite(values[3])?;
+        VmcsField::HostGsSelector.vmwrite(values[4])?;
+        VmcsField::HostSsSelector.vmwrite(values[5])?;
+        VmcsField::HostTrSelector.vmwrite(values[6])?;
+        VmcsField::HostIdtrBase.vmwrite(values[7])?;
+        VmcsField::HostGdtrBase.vmwrite(values[8])?;
+        VmcsField::HostIa32Efer.vmwrite(values[9])?;
+        VmcsField::HostCr0.vmwrite(values[10])?;
+        VmcsField::HostCr3.vmwrite(values[11])?;
+        VmcsField::HostCr4.vmwrite(values[12])
+    }
+}

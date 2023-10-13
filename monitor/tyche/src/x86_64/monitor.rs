@@ -20,7 +20,7 @@ use vmx::errors::Trapnr;
 use vmx::fields::{VmcsField, REGFILE_SIZE};
 use vmx::msr::{IA32_LSTAR, IA32_STAR};
 use vmx::{
-    ActiveVmcs, ActiveVmcs, ControlRegister, Register, Register, VmExitInterrupt, VmExitInterrupt,
+    ActiveVmcs, ControlRegister, Register, Register, VmExitInterrupt, VmExitInterrupt,
     VmExitInterrupt, VmExitInterrupt, Vmxon, REGFILE_CONTEXT_SIZE, REGFILE_SIZE,
 };
 use vtd::Iommu;
@@ -29,7 +29,8 @@ use super::context::ContextData;
 use super::cpuid;
 use super::guest::VmxState;
 use super::init::NB_BOOTED_CORES;
-use crate::allocator::{allocator, PAGE_SIZE};
+use super::vmx_helper::{dump_host_state, load_host_state};
+use crate::allocator::{allocator, allocator, PAGE_SIZE};
 use crate::attestation_domain::{attest_domain, calculate_attestation_hash};
 use crate::rcframe::{drop_rc, RCFrame, RCFramePool, EMPTY_RCFRAME};
 use crate::x86_64::apic;
@@ -471,6 +472,28 @@ pub fn do_init_child_context(
             dest.vmcs = rcvmcs.allocate(rc).expect("Unable to allocate rc frame");
             //Init the frame, it needs the identifier.
             vmxon.init_frame(frame);
+            // Init the host state:
+            {
+                let mut current_ctxt = get_context(current, cpuid());
+                let mut values: [usize; 13] = [0; 13];
+                dump_host_state(vcpu, &mut values).or(Err(CapaError::InvalidSwitch))?;
+
+                // 1. Save.
+                current_ctxt.save(vcpu);
+
+                // 2. Switch.
+                dest.restore_locked(&rcvmcs.get(dest.vmcs).expect("Access error"), vcpu);
+
+                // 3. Set the host state.
+                load_host_state(vcpu, &mut values).or(Err(CapaError::InvalidSwitch))?;
+
+                // 4. Save again.
+                dest.save(vcpu);
+
+                // 5. Restore the previous.
+                current_ctxt
+                    .restore_locked(&rcvmcs.get(current_ctxt.vmcs).expect("Access error"), vcpu);
+            }
         }
     }
     Ok(())
