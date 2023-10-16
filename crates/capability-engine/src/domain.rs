@@ -328,6 +328,12 @@ impl Domain {
         old_regions: &RegionPool,
         domains: &DomainPool,
     ) -> bool {
+
+    pub fn get_manager(&self) -> Option<Handle<Domain>> {
+        self.manager
+    }
+
+    fn is_valid(&self, idx: usize, regions: &RegionPool, domains: &DomainPool) -> bool {
         match self.capas[idx] {
             Capa::None => false,
             Capa::Region(handle) => old_regions.get(handle).is_some(),
