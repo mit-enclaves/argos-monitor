@@ -16,32 +16,32 @@ set breakpoint pending on
 
 # Dump the content of memory from a host physical address.
 # The first argument is the format, the second is the physical host address.
-define x_host_phys2virt
-  x/$arg0 0x18000000000+$arg1
-end
+#define x_host_phys2virt
+#  x/$arg0 0x18000000000+$arg1
+#end
 
-define symbol_rawc
-  add-symbol-file guest/rawc
-  set $tyche_guest_image=0
-end
+#define symbol_rawc
+#  add-symbol-file guest/rawc
+#  set $tyche_guest_image=0
+#end
 
 define symbol_linux
   add-symbol-file builds/linux-x86/vmlinux
   set $tyche_guest_image=1
   source builds/linux-x86/vmlinux-gdb.py
-  #lx-symbols
+  lx-symbols
 end
 
 define plog
   lx-dmesg
 end
 
-source scripts/tyche_debug.py
+#source scripts/tyche_debug.py
 
-b tyche_hook_stage1
-commands
-tyche_set_convenience_vars
-tyche_load_stage2
-end
+#b tyche_hook_stage1
+#commands
+#tyche_set_convenience_vars
+#tyche_load_stage2
+#end
 
 set print asm-demangle on

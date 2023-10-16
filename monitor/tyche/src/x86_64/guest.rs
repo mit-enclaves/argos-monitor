@@ -4,9 +4,8 @@ use core::arch::asm;
 
 use capa_engine::{Bitmaps, Domain, Handle, LocalCapa, NextCapaToken};
 use vmx::bitmaps::exit_qualification;
-use vmx::errors::Trapnr;
 use vmx::fields::VmcsField;
-use vmx::{ActiveVmcs, InterruptionType, VmExitInterrupt, VmxExitReason, Vmxon};
+use vmx::{ActiveVmcs, VmxExitReason, Vmxon};
 
 use super::cpuid_filter::{filter_mpk, filter_tpause};
 use super::{cpuid, monitor};
@@ -352,38 +351,6 @@ fn handle_exit(
             };
             Ok(HandlerResult::Resume)
         }
-        VmxExitReason::EptViolation => {
-            let addr = vs.vcpu.guest_phys_addr()?;
-            log::error!(
-                "EPT Violation! virt: 0x{:x}, phys: 0x{:x}",
-                vs.vcpu
-                    .guest_linear_addr()
-                    .expect("unable to get the virt addr")
-                    .as_u64(),
-                addr.as_u64(),
-            );
-            log::info!("The vcpu {:x?}", vs.vcpu);
-
-            //TODO: replace this with proper handler for interrupts.
-            if domain.idx() == 0 {
-                let interrupt = VmExitInterrupt::create(
-                    Trapnr::Breakpoint,
-                    InterruptionType::SoftwareException,
-                    None,
-                    &vs.vcpu,
-                );
-                // Inject the interrupt.
-                log::debug!(
-                    "Replace EPT violation with exception: {:b}",
-                    interrupt.as_u32()
-                );
-                vs.vcpu
-                    .inject_interrupt(interrupt)
-                    .expect("Unable to inject an exception");
-                return Ok(HandlerResult::Resume);
-            }
-            Ok(HandlerResult::Crash)
-        }
         VmxExitReason::Xsetbv => {
             let ecx = vs.vcpu.get(VmcsField::GuestRcx)?;
             let eax = vs.vcpu.get(VmcsField::GuestRax)?;
@@ -471,6 +438,52 @@ fn handle_exit(
                     Ok(HandlerResult::Crash)
                 }
             }
+        }
+        VmxExitReason::EptViolation | VmxExitReason::ExternalInterrupt => {
+            log::trace!("Handling {:?}", reason);
+            let addr = vs.vcpu.guest_phys_addr()?;
+            // TODO(aghosn): for the moment, crash on EPT violations
+            // on dom0. Later on, we should route them to the domain in a different
+            // way.
+            match monitor::do_handle_violation(*domain) {
+                Ok(_) => {
+                    return Ok(HandlerResult::Resume);
+                }
+                Err(e) => {
+                    log::error!("Unable to handle Ept Violation: {:?}", e);
+                    log::error!(
+                        "Ept Violation! virt: 0x{:x}, phys: 0x{:x} on dom{}",
+                        vs.vcpu
+                            .guest_linear_addr()
+                            .expect("Unable to get virt addr")
+                            .as_u64(),
+                        addr.as_u64(),
+                        *domain
+                    );
+                    log::info!("The vcpu: {:x?}", vs.vcpu);
+                    return Ok(HandlerResult::Crash);
+                }
+            }
+
+            //TODO: replace this with proper handler for interrupts.
+            /*if domain.idx() == 0 {
+                let interrupt = VmExitInterrupt::create(
+                    Trapnr::Breakpoint,
+                    InterruptionType::SoftwareException,
+                    None,
+                    &vs.vcpu,
+                );
+                // Inject the interrupt.
+                log::debug!(
+                    "Replace EPT violation with exception: {:b}",
+                    interrupt.as_u32()
+                );
+                vs.vcpu
+                    .inject_interrupt(interrupt)
+                    .expect("Unable to inject an exception");
+                return Ok(HandlerResult::Resume);
+            }
+            Ok(HandlerResult::Resume)*/
         }
         _ => {
             log::error!(

@@ -33,11 +33,18 @@ pub enum Update {
         trap: u64,
         /// Trap information
         info: u64,
-        /// Core on which the trap happenend
+        /// Core on which the trap happened
         core: usize,
     },
     UpdateTraps {
         trap: u64,
+        core: usize,
+    },
+    ///TODO(aghosn) merge this and the previous one.
+    ForwardViolation {
+        /// The manager responsible for handle ept violation
+        manager: Handle<Domain>,
+        /// Core on which the trap happened
         core: usize,
     },
 }
@@ -116,6 +123,9 @@ impl fmt::Display for Update {
             ),
             Update::UpdateTraps { trap, core } => {
                 write!(f, "UpdateTrap(bitmap {}, core {})", trap, core)
+            }
+            Update::ForwardViolation { manager, core } => {
+                write!(f, "ForwardViolation(manager {}, core {})", manager, core)
             }
         }
     }

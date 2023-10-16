@@ -511,6 +511,13 @@ pub fn handle_trap(
     Ok(())
 }
 
+pub fn do_handle_violation(current: Handle<Domain>) -> Result<(), CapaError> {
+    let mut engine = CAPA_ENGINE.lock();
+    engine.handle_violation(current, cpuid())?;
+    apply_updates(&mut engine);
+    Ok(())
+}
+
 // ———————————————————————————————— Updates ————————————————————————————————— //
 
 /// Per-core updates
@@ -528,6 +535,10 @@ enum CoreUpdate {
     },
     UpdateTrap {
         bitmap: u64,
+    },
+    Violation {
+        manager: Handle<Domain>,
+        core: usize,
     },
 }
 
@@ -574,6 +585,10 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
             capa_engine::Update::UpdateTraps { trap, core } => {
                 let mut core_updates = CORE_UPDATES[core as usize].lock();
                 core_updates.push(CoreUpdate::UpdateTrap { bitmap: !trap });
+            }
+            capa_engine::Update::ForwardViolation { manager, core } => {
+                let mut core_updates = CORE_UPDATES[core as usize].lock();
+                core_updates.push(CoreUpdate::Violation { manager, core });
             }
         }
     }
@@ -670,6 +685,19 @@ pub fn apply_core_updates(
                 //future.
                 vcpu.set_exception_bitmap(ExceptionBitmap::from_bits_truncate(value))
                     .expect("Error setting the exception bitmap");
+            }
+            //TODO(aghosn): this should be gracefully merged with the Trap.
+            CoreUpdate::Violation { manager, core } => {
+                log::trace!("CoreUpdate due to violation.");
+                let current_ctx = get_context(*current_domain, core);
+                let next_ctx = get_context(manager, core);
+                let next_domain = get_domain(manager);
+                switch_domain(vcpu, current_ctx, next_ctx, next_domain)
+                    .expect("Failed to perform a switch for violation");
+                // Set the result in the target core.
+                vcpu.set(VmcsField::GuestRax, 0)
+                    .expect("Unable to set the rax in manager domain.");
+                *current_domain = manager;
             }
         }
     }
@@ -793,6 +821,9 @@ impl core::fmt::Display for CoreUpdate {
             }
             CoreUpdate::UpdateTrap { bitmap } => {
                 write!(f, "UpdateTrap({:b})", bitmap)
+            }
+            CoreUpdate::Violation { manager, core } => {
+                write!(f, "Violation(manager {}, core {})", manager, core)
             }
         }
     }

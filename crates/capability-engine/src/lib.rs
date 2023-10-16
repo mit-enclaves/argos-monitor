@@ -516,6 +516,19 @@ impl CapaEngine {
         Ok(())
     }
 
+    pub fn handle_violation(
+        &mut self,
+        domain: Handle<Domain>,
+        core: usize,
+    ) -> Result<(), CapaError> {
+        if let Some(manager) = self.domains[domain].get_manager() {
+            self.updates
+                .push(Update::ForwardViolation { manager, core });
+            return Ok(());
+        }
+        Err(CapaError::CouldNotHandleTrap)
+    }
+
     pub fn enumerate(
         &mut self,
         domain: Handle<Domain>,
