@@ -69,7 +69,7 @@ pub struct CapaEngine {
 
 impl CapaEngine {
     pub const fn new() -> Self {
-        const EMPTY_DOMAIN: Domain = Domain::new(0);
+        const EMPTY_DOMAIN: Domain = Domain::new(0, false);
         const EMPTY_CAPA: RegionCapa = RegionCapa::new_invalid();
         const EMPTY_CORE: Core = Core::new();
 
@@ -86,7 +86,7 @@ impl CapaEngine {
         log::trace!("Create new manager domain");
 
         let id = self.domain_id();
-        match self.domains.allocate(Domain::new(id)) {
+        match self.domains.allocate(Domain::new(id, false)) {
             Some(handle) => {
                 domain::set_config(
                     handle,
@@ -146,7 +146,7 @@ impl CapaEngine {
         Ok(())
     }
 
-    pub fn create_domain(&mut self, manager: Handle<Domain>) -> Result<LocalCapa, CapaError> {
+    pub fn create_domain(&mut self, manager: Handle<Domain>, io: bool) -> Result<LocalCapa, CapaError> {
         log::trace!("Create new domain");
 
         // Enforce permissions
@@ -158,7 +158,7 @@ impl CapaEngine {
         )?;
 
         let id = self.domain_id();
-        match self.domains.allocate(Domain::new(id)) {
+        match self.domains.allocate(Domain::new(id, io)) {
             Some(handle) => {
                 self.domains[handle].set_manager(manager);
                 let capa = insert_capa(
