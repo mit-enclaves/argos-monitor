@@ -179,7 +179,7 @@ fn get_context(domain: Handle<Domain>, core: usize) -> MutexGuard<'static, Conte
 
 pub fn do_create_domain(current: Handle<Domain>) -> Result<LocalCapa, CapaError> {
     let mut engine = CAPA_ENGINE.lock();
-    let management_capa = engine.create_domain(current)?;
+    let management_capa = engine.create_domain(current, false)?;
     apply_updates(&mut engine);
     Ok(management_capa)
 }
