@@ -5,7 +5,6 @@ use crate::acpi::AcpiInfo;
 use crate::mmu::MemoryMap;
 
 pub mod boot_params;
-pub mod common;
 pub mod linux;
 pub mod rawc;
 pub mod vmx;

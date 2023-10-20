@@ -120,7 +120,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         let iommu_addr = HostVirtAddr::new(
             iommus[0].base_address.as_usize() + physical_memory_offset.as_usize(),
         );
-        let iommu = unsafe { vtd::Iommu::new(iommu_addr) };
+        let iommu = vtd::Iommu::new(iommu_addr);
         log::info!("IO MMU: capabilities {:?}", iommu.get_capability(),);
         log::info!("        extended {:?}", iommu.get_extended_capability());
     } else {

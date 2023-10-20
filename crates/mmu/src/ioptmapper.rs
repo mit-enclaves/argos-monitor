@@ -101,6 +101,38 @@ impl IoPtMapper {
         }
     }
 
+    pub fn free_all(mut self, allocator: &impl FrameAllocator) {
+        let (root, _) = self.root();
+        let host_offset = self.host_offset;
+        let mut cleanup = |page_virt_addr: HostVirtAddr| unsafe {
+            let page_phys = HostPhysAddr::new(page_virt_addr.as_usize() - host_offset);
+            allocator
+                .free_frame(page_phys)
+                .expect("failed to free EPT page");
+        };
+        let mut callback = |_: GuestPhysAddr, entry: &mut u64, level: Level| {
+            if (*entry & PRESENT.bits()) == 0 {
+                // No entry
+                return WalkNext::Leaf;
+            } else if level == Level::L1 || (*entry & IoPtFlag::PAGE_SIZE.bits()) != 0 {
+                // This is a leaf
+                return WalkNext::Leaf;
+            } else {
+                WalkNext::Continue
+            }
+        };
+        unsafe {
+            self.cleanup_range(
+                GuestPhysAddr::new(0),
+                GuestPhysAddr::new(usize::MAX),
+                &mut callback,
+                &mut cleanup,
+            )
+            .expect("Failed to free EPTs");
+            allocator.free_frame(root).expect("Failed to free root");
+        }
+    }
+
     pub fn get_root(&self) -> HostPhysAddr {
         HostPhysAddr::new(self.root.as_usize())
     }
