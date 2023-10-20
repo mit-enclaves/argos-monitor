@@ -6,14 +6,15 @@ use capa_engine::{
     Handle, LocalCapa, MemOps, NextCapaToken, MEMOPS_ALL,
 };
 use mmu::eptmapper::EPT_ROOT_FLAGS;
-use mmu::{EptMapper, FrameAllocator};
+use mmu::{EptMapper, FrameAllocator, IoPtFlag, IoPtMapper};
 use spin::{Mutex, MutexGuard};
 use stage_two_abi::Manifest;
-use utils::{GuestPhysAddr, HostPhysAddr};
+use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
 use vmx::bitmaps::{EptEntryFlags, ExceptionBitmap};
 use vmx::errors::Trapnr;
 use vmx::fields::{VmcsField, REGFILE_SIZE};
 use vmx::{ActiveVmcs, VmExitInterrupt, Vmxon};
+use vtd::Iommu;
 
 use super::context::ContextData;
 use super::cpuid;
@@ -35,6 +36,7 @@ static RC_VMCS: Mutex<RCFramePool> =
 
 pub struct DomainData {
     ept: Option<HostPhysAddr>,
+    iopt: Option<HostPhysAddr>,
 }
 
 #[derive(PartialEq)]
@@ -56,7 +58,7 @@ impl InitVMCS {
     }
 }
 
-const EMPTY_DOMAIN: Mutex<DomainData> = Mutex::new(DomainData { ept: None });
+const EMPTY_DOMAIN: Mutex<DomainData> = Mutex::new(DomainData { ept: None, iopt: None });
 const EMPTY_UPDATE_BUFFER: Mutex<Buffer<CoreUpdate>> = Mutex::new(Buffer::new());
 const EMPTY_CONTEXT: Mutex<ContextData> = Mutex::new(ContextData {
     vmcs: Handle::<RCFrame>::new_invalid(),
@@ -66,6 +68,7 @@ const EMPTY_CONTEXT: Mutex<ContextData> = Mutex::new(ContextData {
     rsp: usize::max_value(),
 });
 const EMPTY_CONTEXT_ARRAY: [Mutex<ContextData>; NB_CORES] = [EMPTY_CONTEXT; NB_CORES];
+static IOMMU: Mutex<Iommu> = Mutex::new(Iommu::new(HostVirtAddr::new(usize::max_value())));
 
 // ————————————————————————————— Initialization ————————————————————————————— //
 
@@ -89,6 +92,11 @@ pub fn init(manifest: &'static Manifest) {
     // Save the initial domain
     let mut initial_domain = INITIAL_DOMAIN.lock();
     *initial_domain = Some(domain);
+
+    if manifest.iommu != 0 {
+        let mut iommu = IOMMU.lock();
+        iommu.set_addr(manifest.iommu as usize);
+    }
 }
 
 pub fn init_vcpu(vcpu: &mut ActiveVmcs<'static>) -> Handle<Domain> {
@@ -700,7 +708,7 @@ fn revoke_domain(_domain: Handle<Domain>) {
     // Noop for now, might need to send IPIs once we land multi-core
 }
 
-fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) {
+fn update_domain_ept(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) {
     let mut domain = get_domain(domain_handle);
     let allocator = allocator();
     if let Some(ept) = domain.ept {
@@ -749,8 +757,81 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
     domain.ept = Some(ept_root.phys_addr);
 }
 
+fn update_domain_iopt(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) {
+    let mut domain = get_domain(domain_handle);
+    let allocator = allocator();
+    if let Some(iopt) = domain.iopt {
+        unsafe { free_iopt(iopt, allocator) };
+        // TODO: global invalidate context cache, PASID cache, and flush the IOTLB
+    }
+
+    let iopt_root = allocator
+        .allocate_frame()
+        .expect("Failed to allocate I/O PT root")
+        .zeroed();
+    let mut iopt_mapper = IoPtMapper::new(
+        allocator.get_physical_offset().as_usize(),
+        iopt_root.phys_addr,
+    );
+
+    // Traverse all regions of the I/O domain and maps them into the new iopt
+    // TODO: @yuchen how are I/O memory region usually mapped? Seems like it should be RWX?
+    for range in engine[domain_handle].regions().permissions() {
+        if !range.ops.contains(MemOps::READ) {
+            log::error!("there is a region without read permission: {}", range);
+            continue;
+        }
+        let mut flags = IoPtFlag::READ;
+        if range.ops.contains(MemOps::WRITE) {
+            flags |= IoPtFlag::WRITE;
+        }
+        if range.ops.contains(MemOps::EXEC) {
+            flags |= IoPtFlag::EXECUTE;
+        }
+        let gpa = if let Some(alias) = range.alias {
+            alias
+        } else {
+            range.start
+        };
+        iopt_mapper.map_range(
+            allocator,
+            GuestPhysAddr::new(gpa),
+            HostPhysAddr::new(range.start),
+            range.size(),
+            flags,
+        )
+    }
+
+    domain.iopt = Some(iopt_root.phys_addr);
+
+    // Update the IOMMU
+    // TODO: @yuchen ideally we only need to change the 2nd stage page translation pointer on the
+    //               context table, instead of reallocating the whole root table
+    // Remap the DMA region on IOMMU
+    let mut iommu = IOMMU.lock();
+    let root_addr: HostPhysAddr = vtd::setup_iommu_context(iopt_mapper.get_root(), allocator);
+    iommu.set_root_table_addr(root_addr.as_u64() | (0b00 << 10)); // Set legacy mode
+    iommu.update_root_table_addr();
+    iommu.enable_translation();
+    log::info!("I/O MMU: {:?}", iommu.get_global_status());
+    log::warn!("I/O MMU Fault: {:?}", iommu.get_fault_status());
+}
+
+fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) {
+    if engine[domain_handle].is_io() {
+        update_domain_iopt(domain_handle, engine);
+    } else {
+        update_domain_ept(domain_handle, engine);
+    }
+}
+
 unsafe fn free_ept(ept: HostPhysAddr, allocator: &impl FrameAllocator) {
     let mapper = EptMapper::new(allocator.get_physical_offset().as_usize(), ept);
+    mapper.free_all(allocator);
+}
+
+unsafe fn free_iopt(iopt: HostPhysAddr, allocator: &impl FrameAllocator) {
+    let mapper = IoPtMapper::new(allocator.get_physical_offset().as_usize(), iopt);
     mapper.free_all(allocator);
 }
 

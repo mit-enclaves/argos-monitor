@@ -13,7 +13,6 @@ use crate::guests::boot_params::{
     BootParams, E820Types, KERNEL_BOOT_FLAG_MAGIC, KERNEL_HDR_MAGIC, KERNEL_LOADER_OTHER,
     KERNEL_MIN_ALIGNMENT_BYTES,
 };
-use crate::guests::common::setup_iommu_context;
 use crate::guests::ManifestInfo;
 use crate::mmu::MemoryMap;
 use crate::vmx;
@@ -83,7 +82,7 @@ impl Guest for Linux {
                         + host_allocator.get_physical_offset().as_usize(),
                 );
                 let mut iommu = Iommu::new(iommu_addr);
-                let root_addr = setup_iommu_context(iopt_mapper.get_root(), host_allocator);
+                let root_addr = vtd::setup_iommu_context(iopt_mapper.get_root(), host_allocator);
                 iommu.set_root_table_addr(root_addr.as_u64() | (0b00 << 10)); // Set legacy mode
                 iommu.update_root_table_addr();
                 iommu.enable_translation();
