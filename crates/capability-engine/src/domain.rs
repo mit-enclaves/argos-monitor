@@ -165,10 +165,12 @@ pub struct Domain {
     is_being_revoked: bool,
     /// Is the domain sealed?
     is_sealed: bool,
+    /// Is it an I/O domain?
+    is_io: bool,
 }
 
 impl Domain {
-    pub const fn new(id: usize) -> Self {
+    pub const fn new(id: usize, io: bool) -> Self {
         const INVALID_CAPA: Capa = Capa::None;
 
         Self {
@@ -195,6 +197,7 @@ impl Domain {
             cores: core_bits::NONE,
             is_being_revoked: false,
             is_sealed: false,
+            is_io: io,
         }
     }
 
@@ -300,6 +303,10 @@ impl Domain {
 
     pub fn is_sealed(&self) -> bool {
         self.is_sealed
+    }
+
+    pub fn is_io(&self) -> bool {
+        self.is_io
     }
 
     fn is_valid(&self, idx: usize, regions: &RegionPool, domains: &DomainPool) -> bool {
