@@ -249,6 +249,18 @@ impl Domain {
         Ok(self.capas[index.idx])
     }
 
+    pub(crate) fn find_capa<F: Fn(&Capa) -> bool>(&self, f: F) -> Option<LocalCapa> {
+        for (i, e) in self.capas.iter().enumerate() {
+            if self.free_list.is_free(i) {
+                continue;
+            }
+            if f(e) {
+                return Some(LocalCapa { idx: i });
+            }
+        }
+        return None;
+    }
+
     /// Get a mutable reference to a capability from a domain.
     fn get_mut(&mut self, index: LocalCapa) -> Result<&mut Capa, CapaError> {
         if self.free_list.is_free(index.idx) {

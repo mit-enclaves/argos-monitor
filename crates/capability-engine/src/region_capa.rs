@@ -5,6 +5,7 @@ use crate::region::{AccessRights, MemOps, TrackerPool};
 use crate::update::UpdateBuffer;
 use crate::{domain, CapaError};
 
+#[derive(Debug)]
 pub struct RegionCapa {
     domain: Handle<Domain>,
     left: Option<Handle<RegionCapa>>,

@@ -205,6 +205,7 @@ fn handle_exit(
                     Ok(HandlerResult::Resume)
                 }
                 calls::SEND_ALIASED => {
+                    log::trace!("Send aliased");
                     // Send a region capa and adds an alias to it.
                     // TODO: check it works.
                     monitor::do_send_aliased(

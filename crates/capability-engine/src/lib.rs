@@ -564,6 +564,7 @@ impl CapaEngine {
             return_capa,
             core,
         });
+        //TODO: should we put this as part of the switch instead?
         self.updates.push(Update::UpdateTraps {
             trap: self.domains[next_dom].traps(),
             core,
@@ -572,6 +573,7 @@ impl CapaEngine {
         Ok(())
     }
 
+    //TODO: fix this. It should update capabilities too for switching + running on core.
     pub fn handle_trap(
         &mut self,
         domain: Handle<Domain>,
@@ -583,6 +585,7 @@ impl CapaEngine {
             log::error!("The domain is able to handle its own trap, why did we exit?");
             return Err(CapaError::ValidTrapCausedExit);
         }
+        //TODO: How do we fix the transitions capas?
         let manager = domain::find_trap_handler(domain, trap, &self.domains)
             .ok_or(CapaError::CouldNotHandleTrap)?;
         self.updates.push(Update::Trap {
@@ -603,14 +606,24 @@ impl CapaEngine {
     pub fn handle_violation(
         &mut self,
         domain: Handle<Domain>,
-        core: usize,
+        core_id: usize,
     ) -> Result<(), CapaError> {
-        if let Some(manager) = self.domains[domain].get_manager() {
-            self.updates
-                .push(Update::ForwardViolation { manager, core });
-            return Ok(());
-        }
-        Err(CapaError::CouldNotHandleTrap)
+        // Find the capability to simulate a switch.
+        let dom = &self.domains[domain];
+        let manager = dom.get_manager().ok_or(CapaError::CouldNotHandleTrap)?;
+        let capa = dom
+            .find_capa(|x| match x {
+                Capa::Switch { to, core } => {
+                    if *to == manager && *core == core_id {
+                        return true;
+                    }
+                    return false;
+                }
+                _ => return false,
+            })
+            .ok_or(CapaError::InvalidCore)?;
+
+        self.switch(domain, core_id, capa)
     }
 
     pub fn enumerate(
