@@ -6,7 +6,6 @@ use vtd::Iommu;
 use super::Guest;
 use crate::acpi::AcpiInfo;
 use crate::elf::ElfProgram;
-use crate::guests::common::setup_iommu_context;
 use crate::guests::ManifestInfo;
 use crate::mmu::MemoryMap;
 use crate::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
@@ -77,7 +76,7 @@ impl Guest for RawcBytes {
                 iommus[0].base_address.as_usize() + host_allocator.get_physical_offset().as_usize(),
             );
             let mut iommu = Iommu::new(iommu_addr);
-            let root_addr = setup_iommu_context(iopt_mapper.get_root(), host_allocator);
+            let root_addr = vtd::setup_iommu_context(iopt_mapper.get_root(), host_allocator);
             iommu.set_root_table_addr(root_addr.as_u64() | (0b00 << 10)); // Set legacy mode
             iommu.update_root_table_addr();
             iommu.enable_translation();
