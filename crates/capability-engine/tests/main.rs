@@ -683,8 +683,8 @@ fn new_capa() {
 
 // ————————————————————————————————— Utils —————————————————————————————————— //
 
-fn regions(domain: Handle<Domain>, engine: &CapaEngine) -> RegionIterator {
-    engine.get_domain_regions(domain).expect("Invalid domain")
+fn regions(domain: Handle<Domain>, engine: &CapaEngine) -> &RegionTracker {
+    engine[domain].hpa_regions()
 }
 
 fn capas(domain: Handle<Domain>, engine: &mut CapaEngine) -> String {
@@ -728,5 +728,6 @@ fn dummy_access(start: usize, end: usize) -> AccessRights {
         start,
         end,
         ops: MEMOPS_ALL,
+        alias: None,
     }
 }

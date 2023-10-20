@@ -158,8 +158,10 @@ pub struct Domain {
     capas: [Capa; NB_CAPAS_PER_DOMAIN],
     /// Free list of capabilities, used for allocating new capabilities.
     free_list: FreeList<NB_CAPAS_PER_DOMAIN>,
-    /// Tracker for region permissions.
-    regions: RegionTracker,
+    /// Tracker for physical region permissions: rmap.
+    hpa_regions: RegionTracker,
+    /// Tracker for guest physical regions: map.
+    gpa_regions: RegionTracker,
     /// The (optional) manager of this domain.
     manager: Option<Handle<Domain>>,
     /// Configuration bitmaps for the domain.
@@ -176,17 +178,20 @@ pub struct Domain {
     attestation_report: Option<EnclaveReport>,
     /// Is it an I/O domain?
     is_io: bool,
+    /// Allow aliasing for memory
+    pub aliased: bool,
 }
 
 impl Domain {
-    pub const fn new(id: usize, io: bool) -> Self {
+    pub const fn new(id: usize, io: bool, aliased: bool) -> Self {
         const INVALID_CAPA: Capa = Capa::None;
 
         Self {
             id,
             capas: [INVALID_CAPA; NB_CAPAS_PER_DOMAIN],
             free_list: FreeList::new(),
-            regions: RegionTracker::new(),
+            hpa_regions: RegionTracker::new(),
+            gpa_regions: RegionTracker::new(),
             manager: None,
             config: Configuration {
                 values: [
@@ -209,6 +214,7 @@ impl Domain {
             attestation_hash: None,
             attestation_report: None,
             is_io: io,
+            aliased,
         }
     }
 
@@ -285,8 +291,19 @@ impl Domain {
         self.cores &= !core_id
     }
 
-    pub(crate) fn regions(&self) -> &RegionTracker {
-        &self.regions
+    /// Emit TLB shootdown updates for all cores executing the domain.
+    fn emit_shootdown(&self, updates: &mut UpdateBuffer) {
+        for core in BitmapIterator::new(self.cores) {
+            updates.push(Update::TlbShootdown { core })
+        }
+    }
+
+    pub fn hpa_regions(&self) -> &RegionTracker {
+        &self.hpa_regions
+    }
+
+    pub fn gpa_regions(&self) -> &RegionTracker {
+        &self.gpa_regions
     }
 
     pub fn id(&self) -> usize {
@@ -589,9 +606,18 @@ pub(crate) fn activate_region(
     if dom.is_being_revoked {
         return Ok(());
     }
-    let change =
-        dom.regions
-            .add_region(access.start, access.end, access.ops, access.alias, tracker)?;
+    let mut change =
+        dom.hpa_regions
+            .add_region(access.start, access.end, access.ops, access.alias)?;
+
+    // If the domain has aliased memory.
+    if dom.aliased {
+        let (start, end, alias) = match access.alias {
+            Some(a) => (a, access.end - access.start + a, Some(access.start)),
+            _ => (access.start, access.end, Some(access.start)),
+        };
+        change = dom.gpa_regions.add_region(start, end, access.ops, alias, tracker)?;
+    }
     if let PermissionChange::Some = change {
         updates.push(Update::PermissionUpdate {
             domain,
@@ -617,9 +643,18 @@ pub(crate) fn deactivate_region(
         return Ok(());
     }
 
-    let change = dom
-        .regions
-        .remove_region(access.start, access.end, access.ops, tracker)?;
+    let mut change = dom
+        .hpa_regions
+        .remove_region(access.start, access.end, access.ops)?;
+
+    // The domain is aliased, updates that count are the gpa ones.
+    if dom.aliased {
+        let (start, end) = match access.alias {
+            Some(a) => (a, access.end - access.start + a),
+            _ => (access.start, access.end),
+        };
+        change = dom.gpa_regions.remove_region(start, end, access.ops, tracker)?;
+    }
     if let PermissionChange::Some = change {
         updates.push(Update::PermissionUpdate {
             domain,

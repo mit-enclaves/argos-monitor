@@ -30,7 +30,7 @@ use super::cpuid;
 use super::guest::VmxState;
 use super::init::NB_BOOTED_CORES;
 use super::vmx_helper::{dump_host_state, load_host_state};
-use crate::allocator::{allocator, allocator, PAGE_SIZE};
+use crate::allocator::{allocator, PAGE_SIZE};
 use crate::attestation_domain::{attest_domain, calculate_attestation_hash};
 use crate::rcframe::{drop_rc, RCFrame, RCFramePool, EMPTY_RCFRAME};
 use crate::x86_64::apic;
@@ -235,9 +235,9 @@ fn get_context(domain: Handle<Domain>, core: usize) -> MutexGuard<'static, Conte
 
 // ————————————————————————————— Monitor Calls —————————————————————————————— //
 
-pub fn do_create_domain(current: Handle<Domain>) -> Result<LocalCapa, CapaError> {
+pub fn do_create_domain(current: Handle<Domain>, aliased: bool) -> Result<LocalCapa, CapaError> {
     let mut engine = CAPA_ENGINE.lock();
-    let management_capa = engine.create_domain(current)?;
+    let management_capa = engine.create_domain(current, aliased)?;
     apply_updates(&mut engine);
     Ok(management_capa)
 }
@@ -605,10 +605,7 @@ pub fn do_debug() {
             next_capa = next_next_capa;
             log::trace!(" - {}", info);
         }
-        log::trace!(
-            "{}",
-            engine.get_domain_regions(domain).expect("Invalid domain")
-        );
+        log::info!("{}", engine[domain].hpa_regions());
     }
 }
 
@@ -957,7 +954,13 @@ fn update_domain_ept(
         ept_root.phys_addr,
     );
 
-    for range in engine.get_domain_permissions(domain_handle).unwrap() {
+    let regions = if engine[domain_handle].aliased {
+        engine[domain_handle].gpa_regions()
+    } else {
+        engine[domain_handle].hpa_regions()
+    };
+
+    for range in regions.permissions() {
         if !range.ops.contains(MemOps::READ) {
             log::error!("there is a region without read permission: {}", range);
             continue;
@@ -973,16 +976,16 @@ fn update_domain_ept(
                 flags |= EptEntryFlags::USER_EXECUTE;
             }
         }
-        let gpa = if let Some(alias) = range.alias {
-            alias
-        } else {
-            range.start
+        let (gpa, hpa, size) = match range.alias {
+            None => (range.start, range.start, range.size()),
+            Some(a) => (range.start, a, range.size()),
         };
+
         mapper.map_range(
             allocator,
             GuestPhysAddr::new(gpa),
-            HostPhysAddr::new(range.start),
-            range.size(),
+            HostPhysAddr::new(hpa),
+            size,
             flags,
         )
     }

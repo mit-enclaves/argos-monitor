@@ -40,8 +40,10 @@ use crate::segment::EMPTY_NEW_REGION_CAPA;
 pub mod config {
     pub const NB_DOMAINS: usize = 32;
     pub const NB_CAPAS_PER_DOMAIN: usize = 128;
-    pub const NB_REGIONS: usize = 1024;
     pub const NB_TRACKER: usize = 1024;
+    //TODO: increasing this make the entire program crash.
+    pub const NB_REGIONS_PER_DOMAIN: usize = 32;
+    pub const NB_REGIONS: usize = 256;
     pub const NB_UPDATES: usize = 128;
     pub const NB_CORES: usize = 32; // NOTE: Can't be greater than 64 as we use 64 bits bitmaps.
 }
@@ -163,12 +165,20 @@ impl CapaEngine {
         Ok(())
     }
 
-    pub fn create_domain(&mut self, manager: Handle<Domain>) -> Result<LocalCapa, CapaError> {
-        self.domain_creation(manager, false)
+    pub fn create_domain(
+        &mut self,
+        manager: Handle<Domain>,
+        aliased: bool,
+    ) -> Result<LocalCapa, CapaError> {
+        self.domain_creation(manager, false, aliased)
     }
 
-    pub fn create_io_domain(&mut self, manager: Handle<Domain>) -> Result<LocalCapa, CapaError> {
-        self.domain_creation(manager, true)
+    pub fn create_io_domain(
+        &mut self,
+        manager: Handle<Domain>,
+        aliased: bool,
+    ) -> Result<LocalCapa, CapaError> {
+        self.domain_creation(manager, true, aliased)
     }
 
     pub fn revoke_domain(&mut self, domain: Handle<Domain>) -> Result<(), CapaError> {
@@ -398,6 +408,7 @@ impl CapaEngine {
         Ok(())
     }
 
+    //TODO this is duplicated from above, do we keep it separate or merge?
     pub fn send_aliased(
         &mut self,
         domain: Handle<Domain>,
@@ -413,6 +424,9 @@ impl CapaEngine {
             permission::SEND,
         )?;
         let to = self.domains[domain].get(to)?.as_channel()?;
+        if !self.domains[to].aliased {
+            return Err(CapaError::InvalidOperation);
+        }
         let capa = remove_capa(domain, capa, &mut self.domains)?;
         match capa {
             Capa::Region(region) => {
@@ -700,6 +714,7 @@ impl CapaEngine {
         &mut self,
         manager: Handle<Domain>,
         io: bool,
+        aliased: bool,
     ) -> Result<LocalCapa, CapaError> {
         log::trace!("Create new domain");
 
@@ -712,10 +727,11 @@ impl CapaEngine {
         )?;
 
         let id = self.domain_id();
-        match self.domains.allocate(Domain::new(id, io)) {
+        match self.domains.allocate(Domain::new(id, io, aliased)) {
             Some(handle) => {
                 self.domains[handle].set_id(id)?;
                 self.domains[handle].set_manager(manager);
+                self.domains[handle].aliased = aliased;
                 let capa = insert_capa(
                     manager,
                     Capa::management(handle),
