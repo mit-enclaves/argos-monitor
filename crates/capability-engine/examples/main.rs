@@ -115,10 +115,10 @@ fn display(_engine: &CapaEngine) {
 
 fn display_domain(domain: Handle<Domain>, engine: &CapaEngine) {
     let domain = &engine[domain];
-    println!("Domain {} {}", domain.id(), domain.regions());
+    println!("Domain {} {}", domain.id(), domain.hpa_regions());
     print!("         {{");
     let mut first = true;
-    for area in domain.regions().permissions() {
+    for area in domain.hpa_regions().permissions() {
         if first {
             first = false;
         } else {

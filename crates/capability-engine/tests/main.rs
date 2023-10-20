@@ -548,7 +548,7 @@ fn access_rights_test() {
 // ————————————————————————————————— Utils —————————————————————————————————— //
 
 fn regions(domain: Handle<Domain>, engine: &CapaEngine) -> &RegionTracker {
-    engine[domain].regions()
+    engine[domain].hpa_regions()
 }
 
 fn capas(domain: Handle<Domain>, engine: &mut CapaEngine) -> String {

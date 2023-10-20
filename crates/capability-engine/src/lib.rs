@@ -29,7 +29,8 @@ use crate::domain::{core_bits, switch_bits, trap_bits};
 pub mod config {
     pub const NB_DOMAINS: usize = 32;
     pub const NB_CAPAS_PER_DOMAIN: usize = 128;
-    pub const NB_REGIONS_PER_DOMAIN: usize = 64;
+    //TODO: increasing this make the entire program crash.
+    pub const NB_REGIONS_PER_DOMAIN: usize = 32;
     pub const NB_REGIONS: usize = 256;
     pub const NB_UPDATES: usize = 128;
     pub const NB_CORES: usize = 32; // NOTE: Can't be greater than 64 as we use 64 bits bitmaps.
@@ -69,7 +70,7 @@ pub struct CapaEngine {
 
 impl CapaEngine {
     pub const fn new() -> Self {
-        const EMPTY_DOMAIN: Domain = Domain::new(0);
+        const EMPTY_DOMAIN: Domain = Domain::new(0, false);
         const EMPTY_CAPA: RegionCapa = RegionCapa::new_invalid();
         const EMPTY_CORE: Core = Core::new();
 
@@ -86,7 +87,7 @@ impl CapaEngine {
         log::trace!("Create new manager domain");
 
         let id = self.domain_id();
-        match self.domains.allocate(Domain::new(id)) {
+        match self.domains.allocate(Domain::new(id, false)) {
             Some(handle) => {
                 domain::set_config(
                     handle,
@@ -146,7 +147,11 @@ impl CapaEngine {
         Ok(())
     }
 
-    pub fn create_domain(&mut self, manager: Handle<Domain>) -> Result<LocalCapa, CapaError> {
+    pub fn create_domain(
+        &mut self,
+        manager: Handle<Domain>,
+        aliased: bool,
+    ) -> Result<LocalCapa, CapaError> {
         log::trace!("Create new domain");
 
         // Enforce permissions
@@ -158,7 +163,7 @@ impl CapaEngine {
         )?;
 
         let id = self.domain_id();
-        match self.domains.allocate(Domain::new(id)) {
+        match self.domains.allocate(Domain::new(id, aliased)) {
             Some(handle) => {
                 self.domains[handle].set_manager(manager);
                 let capa = insert_capa(
@@ -321,6 +326,7 @@ impl CapaEngine {
         Ok(())
     }
 
+    //TODO this is duplicated from above, do we keep it separate or merge?
     pub fn send_aliased(
         &mut self,
         domain: Handle<Domain>,
@@ -336,6 +342,9 @@ impl CapaEngine {
             permission::SEND,
         )?;
         let to = self.domains[domain].get(to)?.as_channel()?;
+        if !self.domains[to].aliased {
+            return Err(CapaError::InvalidOperation);
+        }
         let capa = remove_capa(domain, capa, &mut self.domains)?;
         match capa {
             Capa::Region(region) => {

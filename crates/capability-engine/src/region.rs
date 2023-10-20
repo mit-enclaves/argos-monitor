@@ -666,6 +666,8 @@ pub struct MemoryPermission {
     pub start: usize,
     pub end: usize,
     pub ops: MemOps,
+    /// TODO(aghosn): when I clean up, rename that.
+    /// I went from using it as gpa to using it as hpa, it's confusing.
     pub alias: Option<usize>,
 }
 

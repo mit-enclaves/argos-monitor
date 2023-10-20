@@ -93,7 +93,7 @@ fn handle_exit(
             match vmcall {
                 calls::CREATE_DOMAIN => {
                     log::trace!("Create Domain");
-                    let capa = monitor::do_create_domain(*domain).expect("TODO");
+                    let capa = monitor::do_create_domain(*domain, arg_1 != 0).expect("TODO");
                     vs.vcpu.set(VmcsField::GuestRdi, capa.as_usize())?;
                     vs.vcpu.set(VmcsField::GuestRax, 0)?;
                     vs.vcpu.next_instruction()?;
@@ -330,21 +330,25 @@ fn handle_exit(
             vs.vcpu.next_instruction()?;
             Ok(HandlerResult::Resume)
         }
-        VmxExitReason::ControlRegisterAccesses => {
+        VmxExitReason::ControlRegisterAccesses if domain.idx() == 0 => {
+            // Handle some of these only for dom0, the other domain's problems
+            // are for now forwarded to the manager domain.
             let qualification = vs.vcpu.exit_qualification()?.control_register_accesses();
             match qualification {
                 exit_qualification::ControlRegisterAccesses::MovToCr(cr, reg) => {
+                    log::info!("MovToCr {:?} into {:?} on domain {:?}", reg, cr, *domain);
                     if !cr.is_guest_cr() {
                         log::error!("Invalid register: {:x?}", cr);
                         panic!("VmExit reason for access to control register is not a control register.");
                     }
-                    if cr != VmcsField::GuestCr4 {
-                        todo!("Handle {:?}", cr);
+                    if cr == VmcsField::GuestCr4 {
+                        let value = vs.vcpu.get(reg)? as usize;
+                        vs.vcpu.set(VmcsField::Cr4ReadShadow, value)?;
+                        let real_value = value | (1 << 13); // VMXE
+                        vs.vcpu.set(cr, real_value)?;
+                    } else {
+                        todo!("Handle cr: {:?}", cr);
                     }
-                    let value = vs.vcpu.get(reg)? as usize;
-                    vs.vcpu.set(VmcsField::Cr4ReadShadow, value)?;
-                    let real_value = value | (1 << 13); // VMXE
-                    vs.vcpu.set(cr, real_value)?;
 
                     vs.vcpu.next_instruction()?;
                 }
@@ -440,8 +444,12 @@ fn handle_exit(
                 }
             }
         }
-        VmxExitReason::EptViolation | VmxExitReason::ExternalInterrupt => {
-            log::trace!("Handling {:?}", reason);
+        VmxExitReason::EptViolation
+        | VmxExitReason::ExternalInterrupt
+        | VmxExitReason::IoInstruction
+        | VmxExitReason::ControlRegisterAccesses
+        | VmxExitReason::TripleFault => {
+            log::trace!("Handling {:?} for dom {}", reason, domain.idx());
             let addr = vs.vcpu.guest_phys_addr()?;
             // TODO(aghosn): for the moment, crash on EPT violations
             // on dom0. Later on, we should route them to the domain in a different
@@ -451,46 +459,29 @@ fn handle_exit(
                     return Ok(HandlerResult::Resume);
                 }
                 Err(e) => {
-                    log::error!("Unable to handle Ept Violation: {:?}", e);
-                    log::error!(
-                        "Ept Violation! virt: 0x{:x}, phys: 0x{:x} on dom{}",
-                        vs.vcpu
-                            .guest_linear_addr()
-                            .expect("Unable to get virt addr")
-                            .as_u64(),
-                        addr.as_u64(),
-                        *domain
-                    );
+                    log::error!("Unable to handle {:?}: {:?}", reason, e);
+                    if reason == VmxExitReason::EptViolation {
+                        log::error!(
+                            "Ept Violation! virt: 0x{:x}, phys: 0x{:x} on dom{}",
+                            vs.vcpu
+                                .guest_linear_addr()
+                                .expect("Unable to get virt addr")
+                                .as_u64(),
+                            addr.as_u64(),
+                            *domain
+                        );
+                    }
                     log::info!("The vcpu: {:x?}", vs.vcpu);
                     return Ok(HandlerResult::Crash);
                 }
             }
-
-            //TODO: replace this with proper handler for interrupts.
-            /*if domain.idx() == 0 {
-                let interrupt = VmExitInterrupt::create(
-                    Trapnr::Breakpoint,
-                    InterruptionType::SoftwareException,
-                    None,
-                    &vs.vcpu,
-                );
-                // Inject the interrupt.
-                log::debug!(
-                    "Replace EPT violation with exception: {:b}",
-                    interrupt.as_u32()
-                );
-                vs.vcpu
-                    .inject_interrupt(interrupt)
-                    .expect("Unable to inject an exception");
-                return Ok(HandlerResult::Resume);
-            }
-            Ok(HandlerResult::Resume)*/
         }
         _ => {
             log::error!(
                 "Emulation is not yet implemented for exit reason: {:?}",
                 reason
             );
+            log::error!("This happened on domain {}", domain.idx());
             log::info!("{:?}", vs.vcpu);
             Ok(HandlerResult::Crash)
         }
