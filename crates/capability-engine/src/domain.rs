@@ -171,10 +171,12 @@ pub struct Domain {
     attestation_hash: Option<HashEnclave>,
     /// last attestation report
     attestation_report: Option<EnclaveReport>,
+    /// Is it an I/O domain?
+    is_io: bool,
 }
 
 impl Domain {
-    pub const fn new(id: usize) -> Self {
+    pub const fn new(id: usize, io: bool) -> Self {
         const INVALID_CAPA: Capa = Capa::None;
 
         Self {
@@ -203,6 +205,7 @@ impl Domain {
             is_sealed: false,
             attestation_hash: None,
             attestation_report: None,
+            is_io: io,
         }
     }
 
@@ -315,6 +318,10 @@ impl Domain {
 
     pub fn is_sealed(&self) -> bool {
         self.is_sealed
+    }
+
+    pub fn is_io(&self) -> bool {
+        self.is_io
     }
 
     fn is_valid(&self, idx: usize, regions: &RegionPool, domains: &DomainPool) -> bool {
