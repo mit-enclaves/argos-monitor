@@ -1081,8 +1081,13 @@ impl<'vmx> core::fmt::Debug for ActiveVmcs<'vmx> {
         )?;
         writeln!(
             f,
-            "        VMCS SeconaryControls: {:?}",
+            "        VMCS SecondaryControls: {:?}",
             self.get_secondary_ctrls().ok()
+        )?;
+        writeln!(
+            f,
+            "        VMCS ExceptionBitmap: {:?}",
+            self.get_exception_bitmap().ok()
         )?;
         writeln!(f, "        EPT Ptr: {:#x}", self.get_ept_ptr().unwrap())?;
         writeln!(f, "        EPTP List: {:#x}", self.get_eptp_list().unwrap())?;

@@ -4,6 +4,7 @@ use core::arch::asm;
 
 use capa_engine::{Bitmaps, Domain, Handle, LocalCapa, NextCapaToken};
 use vmx::bitmaps::exit_qualification;
+use vmx::errors::Trapnr;
 use vmx::fields::VmcsField;
 use vmx::{ActiveVmcs, VmxExitReason, Vmxon};
 
@@ -415,10 +416,10 @@ fn handle_exit(
             match vs.vcpu.interrupt_info() {
                 Ok(Some(exit)) => {
                     // The domain exited, so it shouldn't be able to handle it.
-                    log::debug!(
+                    log::trace!(
                         "EXCEPTION RECEIVED {:b}, vector: {:?}, type: {:?}",
                         exit.as_u32(),
-                        exit.vector(),
+                        Trapnr::from_u8(exit.vector()),
                         exit.interrupt_type()
                     );
                     match monitor::handle_trap(*domain, cpuid(), exit) {
