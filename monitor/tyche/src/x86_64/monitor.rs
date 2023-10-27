@@ -606,6 +606,25 @@ pub fn do_debug() {
             log::trace!(" - {}", info);
         }
         log::info!("{}", engine[domain].hpa_regions());
+        log::info!("{}", engine[domain].gpa_regions());
+    }
+}
+
+#[allow(dead_code)]
+pub fn do_print_domain(dom: Handle<Domain>) {
+    let engine = CAPA_ENGINE.lock();
+    let domain = &engine[dom];
+    log::info!("Domain {}", domain.id());
+    log::info!("hpas: {}", domain.hpa_regions());
+    log::info!("gpas: {}", domain.gpa_regions());
+    {
+        let domain = get_domain(dom);
+        let allocator = allocator();
+        let mut mapper = EptMapper::new(
+            allocator.get_physical_offset().as_usize(),
+            domain.ept.unwrap(),
+        );
+        mapper.debug_range(GuestPhysAddr::new(0), usize::max_value());
     }
 }
 
@@ -877,13 +896,13 @@ pub fn apply_core_updates(
                 *current_domain = manager;
             }
             CoreUpdate::UpdateTrap { bitmap } => {
-                log::trace!("Updating trap bitmap on core {} to {:b}", core_id, bitmap);
-                let value = bitmap as u32;
+                let value = ExceptionBitmap::from_bits_truncate(bitmap as u32);
+                log::trace!("Updating trap bitmap on core {} to {:?}", core_id, value);
                 //TODO: for the moment we only offer interposition on the hardware cpu exception
                 //interrupts (first 32 values).
                 //By instrumenting APIC and virtualizing it, we might manage to do better in the
                 //future.
-                vcpu.set_exception_bitmap(ExceptionBitmap::from_bits_truncate(value))
+                vcpu.set_exception_bitmap(value)
                     .expect("Error setting the exception bitmap");
             }
         }

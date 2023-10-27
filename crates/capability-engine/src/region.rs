@@ -1040,14 +1040,15 @@ impl<'a> fmt::Display for RegionIterator<'a> {
         for (_, region) in self.clone() {
             write!(
                 f,
-                "[0x{:x}, 0x{:x} | {} ({} - {} - {} - {})]",
+                "[0x{:x}, 0x{:x} | {} ({} - {} - {} - {}) | {:x?}]",
                 region.start,
                 region.end,
                 region.ref_count,
                 region.read_count,
                 region.write_count,
                 region.exec_count,
-                region.super_count
+                region.super_count,
+                region.alias,
             )?;
             if region.next.is_some() {
                 write!(f, " -> ")?;
