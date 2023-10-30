@@ -6,8 +6,8 @@ use attestation::signature::EnclaveReport;
 use capa_engine::config::{NB_CORES, NB_DOMAINS};
 use capa_engine::utils::BitmapIterator;
 use capa_engine::{
-    permission, AccessRights, Bitmaps, Buffer, CapaEngine, CapaError, CapaInfo, Domain, GenArena,
-    Handle, LocalCapa, MemOps, NextCapaToken, MEMOPS_ALL,
+    permission, AccessRights, Alias, Bitmaps, Buffer, CapaEngine, CapaError, CapaInfo, Domain,
+    GenArena, Handle, LocalCapa, MemOps, NextCapaToken, MEMOPS_ALL,
 };
 use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator, IoPtFlag, IoPtMapper};
@@ -16,6 +16,7 @@ use spin::{Mutex, MutexGuard};
 use stage_two_abi::Manifest;
 use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
 use vmx::bitmaps::{EptEntryFlags, ExceptionBitmap};
+use vmx::ept::PAGE_SIZE;
 use vmx::errors::Trapnr;
 use vmx::fields::{VmcsField, REGFILE_SIZE};
 use vmx::msr::{IA32_LSTAR, IA32_STAR};
@@ -175,7 +176,7 @@ pub fn init(manifest: &'static Manifest) {
                 start: (manifest.iommu + PAGE_SIZE) as usize,
                 end: manifest.poffset as usize,
                 ops: MEMOPS_ALL,
-                alias: None,
+                alias: Alias::NoAlias,
             },
         )
         .unwrap();
@@ -532,13 +533,13 @@ pub fn do_segment_region(
         start: start_1,
         end: end_1,
         ops: prot_1,
-        alias: None,
+        alias: Alias::NoAlias,
     };
     let access_right = AccessRights {
         start: start_2,
         end: end_2,
         ops: prot_2,
-        alias: None,
+        alias: Alias::NoAlias,
     };
     let (left, right) = engine.segment_region(current, capa, access_left, access_right)?;
     apply_updates(&mut engine);
@@ -557,9 +558,12 @@ pub fn do_send_aliased(
     capa: LocalCapa,
     to: LocalCapa,
     alias: usize,
+    is_repeat: bool,
+    size: usize,
 ) -> Result<(), CapaError> {
     let mut engine = CAPA_ENGINE.lock();
-    engine.send_aliased(current, capa, to, alias)?;
+    let size = if is_repeat { Some(size) } else { None };
+    engine.send_aliased(current, capa, to, alias, size)?;
     apply_updates(&mut engine);
     Ok(())
 }
@@ -995,18 +999,32 @@ fn update_domain_ept(
                 flags |= EptEntryFlags::USER_EXECUTE;
             }
         }
-        let (gpa, hpa, size) = match range.alias {
-            None => (range.start, range.start, range.size()),
-            Some(a) => (range.start, a, range.size()),
+        let (gpa, hpa, size, repeat) = match range.alias {
+            Alias::NoAlias => (range.start, range.start, range.size(), false),
+            Alias::Alias(a) => (range.start, a, range.size(), false),
+            Alias::Repeat(a, s) => (range.start, a, s, true),
         };
 
-        mapper.map_range(
-            allocator,
-            GuestPhysAddr::new(gpa),
-            HostPhysAddr::new(hpa),
-            size,
-            flags,
-        )
+        if repeat {
+            // Map all the addresses to the same page.
+            for i in 0..size {
+                mapper.map_range(
+                    allocator,
+                    GuestPhysAddr::new(gpa + i * PAGE_SIZE),
+                    HostPhysAddr::new(hpa),
+                    PAGE_SIZE,
+                    flags,
+                )
+            }
+        } else {
+            mapper.map_range(
+                allocator,
+                GuestPhysAddr::new(gpa),
+                HostPhysAddr::new(hpa),
+                size,
+                flags,
+            )
+        }
     }
 
     if !init {

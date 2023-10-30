@@ -57,11 +57,20 @@ impl MemOps {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub enum Alias {
+    NoAlias,
+    /// The alias address.
+    Alias(usize),
+    /// The alias address and the repeat size.
+    Repeat(usize, usize),
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct AccessRights {
     pub start: usize,
     pub end: usize,
     pub ops: MemOps,
-    pub alias: Option<usize>,
+    pub alias: Alias,
 }
 
 impl AccessRights {
@@ -129,12 +138,12 @@ pub struct Region {
     exec_count: usize,
     super_count: usize,
     ref_count: usize,
-    alias: Option<usize>,
+    alias: Alias,
     next: Option<Handle<Region>>,
 }
 
 impl Region {
-    fn new(start: usize, end: usize, ops: MemOps, alias: Option<usize>) -> Self {
+    fn new(start: usize, end: usize, ops: MemOps, alias: Alias) -> Self {
         if start >= end {
             log::error!(
                 "Region start must be smaller than end, got start = {} and end = {}",
@@ -222,7 +231,7 @@ impl RegionTracker {
             exec_count: 0,
             super_count: 0,
             ref_count: 0,
-            alias: None,
+            alias: Alias::NoAlias,
             next: None,
         };*/
 
@@ -338,7 +347,6 @@ impl RegionTracker {
         start: usize,
         end: usize,
         ops: MemOps,
-        alias: Option<usize>,
         tracker: &mut TrackerPool,
     ) -> Result<PermissionChange, CapaError> {
         log::trace!("Adding region [0x{:x}, 0x{:x}]", start, end);
@@ -500,7 +508,7 @@ impl RegionTracker {
             exec_count: region.exec_count,
             super_count: region.super_count,
             ref_count: region.ref_count,
-            alias: None,
+            alias: Alias::NoAlias,
             next: region.next,
         };
         let second_half_handle = tracker.allocate(second_half).ok_or_else(|| {
@@ -535,9 +543,8 @@ impl RegionTracker {
             );
         }
 
-        let handle = tracker
-            .allocate(Region::new(start, end, ops, None).set_next(region.next))
         //TODO(aghosn) might need to handle the aliasing.
+        let handle = tracker.allocate(Region::new(start, end, ops, Alias::NoAlias).set_next(region.next))
             .ok_or_else(|| {
                 log::trace!("Unable to allocate new region!");
                 CapaError::OutOfMemory
@@ -554,8 +561,8 @@ impl RegionTracker {
         start: usize,
         end: usize,
         ops: MemOps,
-        alias: Option<usize>,
         tracker: &mut TrackerPool,
+        alias: Alias,
     ) -> Result<Handle<Region>, CapaError> {
         if let Some(head) = self.head {
             assert!(
@@ -769,7 +776,7 @@ pub struct MemoryPermission {
     pub ops: MemOps,
     /// TODO(aghosn): when I clean up, rename that.
     /// I went from using it as gpa to using it as hpa, it's confusing.
-    pub alias: Option<usize>,
+    pub alias: Alias,
 }
 
 impl MemoryPermission {
