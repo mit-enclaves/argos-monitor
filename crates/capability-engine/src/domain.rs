@@ -2,7 +2,7 @@ use crate::capa::{Capa, IntoCapa};
 use crate::config::{NB_CAPAS_PER_DOMAIN, NB_DOMAINS};
 use crate::free_list::FreeList;
 use crate::gen_arena::GenArena;
-use crate::region::{PermissionChange, RegionTracker};
+use crate::region::{Alias, PermissionChange, RegionTracker};
 use crate::update::{Update, UpdateBuffer};
 use crate::utils::BitmapIterator;
 use crate::{region_capa, AccessRights, CapaError, Handle, RegionPool};
@@ -507,8 +507,9 @@ pub(crate) fn activate_region(
     // If the domain has aliased memory.
     if dom.aliased {
         let (start, end, alias) = match access.alias {
-            Some(a) => (a, access.end - access.start + a, Some(access.start)),
-            _ => (access.start, access.end, Some(access.start)),
+            Alias::Alias(a) => (a, access.end - access.start + a, Alias::Alias(access.start)),
+            Alias::Repeat(a, s) => (a, s + a, Alias::Repeat(access.start, s)),
+            Alias::NoAlias => (access.start, access.end, Alias::Alias(access.start)),
         };
         change = dom.gpa_regions.add_region(start, end, access.ops, alias)?;
     }
@@ -540,8 +541,9 @@ pub(crate) fn deactivate_region(
     // The domain is aliased, updates that count are the gpa ones.
     if dom.aliased {
         let (start, end) = match access.alias {
-            Some(a) => (a, access.end - access.start + a),
-            _ => (access.start, access.end),
+            Alias::Alias(a) => (a, access.end - access.start + a),
+            Alias::NoAlias => (access.start, access.end),
+            Alias::Repeat(a, s) => (a, s + a),
         };
         change = dom.gpa_regions.remove_region(start, end, access.ops)?;
     }

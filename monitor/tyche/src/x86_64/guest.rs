@@ -214,6 +214,8 @@ fn handle_exit(
                         LocalCapa::new(arg_1),
                         LocalCapa::new(arg_2),
                         arg_3,
+                        arg_4 != 0,
+                        arg_5,
                     )
                     .expect("TODO");
                     vs.vcpu.set(VmcsField::GuestRax, 0)?;
@@ -296,7 +298,7 @@ fn handle_exit(
                 }
             }
         }
-        VmxExitReason::Cpuid => {
+        VmxExitReason::Cpuid if domain.idx() == 0 => {
             // TODO implement a filter for the cpuid.
             let input_eax = vs.vcpu.get(VmcsField::GuestRax)?;
             let input_ecx = vs.vcpu.get(VmcsField::GuestRcx)?;
@@ -412,7 +414,9 @@ fn handle_exit(
                 Ok(HandlerResult::Resume)
             }
         }
-        VmxExitReason::Exception => {
+        //TODO(aghosn): need to re-design this ...
+        /*VmxExitReason::Exception => {
+            log::trace!("Exception");
             match vs.vcpu.interrupt_info() {
                 Ok(Some(exit)) => {
                     // The domain exited, so it shouldn't be able to handle it.
@@ -444,12 +448,14 @@ fn handle_exit(
                     Ok(HandlerResult::Crash)
                 }
             }
-        }
+        }*/
         VmxExitReason::EptViolation
         | VmxExitReason::ExternalInterrupt
         | VmxExitReason::IoInstruction
         | VmxExitReason::ControlRegisterAccesses
-        | VmxExitReason::TripleFault => {
+        | VmxExitReason::TripleFault
+        | VmxExitReason::Cpuid
+        | VmxExitReason::Exception => {
             log::trace!("Handling {:?} for dom {}", reason, domain.idx());
             let addr = vs.vcpu.guest_phys_addr()?;
             // TODO(aghosn): for the moment, crash on EPT violations

@@ -18,7 +18,7 @@ use cores::{Core, CoreList};
 use domain::{insert_capa, remove_capa, DomainHandle, DomainPool};
 pub use domain::{permission, Bitmaps, Domain, LocalCapa, NextCapaToken};
 pub use gen_arena::{GenArena, Handle};
-pub use region::{AccessRights, MemOps, RegionTracker, MEMOPS_ALL};
+pub use region::{AccessRights, Alias, MemOps, RegionTracker, MEMOPS_ALL};
 use region_capa::{RegionCapa, RegionPool};
 use update::UpdateBuffer;
 pub use update::{Buffer, Update};
@@ -333,6 +333,7 @@ impl CapaEngine {
         capa: LocalCapa,
         to: LocalCapa,
         alias: usize,
+        size: Option<usize>,
     ) -> Result<(), CapaError> {
         // Same as above, enforce permissions.
         domain::has_config(
@@ -353,7 +354,13 @@ impl CapaEngine {
                         .regions
                         .get_mut(region)
                         .expect("Unable to access region");
-                    reg.access.alias = Some(alias);
+                    // Alias of repeated region.
+                    if let Some(s) = size {
+                        //TODO(aghosn): check that the original region is of size 1.
+                        reg.access.alias = Alias::Repeat(alias, s);
+                    } else {
+                        reg.access.alias = Alias::Alias(alias);
+                    }
                 }
                 region_capa::send(
                     region,
