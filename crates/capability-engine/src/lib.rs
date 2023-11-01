@@ -169,12 +169,22 @@ impl CapaEngine {
             Some(handle) => {
                 self.domains[handle].set_id(id)?;
                 self.domains[handle].set_manager(manager);
+                // TODO: I'm not sure whether I/O doamin needs a manager domain...
                 let capa = insert_capa(
                     manager,
                     Capa::management(handle),
                     &mut self.regions,
                     &mut self.domains,
                 )?;
+                // Insert the channel capability to the I/O domain, so that the dom0 linux can send
+                // over the shared DMA region to the I/O domain and correspondingly configure the
+                // IOMMU
+                if io {
+                    let Ok(_) = insert_capa(handle, Capa::Channel(handle), &mut self.regions, &mut self.domains) else {
+                        log::error!("Failed to insert channel capability into the I/O domain");
+                        return Err(CapaError::OutOfMemory);
+                    };
+                }
                 self.updates.push(Update::CreateDomain { domain: handle });
                 Ok(capa)
             }
