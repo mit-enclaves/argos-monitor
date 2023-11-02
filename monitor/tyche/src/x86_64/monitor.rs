@@ -69,6 +69,7 @@ const EMPTY_CONTEXT: Mutex<ContextData> = Mutex::new(ContextData {
 });
 const EMPTY_CONTEXT_ARRAY: [Mutex<ContextData>; NB_CORES] = [EMPTY_CONTEXT; NB_CORES];
 static IOMMU: Mutex<Iommu> = Mutex::new(Iommu::new(HostVirtAddr::new(usize::max_value())));
+const SHARED_MEMORY: usize = 0x100_000_000;
 
 // ————————————————————————————— Initialization ————————————————————————————— //
 
@@ -81,12 +82,36 @@ pub fn init(manifest: &'static Manifest) {
             domain,
             AccessRights {
                 start: 0,
-                end: manifest.poffset as usize,
+                end: SHARED_MEMORY, // manifest.poffset as usize,
                 ops: MEMOPS_ALL,
                 alias: None,
             },
         )
         .unwrap();
+    engine
+        .create_shared_region(
+            domain,
+            AccessRights {
+                start: SHARED_MEMORY,
+                end: SHARED_MEMORY + 67108864, // manifest.poffset as usize,
+                ops: MEMOPS_ALL,
+                alias: None,
+            },
+        )
+        .unwrap();
+    engine
+        .create_shared_region(
+            domain,
+            AccessRights {
+                start: SHARED_MEMORY + 67108864 * 3,
+                end: SHARED_MEMORY + 67108864 * 4,
+                ops: MEMOPS_ALL,
+                alias: None,
+            },
+        )
+        .unwrap();
+    log::info!("private memory: {:#x} - {:#x}", 0, SHARED_MEMORY);
+    log::info!("shared memory: {:#x} - {:#x}", SHARED_MEMORY, manifest.poffset);
     apply_updates(&mut engine);
 
     // Save the initial domain

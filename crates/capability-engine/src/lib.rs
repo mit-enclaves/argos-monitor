@@ -224,6 +224,34 @@ impl CapaEngine {
         }
     }
 
+    pub fn create_shared_region(
+        &mut self,
+        domain: DomainHandle,
+        access: AccessRights,
+    ) -> Result<LocalCapa, CapaError> {
+        log::trace!("Create new shared region");
+
+        match self
+            .regions
+            .allocate(RegionCapa::new(domain, access))
+        {
+            Some(handle) => {
+                let capa = region_capa::install(
+                    handle,
+                    domain,
+                    &mut self.regions,
+                    &mut self.domains,
+                    &mut self.updates,
+                )?;
+                Ok(capa)
+            }
+            None => {
+                log::info!("Failed to allocate new shared region for the domain: out of memory");
+                Err(CapaError::OutOfMemory)
+            }
+        }
+    }
+
     pub fn restore_region(
         &mut self,
         domain: Handle<Domain>,
