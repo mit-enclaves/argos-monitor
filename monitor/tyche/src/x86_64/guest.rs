@@ -94,7 +94,8 @@ fn handle_exit(
             match vmcall {
                 calls::CREATE_DOMAIN => {
                     log::trace!("Create Domain");
-                    let capa = monitor::do_create_domain(*domain).expect("TODO");
+                    let io = arg_1 != 0;
+                    let capa = monitor::do_create_domain(*domain, io).expect("TODO");
                     vs.vcpu.set(VmcsField::GuestRdi, capa.as_usize())?;
                     vs.vcpu.set(VmcsField::GuestRax, 0)?;
                     vs.vcpu.next_instruction()?;

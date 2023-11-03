@@ -70,7 +70,7 @@ pub struct CapaEngine {
 impl CapaEngine {
     pub const fn new() -> Self {
         const EMPTY_DOMAIN: Domain = Domain::new(0, false);
-        const IO_DOMAIN: Domain = Domain::new(1, true);
+        // const IO_DOMAIN: Domain = Domain::new(1, true);
         const EMPTY_CAPA: RegionCapa = RegionCapa::new_invalid();
         const EMPTY_CORE: Core = Core::new();
 
