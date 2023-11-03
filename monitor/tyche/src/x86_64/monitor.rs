@@ -82,7 +82,7 @@ pub fn init(manifest: &'static Manifest) {
             domain,
             AccessRights {
                 start: 0,
-                end: SHARED_MEMORY, // manifest.poffset as usize,
+                end: manifest.poffset as usize,
                 ops: MEMOPS_ALL,
                 alias: None,
             },
