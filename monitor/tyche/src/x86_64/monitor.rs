@@ -188,9 +188,9 @@ fn get_context(domain: Handle<Domain>, core: usize) -> MutexGuard<'static, Conte
 
 // ————————————————————————————— Monitor Calls —————————————————————————————— //
 
-pub fn do_create_domain(current: Handle<Domain>) -> Result<LocalCapa, CapaError> {
+pub fn do_create_domain(current: Handle<Domain>, io: bool) -> Result<LocalCapa, CapaError> {
     let mut engine = CAPA_ENGINE.lock();
-    let management_capa = engine.create_domain(current, false)?;
+    let management_capa = engine.create_domain(current, io)?;
     apply_updates(&mut engine);
     Ok(management_capa)
 }
