@@ -368,7 +368,7 @@ pub fn do_get_config_core(
 
     // Check this is a valid idx for a field.
     if !FilteredFields::is_valid(idx) {
-        log::error!("Attempt to set an invalid register: {:x}", idx);
+        log::error!("Attempt to get an invalid register: {:x}", idx);
         return Err(CapaError::InvalidOperation);
     }
     let field = VmcsField::from_u32(idx as u32).unwrap();
@@ -618,7 +618,7 @@ pub fn do_debug() {
 pub fn do_print_domain(dom: Handle<Domain>) {
     let engine = CAPA_ENGINE.lock();
     let domain = &engine[dom];
-    log::info!("Domain {}", domain.id());
+    log::info!("{:?}", domain);
     log::info!("hpas: {}", domain.hpa_regions());
     log::info!("gpas: {}", domain.gpa_regions());
     {
@@ -643,6 +643,7 @@ pub fn do_domain_attestation(
 
 // —————————————————————— Interrupt Handling functions —————————————————————— //
 
+#[allow(dead_code)]
 pub fn handle_trap(
     current: Handle<Domain>,
     core: usize,

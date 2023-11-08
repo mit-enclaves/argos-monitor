@@ -255,7 +255,7 @@ riscv_monitor_gdb:
 ## ———————————————————————— Run Linux without tyche ————————————————————————— ##
 
 only-linux SMP=default_smp:
-  touch _empty.fake_disk
+  #touch _empty.fake_disk
   qemu-system-x86_64 \
   -kernel builds/linux-x86/arch/x86_64/boot/bzImage \
   -smp {{SMP}} \
@@ -263,11 +263,13 @@ only-linux SMP=default_smp:
   -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
   -device intel-iommu,intremap=on,aw-bits=48 \
   -cpu host,+kvm -machine q35 -accel kvm,kernel-irqchip=split -m 6G \
-  -drive file=_empty.fake_disk,format=raw,media=disk \
+  -drive format=raw,file=target/x86_64-unknown-kernel/debug/boot-uefi-s1.img \
+  -bios OVMF-pure-efi.fd \
   -drive file=ubuntu.qcow2,format=qcow2,media=disk \
+  -nographic \
   -append "root=/dev/sda1 apic=debug earlyprintk=serial,ttyS0 console=ttyS0" \
   -chardev socket,path={{default_dbg}},server=on,wait=off,id=gdb0 -gdb chardev:gdb0
-  rm _empty.fake_disk
+  #rm _empty.fake_disk
 
 dbg-only-linux:
   gdb -ex "target remote {{default_dbg}}" \

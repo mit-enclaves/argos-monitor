@@ -1046,6 +1046,11 @@ impl<'vmx> core::fmt::Debug for ActiveVmcs<'vmx> {
         )?;
         writeln!(
             f,
+            "        host cr0: {:#x}",
+            self.get(VmcsField::HostCr0).unwrap()
+        )?;
+        writeln!(
+            f,
             "        cr4 read shadow: {:#x}",
             self.get(VmcsField::Cr4ReadShadow).unwrap()
         )?;
@@ -1056,8 +1061,18 @@ impl<'vmx> core::fmt::Debug for ActiveVmcs<'vmx> {
         )?;
         writeln!(
             f,
+            "        host cr4: {:#x}",
+            self.get(VmcsField::HostCr4).unwrap()
+        )?;
+        writeln!(
+            f,
             "        ia32_efer: {:#x}",
             self.get(VmcsField::GuestIa32Efer).unwrap()
+        )?;
+        writeln!(
+            f,
+            "        rflags: {:#x}",
+            self.get(VmcsField::GuestRflags).unwrap()
         )?;
         writeln!(
             f,

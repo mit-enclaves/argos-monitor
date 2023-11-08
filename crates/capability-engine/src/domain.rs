@@ -132,6 +132,7 @@ impl Bitmaps {
 }
 
 /// Domain configuration bitmaps.
+#[derive(Debug)]
 pub struct Configuration {
     /// Values for the domain for each bitmap.
     values: [u64; Bitmaps::_SIZE as usize],
@@ -441,6 +442,18 @@ impl Cleanable for Domain {
     }
 }
 
+impl core::fmt::Debug for Domain {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        writeln!(
+            f,
+            "Dom{}: traps: {:b} ",
+            self.id(),
+            self.config.values[Bitmaps::TRAP as usize]
+        )?;
+        Ok(())
+    }
+}
+
 // —————————————————————————————— Insert Capa ——————————————————————————————— //
 
 /// insert a capability into a domain.
@@ -610,7 +623,7 @@ pub(crate) fn activate_region(
     }
     let mut change =
         dom.hpa_regions
-            .add_region(access.start, access.end, access.ops, access.alias)?;
+            .add_region(access.start, access.end, access.ops, Alias::NoAlias)?;
 
     // If the domain has aliased memory.
     if dom.aliased {
