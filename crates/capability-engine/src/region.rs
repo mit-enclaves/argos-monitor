@@ -54,7 +54,7 @@ impl MemOps {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Alias {
     NoAlias,
     /// The alias address.
@@ -299,6 +299,7 @@ impl RegionTracker {
         let (mut previous, mut cursor) =
             if let (Some(lower_bound), _) = self.find_lower_bound(start) {
                 let region = &self.regions[lower_bound];
+                //TODO(aghosn): handle or disallow alias
                 if start == region.start {
                     // Regions have the same start
                     let (previous, update) =
@@ -306,6 +307,7 @@ impl RegionTracker {
                     change.update(update);
                     let cursor = self.regions[previous].end;
                     (previous, cursor)
+                //TODO(aghosn): handle or disallow alias
                 } else if region.contains(start) {
                     // Region start in the middle of the lower bound region
                     self.split_region_at(lower_bound, start)?;
@@ -324,7 +326,8 @@ impl RegionTracker {
 
         // Add the remaining portions of the region
         while cursor < end {
-            let (next, update) = self.partial_add_region_after(cursor, end, previous, ops)?;
+            let (next, update) =
+                self.partial_add_region_after(cursor, end, previous, ops, alias)?;
             previous = next;
             change.update(update);
             cursor = self.regions[previous].end;
@@ -341,6 +344,7 @@ impl RegionTracker {
         end: usize,
         after: Handle<Region>,
         ops: MemOps,
+        alias: Alias,
     ) -> Result<(Handle<Region>, PermissionChange), CapaError> {
         let region = &mut self.regions[after];
 
@@ -359,7 +363,7 @@ impl RegionTracker {
                 end = next.start;
             }
         }
-        self.insert_after(start, end, ops, after)
+        self.insert_after(start, end, ops, alias, after)
     }
 
     fn partial_add_region_overlapping(
@@ -453,6 +457,7 @@ impl RegionTracker {
         start: usize,
         end: usize,
         ops: MemOps,
+        alias: Alias,
         after: Handle<Region>,
     ) -> Result<(Handle<Region>, PermissionChange), CapaError> {
         let region = &self.regions[after];
@@ -467,7 +472,7 @@ impl RegionTracker {
         //TODO(aghosn) might need to handle the aliasing.
         let handle = self
             .regions
-            .allocate(Region::new(start, end, ops, Alias::NoAlias).set_next(region.next))
+            .allocate(Region::new(start, end, ops, alias).set_next(region.next))
             .ok_or_else(|| {
                 log::trace!("Unable to allocate new region!");
                 CapaError::OutOfMemory

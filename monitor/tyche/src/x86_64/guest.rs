@@ -4,7 +4,6 @@ use core::arch::asm;
 
 use capa_engine::{Bitmaps, Domain, Handle, LocalCapa, NextCapaToken};
 use vmx::bitmaps::exit_qualification;
-use vmx::errors::Trapnr;
 use vmx::fields::VmcsField;
 use vmx::{ActiveVmcs, VmxExitReason, Vmxon};
 
@@ -382,7 +381,7 @@ fn handle_exit(
             vs.vcpu.next_instruction()?;
             Ok(HandlerResult::Resume)
         }
-        VmxExitReason::Wrmsr => {
+        VmxExitReason::Wrmsr if domain.idx() == 0 => {
             let ecx = vs.vcpu.get(VmcsField::GuestRcx)?;
             if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
                 // Custom MSR range, used by KVM
@@ -395,7 +394,7 @@ fn handle_exit(
                 Ok(HandlerResult::Crash)
             }
         }
-        VmxExitReason::Rdmsr => {
+        VmxExitReason::Rdmsr if domain.idx() == 0 => {
             let ecx = vs.vcpu.get(VmcsField::GuestRcx)?;
             log::trace!("rdmsr");
             if ecx == 0xc0011029 || (ecx >= 0xc0010200 && ecx <= 0xc001020b) {

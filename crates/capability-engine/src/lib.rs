@@ -301,6 +301,21 @@ impl CapaEngine {
 
             // Sending those capa causes side effects
             Capa::Region(region) => {
+                if self.domains[to].aliased {
+                    log::error!(
+                        "Attempt to send a region capa to an alias domain without any alias."
+                    );
+                    return Err(CapaError::InvalidOperation);
+                }
+                if let Some(reg) = self.regions.get(region) {
+                    if reg.access.alias != Alias::NoAlias {
+                        log::error!("Sending an aliased region to non-aliased.");
+                        return Err(CapaError::InvalidOperation);
+                    }
+                } else {
+                    log::error!("Unable to access region.");
+                    return Err(CapaError::InvalidOperation);
+                }
                 region_capa::send(
                     region,
                     &mut self.regions,
