@@ -1,7 +1,7 @@
 use crate::capa::{Capa, IntoCapa};
 use crate::config::{NB_CAPAS_PER_DOMAIN, NB_DOMAINS};
 use crate::free_list::FreeList;
-use crate::gen_arena::GenArena;
+use crate::gen_arena::{Cleanable, GenArena};
 use crate::region::{Alias, PermissionChange, RegionTracker};
 use crate::update::{Update, UpdateBuffer};
 use crate::utils::BitmapIterator;
@@ -225,6 +225,14 @@ impl Domain {
         self.manager = Some(manager);
     }
 
+    pub(crate) fn set_id(&mut self, id: usize) -> Result<(), CapaError> {
+        if self.is_sealed() {
+            return Err(CapaError::AlreadySealed);
+        }
+        self.id = id;
+        Ok(())
+    }
+
     /// Get a capability from a domain.
     pub(crate) fn get(&self, index: LocalCapa) -> Result<Capa, CapaError> {
         if self.free_list.is_free(index.idx) {
@@ -349,6 +357,38 @@ impl core::fmt::Debug for Domain {
             self.config.values[Bitmaps::TRAP as usize]
         )?;
         Ok(())
+    }
+}
+
+impl Cleanable for Domain {
+    fn clean(&mut self) {
+        const INVALID_CAPA: Capa = Capa::None;
+
+        self.id = usize::MAX;
+        self.capas = [INVALID_CAPA; NB_CAPAS_PER_DOMAIN];
+        self.free_list = FreeList::new();
+        self.regions.clean();
+        self.manager = None;
+        self.config = Configuration {
+            values: [
+                permission::NONE,
+                trap_bits::NONE,
+                core_bits::NONE,
+                switch_bits::NONE,
+            ],
+            valid_masks: [
+                permission::ALL,
+                trap_bits::ALL,
+                core_bits::ALL,
+                switch_bits::ALL,
+            ],
+            initialized: [false; Bitmaps::_SIZE as usize],
+        };
+        self.cores = core_bits::NONE;
+        self.is_being_revoked = false;
+        self.is_sealed = false;
+        self.attestation_hash = None;
+        self.attestation_report = None;
     }
 }
 

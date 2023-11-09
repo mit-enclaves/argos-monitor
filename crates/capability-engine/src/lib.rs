@@ -87,7 +87,7 @@ impl CapaEngine {
         log::trace!("Create new manager domain");
 
         let id = self.domain_id();
-        match self.domains.allocate(Domain::new(id, false)) {
+        match self.domains.allocate_clean() {
             Some(handle) => {
                 domain::set_config(
                     handle,
@@ -114,6 +114,7 @@ impl CapaEngine {
                     switch_bits::ALL,
                 )?;
                 log::info!("About to seal");
+                self.domains[handle].set_id(id)?;
                 self.domains[handle].seal()?;
                 self.updates.push(Update::CreateDomain { domain: handle });
                 Ok(handle)
@@ -163,8 +164,9 @@ impl CapaEngine {
         )?;
 
         let id = self.domain_id();
-        match self.domains.allocate(Domain::new(id, aliased)) {
+        match self.domains.allocate_clean() {
             Some(handle) => {
+                self.domains[handle].set_id(id)?;
                 self.domains[handle].set_manager(manager);
                 let capa = insert_capa(
                     manager,
