@@ -11,6 +11,11 @@ pub trait Cleanable {
     fn clean(&mut self);
 }
 
+pub trait Cleanable {
+    /// Reset self to a known good default value.
+    fn clean(&mut self);
+}
+
 // ——————————————————————————— Generational Arena ——————————————————————————— //
 
 /// A generational arena.

@@ -24,8 +24,8 @@ use domain::{insert_capa, remove_capa, DomainHandle, DomainPool};
 pub use domain::{permission, Bitmaps, Domain, LocalCapa, NextCapaToken};
 pub use gen_arena::{GenArena, Handle};
 pub use region::{
-    AccessRights, AccessRights, Alias, MemOps, MemOps, MemoryPermission, Region, RegionIterator,
-    RegionTracker, RegionTracker, MEMOPS_ALL, MEMOPS_ALL,
+    AccessRights, Alias, MemOps, MemOps, MemoryPermission, Region, RegionIterator, RegionTracker,
+    RegionTracker, MEMOPS_ALL, MEMOPS_ALL,
 };
 use region::{TrackerPool, EMPTY_REGION};
 use region_capa::{RegionCapa, RegionPool};
@@ -105,7 +105,7 @@ impl CapaEngine {
         log::trace!("Create new manager domain");
 
         let id = self.domain_id();
-        match self.domains.allocate(Domain::new(id, false)) {
+        match self.domains.allocate_clean() {
             Some(handle) => {
                 domain::set_config(
                     handle,

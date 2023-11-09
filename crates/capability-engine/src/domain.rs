@@ -454,6 +454,38 @@ impl core::fmt::Debug for Domain {
     }
 }
 
+impl Cleanable for Domain {
+    fn clean(&mut self) {
+        const INVALID_CAPA: Capa = Capa::None;
+
+        self.id = usize::MAX;
+        self.capas = [INVALID_CAPA; NB_CAPAS_PER_DOMAIN];
+        self.free_list = FreeList::new();
+        self.regions.clean();
+        self.manager = None;
+        self.config = Configuration {
+            values: [
+                permission::NONE,
+                trap_bits::NONE,
+                core_bits::NONE,
+                switch_bits::NONE,
+            ],
+            valid_masks: [
+                permission::ALL,
+                trap_bits::ALL,
+                core_bits::ALL,
+                switch_bits::ALL,
+            ],
+            initialized: [false; Bitmaps::_SIZE as usize],
+        };
+        self.cores = core_bits::NONE;
+        self.is_being_revoked = false;
+        self.is_sealed = false;
+        self.attestation_hash = None;
+        self.attestation_report = None;
+    }
+}
+
 // —————————————————————————————— Insert Capa ——————————————————————————————— //
 
 /// insert a capability into a domain.

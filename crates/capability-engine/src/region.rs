@@ -3,6 +3,7 @@ use core::fmt;
 use bitflags::bitflags;
 
 use crate::config::NB_TRACKER;
+use crate::config::NB_REGIONS_PER_DOMAIN;
 use crate::gen_arena::{Cleanable, GenArena, Handle};
 use crate::CapaError;
 
@@ -215,6 +216,12 @@ impl Cleanable for Region {
     }
 }
 
+impl Cleanable for Region {
+    fn clean(&mut self) {
+        *self = EMPTY_REGION;
+    }
+}
+
 // ————————————————————————————— RegionTracker —————————————————————————————— //
 
 pub struct RegionTracker {
@@ -234,7 +241,6 @@ impl RegionTracker {
             alias: Alias::NoAlias,
             next: None,
         };*/
-
         Self {
             head: None,
         }
@@ -743,6 +749,7 @@ impl RegionTracker {
 impl Cleanable for RegionTracker {
     fn clean(&mut self) {
         self.head = None;
+        self.regions.clean_all();
     }
 }
 
