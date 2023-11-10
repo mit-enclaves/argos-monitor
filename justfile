@@ -9,6 +9,7 @@ build_features      := "-Zbuild-std-features=compiler-builtins-mem"
 cargo_args          := build_std + " " + build_features
 x86-linker-script   := "RUSTFLAGS='-C link-arg=-Tconfigs/x86-linker-script.x'"
 riscv-linker-script := "RUSTFLAGS='-C link-arg=-Tconfigs/riscv-linker-script.x'"
+vf2-linker-script   := "RUSTFLAGS='-C link-arg=-Tconfigs/vf2-riscv-linker-script.x'"
 first-stage         := "--package s1 --features=s1/second-stage"
 tyche               := "--package tyche"
 rawc                := "--features=s1/guest_rawc"
@@ -136,6 +137,11 @@ build:
 build-riscv:
 	{{riscv-linker-script}} cargo build {{cargo_args}} {{riscv}} {{tyche}} --release
 	./opensbi-stage1/run_build.sh
+
+# Build the monitor for RISC-V64
+build-riscv-vf2:
+	{{vf2-linker-script}} cargo build {{cargo_args}} {{riscv}} {{tyche}} --release
+
 
 ## ——————————————————————————— Linux Kernel Build ——————————————————————————— ##
 
