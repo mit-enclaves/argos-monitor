@@ -12,6 +12,7 @@ use super::{arch, guest, launch_guest, monitor};
 use crate::debug::qemu;
 use crate::riscv::cpuid;
 
+#[cfg(not(feature="visionfive2"))]
 pub fn arch_entry_point(hartid: usize, manifest: RVManifest, log_level: log::LevelFilter) -> ! {
     if hartid == manifest.coldboot_hartid {
         logger::init(log_level);
@@ -98,7 +99,6 @@ pub fn arch_entry_point(hartid: usize, manifest: RVManifest, log_level: log::Lev
 
         //spin loop until linux sends an ecall to start the hart.
         while !HART_START[hartid].load(Ordering::SeqCst) {
-            //while true {
             core::hint::spin_loop();
         }
 

@@ -17,3 +17,7 @@ pub struct RVManifest {
     pub coldboot_hartid: usize,
     pub num_harts: usize,
 }
+
+// For the VF2 board  
+pub const VF2_TYCHE_START_ADDRESS: usize = 0x40100000;
+pub const VF2_TYCHE_STACK_POINTER: usize = 0x40190000;
