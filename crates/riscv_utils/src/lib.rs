@@ -7,6 +7,7 @@ pub const NUM_HARTS: usize = 4; //This is supposed to be maximum supported harts
 
 //uart base address
 pub const SERIAL_PORT_BASE_ADDRESS: usize = 0x1000_0000;
+pub const RV_VF2_UART_BAUD_RATE: usize = 115200;
 
 //SIFIVE TEST SYSCON
 pub const SIFIVE_TEST_SYSCON_BASE_ADDRESS: usize = 0x100000;
