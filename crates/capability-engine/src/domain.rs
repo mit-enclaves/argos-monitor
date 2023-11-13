@@ -461,7 +461,8 @@ impl Cleanable for Domain {
         self.id = usize::MAX;
         self.capas = [INVALID_CAPA; NB_CAPAS_PER_DOMAIN];
         self.free_list = FreeList::new();
-        self.regions.clean();
+        self.hpa_regions.clean();
+        self.gpa_regions.clean();
         self.manager = None;
         self.config = Configuration {
             values: [
@@ -481,8 +482,7 @@ impl Cleanable for Domain {
         self.cores = core_bits::NONE;
         self.is_being_revoked = false;
         self.is_sealed = false;
-        self.attestation_hash = None;
-        self.attestation_report = None;
+        self.aliased = false;
     }
 }
 

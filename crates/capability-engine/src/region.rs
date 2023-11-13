@@ -126,7 +126,7 @@ pub(crate) const EMPTY_REGION: Region = Region {
     exec_count: 0,
     super_count: 0,
     ref_count: 0,
-    alias: None,
+    alias: Alias::NoAlias,
     next: None,
 };
 
