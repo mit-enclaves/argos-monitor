@@ -27,8 +27,8 @@ use crate::domain::{core_bits, switch_bits, trap_bits};
 
 /// Configuration for the static Capa Engine size.
 pub mod config {
-    pub const NB_DOMAINS: usize = 32;
-    pub const NB_CAPAS_PER_DOMAIN: usize = 128;
+    pub const NB_DOMAINS: usize = 3;
+    pub const NB_CAPAS_PER_DOMAIN: usize = 512;
     //TODO: increasing this make the entire program crash.
     pub const NB_REGIONS_PER_DOMAIN: usize = 32;
     pub const NB_REGIONS: usize = 256;
@@ -115,6 +115,7 @@ impl CapaEngine {
                 )?;
                 log::info!("About to seal");
                 self.domains[handle].set_id(id)?;
+                self.domains[handle].aliased = false;
                 self.domains[handle].seal()?;
                 self.updates.push(Update::CreateDomain { domain: handle });
                 Ok(handle)
@@ -168,6 +169,7 @@ impl CapaEngine {
             Some(handle) => {
                 self.domains[handle].set_id(id)?;
                 self.domains[handle].set_manager(manager);
+                self.domains[handle].aliased = aliased;
                 let capa = insert_capa(
                     manager,
                     Capa::management(handle),
@@ -361,6 +363,7 @@ impl CapaEngine {
         )?;
         let to = self.domains[domain].get(to)?.as_channel()?;
         if !self.domains[to].aliased {
+            log::info!("The domain is not aliased");
             return Err(CapaError::InvalidOperation);
         }
         let capa = remove_capa(domain, capa, &mut self.domains)?;
