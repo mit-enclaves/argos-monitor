@@ -41,10 +41,10 @@ use crate::segment::EMPTY_NEW_REGION_CAPA;
 pub mod config {
     pub const NB_TRACKER: usize = 1024;
     pub const NB_DOMAINS: usize = 3;
-    pub const NB_CAPAS_PER_DOMAIN: usize = 512;
+    pub const NB_CAPAS_PER_DOMAIN: usize = 1024;
     //TODO: increasing this make the entire program crash.
     pub const NB_REGIONS_PER_DOMAIN: usize = 32;
-    pub const NB_REGIONS: usize = 256;
+    pub const NB_REGIONS: usize = 1500;
     pub const NB_UPDATES: usize = 128;
     pub const NB_CORES: usize = 32; // NOTE: Can't be greater than 64 as we use 64 bits bitmaps.
 }

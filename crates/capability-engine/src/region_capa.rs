@@ -1,7 +1,7 @@
 use crate::config::NB_REGIONS;
 use crate::domain::{insert_capa, Domain, DomainPool, LocalCapa};
 use crate::gen_arena::{GenArena, Handle};
-use crate::region::{AccessRights, AccessRights, Alias, MemOps, MemOps, TrackerPool};
+use crate::region::{AccessRights, Alias, MemOps, MemOps, TrackerPool};
 use crate::update::UpdateBuffer;
 use crate::{domain, CapaError};
 
@@ -149,13 +149,13 @@ pub(crate) fn duplicate(
     let Some(left) = regions
         .allocate(RegionCapa::new(domain_handle, access_left).set_confidential(is_confidential))
     else {
-        log::info!("Ouf of memory during left allocation on duplicate");
+        log::info!("Out of memory during left allocation on duplicate");
         return Err(CapaError::OutOfMemory);
     };
     let Some(right) = regions
         .allocate(RegionCapa::new(domain_handle, access_right).set_confidential(is_confidential))
     else {
-        log::info!("Ouf of memory during right allocation on duplicate");
+        log::info!("Out of memory during right allocation on duplicate");
         // Cleanup previous allocation
         regions.free(left);
         return Err(CapaError::OutOfMemory);

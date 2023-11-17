@@ -148,6 +148,7 @@ const EMPTY_CONTEXT: Mutex<ContextData> = Mutex::new(ContextData {
     cr3: usize::max_value(),
     rip: usize::max_value(),
     rsp: usize::max_value(),
+    interrupted: false,
 });
 const EMPTY_CONTEXT_ARRAY: [Mutex<ContextData>; NB_CORES] = [EMPTY_CONTEXT; NB_CORES];
 static IOMMU: Mutex<Iommu> =
@@ -657,7 +658,12 @@ pub fn handle_trap(
 
 pub fn do_handle_violation(current: Handle<Domain>) -> Result<(), CapaError> {
     let mut engine = CAPA_ENGINE.lock();
-    engine.handle_violation(current, cpuid())?;
+    let core = cpuid();
+    {
+        let mut current_ctx = get_context(current, core);
+        current_ctx.interrupted = true;
+    }
+    engine.handle_violation(current, core)?;
     apply_updates(&mut engine);
     Ok(())
 }
@@ -847,16 +853,22 @@ pub fn apply_core_updates(
                 log::trace!("Domain Switch on core {}", core_id);
 
                 let current_ctx = get_context(*current_domain, core);
-                let next_ctx = get_context(domain, core);
+                let mut next_ctx = get_context(domain, core);
+                let interrupted = {
+                    let v = next_ctx.interrupted;
+                    next_ctx.interrupted = false;
+                    v
+                };
                 let next_domain = get_domain(domain);
                 switch_domain(vcpu, current_ctx, next_ctx, next_domain)
                     .expect("Failed to perform the switch");
 
-                // Set switch return values
-                vcpu.set(VmcsField::GuestRax, 0).unwrap();
-                vcpu.set(VmcsField::GuestRdi, return_capa.as_usize())
-                    .unwrap();
-
+                // Set switch return values if the target was not interrupted.
+                if !interrupted {
+                    vcpu.set(VmcsField::GuestRax, 0).unwrap();
+                    vcpu.set(VmcsField::GuestRdi, return_capa.as_usize())
+                        .unwrap();
+                }
                 // Update the current domain and context handle
                 *current_domain = domain;
             }
