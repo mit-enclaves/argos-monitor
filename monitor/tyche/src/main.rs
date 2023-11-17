@@ -31,11 +31,13 @@ fn tyche_entry_point(hartid: usize, manifest: RVManifest) -> ! {
 fn tyche_entry_point(hartid: u64, arg1: u64, next_addr: u64, next_mode: u64) -> ! {
     use tyche::riscv::launch_guest;
 
-    unsafe { 
-        asm!("ecall");
+    if hartid != 1 {
+        unsafe { 
+            asm!("ecall");
+        }
     }
 
-    println!("============== HELLO FROM TYCHE ===============");
+    //println!("============== HELLO FROM TYCHE ===============");
     //logger::init(LOG_LEVEL);
     //arch::arch_entry_point(hartid, arg1, next_addr, next_mode, LOG_LEVEL);
     launch_guest(hartid, arg1, next_addr, next_mode);
