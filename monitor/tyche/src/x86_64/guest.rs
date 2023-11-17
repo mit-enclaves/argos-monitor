@@ -563,7 +563,10 @@ fn handle_exit(
         | VmxExitReason::ControlRegisterAccesses
         | VmxExitReason::TripleFault
         | VmxExitReason::Cpuid
-        | VmxExitReason::Exception => {
+        | VmxExitReason::Exception
+        | VmxExitReason::Wrmsr
+        | VmxExitReason::Rdmsr
+        | VmxExitReason::ApicWrite => {
             log::trace!("Handling {:?} for dom {}", reason, domain.idx());
             let addr = vs.vcpu.guest_phys_addr()?;
             // TODO(aghosn): for the moment, crash on EPT violations
