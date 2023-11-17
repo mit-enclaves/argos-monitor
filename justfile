@@ -243,6 +243,7 @@ only-linux SMP=default_smp:
   -kernel builds/linux-x86/arch/x86_64/boot/bzImage \
   -smp {{SMP}} \
   --no-reboot \
+  -chardev file,path="/tmp/charseabios",logfile="/tmp/seabios",id=seabios -device isa-debugcon,iobase=0x402,chardev=seabios \
   -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
   -device intel-iommu,intremap=on,aw-bits=48 \
   -cpu host,+kvm -machine q35 -accel kvm,kernel-irqchip=split -m 6G \
@@ -253,6 +254,9 @@ only-linux SMP=default_smp:
   -append "root=/dev/sda1 apic=debug earlyprintk=serial,ttyS0 console=ttyS0" \
   -chardev socket,path={{default_dbg}},server=on,wait=off,id=gdb0 -gdb chardev:gdb0
   #rm _empty.fake_disk
+  #  -drive format=raw,file=target/x86_64-unknown-kernel/debug/boot-uefi-s1.img \
+  #    -bios OVMF-pure-efi.fd \
+  #-drive file=_empty.fake_disk,format=raw,media=disk \
 
 dbg-only-linux:
   gdb -ex "target remote {{default_dbg}}" \

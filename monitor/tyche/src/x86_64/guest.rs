@@ -293,6 +293,7 @@ fn handle_exit(
                 }
                 _ => {
                     log::info!("Unknown MonCall: 0x{:x}", vmcall);
+                    log::info!("vcpu: {:x?}", vs.vcpu);
                     todo!("Unknown VMCall");
                 }
             }

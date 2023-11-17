@@ -16,6 +16,8 @@ pub struct ContextData {
     pub cr3: usize,
     pub rip: usize,
     pub rsp: usize,
+    // True if the context was preempted due to an interrupt.
+    pub interrupted: bool,
 }
 
 impl ContextData {
