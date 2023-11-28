@@ -7,17 +7,17 @@ use core::fmt::Write;
 use riscv_utils::SERIAL_PORT_BASE_ADDRESS;
 use spin::Mutex;
 
-#[cfg(not(feature = "visionfive2"))]
+//#[cfg(not(feature = "visionfive2"))]
 use uart_16550::MmioSerialPort;
 
-#[cfg(feature = "visionfive2")]
-use uart8250::MmioUart8250; 
+//#[cfg(feature = "visionfive2")]
+//use uart8250::MmioUart8250; 
 
 use crate::ExitCode;
 
 /// Internal function used to print to stdout when running in Qemu.
 
-#[cfg(not(feature = "visionfive2"))]
+//#[cfg(not(feature = "visionfive2"))]
 pub fn _print(_args: fmt::Arguments) {
     static mut SERIAL_PORT: Option<Mutex<MmioSerialPort>> = None;
 
@@ -38,7 +38,7 @@ pub fn _print(_args: fmt::Arguments) {
     }
 }
 
-#[cfg(feature = "visionfive2")]
+/* #[cfg(feature = "visionfive2")]
 pub fn _print(_args: fmt::Arguments) {
     static mut SERIAL_PORT: Option<MmioUart8250> = None;
 
@@ -48,14 +48,12 @@ pub fn _print(_args: fmt::Arguments) {
         SERIAL_PORT = Some(serial_port);
 
         if let Some(ref mut serial_port) = SERIAL_PORT {
-            serial_port.write_byte(0);
-            serial_port.write_byte(1);
             serial_port
                 .write_fmt(_args)
                 .expect("Printing to serial failed");
         }
     }
-}
+} */
 
 
 // —————————————————————————————— Exiting QEMU —————————————————————————————— //
