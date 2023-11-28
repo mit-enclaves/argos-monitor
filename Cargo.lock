@@ -758,9 +758,9 @@ dependencies = [
 name = "qemu"
 version = "0.1.0"
 dependencies = [
+ "riscv_serial",
  "riscv_utils",
  "spin 0.5.2",
- "uart8250",
  "uart_16550",
 ]
 
@@ -803,6 +803,13 @@ dependencies = [
  "riscv_csrs",
  "riscv_utils",
  "spin 0.9.4",
+]
+
+[[package]]
+name = "riscv_serial"
+version = "0.1.0"
+dependencies = [
+ "spin 0.5.2",
 ]
 
 [[package]]
@@ -1115,10 +1122,12 @@ dependencies = [
  "riscv_csrs",
  "riscv_pmp",
  "riscv_sbi",
+ "riscv_serial",
  "riscv_tyche",
  "riscv_utils",
  "spin 0.9.4",
  "stage_two_abi",
+ "uart8250",
  "utils",
  "vga",
  "vmx",

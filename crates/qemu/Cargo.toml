@@ -11,8 +11,9 @@ spin = "0.5.2"
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
 riscv_utils = { path = "../riscv_utils/" }
-uart8250 = { version = "0.6.0", features = ["fmt"], optional = true } 
+riscv_serial = { path = "../riscv_serial/" }
+#uart8250 = { version = "0.6.0", features = ["fmt"], optional = true } 
 
 [features]
-visionfive2 = ["dep:uart8250"] 
-
+#visionfive2 = ["dep:uart8250"] 
+visionfive2 = []
