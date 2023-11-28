@@ -34,4 +34,6 @@ riscv_tyche = { path = "../../crates/riscv_tyche/" }
 riscv_csrs = { path = "../../crates/riscv_csrs/" }
 riscv_sbi = { path = "../../crates/riscv_sbi/" }
 riscv_pmp = { path = "../../crates/riscv_pmp/" }
+riscv_serial = { path = "../../crates/riscv_serial/" }
+uart8250 = { version = "0.6.0" } 
 
