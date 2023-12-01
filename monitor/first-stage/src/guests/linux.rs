@@ -53,21 +53,7 @@ impl Guest for Linux {
         let mut manifest = ManifestInfo::default();
         let mut linux_prog = ElfProgram::new(LINUXBYTES);
         linux_prog.set_mapping(ElfMapping::Identity);
-
         let virtoffset = host_allocator.get_physical_offset();
-        let iopt_root = host_allocator
-            .allocate_frame()
-            .expect("I/O PT root allocation")
-            .zeroed();
-        let mut iopt_mapper = IoPtMapper::new(virtoffset.as_usize(), iopt_root.phys_addr);
-        let host_range = memory_map.host;
-        iopt_mapper.map_range(
-            host_allocator,
-            GuestPhysAddr::new(0),
-            HostPhysAddr::new(0),
-            host_range.start.as_usize(),
-            IoPtFlag::WRITE | IoPtFlag::READ | IoPtFlag::EXECUTE,
-        );
 
         // Load guest into memory.
         let mut loaded_linux = linux_prog
@@ -76,20 +62,7 @@ impl Guest for Linux {
 
         // Setup I/O MMU
         if let Some(iommus) = &acpi.iommu {
-            if cfg!(not(feature = "bare_metal")) {
-                let iommu_addr = HostVirtAddr::new(
-                    iommus[0].base_address.as_usize()
-                        + host_allocator.get_physical_offset().as_usize(),
-                );
-                let mut iommu = Iommu::new(iommu_addr);
-                let root_addr = vtd::setup_iommu_context(iopt_mapper.get_root(), host_allocator);
-                iommu.set_root_table_addr(root_addr.as_u64() | (0b00 << 10)); // Set legacy mode
-                iommu.update_root_table_addr();
-                iommu.enable_translation();
-                manifest.iommu = iommus[0].base_address.as_u64();
-                log::info!("I/O MMU: {:?}", iommu.get_global_status());
-                log::warn!("I/O MMU Fault: {:?}", iommu.get_fault_status());
-            }
+            manifest.iommu = iommus[0].base_address.as_u64();
         }
 
         // Build the boot params
