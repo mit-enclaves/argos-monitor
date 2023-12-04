@@ -606,7 +606,10 @@ impl RegionTracker {
         // Go through the list.
         while curr != None {
             let current = curr.unwrap();
+            //For the moment prevent coalescing of aliased regions.
             if self.regions[prev].end == self.regions[current].start
+                && self.regions[prev].alias == Alias::NoAlias
+                && self.regions[current].alias == Alias::NoAlias
                 && (self.regions[prev].same_counts(&self.regions[current])
                     || self.regions[current].start == self.regions[current].end
                     || self.regions[prev].start == self.regions[prev].end)
