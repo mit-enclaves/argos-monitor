@@ -702,7 +702,10 @@ impl RegionTracker {
         // Go through the list.
         while curr != None {
             let current = curr.unwrap();
+            //For the moment prevent coalescing of aliased regions.
             if tracker[prev].end == tracker[current].start
+                && tracker[prev].alias == Alias::NoAlias
+                && tracker[current].alias == Alias::NoAlias
                 && (tracker[prev].same_counts(&tracker[current])
                     || tracker[current].start == tracker[current].end
                     || tracker[prev].start == tracker[prev].end)
