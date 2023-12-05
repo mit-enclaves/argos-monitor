@@ -1,10 +1,8 @@
 //! Linux Guest
 
 use bootloader::boot_info::MemoryRegionKind;
-use mmu::{IoPtFlag, IoPtMapper, RangeAllocator};
+use mmu::RangeAllocator;
 use stage_two_abi::GuestInfo;
-use vmx::HostPhysAddr;
-use vtd::Iommu;
 
 use super::Guest;
 use crate::acpi::AcpiInfo;
@@ -15,8 +13,7 @@ use crate::guests::boot_params::{
 };
 use crate::guests::ManifestInfo;
 use crate::mmu::MemoryMap;
-use crate::vmx;
-use crate::vmx::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
+use crate::vmx::{GuestPhysAddr, GuestVirtAddr};
 
 #[cfg(feature = "guest_linux")]
 const LINUXBYTES: &'static [u8] = include_bytes!("../../../../builds/linux-x86/vmlinux");
