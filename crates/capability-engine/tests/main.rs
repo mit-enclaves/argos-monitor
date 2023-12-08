@@ -114,7 +114,7 @@ fn scenario_1() {
     snap!("{}", updates(engine));
 
     // Create a new domain and send the inactive region there
-    let dom2 = engine.create_domain(domain, false).unwrap();
+    let dom2 = engine.create_domain(domain).unwrap();
     let domain2 = engine.get_domain_capa(domain, dom2).unwrap();
     engine.send(domain, reg2, dom2).unwrap();
     snap!(
@@ -213,7 +213,7 @@ fn scenario_2() {
     );
 
     // Create a new domain and send a region there
-    let dom2 = engine.create_domain(domain, false).unwrap();
+    let dom2 = engine.create_domain(domain).unwrap();
     let domain2 = engine.get_domain_capa(domain, dom2).unwrap();
     engine.send(domain, reg2, dom2).unwrap();
     snap!(
@@ -325,7 +325,7 @@ fn scenario_3() {
         )
         .unwrap();
     // Create a new domain and send the region.
-    let encl = engine.create_domain(domain, false).unwrap();
+    let encl = engine.create_domain(domain).unwrap();
     let enclave = engine.get_domain_capa(domain, encl).unwrap();
     engine.send(domain, reg_to_give, encl).unwrap();
 
