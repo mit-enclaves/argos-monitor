@@ -80,7 +80,7 @@ macro_rules! rw_reg {
 }
 
 impl Iommu {
-    pub const fn new(addr: HostVirtAddr) -> Self {
+    pub const unsafe fn new(addr: HostVirtAddr) -> Self {
         Self {
             addr: addr.as_usize() as *mut u8,
         }
