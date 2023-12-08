@@ -123,7 +123,8 @@ const EMPTY_CONTEXT: Mutex<ContextData> = Mutex::new(ContextData {
     vmcs: Handle::<RCFrame>::new_invalid(),
 });
 const EMPTY_CONTEXT_ARRAY: [Mutex<ContextData>; NB_CORES] = [EMPTY_CONTEXT; NB_CORES];
-static IOMMU: Mutex<Iommu> = Mutex::new(Iommu::new(HostVirtAddr::new(usize::max_value())));
+static IOMMU: Mutex<Iommu> =
+    Mutex::new(unsafe { Iommu::new(HostVirtAddr::new(usize::max_value())) });
 
 // ————————————————————————————— Initialization ————————————————————————————— //
 
