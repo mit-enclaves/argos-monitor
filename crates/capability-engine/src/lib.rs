@@ -509,7 +509,6 @@ impl CapaEngine {
             Some(handle) => {
                 self.domains[handle].set_id(id)?;
                 self.domains[handle].set_manager(manager);
-                // TODO: I'm not sure whether I/O doamin needs a manager domain...
                 let capa = insert_capa(
                     manager,
                     Capa::management(handle),
