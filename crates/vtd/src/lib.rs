@@ -3,10 +3,11 @@
 #![no_std]
 
 use core::arch::x86_64;
-use core::ptr;
+use core::{ptr, slice};
 
 use bitflags::bitflags;
-use vmx::HostVirtAddr;
+use mmu::FrameAllocator;
+use vmx::{HostPhysAddr, HostVirtAddr};
 
 /// Command bits that have an effect when set to 1 (e.g. update internal I/O MMU state).
 const ONE_SHOOT_COMMAND_BITS: Command = Command::SET_ROOT_PTR
@@ -79,10 +80,14 @@ macro_rules! rw_reg {
 }
 
 impl Iommu {
-    pub unsafe fn new(addr: HostVirtAddr) -> Self {
+    pub const unsafe fn new(addr: HostVirtAddr) -> Self {
         Self {
             addr: addr.as_usize() as *mut u8,
         }
+    }
+
+    pub fn set_addr(&mut self, addr: usize) {
+        self.addr = addr as *mut u8;
     }
 
     pub fn update_root_table_addr(&mut self) {
@@ -231,6 +236,8 @@ pub struct FaultIterator<'iommu> {
     iommu: &'iommu mut Iommu,
 }
 
+unsafe impl Send for Iommu {}
+
 impl<'iommu> Iterator for FaultIterator<'iommu> {
     type Item = FaultInfo;
 
@@ -266,6 +273,42 @@ impl<'iommu> Iterator for FaultIterator<'iommu> {
             record: high,
         })
     }
+}
+
+pub fn setup_iommu_context(
+    iopt_root: HostPhysAddr,
+    allocator: &impl FrameAllocator,
+) -> HostPhysAddr {
+    let ctx_frame = allocator
+        .allocate_frame()
+        .expect("I/O MMU context frame")
+        .zeroed();
+    let root_frame = allocator
+        .allocate_frame()
+        .expect("I/O MMU root frame")
+        .zeroed();
+    let ctx_entry = ContextEntry {
+        upper: 0b010, // 4 lvl pages
+        lower: iopt_root.as_u64() | 0b0001,
+    };
+    let root_entry = RootEntry {
+        reserved: 0,
+        entry: ctx_frame.phys_addr.as_u64() | 0b1, // Mark as present
+    };
+
+    unsafe {
+        let ctx_array = slice::from_raw_parts_mut(ctx_frame.virt_addr as *mut ContextEntry, 256);
+        let root_array = slice::from_raw_parts_mut(root_frame.virt_addr as *mut RootEntry, 256);
+
+        for entry in ctx_array {
+            *entry = ctx_entry;
+        }
+        for entry in root_array {
+            *entry = root_entry;
+        }
+    }
+
+    root_frame.phys_addr
 }
 
 // ————————————————————————————————— Flags —————————————————————————————————— //

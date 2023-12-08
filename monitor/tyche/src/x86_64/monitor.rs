@@ -10,11 +10,12 @@ use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator};
 use spin::{Mutex, MutexGuard};
 use stage_two_abi::Manifest;
-use utils::{GuestPhysAddr, HostPhysAddr};
+use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
 use vmx::bitmaps::{EptEntryFlags, ExceptionBitmap};
 use vmx::errors::Trapnr;
 use vmx::msr::{IA32_LSTAR, IA32_STAR};
 use vmx::{ActiveVmcs, ControlRegister, Register, VmExitInterrupt, REGFILE_SIZE};
+use vtd::Iommu;
 
 use super::cpuid;
 use super::guest::VmxState;
@@ -118,6 +119,8 @@ const EMPTY_CONTEXT: Mutex<ContextData> = Mutex::new(ContextData {
     vmcs: Handle::<RCFrame>::new_invalid(),
 });
 const EMPTY_CONTEXT_ARRAY: [Mutex<ContextData>; NB_CORES] = [EMPTY_CONTEXT; NB_CORES];
+static IOMMU: Mutex<Iommu> =
+    Mutex::new(unsafe { Iommu::new(HostVirtAddr::new(usize::max_value())) });
 
 // ————————————————————————————— Initialization ————————————————————————————— //
 
