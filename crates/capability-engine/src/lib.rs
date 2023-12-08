@@ -149,50 +149,12 @@ impl CapaEngine {
         Ok(())
     }
 
-    pub fn create_domain(
-        &mut self,
-        manager: Handle<Domain>,
-        io: bool,
-    ) -> Result<LocalCapa, CapaError> {
-        log::trace!("Create new domain");
+    pub fn create_domain(&mut self, manager: Handle<Domain>) -> Result<LocalCapa, CapaError> {
+        self.domain_creation(manager, false)
+    }
 
-        // Enforce permissions
-        domain::has_config(
-            manager,
-            &self.domains,
-            domain::Bitmaps::PERMISSION,
-            permission::SPAWN,
-        )?;
-
-        let id = self.domain_id();
-        match self.domains.allocate(Domain::new(id, io)) {
-            Some(handle) => {
-                self.domains[handle].set_id(id)?;
-                self.domains[handle].set_manager(manager);
-                // TODO: I'm not sure whether I/O doamin needs a manager domain...
-                let capa = insert_capa(
-                    manager,
-                    Capa::management(handle),
-                    &mut self.regions,
-                    &mut self.domains,
-                )?;
-                // Insert the channel capability to the I/O domain, so that the dom0 linux can send
-                // over the shared DMA region to the I/O domain and correspondingly configure the
-                // IOMMU
-                if io {
-                    let Ok(_) = insert_capa(handle, Capa::Channel(handle), &mut self.regions, &mut self.domains) else {
-                        log::error!("Failed to insert channel capability into the I/O domain");
-                        return Err(CapaError::OutOfMemory);
-                    };
-                }
-                self.updates.push(Update::CreateDomain { domain: handle });
-                Ok(capa)
-            }
-            None => {
-                log::info!("Failed to create new domain: out of memory");
-                Err(CapaError::OutOfMemory)
-            }
-        }
+    pub fn create_io_domain(&mut self, manager: Handle<Domain>) -> Result<LocalCapa, CapaError> {
+        self.domain_creation(manager, true)
     }
 
     pub fn revoke_domain(&mut self, domain: Handle<Domain>) -> Result<(), CapaError> {
@@ -524,6 +486,53 @@ impl CapaEngine {
 
     pub fn set_report(&mut self, domain: Handle<Domain>, rep: EnclaveReport) {
         self.domains[domain].set_report(rep);
+    }
+
+    /// creates a new domain
+    fn domain_creation(
+        &mut self,
+        manager: Handle<Domain>,
+        io: bool,
+    ) -> Result<LocalCapa, CapaError> {
+        log::trace!("Create new domain");
+
+        // Enforce permissions
+        domain::has_config(
+            manager,
+            &self.domains,
+            domain::Bitmaps::PERMISSION,
+            permission::SPAWN,
+        )?;
+
+        let id = self.domain_id();
+        match self.domains.allocate(Domain::new(id, io)) {
+            Some(handle) => {
+                self.domains[handle].set_id(id)?;
+                self.domains[handle].set_manager(manager);
+                // TODO: I'm not sure whether I/O doamin needs a manager domain...
+                let capa = insert_capa(
+                    manager,
+                    Capa::management(handle),
+                    &mut self.regions,
+                    &mut self.domains,
+                )?;
+                // Insert the channel capability to the I/O domain, so that the dom0 linux can send
+                // over the shared DMA region to the I/O domain and correspondingly configure the
+                // IOMMU
+                if io {
+                    let Ok(_) = insert_capa(handle, Capa::Channel(handle), &mut self.regions, &mut self.domains) else {
+                        log::error!("Failed to insert channel capability into the I/O domain");
+                        return Err(CapaError::OutOfMemory);
+                    };
+                }
+                self.updates.push(Update::CreateDomain { domain: handle });
+                Ok(capa)
+            }
+            None => {
+                log::info!("Failed to create new domain: out of memory");
+                Err(CapaError::OutOfMemory)
+            }
+        }
     }
 
     /// Returns a fresh domain ID.

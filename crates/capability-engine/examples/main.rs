@@ -81,7 +81,7 @@ fn foo() {
     display(&engine);
     display_domain(domain, &engine);
 
-    let dom2 = engine.create_domain(domain, false).unwrap();
+    let dom2 = engine.create_domain(domain).unwrap();
     engine.set_child_config(
         domain,
         dom2,
@@ -94,7 +94,7 @@ fn foo() {
     display_domain(domain, &engine);
     display_domain(domain2, &engine);
 
-    engine.create_domain(domain2, false).unwrap();
+    engine.create_domain(domain2).unwrap();
     engine.revoke_domain(domain2);
     display(&engine);
     display_domain(domain, &engine);
