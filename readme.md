@@ -11,17 +11,25 @@ This project assumes an Intel x86_64 processor with VT-x capabilities in order
 to build and run the x86_64 version. The risc-v version can be built from any
 platform.
 
-### Justfiles
+### rustup,  cargo, and just
+
+Do not use the Ubuntu/debian distribution of `rustup` (from apt-get and/or snap) as this can cause a compilation problem with `rust-src`.
+
+Instead, follow the instructions in `https://www.rust-lang.org/tools/install`
+
+Check that `which rustc` and `which cargo` both point to `$HOME/.cargo/bin`
 
 This project uses _justfiles_ as a command line runner (think makefiles but
-without the build-system bits). To get started [install
-just](https://github.com/casey/just#packages), you can also build it from source
-if you have rust installed with `cargo install just`.
+without the build-system bits). 
 
-To list available commands, run `just help`. For instance, the monitor can be
-built with `just build`.
+To install `just` from sources: `cargo install just`.
+
+To list available commands, run `just help`. 
 
 To get started with this project, run `just setup`.
+
+Later, just is used during development.  For instance, the monitor can be
+built with `just build`.
 
 ### Linux Images
 
