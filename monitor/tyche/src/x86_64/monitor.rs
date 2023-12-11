@@ -26,6 +26,7 @@ use crate::rcframe::{drop_rc, RCFrame, RCFramePool, EMPTY_RCFRAME};
 // ————————————————————————— Statics & Backend Data ————————————————————————— //
 
 static CAPA_ENGINE: Mutex<CapaEngine> = Mutex::new(CapaEngine::new());
+static IO_DOMAIN: Mutex<Option<LocalCapa>> = Mutex::new(None);
 static INITIAL_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
 static DOMAINS: [Mutex<DomainData>; NB_DOMAINS] = [EMPTY_DOMAIN; NB_DOMAINS];
 static CORE_UPDATES: [Mutex<Buffer<CoreUpdate>>; NB_CORES] = [EMPTY_UPDATE_BUFFER; NB_CORES];
@@ -147,6 +148,11 @@ pub fn init(manifest: &'static Manifest) {
     // Save the initial domain
     let mut initial_domain = INITIAL_DOMAIN.lock();
     *initial_domain = Some(domain);
+
+    // Create and save the I/O domain
+    let io_domain = engine.create_io_domain(domain).unwrap();
+    let mut initial_io_domain = IO_DOMAIN.lock();
+    *initial_io_domain = Some(io_domain);
 
     if manifest.iommu != 0 {
         let mut iommu = IOMMU.lock();
