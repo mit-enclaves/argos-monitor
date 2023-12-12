@@ -1,10 +1,17 @@
 use capa_engine::Handle;
 use spin::Mutex;
-use vmx::fields::{GeneralPurposeField as GPF, VmcsField, VmcsFieldWidth, REGFILE_SIZE};
-use vmx::msr::IA32_LSTAR;
-use vmx::ActiveVmcs;
+use vmx::fields::{VmcsField, VmcsFieldWidth};
+use vmx::{ActiveVmcs, VmxError};
 
 use crate::rcframe::{RCFrame, RCFramePool};
+
+trait ContextRegisterx86 {
+    fn as_vmcs_field(&self) -> VmcsField;
+    fn from_vmcs_field(field: VmcsField) -> Option<Self>
+    where
+        Self: Sized;
+    fn from_usize(v: usize) -> Self;
+}
 
 #[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -103,54 +110,54 @@ impl ContextGpx86 {
 #[repr(usize)]
 pub enum Context64x86 {
     PinBasedVmExecControl = 0,
-    CpuBasedVmExecControl,
-    ExceptionBitmap,
-    PageFaultErrorCodeMask,
-    PageFaultErrorCodeMatch,
-    Cr3TargetCount,
-    VmExitControls,
-    VmExitMsrStoreCount,
-    VmExitMsrLoadCount,
-    VmEntryControls,
-    VmEntryMsrLoadCount,
-    VmEntryIntrInfoField,
-    VmEntryExceptionErrorCode,
-    VmEntryInstructionLen,
-    TprThreshold,
-    SecondaryVmExecControl,
-    PleGap,
-    PleWindow,
-    NotifyWindow,
-    VmInstructionError,
-    VmExitReason,
-    VmExitIntrInfo,
-    VmExitIntrErrorCode,
-    IdtVectoringInfoField,
-    IdtVectoringErrorCode,
-    VmExitInstructionLen,
-    VmxInstructionInfo,
-    GuestEsLimit,
-    GuestCsLimit,
-    GuestSsLimit,
-    GuestDsLimit,
-    GuestFsLimit,
-    GuestGsLimit,
-    GuestLdtrLimit,
-    GuestTrLimit,
-    GuestGdtrLimit,
-    GuestIdtrLimit,
-    GuestEsArBytes,
-    GuestCsArBytes,
-    GuestSsArBytes,
-    GuestDsArBytes,
-    GuestFsArBytes,
-    GuestGsArBytes,
-    GuestLdtrArBytes,
-    GuestTrArBytes,
-    GuestInterruptibilityInfo,
-    GuestActivityState,
-    GuestSysenterCs,
-    VmxPreemptionTimerValue,
+    CpuBasedVmExecControl = 1,
+    ExceptionBitmap = 2,
+    PageFaultErrorCodeMask = 3,
+    PageFaultErrorCodeMatch = 4,
+    Cr3TargetCount = 5,
+    VmExitControls = 6,
+    VmExitMsrStoreCount = 7,
+    VmExitMsrLoadCount = 8,
+    VmEntryControls = 9,
+    VmEntryMsrLoadCount = 10,
+    VmEntryIntrInfoField = 11,
+    VmEntryExceptionErrorCode = 12,
+    VmEntryInstructionLen = 13,
+    TprThreshold = 14,
+    SecondaryVmExecControl = 15,
+    PleGap = 16,
+    PleWindow = 17,
+    NotifyWindow = 18,
+    VmInstructionError = 19,
+    VmExitReason = 20,
+    VmExitIntrInfo = 21,
+    VmExitIntrErrorCode = 22,
+    IdtVectoringInfoField = 23,
+    IdtVectoringErrorCode = 24,
+    VmExitInstructionLen = 25,
+    VmxInstructionInfo = 26,
+    GuestEsLimit = 27,
+    GuestCsLimit = 28,
+    GuestSsLimit = 29,
+    GuestDsLimit = 30,
+    GuestFsLimit = 31,
+    GuestGsLimit = 32,
+    GuestLdtrLimit = 33,
+    GuestTrLimit = 34,
+    GuestGdtrLimit = 35,
+    GuestIdtrLimit = 36,
+    GuestEsArBytes = 37,
+    GuestCsArBytes = 38,
+    GuestSsArBytes = 39,
+    GuestDsArBytes = 40,
+    GuestFsArBytes = 41,
+    GuestGsArBytes = 42,
+    GuestLdtrArBytes = 43,
+    GuestTrArBytes = 44,
+    GuestInterruptibilityInfo = 45,
+    GuestActivityState = 46,
+    GuestSysenterCs = 47,
+    VmxPreemptionTimerValue = 48,
 }
 
 #[allow(dead_code)]
@@ -197,7 +204,7 @@ impl Context64x86 {
             Self::GuestEsArBytes => VmcsField::GuestEsArBytes,
             Self::GuestCsArBytes => VmcsField::GuestCsArBytes,
             Self::GuestSsArBytes => VmcsField::GuestSsArBytes,
-            Self::GuestDsArBytes => VmcsField::GuestDsLimit,
+            Self::GuestDsArBytes => VmcsField::GuestDsArBytes,
             Self::GuestFsArBytes => VmcsField::GuestFsArBytes,
             Self::GuestGsArBytes => VmcsField::GuestGsArBytes,
             Self::GuestLdtrArBytes => VmcsField::GuestLdtrArBytes,
@@ -251,7 +258,7 @@ impl Context64x86 {
             VmcsField::GuestEsArBytes => Some(Self::GuestEsArBytes),
             VmcsField::GuestCsArBytes => Some(Self::GuestCsArBytes),
             VmcsField::GuestSsArBytes => Some(Self::GuestSsArBytes),
-            VmcsField::GuestDsArBytes => Some(Self::GuestDsLimit),
+            VmcsField::GuestDsArBytes => Some(Self::GuestDsArBytes),
             VmcsField::GuestFsArBytes => Some(Self::GuestFsArBytes),
             VmcsField::GuestGsArBytes => Some(Self::GuestGsArBytes),
             VmcsField::GuestLdtrArBytes => Some(Self::GuestLdtrArBytes),
@@ -329,85 +336,45 @@ impl Context64x86 {
 #[repr(usize)]
 pub enum Context32x86 {
     IoBitmapA = 0,
-    IoBitmapAHigh,
-    IoBitmapB,
-    IoBitmapBHigh,
-    MsrBitmap,
-    MsrBitmapHigh,
-    VmExitMsrStoreAddr,
-    VmExitMsrStoreAddrHigh,
-    VmExitMsrLoadAddr,
-    VMExitMsrLoadAddrHigh,
-    VmEntryMsrLoadAddr,
-    VmEntryMsrLoadAddrHigh,
-    PmlAddress,
-    PmlAddressHigh,
-    TscOffset,
-    TscOffsetHigh,
-    VirtualApicPageAddr,
-    VirtualApicPageAddrHigh,
-    ApicAccessAddr,
-    ApicAccessAddrHigh,
-    PostedIntrDescAddr,
-    PostedIntrDescAddrHigh,
-    VmFunctionControl,
-    VmFunctionControlHigh,
-    EptPointer,
-    EptPointerHigh,
-    EoiExitBitmap0,
-    EoiExitBitmap0High,
-    EoiExitBitmap1,
-    EoiExitBitmap1High,
-    EoiExitBitmap2,
-    EoiExitBitmap2High,
-    EoiExitBitmap3,
-    EoiExitBitmap3High,
-    EptpListAddress,
-    EptpListAddressHigh,
-    VmreadBitmap,
-    VmreadBitmapHigh,
-    VmwriteBitmap,
-    VmwriteBitmapHigh,
-    XssExitBitmap,
-    XssExitBitmapHigh,
-    EnclsExitingBitmap,
-    EnclsExitingBitmapHigh,
-    TscMultiplier,
-    TscMultiplierHigh,
-    TertiaryVmExecControl,
-    TertiaryVmExecControlHigh,
-    PidPointerTable,
-    PidPointerTableHigh,
-    GuestPhysicalAddress,
-    GuestPhysicalAddressHigh,
-    VmcsLinkPointer,
-    VmcsLinkPointerHigh,
-    GuestIa32Debugctl,
-    GuestIa32DebugctlHigh,
-    GuestIa32Pat,
-    GuestIa32PatHigh,
-    GuestIa32Efer,
-    GuestIa32EferHigh,
-    GuestIa32PerfGlobalCtrl,
-    GuestIa32PerfGlobalCtrlHigh,
-    GuestPdptr0,
-    GuestPdprt0High,
-    GuestPdptr1,
-    GuestPdptr1High,
-    GuestPdptr2,
-    GuestPdptr2High,
-    GuestPdptr3,
-    GuestPdptr3High,
-    GuestBndcfgs,
-    GuestBndcfgsHigh,
-    GuestIa32RtitCtl,
-    GuestIa32RtitCtlHigh,
-    HostIa32Pat,
-    HostIa32PatHigh,
-    HostIa32Efer,
-    HostIa32EferHigh,
-    HostIa32PerfGlobalCtrl,
-    HostIa32PerfGlobalCtrlHigh,
+    IoBitmapB = 1,
+    MsrBitmap = 2,
+    VmExitMsrStoreAddr = 3,
+    VmExitMsrLoadAddr = 4,
+    VmEntryMsrLoadAddr = 5,
+    PmlAddress = 6,
+    TscOffset = 7,
+    VirtualApicPageAddr = 8,
+    ApicAccessAddr = 9,
+    PostedIntrDescAddr = 10,
+    VmFunctionControl = 11,
+    EptPointer = 12,
+    EoiExitBitmap0 = 13,
+    EoiExitBitmap1 = 14,
+    EoiExitBitmap2 = 15,
+    EoiExitBitmap3 = 16,
+    EptpListAddress = 17,
+    VmreadBitmap = 18,
+    VmwriteBitmap = 19,
+    XssExitBitmap = 20,
+    EnclsExitingBitmap = 21,
+    TscMultiplier = 22,
+    TertiaryVmExecControl = 23,
+    PidPointerTable = 24,
+    GuestPhysicalAddress = 25,
+    VmcsLinkPointer = 26,
+    GuestIa32Debugctl = 27,
+    GuestIa32Pat = 28,
+    GuestIa32Efer = 29,
+    GuestIa32PerfGlobalCtrl = 30,
+    GuestPdptr0 = 31,
+    GuestPdptr1 = 32,
+    GuestPdptr2 = 33,
+    GuestPdptr3 = 34,
+    GuestBndcfgs = 35,
+    GuestIa32RtitCtl = 36,
+    HostIa32Pat = 37,
+    HostIa32Efer = 38,
+    HostIa32PerfGlobalCtrl = 39,
 }
 
 #[allow(dead_code)]
@@ -415,170 +382,90 @@ impl Context32x86 {
     pub fn as_vmcs_field(&self) -> VmcsField {
         match self {
             Self::IoBitmapA => VmcsField::IoBitmapA,
-            Self::IoBitmapAHigh => VmcsField::IoBitmapAHigh,
             Self::IoBitmapB => VmcsField::IoBitmapB,
-            Self::IoBitmapBHigh => VmcsField::IoBitmapBHigh,
             Self::MsrBitmap => VmcsField::MsrBitmap,
-            Self::MsrBitmapHigh => VmcsField::MsrBitmapHigh,
             Self::VmExitMsrStoreAddr => VmcsField::VmExitMsrStoreAddr,
-            Self::VmExitMsrStoreAddrHigh => VmcsField::VmExitMsrStoreAddrHigh,
             Self::VmExitMsrLoadAddr => VmcsField::VmExitMsrLoadAddr,
-            Self::VMExitMsrLoadAddrHigh => VmcsField::VMExitMsrLoadAddrHigh,
             Self::VmEntryMsrLoadAddr => VmcsField::VmEntryMsrLoadAddr,
-            Self::VmEntryMsrLoadAddrHigh => VmcsField::VmEntryMsrLoadAddrHigh,
             Self::PmlAddress => VmcsField::PmlAddress,
-            Self::PmlAddressHigh => VmcsField::PmlAddressHigh,
             Self::TscOffset => VmcsField::TscOffset,
-            Self::TscOffsetHigh => VmcsField::TscOffsetHigh,
             Self::VirtualApicPageAddr => VmcsField::VirtualApicPageAddr,
-            Self::VirtualApicPageAddrHigh => VmcsField::VirtualApicPageAddrHigh,
             Self::ApicAccessAddr => VmcsField::ApicAccessAddr,
-            Self::ApicAccessAddrHigh => VmcsField::ApicAccessAddrHigh,
             Self::PostedIntrDescAddr => VmcsField::PostedIntrDescAddr,
-            Self::PostedIntrDescAddrHigh => VmcsField::PostedIntrDescAddrHigh,
             Self::VmFunctionControl => VmcsField::VmFunctionControl,
-            Self::VmFunctionControlHigh => VmcsField::VmFunctionControlHigh,
             Self::EptPointer => VmcsField::EptPointer,
-            Self::EptPointerHigh => VmcsField::EptPointerHigh,
             Self::EoiExitBitmap0 => VmcsField::EoiExitBitmap0,
-            Self::EoiExitBitmap0High => VmcsField::EoiExitBitmap0High,
             Self::EoiExitBitmap1 => VmcsField::EoiExitBitmap1,
-            Self::EoiExitBitmap1High => VmcsField::EoiExitBitmap1High,
             Self::EoiExitBitmap2 => VmcsField::EoiExitBitmap2,
-            Self::EoiExitBitmap2High => VmcsField::EoiExitBitmap2High,
             Self::EoiExitBitmap3 => VmcsField::EoiExitBitmap3,
-            Self::EoiExitBitmap3High => VmcsField::EoiExitBitmap3High,
             Self::EptpListAddress => VmcsField::EptpListAddress,
-            Self::EptpListAddressHigh => VmcsField::EptpListAddressHigh,
             Self::VmreadBitmap => VmcsField::VmreadBitmap,
-            Self::VmreadBitmapHigh => VmcsField::VmreadBitmapHigh,
             Self::VmwriteBitmap => VmcsField::VmwriteBitmap,
-            Self::VmwriteBitmapHigh => VmcsField::VmwriteBitmapHigh,
             Self::XssExitBitmap => VmcsField::XssExitBitmap,
-            Self::XssExitBitmapHigh => VmcsField::XssExitBitmapHigh,
             Self::EnclsExitingBitmap => VmcsField::EnclsExitingBitmap,
-            Self::EnclsExitingBitmapHigh => VmcsField::EnclsExitingBitmapHigh,
             Self::TscMultiplier => VmcsField::TscMultiplier,
-            Self::TscMultiplierHigh => VmcsField::TscMultiplierHigh,
             Self::TertiaryVmExecControl => VmcsField::TertiaryVmExecControl,
-            Self::TertiaryVmExecControlHigh => VmcsField::TertiaryVmExecControlHigh,
             Self::PidPointerTable => VmcsField::PidPointerTable,
-            Self::PidPointerTableHigh => VmcsField::PidPointerTableHigh,
             Self::GuestPhysicalAddress => VmcsField::GuestPhysicalAddress,
-            Self::GuestPhysicalAddressHigh => VmcsField::GuestPhysicalAddressHigh,
-            Self::VmcsLinkPointer => VmcsField::VmcsLinkPointerHigh,
-            Self::VmcsLinkPointerHigh => VmcsField::VmcsLinkPointerHigh,
+            Self::VmcsLinkPointer => VmcsField::VmcsLinkPointer,
             Self::GuestIa32Debugctl => VmcsField::GuestIa32Debugctl,
-            Self::GuestIa32DebugctlHigh => VmcsField::GuestIa32DebugctlHigh,
             Self::GuestIa32Pat => VmcsField::GuestIa32Pat,
-            Self::GuestIa32PatHigh => VmcsField::GuestIa32PatHigh,
             Self::GuestIa32Efer => VmcsField::GuestIa32Efer,
-            Self::GuestIa32EferHigh => VmcsField::GuestIa32EferHigh,
             Self::GuestIa32PerfGlobalCtrl => VmcsField::GuestIa32PerfGlobalCtrl,
-            Self::GuestIa32PerfGlobalCtrlHigh => VmcsField::GuestIa32PerfGlobalCtrlHigh,
             Self::GuestPdptr0 => VmcsField::GuestPdptr0,
-            Self::GuestPdprt0High => VmcsField::GuestPdprt0High,
             Self::GuestPdptr1 => VmcsField::GuestPdptr1,
-            Self::GuestPdptr1High => VmcsField::GuestPdptr1High,
             Self::GuestPdptr2 => VmcsField::GuestPdptr2,
-            Self::GuestPdptr2High => VmcsField::GuestPdptr2High,
             Self::GuestPdptr3 => VmcsField::GuestPdptr3,
-            Self::GuestPdptr3High => VmcsField::GuestPdptr3High,
             Self::GuestBndcfgs => VmcsField::GuestBndcfgs,
-            Self::GuestBndcfgsHigh => VmcsField::GuestBndcfgsHigh,
             Self::GuestIa32RtitCtl => VmcsField::GuestIa32RtitCtl,
-            Self::GuestIa32RtitCtlHigh => VmcsField::GuestIa32RtitCtlHigh,
             Self::HostIa32Pat => VmcsField::HostIa32Pat,
-            Self::HostIa32PatHigh => VmcsField::HostIa32PatHigh,
             Self::HostIa32Efer => VmcsField::HostIa32Efer,
-            Self::HostIa32EferHigh => VmcsField::HostIa32EferHigh,
             Self::HostIa32PerfGlobalCtrl => VmcsField::HostIa32PerfGlobalCtrl,
-            Self::HostIa32PerfGlobalCtrlHigh => VmcsField::HostIa32PerfGlobalCtrlHigh,
         }
     }
 
     pub fn from_vmcs_field(field: VmcsField) -> Option<Self> {
         match field {
             VmcsField::IoBitmapA => Some(Self::IoBitmapA),
-            VmcsField::IoBitmapAHigh => Some(Self::IoBitmapAHigh),
             VmcsField::IoBitmapB => Some(Self::IoBitmapB),
-            VmcsField::IoBitmapBHigh => Some(Self::IoBitmapBHigh),
             VmcsField::MsrBitmap => Some(Self::MsrBitmap),
-            VmcsField::MsrBitmapHigh => Some(Self::MsrBitmapHigh),
             VmcsField::VmExitMsrStoreAddr => Some(Self::VmExitMsrStoreAddr),
-            VmcsField::VmExitMsrStoreAddrHigh => Some(Self::VmExitMsrStoreAddrHigh),
             VmcsField::VmExitMsrLoadAddr => Some(Self::VmExitMsrLoadAddr),
-            VmcsField::VMExitMsrLoadAddrHigh => Some(Self::VMExitMsrLoadAddrHigh),
             VmcsField::VmEntryMsrLoadAddr => Some(Self::VmEntryMsrLoadAddr),
-            VmcsField::VmEntryMsrLoadAddrHigh => Some(Self::VmEntryMsrLoadAddrHigh),
             VmcsField::PmlAddress => Some(Self::PmlAddress),
-            VmcsField::PmlAddressHigh => Some(Self::PmlAddressHigh),
             VmcsField::TscOffset => Some(Self::TscOffset),
-            VmcsField::TscOffsetHigh => Some(Self::TscOffsetHigh),
             VmcsField::VirtualApicPageAddr => Some(Self::VirtualApicPageAddr),
-            VmcsField::VirtualApicPageAddrHigh => Some(Self::VirtualApicPageAddrHigh),
             VmcsField::ApicAccessAddr => Some(Self::ApicAccessAddr),
-            VmcsField::ApicAccessAddrHigh => Some(Self::ApicAccessAddrHigh),
             VmcsField::PostedIntrDescAddr => Some(Self::PostedIntrDescAddr),
-            VmcsField::PostedIntrDescAddrHigh => Some(Self::PostedIntrDescAddrHigh),
             VmcsField::VmFunctionControl => Some(Self::VmFunctionControl),
-            VmcsField::VmFunctionControlHigh => Some(Self::VmFunctionControlHigh),
             VmcsField::EptPointer => Some(Self::EptPointer),
-            VmcsField::EptPointerHigh => Some(Self::EptPointerHigh),
             VmcsField::EoiExitBitmap0 => Some(Self::EoiExitBitmap0),
-            VmcsField::EoiExitBitmap0High => Some(Self::EoiExitBitmap0High),
             VmcsField::EoiExitBitmap1 => Some(Self::EoiExitBitmap1),
-            VmcsField::EoiExitBitmap1High => Some(Self::EoiExitBitmap1High),
             VmcsField::EoiExitBitmap2 => Some(Self::EoiExitBitmap2),
-            VmcsField::EoiExitBitmap2High => Some(Self::EoiExitBitmap2High),
             VmcsField::EoiExitBitmap3 => Some(Self::EoiExitBitmap3),
-            VmcsField::EoiExitBitmap3High => Some(Self::EoiExitBitmap3High),
             VmcsField::EptpListAddress => Some(Self::EptpListAddress),
-            VmcsField::EptpListAddressHigh => Some(Self::EptpListAddressHigh),
             VmcsField::VmreadBitmap => Some(Self::VmreadBitmap),
-            VmcsField::VmreadBitmapHigh => Some(Self::VmreadBitmapHigh),
             VmcsField::VmwriteBitmap => Some(Self::VmwriteBitmap),
-            VmcsField::VmwriteBitmapHigh => Some(Self::VmwriteBitmapHigh),
             VmcsField::XssExitBitmap => Some(Self::XssExitBitmap),
-            VmcsField::XssExitBitmapHigh => Some(Self::XssExitBitmapHigh),
             VmcsField::EnclsExitingBitmap => Some(Self::EnclsExitingBitmap),
-            VmcsField::EnclsExitingBitmapHigh => Some(Self::EnclsExitingBitmapHigh),
             VmcsField::TscMultiplier => Some(Self::TscMultiplier),
-            VmcsField::TscMultiplierHigh => Some(Self::TscMultiplierHigh),
             VmcsField::TertiaryVmExecControl => Some(Self::TertiaryVmExecControl),
-            VmcsField::TertiaryVmExecControlHigh => Some(Self::TertiaryVmExecControlHigh),
             VmcsField::PidPointerTable => Some(Self::PidPointerTable),
-            VmcsField::PidPointerTableHigh => Some(Self::PidPointerTableHigh),
             VmcsField::GuestPhysicalAddress => Some(Self::GuestPhysicalAddress),
-            VmcsField::GuestPhysicalAddressHigh => Some(Self::GuestPhysicalAddressHigh),
-            VmcsField::VmcsLinkPointer => Some(Self::VmcsLinkPointerHigh),
-            VmcsField::VmcsLinkPointerHigh => Some(Self::VmcsLinkPointerHigh),
+            VmcsField::VmcsLinkPointer => Some(Self::VmcsLinkPointer),
             VmcsField::GuestIa32Debugctl => Some(Self::GuestIa32Debugctl),
-            VmcsField::GuestIa32DebugctlHigh => Some(Self::GuestIa32DebugctlHigh),
             VmcsField::GuestIa32Pat => Some(Self::GuestIa32Pat),
-            VmcsField::GuestIa32PatHigh => Some(Self::GuestIa32PatHigh),
             VmcsField::GuestIa32Efer => Some(Self::GuestIa32Efer),
-            VmcsField::GuestIa32EferHigh => Some(Self::GuestIa32EferHigh),
             VmcsField::GuestIa32PerfGlobalCtrl => Some(Self::GuestIa32PerfGlobalCtrl),
-            VmcsField::GuestIa32PerfGlobalCtrlHigh => Some(Self::GuestIa32PerfGlobalCtrlHigh),
             VmcsField::GuestPdptr0 => Some(Self::GuestPdptr0),
-            VmcsField::GuestPdprt0High => Some(Self::GuestPdprt0High),
             VmcsField::GuestPdptr1 => Some(Self::GuestPdptr1),
-            VmcsField::GuestPdptr1High => Some(Self::GuestPdptr1High),
             VmcsField::GuestPdptr2 => Some(Self::GuestPdptr2),
-            VmcsField::GuestPdptr2High => Some(Self::GuestPdptr2High),
             VmcsField::GuestPdptr3 => Some(Self::GuestPdptr3),
-            VmcsField::GuestPdptr3High => Some(Self::GuestPdptr3High),
             VmcsField::GuestBndcfgs => Some(Self::GuestBndcfgs),
-            VmcsField::GuestBndcfgsHigh => Some(Self::GuestBndcfgsHigh),
             VmcsField::GuestIa32RtitCtl => Some(Self::GuestIa32RtitCtl),
-            VmcsField::GuestIa32RtitCtlHigh => Some(Self::GuestIa32RtitCtlHigh),
             VmcsField::HostIa32Pat => Some(Self::HostIa32Pat),
-            VmcsField::HostIa32PatHigh => Some(Self::HostIa32PatHigh),
             VmcsField::HostIa32Efer => Some(Self::HostIa32Efer),
-            VmcsField::HostIa32EferHigh => Some(Self::HostIa32EferHigh),
             VmcsField::HostIa32PerfGlobalCtrl => Some(Self::HostIa32PerfGlobalCtrl),
-            VmcsField::HostIa32PerfGlobalCtrlHigh => Some(Self::HostIa32PerfGlobalCtrlHigh),
             _ => None,
         }
     }
@@ -586,91 +473,51 @@ impl Context32x86 {
     pub fn from_usize(v: usize) -> Self {
         match v {
             0 => Self::IoBitmapA,
-            1 => Self::IoBitmapAHigh,
-            2 => Self::IoBitmapB,
-            3 => Self::IoBitmapBHigh,
-            4 => Self::MsrBitmap,
-            5 => Self::MsrBitmapHigh,
-            6 => Self::VmExitMsrStoreAddr,
-            7 => Self::VmExitMsrStoreAddrHigh,
-            8 => Self::VmExitMsrLoadAddr,
-            9 => Self::VMExitMsrLoadAddrHigh,
-            10 => Self::VmEntryMsrLoadAddr,
-            11 => Self::VmEntryMsrLoadAddrHigh,
-            12 => Self::PmlAddress,
-            13 => Self::PmlAddressHigh,
-            14 => Self::TscOffset,
-            15 => Self::TscOffsetHigh,
-            16 => Self::VirtualApicPageAddr,
-            17 => Self::VirtualApicPageAddrHigh,
-            18 => Self::ApicAccessAddr,
-            19 => Self::ApicAccessAddrHigh,
-            20 => Self::PostedIntrDescAddr,
-            21 => Self::PostedIntrDescAddrHigh,
-            22 => Self::VmFunctionControl,
-            23 => Self::VmFunctionControlHigh,
-            24 => Self::EptPointer,
-            25 => Self::EptPointerHigh,
-            26 => Self::EoiExitBitmap0,
-            27 => Self::EoiExitBitmap0High,
-            28 => Self::EoiExitBitmap1,
-            29 => Self::EoiExitBitmap1High,
-            30 => Self::EoiExitBitmap2,
-            31 => Self::EoiExitBitmap2High,
-            32 => Self::EoiExitBitmap3,
-            33 => Self::EoiExitBitmap3High,
-            34 => Self::EptpListAddress,
-            35 => Self::EptpListAddressHigh,
-            36 => Self::VmreadBitmap,
-            37 => Self::VmreadBitmapHigh,
-            38 => Self::VmwriteBitmap,
-            39 => Self::VmwriteBitmapHigh,
-            40 => Self::XssExitBitmap,
-            41 => Self::XssExitBitmapHigh,
-            42 => Self::EnclsExitingBitmap,
-            43 => Self::EnclsExitingBitmapHigh,
-            44 => Self::TscMultiplier,
-            45 => Self::TscMultiplierHigh,
-            46 => Self::TertiaryVmExecControl,
-            47 => Self::TertiaryVmExecControlHigh,
-            48 => Self::PidPointerTable,
-            49 => Self::PidPointerTableHigh,
-            50 => Self::GuestPhysicalAddress,
-            51 => Self::GuestPhysicalAddressHigh,
-            52 => Self::VmcsLinkPointer,
-            53 => Self::VmcsLinkPointerHigh,
-            54 => Self::GuestIa32Debugctl,
-            55 => Self::GuestIa32DebugctlHigh,
-            56 => Self::GuestIa32Pat,
-            57 => Self::GuestIa32PatHigh,
-            58 => Self::GuestIa32Efer,
-            59 => Self::GuestIa32EferHigh,
-            60 => Self::GuestIa32PerfGlobalCtrl,
-            61 => Self::GuestIa32PerfGlobalCtrlHigh,
-            62 => Self::GuestPdptr0,
-            63 => Self::GuestPdprt0High,
-            64 => Self::GuestPdptr1,
-            65 => Self::GuestPdptr1High,
-            66 => Self::GuestPdptr2,
-            67 => Self::GuestPdptr2High,
-            68 => Self::GuestPdptr3,
-            69 => Self::GuestPdptr3High,
-            70 => Self::GuestBndcfgs,
-            71 => Self::GuestBndcfgsHigh,
-            72 => Self::GuestIa32RtitCtl,
-            73 => Self::GuestIa32RtitCtlHigh,
-            74 => Self::HostIa32Pat,
-            75 => Self::HostIa32PatHigh,
-            76 => Self::HostIa32Efer,
-            77 => Self::HostIa32EferHigh,
-            78 => Self::HostIa32PerfGlobalCtrl,
-            79 => Self::HostIa32PerfGlobalCtrlHigh,
+            1 => Self::IoBitmapB,
+            2 => Self::MsrBitmap,
+            3 => Self::VmExitMsrStoreAddr,
+            4 => Self::VmExitMsrLoadAddr,
+            5 => Self::VmEntryMsrLoadAddr,
+            6 => Self::PmlAddress,
+            7 => Self::TscOffset,
+            8 => Self::VirtualApicPageAddr,
+            9 => Self::ApicAccessAddr,
+            10 => Self::PostedIntrDescAddr,
+            11 => Self::VmFunctionControl,
+            12 => Self::EptPointer,
+            13 => Self::EoiExitBitmap0,
+            14 => Self::EoiExitBitmap1,
+            15 => Self::EoiExitBitmap2,
+            16 => Self::EoiExitBitmap3,
+            17 => Self::EptpListAddress,
+            18 => Self::VmreadBitmap,
+            19 => Self::VmwriteBitmap,
+            20 => Self::XssExitBitmap,
+            21 => Self::EnclsExitingBitmap,
+            22 => Self::TscMultiplier,
+            23 => Self::TertiaryVmExecControl,
+            24 => Self::PidPointerTable,
+            25 => Self::GuestPhysicalAddress,
+            26 => Self::VmcsLinkPointer,
+            27 => Self::GuestIa32Debugctl,
+            28 => Self::GuestIa32Pat,
+            29 => Self::GuestIa32Efer,
+            30 => Self::GuestIa32PerfGlobalCtrl,
+            31 => Self::GuestPdptr0,
+            32 => Self::GuestPdptr1,
+            33 => Self::GuestPdptr2,
+            34 => Self::GuestPdptr3,
+            35 => Self::GuestBndcfgs,
+            36 => Self::GuestIa32RtitCtl,
+            37 => Self::HostIa32Pat,
+            38 => Self::HostIa32Efer,
+            39 => Self::HostIa32PerfGlobalCtrl,
             _ => panic!("Invalid"),
         }
     }
 
     pub const fn size() -> usize {
-        return Self::HostIa32PerfGlobalCtrlHigh as usize + 1;
+        return Self::HostIa32PerfGlobalCtrl as usize + 1;
     }
 }
 
@@ -679,25 +526,25 @@ impl Context32x86 {
 #[repr(usize)]
 pub enum Context16x86 {
     VirtualProcessorId = 0,
-    PostedIntrNv,
-    LastPidPointerIndex,
-    GuestEsSelector,
-    GuestCsSelector,
-    GuestSsSelector,
-    GuestDsSelector,
-    GuestFsSelector,
-    GuestGsSelector,
-    GuestLdtrSelector,
-    GuestTrSelector,
-    GuestIntrStatus,
-    GuestPmlIndex,
-    HostEsSelector,
-    HostCsSelector,
-    HostSsSelector,
-    HostDsSelector,
-    HostFsSelector,
-    HostGsSelector,
-    HostTrSelector,
+    PostedIntrNv = 1,
+    LastPidPointerIndex = 2,
+    GuestEsSelector = 3,
+    GuestCsSelector = 4,
+    GuestSsSelector = 5,
+    GuestDsSelector = 6,
+    GuestFsSelector = 7,
+    GuestGsSelector = 8,
+    GuestLdtrSelector = 9,
+    GuestTrSelector = 10,
+    GuestIntrStatus = 11,
+    GuestPmlIndex = 12,
+    HostEsSelector = 13,
+    HostCsSelector = 14,
+    HostSsSelector = 15,
+    HostDsSelector = 16,
+    HostFsSelector = 17,
+    HostGsSelector = 18,
+    HostTrSelector = 19,
 }
 
 #[allow(dead_code)]
@@ -789,47 +636,35 @@ impl Context16x86 {
 #[repr(usize)]
 pub enum ContextNatx86 {
     Cr0GuestHostMask = 0,
-    Cr4GuestHostMask,
-    Cr0ReadShadow,
-    Cr4ReadShadow,
-    Cr3TargetValue0,
-    Cr3TargetValue1,
-    Cr3TargetValue2,
-    Cr3TargetValue3,
-    ExitQualification,
-    GuestLinearAddress,
-    GuestCr0,
-    GuestCr3,
-    GuestCr4,
-    GuestEsBase,
-    GuestCsBase,
-    GuestSsBase,
-    GuestDsBase,
-    GuestFsBase,
-    GuestGsBase,
-    GuestLdtrBase,
-    GuestTrBase,
-    GuestGdtrBase,
-    GuestIdtrBase,
-    GuestDr7,
-    GuestRsp,
-    GuestRip,
-    GuestRflags,
-    GuestPendingDbgExceptions,
-    GuestSysenterEsp,
-    GuestSysenterEip,
-    //HostCr0,
-    //HostCr3,
-    //HostCr4,
-    //HostFsBase,
-    //HostGsBase,
-    //HostTrBase,
-    //HostGdtrBase,
-    //HostIdtrBase,
-    //HostIa32SysenterEsp,
-    //HostIa32SysenterEip,
-    //HostRsp,
-    //HostRip,
+    Cr4GuestHostMask = 1,
+    Cr0ReadShadow = 2,
+    Cr4ReadShadow = 3,
+    Cr3TargetValue0 = 4,
+    Cr3TargetValue1 = 5,
+    Cr3TargetValue2 = 6,
+    Cr3TargetValue3 = 7,
+    ExitQualification = 8,
+    GuestLinearAddress = 9,
+    GuestCr0 = 10,
+    GuestCr3 = 11,
+    GuestCr4 = 12,
+    GuestEsBase = 13,
+    GuestCsBase = 14,
+    GuestSsBase = 15,
+    GuestDsBase = 16,
+    GuestFsBase = 17,
+    GuestGsBase = 18,
+    GuestLdtrBase = 19,
+    GuestTrBase = 20,
+    GuestGdtrBase = 21,
+    GuestIdtrBase = 22,
+    GuestDr7 = 23,
+    GuestRsp = 24,
+    GuestRip = 25,
+    GuestRflags = 26,
+    GuestPendingDbgExceptions = 27,
+    GuestSysenterEsp = 28,
+    GuestSysenterEip = 29,
 }
 
 #[allow(dead_code)]
@@ -937,12 +772,12 @@ impl ContextNatx86 {
             27 => Self::GuestPendingDbgExceptions,
             28 => Self::GuestSysenterEsp,
             29 => Self::GuestSysenterEip,
-            _ => panic!("Invalid"),
+            _ => panic!("Invalid {}", v),
         }
     }
 
     pub const fn size() -> usize {
-        return VmcsField::GuestSysenterEip as usize + 1;
+        return Self::GuestSysenterEip as usize + 1;
     }
 }
 
@@ -952,7 +787,6 @@ pub enum DirtyRegGroups {
     Reg32,
     Reg64,
     RegNat,
-    RegGp,
 }
 
 impl DirtyRegGroups {
@@ -962,34 +796,78 @@ impl DirtyRegGroups {
             1 => Self::Reg32,
             2 => Self::Reg64,
             3 => Self::RegNat,
-            4 => Self::RegGp,
             _ => panic!("Invalid"),
         }
     }
     pub const fn size() -> usize {
-        return Self::RegGp as usize + 1;
+        return Self::RegNat as usize + 1;
     }
 }
 
+/// Simple cache implementation.
+#[derive(Debug)]
+pub struct Cache<const N: usize> {
+    pub bitmap: u64,
+}
+
+impl<const N: usize> Cache<N> {
+    pub fn is_on(&self, idx: usize) -> bool {
+        if idx >= N {
+            return false;
+        }
+        self.bitmap & (1 << idx) != 0
+    }
+    pub fn set(&mut self, idx: usize) -> bool {
+        if idx >= N {
+            return false;
+        }
+        self.bitmap |= 1 << idx;
+        return true;
+    }
+    pub fn clear(&mut self, idx: usize) -> bool {
+        if idx >= N {
+            return false;
+        }
+        self.bitmap &= !(1 << idx);
+        return true;
+    }
+    pub fn clear_all(&mut self) {
+        self.bitmap = 0;
+    }
+}
+
+pub const DUMP_FRAME: [(VmcsField, VmcsField); 9] = [
+    (VmcsField::GuestRbx, VmcsField::GuestRip),
+    (VmcsField::GuestRcx, VmcsField::GuestRsp),
+    (VmcsField::GuestRdx, VmcsField::GuestRflags),
+    (VmcsField::GuestRsi, VmcsField::VmInstructionError),
+    (VmcsField::GuestR8, VmcsField::VmExitReason),
+    (VmcsField::GuestR9, VmcsField::VmExitIntrInfo),
+    (VmcsField::GuestR10, VmcsField::VmExitIntrErrorCode),
+    (VmcsField::GuestR11, VmcsField::VmExitInstructionLen),
+    (VmcsField::GuestR12, VmcsField::VmInstructionError),
+];
+
+#[derive(Debug)]
 #[allow(dead_code)]
 pub struct Contextx86 {
     // Quick way to mark register groups that need to be visited.
-    pub dirty: [bool; DirtyRegGroups::size()],
+    pub dirty: Cache<{ DirtyRegGroups::size() }>,
     // 16-bits registers.
     pub vmcs_16: [u16; Context16x86::size()],
-    pub dirty_16: [bool; Context16x86::size()],
-    // 32-bits registers.
-    pub vmcs_32: [u32; Context32x86::size()],
-    pub dirty_32: [bool; Context32x86::size()],
+    pub dirty_16: Cache<{ Context16x86::size() }>,
+    // 32-bits registers that occupy low and high.
+    pub vmcs_32: [u64; Context32x86::size()],
+    pub dirty_32: Cache<{ Context32x86::size() }>,
     // 64-bits registers.
     pub vmcs_64: [u64; Context64x86::size()],
-    pub dirty_64: [bool; Context64x86::size()],
+    pub dirty_64: Cache<{ Context64x86::size() }>,
     // Nat-width registers.
     pub vmcs_nat: [usize; ContextNatx86::size()],
-    pub dirty_nat: [bool; ContextNatx86::size()],
+    pub dirty_nat: Cache<{ ContextNatx86::size() }>,
     // General purpose registers.
-    pub vmcs_gp: [u64; ContextGpx86::size()],
-    pub dirty_gp: [bool; ContextGpx86::size()],
+    pub vmcs_gp: [usize; ContextGpx86::size()],
+    pub dirty_gp: Cache<{ ContextGpx86::size() }>,
     // State.
     pub interrupted: bool,
     pub vmcs: Handle<RCFrame>,
@@ -997,75 +875,110 @@ pub struct Contextx86 {
 
 #[allow(dead_code)]
 impl Contextx86 {
-    pub fn set_register(&mut self, field: VmcsField, value: usize) {
+    pub fn set(
+        &mut self,
+        field: VmcsField,
+        value: usize,
+        vcpu: Option<&mut ActiveVmcs>,
+    ) -> Result<(), VmxError> {
         match (field.width(), field.is_gp_register()) {
             (_, true) => {
                 let reg = ContextGpx86::from_vmcs_field(field).expect("Invalid GP");
-                self.vmcs_gp[reg as usize] = value as u64;
-                self.dirty_gp[reg as usize] = true;
-                self.dirty[DirtyRegGroups::RegGp as usize] = true;
+                self.vmcs_gp[reg as usize] = value;
+                self.dirty_gp.set(reg as usize);
             }
             (VmcsFieldWidth::Width16, _) => {
                 let reg = Context16x86::from_vmcs_field(field).expect("Invalid 16");
                 self.vmcs_16[reg as usize] = value as u16;
-                self.dirty_16[reg as usize] = true;
-                self.dirty[DirtyRegGroups::Reg16 as usize] = true;
+                if let Some(vcpu) = vcpu {
+                    vcpu.set(field, value)?;
+                } else {
+                    self.dirty_16.set(reg as usize);
+                    self.dirty.set(DirtyRegGroups::Reg16 as usize);
+                }
             }
             (VmcsFieldWidth::Width32, _) => {
-                let reg = Context16x86::from_vmcs_field(field).expect("Invalid 32");
-                self.vmcs_32[reg as usize] = value as u32;
-                self.dirty_32[reg as usize] = true;
-                self.dirty[DirtyRegGroups::Reg32 as usize] = true;
+                let reg = Context32x86::from_vmcs_field(field).expect("Invalid 32");
+                self.vmcs_32[reg as usize] = value as u64;
+                if let Some(vcpu) = vcpu {
+                    vcpu.set(field, value)?;
+                } else {
+                    self.dirty_32.set(reg as usize);
+                    self.dirty.set(DirtyRegGroups::Reg32 as usize);
+                }
             }
             (VmcsFieldWidth::Width64, _) => {
                 let reg = Context64x86::from_vmcs_field(field).expect("Invalid 64");
                 self.vmcs_64[reg as usize] = value as u64;
-                self.dirty_64[reg as usize] = true;
-                self.dirty[DirtyRegGroups::Reg64 as usize] = true;
+                if let Some(vcpu) = vcpu {
+                    vcpu.set(field, value)?;
+                } else {
+                    self.dirty_64.set(reg as usize);
+                    self.dirty.set(DirtyRegGroups::Reg64 as usize);
+                }
             }
             (VmcsFieldWidth::WidthNat, _) => {
                 let reg = ContextNatx86::from_vmcs_field(field).expect("Invalid Nat");
                 self.vmcs_nat[reg as usize] = value;
-                self.dirty_nat[reg as usize] = true;
-                self.dirty[DirtyRegGroups::RegNat as usize] = true;
+                if let Some(vcpu) = vcpu {
+                    vcpu.set(field, value)?;
+                } else {
+                    self.dirty_nat.set(reg as usize);
+                    self.dirty.set(DirtyRegGroups::RegNat as usize);
+                }
             }
         }
+        Ok(())
     }
 
-    pub fn get_register(&self, field: VmcsField) -> usize {
-        match (field.width(), field.is_gp_register()) {
+    pub fn get(&mut self, field: VmcsField, vcpu: Option<&ActiveVmcs>) -> Result<usize, VmxError> {
+        let res = match (field.width(), field.is_gp_register()) {
             (_, true) => {
                 let reg = ContextGpx86::from_vmcs_field(field).expect("Invalid GP");
                 self.vmcs_gp[reg as usize] as usize
             }
             (VmcsFieldWidth::Width16, _) => {
                 let reg = Context16x86::from_vmcs_field(field).expect("Invalid 16");
+                if let Some(vcpu) = vcpu {
+                    self.vmcs_16[reg as usize] = vcpu.get(field)? as u16;
+                }
                 self.vmcs_16[reg as usize] as usize
             }
             (VmcsFieldWidth::Width32, _) => {
                 let reg = Context32x86::from_vmcs_field(field).expect("Invalid 32");
+                if let Some(vcpu) = vcpu {
+                    self.vmcs_32[reg as usize] = vcpu.get(field)? as u64;
+                }
                 self.vmcs_32[reg as usize] as usize
             }
             (VmcsFieldWidth::Width64, _) => {
                 let reg = Context64x86::from_vmcs_field(field).expect("Invalid 64");
+                if let Some(vcpu) = vcpu {
+                    self.vmcs_64[reg as usize] = vcpu.get(field)? as u64;
+                }
                 self.vmcs_64[reg as usize] as usize
             }
             (VmcsFieldWidth::WidthNat, _) => {
                 let reg = ContextNatx86::from_vmcs_field(field).expect("Invalid Nat");
+                if let Some(vcpu) = vcpu {
+                    self.vmcs_nat[reg as usize] = vcpu.get(field)?;
+                }
                 self.vmcs_nat[reg as usize]
             }
-        }
+        };
+        Ok(res)
     }
 
+    /// Read context, write vcpu.
     pub fn flush(&mut self, vcpu: &mut ActiveVmcs) {
         for i in 0..DirtyRegGroups::size() {
-            if !self.dirty[i] {
+            if !self.dirty.is_on(i) {
                 continue;
             }
             match DirtyRegGroups::from_usize(i) {
                 DirtyRegGroups::Reg16 => {
                     for j in 0..Context16x86::size() {
-                        if !self.dirty_16[j] {
+                        if !self.dirty_16.is_on(j) {
                             continue;
                         }
                         vcpu.set(
@@ -1073,12 +986,12 @@ impl Contextx86 {
                             self.vmcs_16[j] as usize,
                         )
                         .unwrap();
-                        self.dirty_16[j] = false;
+                        self.dirty_16.clear(j);
                     }
                 }
                 DirtyRegGroups::Reg32 => {
                     for j in 0..Context32x86::size() {
-                        if !self.dirty_32[j] {
+                        if !self.dirty_32.is_on(j) {
                             continue;
                         }
                         vcpu.set(
@@ -1086,12 +999,12 @@ impl Contextx86 {
                             self.vmcs_32[j] as usize,
                         )
                         .unwrap();
-                        self.dirty_32[j] = false;
+                        self.dirty_32.clear(j);
                     }
                 }
                 DirtyRegGroups::Reg64 => {
                     for j in 0..Context64x86::size() {
-                        if !self.dirty_64[j] {
+                        if !self.dirty_64.is_on(j) {
                             continue;
                         }
                         vcpu.set(
@@ -1099,12 +1012,12 @@ impl Contextx86 {
                             self.vmcs_64[j] as usize,
                         )
                         .unwrap();
-                        self.dirty_64[j] = false;
+                        self.dirty_64.clear(j);
                     }
                 }
                 DirtyRegGroups::RegNat => {
                     for j in 0..ContextNatx86::size() {
-                        if !self.dirty_nat[j] {
+                        if !self.dirty_nat.is_on(j) {
                             continue;
                         }
                         vcpu.set(
@@ -1112,112 +1025,88 @@ impl Contextx86 {
                             self.vmcs_nat[j],
                         )
                         .unwrap();
-                        self.dirty_nat[j] = false;
-                    }
-                }
-                DirtyRegGroups::RegGp => {
-                    for j in 0..ContextGpx86::size() {
-                        if !self.dirty_gp[j] {
-                            continue;
-                        }
-                        vcpu.set(
-                            ContextGpx86::from_usize(j).as_vmcs_field(),
-                            self.vmcs_gp[j] as usize,
-                        )
-                        .unwrap();
-                        self.dirty_gp[j] = false;
+                        self.dirty_nat.clear(j);
                     }
                 }
             }
-            self.dirty[i] = false;
+            self.dirty.clear(i);
         }
     }
 
+    /// Read vcpu, write context.
     pub fn load(&mut self, vcpu: &ActiveVmcs) {
-        // General purpose registers.
-        for i in 0..ContextGpx86::size() {
-            self.vmcs_gp[i] = vcpu
-                .get(ContextGpx86::from_usize(i).as_vmcs_field())
-                .unwrap() as u64;
-        }
-
+        // General purpose registers are handled by vmlaunch/vmresume.
         // 16-bits.
         for i in 0..Context16x86::size() {
             self.vmcs_16[i] = vcpu
                 .get(Context16x86::from_usize(i).as_vmcs_field())
-                .unwrap() as u16;
+                .unwrap_or(0) as u16;
         }
 
         // 32-bits.
         for i in 0..Context32x86::size() {
             self.vmcs_32[i] = vcpu
                 .get(Context32x86::from_usize(i).as_vmcs_field())
-                .unwrap() as u32;
+                .unwrap_or(0) as u64;
         }
 
         // 64-bits.
         for i in 0..Context64x86::size() {
             self.vmcs_64[i] = vcpu
                 .get(Context64x86::from_usize(i).as_vmcs_field())
-                .unwrap() as u64;
+                .unwrap_or(0) as u64;
         }
 
         // Nat-bits.
         for i in 0..ContextNatx86::size() {
+            if i == 30 {
+                log::trace!("We are calling with usize 30: {}", ContextNatx86::size());
+                log::trace!(
+                    "Other sizes: {}, {}, {}",
+                    Context64x86::size(),
+                    Context32x86::size(),
+                    Context16x86::size()
+                );
+            }
             self.vmcs_nat[i] = vcpu
                 .get(ContextNatx86::from_usize(i).as_vmcs_field())
-                .unwrap();
+                .unwrap_or(0);
         }
     }
-}
 
-pub struct ContextData {
-    // VCPU for this core.
-    pub vmcs: Handle<RCFrame>,
-    // General purpose registers values for the context.
-    pub regs: [usize; REGFILE_SIZE],
-    // Extra registers stored in the context.
-    // This is necessary due to shared VMCS.
-    pub cr3: usize,
-    pub rip: usize,
-    pub rsp: usize,
-    // True if the context was preempted due to an interrupt.
-    pub interrupted: bool,
-}
-
-impl ContextData {
-    pub fn save_partial(&mut self, vcpu: &ActiveVmcs<'static>) {
-        self.cr3 = vcpu.get(VmcsField::GuestCr3).unwrap();
-        self.rip = vcpu.get(VmcsField::GuestRip).unwrap();
-        self.rsp = vcpu.get(VmcsField::GuestRsp).unwrap();
-    }
-
-    pub fn save(&mut self, vcpu: &mut ActiveVmcs<'static>) {
-        self.save_partial(vcpu);
-        vcpu.dump_regs(&mut self.regs[0..REGFILE_SIZE]);
-        self.regs[GPF::Lstar as usize] = unsafe { IA32_LSTAR.read() } as usize;
-        vcpu.flush();
-    }
-
-    pub fn restore_partial(&self, vcpu: &mut ActiveVmcs<'static>) {
-        vcpu.set(VmcsField::GuestCr3, self.cr3).unwrap();
-        vcpu.set(VmcsField::GuestRip, self.rip).unwrap();
-        vcpu.set(VmcsField::GuestRsp, self.rsp).unwrap();
-    }
-
-    pub fn restore(&self, rc_vmcs: &Mutex<RCFramePool>, vcpu: &mut ActiveVmcs<'static>) {
+    /// Switch frames and flush.
+    pub fn switch_flush(&mut self, rc_vmcs: &Mutex<RCFramePool>, vcpu: &mut ActiveVmcs) {
         let locked = rc_vmcs.lock();
         let rc_frame = locked.get(self.vmcs).unwrap();
-        self.restore_locked(rc_frame, vcpu);
+        // Switch the frame.
+        vcpu.switch_frame(rc_frame.frame).unwrap();
+        // Load values that changed.
+        self.flush(vcpu);
     }
 
-    pub fn restore_locked(&self, rc_frame: &RCFrame, vcpu: &mut ActiveVmcs<'static>) {
-        vcpu.load_regs(&self.regs[0..REGFILE_SIZE]);
-        unsafe {
-            vmx::msr::Msr::new(IA32_LSTAR.address()).write(self.regs[GPF::Lstar as usize] as u64)
-        };
-        vcpu.switch_frame(rc_frame.frame).unwrap();
-        // Restore partial must be called AFTER we set a valid frame.
-        self.restore_partial(vcpu);
+    /// Save only Cr3, Rip, Rsp for shared vmcs.
+    pub fn save_shared(&mut self, vcpu: &ActiveVmcs) -> Result<(), VmxError> {
+        self.set(VmcsField::GuestCr3, vcpu.get(VmcsField::GuestCr3)?, None)?;
+        self.set(VmcsField::GuestRip, vcpu.get(VmcsField::GuestRip)?, None)?;
+        self.set(VmcsField::GuestRsp, vcpu.get(VmcsField::GuestRsp)?, None)?;
+        Ok(())
+    }
+
+    // TODO: maybe more efficient if we dump the frame first?
+    pub fn copy_interrupt_frame(
+        &mut self,
+        _child: &Self,
+        capa: usize,
+        vcpu: &ActiveVmcs,
+    ) -> Result<(), VmxError> {
+        // Return state: 1 means failure, rdi holds resume capa.
+        self.set(VmcsField::GuestRax, 0, None)?;
+        self.set(VmcsField::GuestRdi, capa, None)?;
+
+        for i in DUMP_FRAME {
+            self.set(i.0, vcpu.get(i.1)?, None)?;
+        }
+
+        Ok(())
     }
 }

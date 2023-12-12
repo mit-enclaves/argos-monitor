@@ -22,7 +22,7 @@ use bitmaps::{
     exit_qualification, EntryControls, ExceptionBitmap, ExitControls, PinbasedControls,
     PrimaryControls, SecondaryControls,
 };
-use fields::{GeneralPurposeField, VmcsField, VmcsFieldType};
+use fields::{VmcsField, VmcsFieldType};
 pub use utils::{Frame, GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
 
 pub use crate::errors::{
@@ -235,7 +235,6 @@ impl Vmxon {
 
         Ok(VmcsRegion {
             frame,
-            regs: [0; REGFILE_SIZE],
             msr_bitmaps: None,
             _lifetime: PhantomData,
             _not_sync: PhantomData,
@@ -255,8 +254,6 @@ impl Vmxon {
 
 /// A region containing information about a VM.
 pub struct VmcsRegion<'vmx> {
-    // Set of registers to save/restore
-    regs: [usize; REGFILE_SIZE],
     /// The frame used by the region.
     frame: Frame,
     /// The MSR read and write bitmaps.
@@ -293,7 +290,7 @@ impl<'vmx> VmcsRegion<'vmx> {
         self.frame = frame;
     }
 
-    pub fn get_regs(&self) -> &[usize; REGFILE_SIZE] {
+    /*pub fn get_regs(&self) -> &[usize; REGFILE_SIZE] {
         &self.regs
     }
     pub fn set_regs(&mut self, src: &[usize]) {
@@ -301,7 +298,7 @@ impl<'vmx> VmcsRegion<'vmx> {
     }
     pub fn set_gp_regs(&mut self, src: &[usize]) {
         self.regs[0..REGFILE_SIZE - 1].copy_from_slice(src);
-    }
+    }*/
 }
 
 impl<'vmx> ActiveVmcs<'vmx> {
@@ -311,7 +308,7 @@ impl<'vmx> ActiveVmcs<'vmx> {
         Ok(self.region)
     }
 
-    pub fn dump_regs(&self, dest: &mut [usize]) {
+    /*pub fn dump_regs(&self, dest: &mut [usize]) {
         dest.clone_from_slice(self.region.get_regs());
     }
 
@@ -321,7 +318,7 @@ impl<'vmx> ActiveVmcs<'vmx> {
 
     pub fn load_gp_regs(&mut self, src: &[usize]) {
         self.region.set_gp_regs(src);
-    }
+    }*/
 
     pub fn flush(&mut self) {
         if !self.launched {
@@ -370,18 +367,12 @@ impl<'vmx> ActiveVmcs<'vmx> {
 
     /// Get VMCS Field.
     pub fn get(&self, field: VmcsField) -> Result<usize, VmxError> {
-        match field.is_gp_register() {
-            true => Ok(self.region.regs[GeneralPurposeField::from_field(field) as usize] as usize),
-            false => unsafe { field.vmread() },
-        }
+        unsafe { field.vmread() }
     }
 
     /// Set VMCS Field.
     pub fn set(&mut self, field: VmcsField, value: usize) -> Result<(), VmxError> {
-        match field.is_gp_register() {
-            true => self.region.regs[GeneralPurposeField::from_field(field) as usize] = value,
-            false => unsafe { field.vmwrite(value) }?,
-        };
+        unsafe { field.vmwrite(value) }?;
         Ok(())
     }
 
@@ -477,9 +468,12 @@ impl<'vmx> ActiveVmcs<'vmx> {
     /// SAFETY: the VMCS must be properly configured so that the host can resume execution in a
     /// sensible environment. A simple way of ensuring that is to save the current environment as
     /// host state.
-    pub unsafe fn launch(&mut self) -> Result<VmxExitReason, VmxError> {
+    pub unsafe fn launch(
+        &mut self,
+        regs: &mut [usize; REGFILE_SIZE],
+    ) -> Result<VmxExitReason, VmxError> {
         self.launched = true;
-        raw::vmlaunch(self)?;
+        raw::vmlaunch(self, regs)?;
         self.exit_reason()
     }
 
@@ -488,16 +482,22 @@ impl<'vmx> ActiveVmcs<'vmx> {
     /// SAFETY: the VMCS must be properly configured so that the host can resume execution in a
     /// sensible environment. A simple way of ensuring that is to save the current environment as
     /// host state.
-    pub unsafe fn resume(&mut self) -> Result<VmxExitReason, VmxError> {
-        raw::vmresume(self)?;
+    pub unsafe fn resume(
+        &mut self,
+        regs: &mut [usize; REGFILE_SIZE],
+    ) -> Result<VmxExitReason, VmxError> {
+        raw::vmresume(self, regs)?;
         self.exit_reason()
     }
 
-    pub unsafe fn run(&mut self) -> Result<VmxExitReason, VmxError> {
+    pub unsafe fn run(
+        &mut self,
+        regs: &mut [usize; REGFILE_SIZE],
+    ) -> Result<VmxExitReason, VmxError> {
         if self.launched {
-            self.resume()
+            self.resume(regs)
         } else {
-            self.launch()
+            self.launch(regs)
         }
     }
 
@@ -761,91 +761,91 @@ impl<'vmx> core::fmt::Debug for ActiveVmcs<'vmx> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         writeln!(f, "VMCS {{")?;
         writeln!(f, "    registers {{")?;
-        writeln!(
-            f,
-            "        rax: {:#x}",
-            self.get(VmcsField::GuestRax).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        rbx: {:#x}",
-            self.get(VmcsField::GuestRbx).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        rcx: {:#x}",
-            self.get(VmcsField::GuestRcx).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        rdx: {:#x}",
-            self.get(VmcsField::GuestRdx).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        rip: {:#x}",
-            self.get(VmcsField::GuestRip).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        rsp: {:#x}",
-            self.get(VmcsField::GuestRsp).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        rbp: {:#x}",
-            self.get(VmcsField::GuestRbp).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        rsi: {:#x}",
-            self.get(VmcsField::GuestRsi).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        rdi: {:#x}",
-            self.get(VmcsField::GuestRdi).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        r8:  {:#x}",
-            self.get(VmcsField::GuestR8).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        r9:  {:#x}",
-            self.get(VmcsField::GuestR9).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        r10: {:#x}",
-            self.get(VmcsField::GuestR10).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        r11: {:#x}",
-            self.get(VmcsField::GuestR11).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        r12: {:#x}",
-            self.get(VmcsField::GuestR12).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        r13: {:#x}",
-            self.get(VmcsField::GuestR13).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        r14: {:#x}",
-            self.get(VmcsField::GuestR14).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        r15: {:#x}",
-            self.get(VmcsField::GuestR15).unwrap()
-        )?;
+        //writeln!(
+        //    f,
+        //    "        rax: {:#x}",
+        //    self.get(VmcsField::GuestRax).unwrap()
+        //)?;
+        //writeln!(
+        //    f,
+        //    "        rbx: {:#x}",
+        //    self.get(VmcsField::GuestRbx).unwrap()
+        //)?;
+        //writeln!(
+        //    f,
+        //    "        rcx: {:#x}",
+        //    self.get(VmcsField::GuestRcx).unwrap()
+        //)?;
+        //writeln!(
+        //    f,
+        //    "        rdx: {:#x}",
+        //    self.get(VmcsField::GuestRdx).unwrap()
+        //)?;
+        //writeln!(
+        //    f,
+        //    "        rip: {:#x}",
+        //    self.get(VmcsField::GuestRip).unwrap()
+        //)?;
+        //writeln!(
+        //    f,
+        //    "        rsp: {:#x}",
+        //    self.get(VmcsField::GuestRsp).unwrap()
+        //)?;
+        //writeln!(
+        //    f,
+        //    "        rbp: {:#x}",
+        //    self.get(VmcsField::GuestRbp).unwrap()
+        //)?;
+        //writeln!(
+        //    f,
+        //    "        rsi: {:#x}",
+        //    self.get(VmcsField::GuestRsi).unwrap()
+        //)?;
+        //writeln!(
+        //    f,
+        //    "        rdi: {:#x}",
+        //    self.get(VmcsField::GuestRdi).unwrap()
+        //)?;
+        //writeln!(
+        //    f,
+        //    "        r8:  {:#x}",
+        //    self.get(VmcsField::GuestR8).unwrap()
+        //)?;
+        //writeln!(
+        //    f,
+        //    "        r9:  {:#x}",
+        //    self.get(VmcsField::GuestR9).unwrap()
+        //)?;
+        //writeln!(
+        //    f,
+        //    "        r10: {:#x}",
+        //    self.get(VmcsField::GuestR10).unwrap()
+        //)?;
+        //writeln!(
+        //    f,
+        //    "        r11: {:#x}",
+        //    self.get(VmcsField::GuestR11).unwrap()
+        //)?;
+        //writeln!(
+        //    f,
+        //    "        r12: {:#x}",
+        //    self.get(VmcsField::GuestR12).unwrap()
+        //)?;
+        //writeln!(
+        //    f,
+        //    "        r13: {:#x}",
+        //    self.get(VmcsField::GuestR13).unwrap()
+        //)?;
+        //writeln!(
+        //    f,
+        //    "        r14: {:#x}",
+        //    self.get(VmcsField::GuestR14).unwrap()
+        //)?;
+        //writeln!(
+        //    f,
+        //    "        r15: {:#x}",
+        //    self.get(VmcsField::GuestR15).unwrap()
+        //)?;
         writeln!(
             f,
             "        cr0: {:#x}",

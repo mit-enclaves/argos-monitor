@@ -180,7 +180,7 @@ unsafe fn create_vcpu(info: &GuestInfo) -> (VmxState, Handle<Domain>) {
         .expect("Failed to create VMCS");
     let mut vcpu = vmcs.set_as_active().expect("Failed to set VMCS as active");
     drop(allocator);
-    vmx_helper::init_vcpu(&mut vcpu, info);
     let domain = monitor::init_vcpu(&mut vcpu);
+    vmx_helper::init_vcpu(&mut vcpu, info, &mut monitor::get_context(domain, cpuid()));
     (VmxState { vcpu, vmxon }, domain)
 }

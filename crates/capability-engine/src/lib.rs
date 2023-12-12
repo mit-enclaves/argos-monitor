@@ -33,7 +33,7 @@ pub mod config {
     pub const NB_REGIONS_PER_DOMAIN: usize = 32;
     pub const NB_REGIONS: usize = 1500;
     pub const NB_UPDATES: usize = 128;
-    pub const NB_CORES: usize = 32; // NOTE: Can't be greater than 64 as we use 64 bits bitmaps.
+    pub const NB_CORES: usize = 1; // NOTE: Can't be greater than 64 as we use 64 bits bitmaps.
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -515,12 +515,6 @@ impl CapaEngine {
             return_capa,
             core,
         });
-        //TODO: should we put this as part of the switch instead?
-        self.updates.push(Update::UpdateTraps {
-            trap: self.domains[next_dom].traps(),
-            core,
-        });
-
         Ok(())
     }
 
@@ -545,12 +539,6 @@ impl CapaEngine {
             info,
             core,
         });
-        // Also update the bitmap.
-        self.updates.push(Update::UpdateTraps {
-            trap: self.domains[manager].traps(),
-            core,
-        });
-
         Ok(())
     }
 

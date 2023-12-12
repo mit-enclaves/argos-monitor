@@ -1,6 +1,4 @@
-use capa_engine::CapaError;
 use vmx::fields::{VmcsField, VmcsFieldType};
-use vmx::ActiveVmcs;
 
 /// Represents all the fields that cannot be set by a user when creating a new domain.
 ///
@@ -46,42 +44,14 @@ const DISALLOWED_FIELDS: [VmcsField; 30] = [
 pub struct FilteredFields {}
 
 impl FilteredFields {
-    pub fn is_valid(idx: usize) -> bool {
+    pub fn is_valid(idx: usize, is_write: bool) -> bool {
         if let Some(value) = VmcsField::from_u32(idx as u32) {
             match DISALLOWED_FIELDS.iter().position(|item| *item == value) {
                 Some(_) => return false,
-                _ => return true,
+                // Eliminate non-writable fields
+                _ => return !(is_write && value.tpe() == VmcsFieldType::VmExitInformation),
             }
         }
         return false;
-    }
-
-    pub fn set_register(
-        vcpu: &mut ActiveVmcs,
-        field: VmcsField,
-        value: usize,
-    ) -> Result<(), CapaError> {
-        if !FilteredFields::is_valid(field as usize) {
-            log::error!("Invalid filtered field.");
-            return Err(CapaError::InvalidOperation);
-        }
-
-        // These fields are not writable.
-        if field.tpe() == VmcsFieldType::VmExitInformation {
-            log::error!("Non-writable filtered field.");
-            return Err(CapaError::InvalidOperation);
-        }
-
-        vcpu.set(field, value)
-            .expect("Unable to write the register value");
-        Ok(())
-    }
-
-    pub fn get_register(vcpu: &ActiveVmcs, field: VmcsField) -> Result<usize, CapaError> {
-        if !FilteredFields::is_valid(field as usize) {
-            log::error!("Invalid filtered field.");
-            return Err(CapaError::InvalidOperation);
-        }
-        Ok(vcpu.get(field).expect("Unable to read the register value"))
     }
 }
