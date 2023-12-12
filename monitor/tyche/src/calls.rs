@@ -20,3 +20,7 @@ pub const SEND_ALIASED: usize = 13;
 pub const CONFIGURE_CORE: usize = 14;
 pub const GET_CONFIG_CORE: usize = 15;
 pub const ALLOC_CORE_CONTEXT: usize = 16;
+pub const READ_ALL_GP: usize = 17;
+pub const WRITE_ALL_GP: usize = 18;
+pub const DEBUG_MARKER: usize = 0x666;
+pub const DEBUG_MARKER2: usize = 0x777;
