@@ -8,7 +8,8 @@ use core::arch::asm;
 
 use crate::bitmaps::RFlags;
 use crate::errors::{VmxError, VmxInstructionError};
-use crate::fields::{GeneralPurposeField as GPF, VmcsField};
+use crate::fields::{GeneralPurposeField as GPF, VmcsField, REGFILE_SIZE};
+use crate::msr::{self, IA32_LSTAR};
 use crate::ActiveVmcs;
 
 /// Executes VMXON.
@@ -82,11 +83,16 @@ pub unsafe fn vmptrst() -> Result<u64, VmxError> {
 /// - If the guest is not properly loaded, configured, and sandboxed, this might result in
 ///   arbitrary execution.
 /// - This function expects a 64 bits architecture for now.
-pub unsafe fn vmlaunch(vmcs: &mut ActiveVmcs) -> Result<(), VmxError> {
+pub unsafe fn vmlaunch(
+    _vmcs: &mut ActiveVmcs,
+    regs: &mut [usize; REGFILE_SIZE],
+) -> Result<(), VmxError> {
     let rip_field = VmcsField::HostRip as u64;
     let rsp_field = VmcsField::HostRsp as u64;
-    let vcpu_ptr = vmcs.region.regs.as_mut_ptr();
-    let regs = &mut vmcs.region.regs;
+    // Start by switching lstar.
+    let lstar = msr::Msr::new(IA32_LSTAR.address()).read();
+    msr::Msr::new(IA32_LSTAR.address()).write(regs[GPF::Lstar as usize] as u64);
+    let vcpu_ptr = regs.as_mut_ptr();
     asm!(
         // Save some of the host state on the stack
         "push rbx",                   // Save %rbx, see https://stackoverflow.com/a/71481425
@@ -140,7 +146,12 @@ pub unsafe fn vmlaunch(vmcs: &mut ActiveVmcs) -> Result<(), VmxError> {
     );
     // NOTE: it is correct to check the flag even after a nop and pop instructions since none of
     // them modifies any flags.
-    vmx_capture_status()
+    let res = vmx_capture_status();
+    // Save the current lstar.
+    regs[GPF::Lstar as usize] = msr::Msr::new(IA32_LSTAR.address()).read() as usize;
+    // Restore Lstar.
+    msr::Msr::new(IA32_LSTAR.address()).write(lstar);
+    res
 }
 
 /// Save host state, restore guest state and executes VMRESUME.
@@ -152,11 +163,16 @@ pub unsafe fn vmlaunch(vmcs: &mut ActiveVmcs) -> Result<(), VmxError> {
 /// - If the guest is not properly loaded, configured, and sandboxed, this might result in
 ///   arbitrary execution.
 /// - This function expects a 64 bits architecture for now.
-pub unsafe fn vmresume(vmcs: &mut ActiveVmcs) -> Result<(), VmxError> {
+pub unsafe fn vmresume(
+    _vmcs: &mut ActiveVmcs,
+    regs: &mut [usize; REGFILE_SIZE],
+) -> Result<(), VmxError> {
     let rip_field = VmcsField::HostRip as u64;
     let rsp_field = VmcsField::HostRsp as u64;
-    let vcpu_ptr = vmcs.region.regs.as_mut_ptr();
-    let regs = &mut vmcs.region.regs;
+    // Start by switching lstar.
+    let lstar = msr::Msr::new(IA32_LSTAR.address()).read();
+    msr::Msr::new(IA32_LSTAR.address()).write(regs[GPF::Lstar as usize] as u64);
+    let vcpu_ptr = regs.as_mut_ptr();
     asm!(
         // Save some of the host state on the stack
         "push rbx",                   // Save %rbx, see https://stackoverflow.com/a/71481425
@@ -208,9 +224,15 @@ pub unsafe fn vmresume(vmcs: &mut ActiveVmcs) -> Result<(), VmxError> {
         inout("r14") regs[GPF::R14 as usize] => regs[GPF::R14 as usize],
         inout("r15") regs[GPF::R15 as usize] => regs[GPF::R15 as usize],
     );
+
     // NOTE: it is correct to check the flag even after a nop and pop instructions since none of
     // them modifies any flags.
-    vmx_capture_status()
+    let res = vmx_capture_status();
+    // Save the current lstar.
+    regs[GPF::Lstar as usize] = msr::Msr::new(IA32_LSTAR.address()).read() as usize;
+    // Restore the previous lstar.
+    msr::Msr::new(IA32_LSTAR.address()).write(lstar);
+    res
 }
 
 /// Helper used to extract VMX-specific Result in accordance with

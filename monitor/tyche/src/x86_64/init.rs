@@ -7,7 +7,7 @@ use allocator::FrameAllocator;
 use capa_engine::{Domain, Handle};
 use stage_two_abi::{GuestInfo, Manifest};
 use vmx::fields::VmcsField;
-pub use vmx::{ActiveVmcs, ActiveVmcs, ControlRegister, VmxError as BackendError};
+pub use vmx::{ActiveVmcs, ControlRegister, VmxError as BackendError};
 
 use super::guest::VmxState;
 use super::{arch, cpuid, launch_guest, monitor, vmx_helper};
@@ -179,7 +179,8 @@ unsafe fn create_vcpu(info: &GuestInfo) -> (VmxState, Handle<Domain>) {
         .create_vm_unsafe(vmcs_frame)
         .expect("Failed to create VMCS");
     let mut vcpu = vmcs.set_as_active().expect("Failed to set VMCS as active");
-    vmx_helper::init_vcpu(&mut vcpu, info);
+    drop(allocator);
     let domain = monitor::init_vcpu(&mut vcpu);
+    vmx_helper::init_vcpu(&mut vcpu, info, &mut monitor::get_context(domain, cpuid()));
     (VmxState { vcpu, vmxon }, domain)
 }

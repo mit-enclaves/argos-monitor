@@ -14,20 +14,26 @@ use mmu::{EptMapper, FrameAllocator, IoPtFlag, IoPtMapper};
 use spin::barrier::Barrier;
 use spin::{Mutex, MutexGuard};
 use stage_two_abi::Manifest;
-use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
-use vmx::bitmaps::{EptEntryFlags, ExceptionBitmap};
+use utils::{GuestPhysAddr, GuestPhysAddr, HostPhysAddr, HostPhysAddr, HostVirtAddr};
+use vmx::bitmaps::{EptEntryFlags, EptEntryFlags, ExceptionBitmap};
 use vmx::ept::PAGE_SIZE;
 use vmx::errors::Trapnr;
-use vmx::fields::{GeneralPurposeField, VmcsField, VmcsField, REGFILE_SIZE, REGFILE_SIZE};
+use vmx::fields::{
+    GeneralPurposeField, GeneralPurposeField, VmcsField, VmcsField, VmcsField, REGFILE_SIZE,
+    REGFILE_SIZE, REGFILE_SIZE,
+};
 use vmx::msr::{IA32_LSTAR, IA32_STAR};
 use vmx::{
     ActiveVmcs, ActiveVmcs, ControlRegister, Register, Register, VmExitInterrupt, VmExitInterrupt,
-    VmExitInterrupt, VmExitInterrupt, VmExitInterrupt, Vmxon, Vmxon, REGFILE_CONTEXT_SIZE,
-    REGFILE_SIZE,
+    VmExitInterrupt, VmExitInterrupt, VmExitInterrupt, VmExitInterrupt, Vmxon, Vmxon, Vmxon,
+    REGFILE_CONTEXT_SIZE, REGFILE_SIZE,
 };
 use vtd::Iommu;
 
-use super::context::ContextData;
+use super::context::{
+    Cache, Context16x86, Context32x86, Context64x86, ContextGpx86, ContextNatx86, Contextx86,
+    DirtyRegGroups,
+};
 use super::cpuid;
 use super::guest::VmxState;
 use super::init::NB_BOOTED_CORES;
@@ -46,7 +52,7 @@ static IO_DOMAIN: Mutex<Option<LocalCapa>> = Mutex::new(None);
 static INITIAL_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
 static DOMAINS: [Mutex<DomainData>; NB_DOMAINS] = [EMPTY_DOMAIN; NB_DOMAINS];
 static CORE_UPDATES: [Mutex<Buffer<CoreUpdate>>; NB_CORES] = [EMPTY_UPDATE_BUFFER; NB_CORES];
-static CONTEXTS: [[Mutex<ContextData>; NB_CORES]; NB_DOMAINS] = [EMPTY_CONTEXT_ARRAY; NB_DOMAINS];
+static CONTEXTS: [[Mutex<Contextx86>; NB_CORES]; NB_DOMAINS] = [EMPTY_CONTEXT_ARRAY; NB_DOMAINS];
 static RC_VMCS: Mutex<RCFramePool> =
     Mutex::new(GenArena::new([EMPTY_RCFRAME; { NB_DOMAINS * NB_CORES }]));
 const BARRIER: Option<Barrier> = None;
@@ -137,24 +143,25 @@ const EMPTY_DOMAIN: Mutex<DomainData> = Mutex::new(DomainData {
     iopt: None,
 });
 const EMPTY_UPDATE_BUFFER: Mutex<Buffer<CoreUpdate>> = Mutex::new(Buffer::new());
-const EMPTY_CONTEXT: Mutex<ContextData> = Mutex::new(ContextData {
-    cr3: usize::max_value(),
-    rip: usize::max_value(),
-    rsp: usize::max_value(),
-    regs: [0; REGFILE_SIZE],
-    lstar: u64::max_value(),
-    star: u64::max_value(),
-    vmcs: Handle::<RCFrame>::new_invalid(),
-    regs: [usize::max_value(); REGFILE_SIZE],
-    cr3: usize::max_value(),
-    rip: usize::max_value(),
-    rsp: usize::max_value(),
+
+const EMPTY_CONTEXT: Mutex<Contextx86> = Mutex::new(Contextx86 {
+    dirty: Cache::<{ DirtyRegGroups::size() }> { bitmap: 0 },
+    vmcs_16: [0; Context16x86::size()],
+    dirty_16: Cache::<{ Context16x86::size() }> { bitmap: 0 },
+    vmcs_32: [0; Context32x86::size()],
+    dirty_32: Cache::<{ Context32x86::size() }> { bitmap: 0 },
+    vmcs_64: [0; Context64x86::size()],
+    dirty_64: Cache::<{ Context64x86::size() }> { bitmap: 0 },
+    vmcs_nat: [0; ContextNatx86::size()],
+    dirty_nat: Cache::<{ ContextNatx86::size() }> { bitmap: 0 },
+    vmcs_gp: [0; ContextGpx86::size()],
+    dirty_gp: Cache::<{ ContextGpx86::size() }> { bitmap: 0 },
     interrupted: false,
+    vmcs: Handle::<RCFrame>::new_invalid(),
 });
 const EMPTY_CONTEXT_ARRAY: [Mutex<ContextData>; NB_CORES] = [EMPTY_CONTEXT; NB_CORES];
 static IOMMU: Mutex<Iommu> =
     Mutex::new(unsafe { Iommu::new(HostVirtAddr::new(usize::max_value())) });
-
 // ————————————————————————————— Initialization ————————————————————————————— //
 
 pub fn init(manifest: &'static Manifest) {
@@ -168,6 +175,7 @@ pub fn init(manifest: &'static Manifest) {
                 start: 0,
                 end: manifest.iommu as usize,
                 ops: MEMOPS_ALL,
+                alias: Alias::NoAlias,
             },
         )
         .unwrap();
@@ -232,7 +240,7 @@ fn get_domain(domain: Handle<Domain>) -> MutexGuard<'static, DomainData> {
     DOMAINS[domain.idx()].lock()
 }
 
-fn get_context(domain: Handle<Domain>, core: usize) -> MutexGuard<'static, ContextData> {
+pub fn get_context(domain: Handle<Domain>, core: usize) -> MutexGuard<'static, Contextx86> {
     CONTEXTS[domain.idx()][core].lock()
 }
 
@@ -263,7 +271,6 @@ pub fn do_configure_core(
     core: usize,
     idx: usize,
     value: usize,
-    vcpu: &mut ActiveVmcs<'static>,
 ) -> Result<(), CapaError> {
     let mut engine = CAPA_ENGINE.lock();
     let local_capa = domain;
@@ -289,7 +296,7 @@ pub fn do_configure_core(
     }
 
     // Check this is a valid idx for a field.
-    if !FilteredFields::is_valid(idx) {
+    if !FilteredFields::is_valid(idx, true) {
         log::error!("Attempt to set an invalid register: {:x}", idx);
         return Err(CapaError::InvalidOperation);
     }
@@ -309,39 +316,14 @@ pub fn do_configure_core(
         return Err(CapaError::InvalidOperation);
     }
 
-    // Now we have a complex dance to set a value on the target context.
-    // TODO: I do it in a block to lazily return the error. Poor style, let's make it clean when it
-    // works.
-    {
-        let mut current_ctx = get_context(current, cpuid());
-        let mut target_ctx = get_context(domain, core);
-        if current_ctx.vmcs.is_invalid() || target_ctx.vmcs.is_invalid() {
-            log::error!(
-                "VMCs are none during a configure core {}: curr:{:?}, tgt:{:?}",
-                core,
-                current_ctx.vmcs.is_invalid(),
-                target_ctx.vmcs.is_invalid()
-            );
-            return Err(CapaError::InvalidOperation);
-        }
-
-        // 1. save the current context.
-        current_ctx.save(vcpu);
-
-        // 2. switch to the target one.
-        target_ctx.restore(&RC_VMCS, vcpu);
-
-        // 3. set the value.
-        let err = FilteredFields::set_register(vcpu, field, value);
-
-        // 4. save the target context.
-        target_ctx.save(vcpu);
-
-        // 5. switch back to the original one.
-        current_ctx.restore(&RC_VMCS, vcpu);
-        err
-    }?;
-
+    let mut target_ctxt = get_context(domain, core);
+    if target_ctxt.vmcs.is_invalid() {
+        log::error!("Target VMCS is none.");
+        return Err(CapaError::InvalidOperation);
+    }
+    target_ctxt
+        .set(field, value, None)
+        .map_err(|_| CapaError::InvalidOperation)?;
     Ok(())
 }
 
@@ -350,7 +332,6 @@ pub fn do_get_config_core(
     domain: LocalCapa,
     core: usize,
     idx: usize,
-    vcpu: &mut ActiveVmcs<'static>,
 ) -> Result<usize, CapaError> {
     let mut engine = CAPA_ENGINE.lock();
     let domain = engine.get_domain_capa(current, domain)?;
@@ -369,7 +350,7 @@ pub fn do_get_config_core(
     }
 
     // Check this is a valid idx for a field.
-    if !FilteredFields::is_valid(idx) {
+    if !FilteredFields::is_valid(idx, false) {
         log::error!("Attempt to get an invalid register: {:x}", idx);
         return Err(CapaError::InvalidOperation);
     }
@@ -384,47 +365,17 @@ pub fn do_get_config_core(
         return Err(CapaError::InvalidOperation);
     }
 
-    // Now we have a complex dance to get a value on the target context.
-    // TODO: I do it in a block to lazily return the error. Poor style, let's make it clean when it
-    // works.
-    let res = {
-        let mut current_ctx = get_context(current, cpuid());
-        let mut target_ctx = get_context(domain, core);
-        if current_ctx.vmcs.is_invalid() || target_ctx.vmcs.is_invalid() {
-            log::error!(
-                "VMCs are none during a configure core {}: curr:{:?}, tgt:{:?}",
-                core,
-                current_ctx.vmcs.is_invalid(),
-                target_ctx.vmcs.is_invalid()
-            );
-            return Err(CapaError::InvalidOperation);
-        }
-
-        // 1. save the current context.
-        current_ctx.save(vcpu);
-
-        // 2. switch to the target one.
-        target_ctx.restore(&RC_VMCS, vcpu);
-
-        // 3. set the value.
-        let err = FilteredFields::get_register(vcpu, field);
-
-        // 4. save the target context.
-        target_ctx.save(vcpu);
-
-        // 5. switch back to the original one.
-        current_ctx.restore(&RC_VMCS, vcpu);
-        err
-    }?;
-
-    Ok(res)
+    let mut target_ctx = get_context(domain, core);
+    if target_ctx.vmcs.is_invalid() {
+        log::error!("Target VMCS is invalid.");
+        return Err(CapaError::InvalidOperation);
+    }
+    target_ctx
+        .get(field, None)
+        .map_err(|_| CapaError::InvalidOperation)
 }
 
-pub fn do_set_all_gp(
-    current: Handle<Domain>,
-    domain: LocalCapa,
-    vcpu: &mut ActiveVmcs<'static>,
-) -> Result<(), CapaError> {
+pub fn do_set_all_gp(current: Handle<Domain>, domain: LocalCapa) -> Result<(), CapaError> {
     let mut engine = CAPA_ENGINE.lock();
     let domain = engine.get_domain_capa(current, domain)?;
     let core = cpuid();
@@ -441,7 +392,7 @@ pub fn do_set_all_gp(
         log::error!("Trying to get all registers from a shared vcpu.");
         return Err(CapaError::InvalidOperation);
     }
-    let mut curr_ctx = get_context(current, core);
+    let curr_ctx = get_context(current, core);
     let mut tgt_ctx = get_context(domain, core);
     if curr_ctx.vmcs.is_invalid() || tgt_ctx.vmcs.is_invalid() {
         log::error!(
@@ -453,20 +404,15 @@ pub fn do_set_all_gp(
         return Err(CapaError::InvalidOperation);
     }
     // Copy the general purpose registers.
-    vcpu.dump_regs(&mut curr_ctx.regs);
-    let rax = tgt_ctx.regs[GeneralPurposeField::Rax as usize];
-    let rdi = tgt_ctx.regs[GeneralPurposeField::Rdi as usize];
-    tgt_ctx.regs[0..REGFILE_SIZE - 1].copy_from_slice(&curr_ctx.regs[0..REGFILE_SIZE - 1]);
-    tgt_ctx.regs[GeneralPurposeField::Rax as usize] = rax;
-    tgt_ctx.regs[GeneralPurposeField::Rdi as usize] = rdi;
+    let rax = tgt_ctx.vmcs_gp[GeneralPurposeField::Rax as usize];
+    let rdi = tgt_ctx.vmcs_gp[GeneralPurposeField::Rdi as usize];
+    tgt_ctx.vmcs_gp[0..REGFILE_SIZE - 1].copy_from_slice(&curr_ctx.vmcs_gp[0..REGFILE_SIZE - 1]);
+    tgt_ctx.vmcs_gp[GeneralPurposeField::Rax as usize] = rax;
+    tgt_ctx.vmcs_gp[GeneralPurposeField::Rdi as usize] = rdi;
     Ok(())
 }
 
-pub fn do_get_all_gp(
-    current: Handle<Domain>,
-    domain: LocalCapa,
-    vcpu: &mut ActiveVmcs<'static>,
-) -> Result<(), CapaError> {
+pub fn do_get_all_gp(current: Handle<Domain>, domain: LocalCapa) -> Result<(), CapaError> {
     let mut engine = CAPA_ENGINE.lock();
     let domain = engine.get_domain_capa(current, domain)?;
     let core = cpuid();
@@ -495,9 +441,7 @@ pub fn do_get_all_gp(
         return Err(CapaError::InvalidOperation);
     }
     // Copy the general purpose registers.
-    curr_ctx.regs[0..REGFILE_SIZE - 1].copy_from_slice(&tgt_ctx.regs[0..REGFILE_SIZE - 1]);
-    vcpu.load_gp_regs(&curr_ctx.regs[0..REGFILE_SIZE - 1]);
-
+    curr_ctx.vmcs_gp[0..REGFILE_SIZE - 1].copy_from_slice(&tgt_ctx.vmcs_gp[0..REGFILE_SIZE - 1]);
     Ok(())
 }
 
@@ -558,25 +502,23 @@ pub fn do_init_child_context(
             vmxon.init_frame(frame);
             // Init the host state:
             {
-                let mut current_ctxt = get_context(current, cpuid());
+                let current_ctxt = get_context(current, cpuid());
                 let mut values: [usize; 13] = [0; 13];
                 dump_host_state(vcpu, &mut values).or(Err(CapaError::InvalidSwitch))?;
 
-                // 1. Save.
-                current_ctxt.save(vcpu);
+                //TODO(aghosn): we could just set it in the context if we were able to distinguish
+                //writable by tyche from writable by parent.
 
-                // 2. Switch.
-                dest.restore_locked(&rcvmcs.get(dest.vmcs).expect("Access error"), vcpu);
+                // Switch to the target frame.
+                vcpu.switch_frame(rcvmcs.get(dest.vmcs).unwrap().frame)
+                    .unwrap();
 
-                // 3. Set the host state.
+                // Load the default values.
                 load_host_state(vcpu, &mut values).or(Err(CapaError::InvalidSwitch))?;
 
-                // 4. Save again.
-                dest.save(vcpu);
-
-                // 5. Restore the previous.
-                current_ctxt
-                    .restore_locked(&rcvmcs.get(current_ctxt.vmcs).expect("Access error"), vcpu);
+                // Switch back the frame.
+                vcpu.switch_frame(rcvmcs.get(current_ctxt.vmcs).unwrap().frame)
+                    .unwrap();
             }
         }
     }
@@ -765,9 +707,6 @@ enum CoreUpdate {
         trap: u64,
         info: u64,
     },
-    UpdateTrap {
-        bitmap: u64,
-    },
 }
 
 fn post_ept_update(core_id: usize, cores: u64, domain: &Handle<Domain>) {
@@ -871,9 +810,10 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
                     info,
                 });
             }
-            capa_engine::Update::UpdateTraps { trap, core } => {
+
+            capa_engine::Update::TlbShootdown { core } => {
                 let mut core_updates = CORE_UPDATES[core as usize].lock();
-                core_updates.push(CoreUpdate::UpdateTrap { bitmap: !trap });
+                core_updates.push(CoreUpdate::TlbShootdown);
             }
         }
     }
@@ -936,46 +876,39 @@ pub fn apply_core_updates(
 
                 let mut current_ctx = get_context(*current_domain, core);
                 let mut next_ctx = get_context(domain, core);
-                let interrupted = {
+                /*let interrupted = {
                     let v = next_ctx.interrupted;
                     next_ctx.interrupted = false;
                     v
-                };
+                };*/
                 let next_domain = get_domain(domain);
-                switch_domain(vcpu, &mut current_ctx, &next_ctx, next_domain)
-                    .expect("Failed to perform the switch");
-
-                // Set switch return values if the target was not interrupted.
-                if !interrupted {
-                    vcpu.set(VmcsField::GuestRax, 0).unwrap();
-                    vcpu.set(VmcsField::GuestRdi, return_capa.as_usize())
-                        .unwrap();
-                }
-                // We are returning from an interruption
-                if current_ctx.interrupted {
-                    // Propagate the register values.
-                    // TODO(aghosn) we need a clean principled way to do this.
-                    // The -1 is to ignore LSTAR -> clean that seriously.
-                    //vcpu.load_gp_regs(&current_ctx.regs[0..REGFILE_SIZE - 1]);
-                }
+                switch_domain(
+                    vcpu,
+                    &mut current_ctx,
+                    &mut next_ctx,
+                    next_domain,
+                    return_capa,
+                )
+                .expect("Failed to perform the switch");
                 // Update the current domain and context handle
                 *current_domain = domain;
             }
             CoreUpdate::Trap {
-                manager,
+                manager: _manager,
                 trap,
-                info,
+                info: _info,
             } => {
                 log::trace!("Trap {} on core {}", trap, core_id);
                 log::debug!(
                     "Exception Bitmap is {:b}",
                     vcpu.get_exception_bitmap().expect("Failed to read bitmpap")
                 );
+                todo!("Update this code path.");
 
-                let mut current_ctx = get_context(*current_domain, core);
-                let next_ctx = get_context(manager, core);
+                /*let mut current_ctx = get_context(*current_domain, core);
+                let mut next_ctx = get_context(manager, core);
                 let next_domain = get_domain(manager);
-                switch_domain(vcpu, &mut current_ctx, &next_ctx, next_domain)
+                switch_domain(vcpu, &mut current_ctx, &mut next_ctx, next_domain)
                     .expect("Failed to perform switch for trap");
 
                 log::debug!(
@@ -999,17 +932,7 @@ pub fn apply_core_updates(
                 //vcpu.set(Register::Rax, trap);
 
                 // Update the current domain
-                *current_domain = manager;
-            }
-            CoreUpdate::UpdateTrap { bitmap } => {
-                let value = ExceptionBitmap::from_bits_truncate(bitmap as u32);
-                log::trace!("Updating trap bitmap on core {} to {:?}", core_id, value);
-                //TODO: for the moment we only offer interposition on the hardware cpu exception
-                //interrupts (first 32 values).
-                //By instrumenting APIC and virtualizing it, we might manage to do better in the
-                //future.
-                vcpu.set_exception_bitmap(value)
-                    .expect("Error setting the exception bitmap");
+                *current_domain = manager;*/
             }
         }
     }
@@ -1017,9 +940,10 @@ pub fn apply_core_updates(
 
 fn switch_domain(
     vcpu: &mut ActiveVmcs<'static>,
-    current_ctx: &mut MutexGuard<ContextData>,
-    next_ctx: &MutexGuard<ContextData>,
+    current_ctx: &mut MutexGuard<Contextx86>,
+    next_ctx: &mut MutexGuard<Contextx86>,
     next_domain: MutexGuard<DomainData>,
+    return_capa: LocalCapa,
 ) -> Result<(), CapaError> {
     // Safety check that both contexts have a valid vmcs.
     if current_ctx.vmcs.is_invalid() || next_ctx.vmcs.is_invalid() {
@@ -1030,12 +954,39 @@ fn switch_domain(
         );
         return Err(CapaError::InvalidSwitch);
     }
-    if current_ctx.vmcs != next_ctx.vmcs {
-        current_ctx.save(vcpu);
-        next_ctx.restore(&RC_VMCS, vcpu);
+
+    // We have different cases:
+    // 1. current(interrupted) -- interrupt --> next.
+    // 2. current -- resume interrupted --> next(interrupted)
+    // 3. current -- synchronous --> next
+    if current_ctx.interrupted && next_ctx.interrupted {
+        panic!("Two domains should never be both interrupted in a switch.");
+    }
+    // Case 1: copy the interrupted state.
+    if current_ctx.interrupted {
+        next_ctx
+            .copy_interrupt_frame(current_ctx, return_capa.as_usize(), vcpu)
+            .unwrap();
+    } else if next_ctx.interrupted {
+        // Case 2: do not put the return capa.
+        next_ctx.interrupted = false;
     } else {
-        current_ctx.save_partial(vcpu);
-        next_ctx.restore_partial(vcpu);
+        // Case 3: synchronous call.
+        next_ctx.set(VmcsField::GuestRax, 0, None).unwrap();
+        next_ctx
+            .set(VmcsField::GuestRdi, return_capa.as_usize(), None)
+            .unwrap();
+    }
+
+    // Now the logic for shared vs. private vmcs.
+    if current_ctx.vmcs != next_ctx.vmcs {
+        current_ctx.load(vcpu);
+        next_ctx.switch_flush(&RC_VMCS, vcpu);
+    } else {
+        // TODO: This case is annoying.
+        current_ctx.save_shared(vcpu).unwrap();
+        // The previous values should have been marked as dirty.
+        next_ctx.flush(vcpu);
     }
 
     vcpu.set_ept_ptr(HostPhysAddr::new(
@@ -1250,9 +1201,6 @@ impl core::fmt::Display for CoreUpdate {
                 info: inf,
             } => {
                 write!(f, "Trap({}, {} | {:b})", manager, interrupt, inf)
-            }
-            CoreUpdate::UpdateTrap { bitmap } => {
-                write!(f, "UpdateTrap({:b})", bitmap)
             }
         }
     }
