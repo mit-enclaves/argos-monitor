@@ -13,7 +13,7 @@ use utils::{GuestPhysAddr, HostPhysAddr};
 use vmx::bitmaps::{EptEntryFlags, ExceptionBitmap};
 use vmx::ept::PAGE_SIZE;
 use vmx::errors::Trapnr;
-use vmx::fields::{VmcsField, REGFILE_SIZE};
+use vmx::fields::{GeneralPurposeField, VmcsField, REGFILE_SIZE};
 use vmx::{ActiveVmcs, VmExitInterrupt, Vmxon};
 
 use super::context::ContextData;
@@ -313,6 +313,87 @@ pub fn do_get_config_core(
     }?;
 
     Ok(res)
+}
+
+pub fn do_set_all_gp(
+    current: Handle<Domain>,
+    domain: LocalCapa,
+    vcpu: &mut ActiveVmcs<'static>,
+) -> Result<(), CapaError> {
+    let mut engine = CAPA_ENGINE.lock();
+    let domain = engine.get_domain_capa(current, domain)?;
+    let core = cpuid();
+
+    let core_map = engine.get_domain_config(domain, Bitmaps::CORE);
+    if (1 << core) & core_map == 0 {
+        return Err(CapaError::InvalidCore);
+    }
+
+    // Check the domain has the correct vcpu type
+    let switch_type = engine.get_domain_config(domain, Bitmaps::SWITCH);
+    let switch_type = InitVMCS::from_u64(switch_type)?;
+    if switch_type == InitVMCS::Shared {
+        log::error!("Trying to get all registers from a shared vcpu.");
+        return Err(CapaError::InvalidOperation);
+    }
+    let mut curr_ctx = get_context(current, core);
+    let mut tgt_ctx = get_context(domain, core);
+    if curr_ctx.vmcs.is_invalid() || tgt_ctx.vmcs.is_invalid() {
+        log::error!(
+            "VMCs are none during a configure core {}: curr:{:?}, tgt:{:?}",
+            core,
+            curr_ctx.vmcs.is_invalid(),
+            tgt_ctx.vmcs.is_invalid()
+        );
+        return Err(CapaError::InvalidOperation);
+    }
+    // Copy the general purpose registers.
+    vcpu.dump_regs(&mut curr_ctx.regs);
+    let rax = tgt_ctx.regs[GeneralPurposeField::Rax as usize];
+    let rdi = tgt_ctx.regs[GeneralPurposeField::Rdi as usize];
+    tgt_ctx.regs[0..REGFILE_SIZE - 1].copy_from_slice(&curr_ctx.regs[0..REGFILE_SIZE - 1]);
+    tgt_ctx.regs[GeneralPurposeField::Rax as usize] = rax;
+    tgt_ctx.regs[GeneralPurposeField::Rdi as usize] = rdi;
+    Ok(())
+}
+
+pub fn do_get_all_gp(
+    current: Handle<Domain>,
+    domain: LocalCapa,
+    vcpu: &mut ActiveVmcs<'static>,
+) -> Result<(), CapaError> {
+    let mut engine = CAPA_ENGINE.lock();
+    let domain = engine.get_domain_capa(current, domain)?;
+    let core = cpuid();
+
+    let core_map = engine.get_domain_config(domain, Bitmaps::CORE);
+    if (1 << core) & core_map == 0 {
+        return Err(CapaError::InvalidCore);
+    }
+
+    // Check the domain has the correct vcpu type
+    let switch_type = engine.get_domain_config(domain, Bitmaps::SWITCH);
+    let switch_type = InitVMCS::from_u64(switch_type)?;
+    if switch_type == InitVMCS::Shared {
+        log::error!("Trying to get all registers from a shared vcpu.");
+        return Err(CapaError::InvalidOperation);
+    }
+    let mut curr_ctx = get_context(current, core);
+    let tgt_ctx = get_context(domain, core);
+    if curr_ctx.vmcs.is_invalid() || tgt_ctx.vmcs.is_invalid() {
+        log::error!(
+            "VMCs are none during a configure core {}: curr:{:?}, tgt:{:?}",
+            core,
+            curr_ctx.vmcs.is_invalid(),
+            tgt_ctx.vmcs.is_invalid()
+        );
+        return Err(CapaError::InvalidOperation);
+    }
+    // Copy the general purpose registers.
+    curr_ctx.regs[0..REGFILE_SIZE - 1].copy_from_slice(&tgt_ctx.regs[0..REGFILE_SIZE - 1]);
+    vcpu.load_gp_regs(&curr_ctx.regs[0..REGFILE_SIZE - 1]);
+
+    Ok(())
 }
 
 pub fn do_init_child_context(
@@ -644,7 +725,7 @@ pub fn apply_core_updates(
             } => {
                 log::trace!("Domain Switch on core {}", core_id);
 
-                let current_ctx = get_context(*current_domain, core);
+                let mut current_ctx = get_context(*current_domain, core);
                 let mut next_ctx = get_context(domain, core);
                 let interrupted = {
                     let v = next_ctx.interrupted;
@@ -652,7 +733,7 @@ pub fn apply_core_updates(
                     v
                 };
                 let next_domain = get_domain(domain);
-                switch_domain(vcpu, current_ctx, next_ctx, next_domain)
+                switch_domain(vcpu, &mut current_ctx, &next_ctx, next_domain)
                     .expect("Failed to perform the switch");
 
                 // Set switch return values if the target was not interrupted.
@@ -660,6 +741,13 @@ pub fn apply_core_updates(
                     vcpu.set(VmcsField::GuestRax, 0).unwrap();
                     vcpu.set(VmcsField::GuestRdi, return_capa.as_usize())
                         .unwrap();
+                }
+                // We are returning from an interruption
+                if current_ctx.interrupted {
+                    // Propagate the register values.
+                    // TODO(aghosn) we need a clean principled way to do this.
+                    // The -1 is to ignore LSTAR -> clean that seriously.
+                    //vcpu.load_gp_regs(&current_ctx.regs[0..REGFILE_SIZE - 1]);
                 }
                 // Update the current domain and context handle
                 *current_domain = domain;
@@ -675,10 +763,10 @@ pub fn apply_core_updates(
                     vcpu.get_exception_bitmap().expect("Failed to read bitmpap")
                 );
 
-                let current_ctx = get_context(*current_domain, core);
+                let mut current_ctx = get_context(*current_domain, core);
                 let next_ctx = get_context(manager, core);
                 let next_domain = get_domain(manager);
-                switch_domain(vcpu, current_ctx, next_ctx, next_domain)
+                switch_domain(vcpu, &mut current_ctx, &next_ctx, next_domain)
                     .expect("Failed to perform switch for trap");
 
                 log::debug!(
@@ -720,8 +808,8 @@ pub fn apply_core_updates(
 
 fn switch_domain(
     vcpu: &mut ActiveVmcs<'static>,
-    mut current_ctx: MutexGuard<ContextData>,
-    next_ctx: MutexGuard<ContextData>,
+    current_ctx: &mut MutexGuard<ContextData>,
+    next_ctx: &MutexGuard<ContextData>,
     next_domain: MutexGuard<DomainData>,
 ) -> Result<(), CapaError> {
     // Safety check that both contexts have a valid vmcs.

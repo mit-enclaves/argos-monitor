@@ -485,7 +485,6 @@ impl CapaEngine {
         domain::create_switch(domain, core, &mut self.regions, &mut self.domains)
     }
 
-    /// Returns the new domain if the switch succeeds
     pub fn switch(
         &mut self,
         domain: Handle<Domain>,

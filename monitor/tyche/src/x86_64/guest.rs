@@ -143,6 +143,20 @@ fn handle_exit(
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
+                calls::READ_ALL_GP => {
+                    log::trace!("Read all gp register values.");
+                    monitor::do_get_all_gp(*domain, LocalCapa::new(arg_1), &mut vs.vcpu)
+                        .expect("Problem during copy");
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
+                calls::WRITE_ALL_GP => {
+                    log::trace!("Write all gp register values.");
+                    monitor::do_set_all_gp(*domain, LocalCapa::new(arg_1), &mut vs.vcpu)
+                        .expect("Problem during copy");
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
                 calls::CONFIGURE_CORE => {
                     log::trace!("Configure Core");
                     match monitor::do_configure_core(
@@ -281,10 +295,46 @@ fn handle_exit(
                 }
                 calls::DEBUG => {
                     log::trace!("Debug");
+                    log::info!("Debug called on {} vcpu: {:x?}", domain.idx(), vs.vcpu);
                     monitor::do_debug();
                     vs.vcpu.set(VmcsField::GuestRax, 0)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
+                }
+                calls::DEBUG_MARKER => {
+                    if domain.idx() == 0 {
+                        log::info!("Marker called {}", arg_1);
+                        vs.vcpu.next_instruction()?;
+                        return Ok(HandlerResult::Resume);
+                    }
+                    let addr = vs.vcpu.guest_phys_addr()?;
+                    match monitor::do_handle_violation(*domain) {
+                        Ok(_) => {
+                            return Ok(HandlerResult::Resume);
+                        }
+                        Err(e) => {
+                            log::error!("Unable to handle {:?}: {:?}", reason, e);
+                            if reason == VmxExitReason::EptViolation {
+                                log::error!(
+                                    "Ept Violation! virt: 0x{:x}, phys: 0x{:x} on dom{}",
+                                    vs.vcpu
+                                        .guest_linear_addr()
+                                        .expect("Unable to get virt addr")
+                                        .as_u64(),
+                                    addr.as_u64(),
+                                    *domain
+                                );
+                            }
+                            log::info!("The vcpu: {:x?}", vs.vcpu);
+                            return Ok(HandlerResult::Crash);
+                        }
+                    }
+                    /*log::info!("marker called with {}", arg_1);
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)*/
+                }
+                calls::DEBUG_MARKER2 => {
+                    todo!("Got it");
                 }
                 calls::EXIT => {
                     log::info!("MonCall: exit");
@@ -458,7 +508,11 @@ fn handle_exit(
         | VmxExitReason::Exception
         | VmxExitReason::Wrmsr
         | VmxExitReason::Rdmsr
-        | VmxExitReason::ApicWrite => {
+        | VmxExitReason::ApicWrite
+        | VmxExitReason::InterruptWindow
+        | VmxExitReason::Wbinvd
+        | VmxExitReason::MovDR
+        | VmxExitReason::VirtualizedEoi => {
             log::trace!("Handling {:?} for dom {}", reason, domain.idx());
             let addr = vs.vcpu.guest_phys_addr()?;
             // TODO(aghosn): for the moment, crash on EPT violations

@@ -299,6 +299,9 @@ impl<'vmx> VmcsRegion<'vmx> {
     pub fn set_regs(&mut self, src: &[usize]) {
         self.regs.copy_from_slice(src);
     }
+    pub fn set_gp_regs(&mut self, src: &[usize]) {
+        self.regs[0..REGFILE_SIZE - 1].copy_from_slice(src);
+    }
 }
 
 impl<'vmx> ActiveVmcs<'vmx> {
@@ -314,6 +317,10 @@ impl<'vmx> ActiveVmcs<'vmx> {
 
     pub fn load_regs(&mut self, src: &[usize]) {
         self.region.set_regs(src);
+    }
+
+    pub fn load_gp_regs(&mut self, src: &[usize]) {
+        self.region.set_gp_regs(src);
     }
 
     pub fn flush(&mut self) {
