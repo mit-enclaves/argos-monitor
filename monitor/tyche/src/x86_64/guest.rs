@@ -139,7 +139,7 @@ fn handle_exit(
                 }
                 calls::READ_ALL_GP => {
                     log::trace!("Read all gp register values.");
-                    monitor::do_get_all_gp(*domain, LocalCapa::new(arg_1))
+                    monitor::do_get_all_gp(*domain, LocalCapa::new(arg_1), arg_2)
                         .expect("Problem during copy");
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
@@ -148,6 +148,54 @@ fn handle_exit(
                     log::trace!("Write all gp register values.");
                     monitor::do_set_all_gp(*domain, LocalCapa::new(arg_1))
                         .expect("Problem during copy");
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
+                calls::WRITE_FIELDS => {
+                    log::trace!("Write several registers.");
+                    // Collect the arguments.
+                    let values: [(usize, usize); 6] = {
+                        let mut context = monitor::get_context(*domain, cpuid());
+                        [
+                            (
+                                context.get(VmcsField::GuestRbp, None).unwrap(),
+                                context.get(VmcsField::GuestRbx, None).unwrap(),
+                            ),
+                            (
+                                context.get(VmcsField::GuestRcx, None).unwrap(),
+                                context.get(VmcsField::GuestRdx, None).unwrap(),
+                            ),
+                            (
+                                context.get(VmcsField::GuestR8, None).unwrap(),
+                                context.get(VmcsField::GuestR9, None).unwrap(),
+                            ),
+                            (
+                                context.get(VmcsField::GuestR10, None).unwrap(),
+                                context.get(VmcsField::GuestR11, None).unwrap(),
+                            ),
+                            (
+                                context.get(VmcsField::GuestR12, None).unwrap(),
+                                context.get(VmcsField::GuestR13, None).unwrap(),
+                            ),
+                            (
+                                context.get(VmcsField::GuestR14, None).unwrap(),
+                                context.get(VmcsField::GuestR15, None).unwrap(),
+                            ),
+                        ]
+                    };
+                    let res = match monitor::do_set_fields(
+                        *domain,
+                        LocalCapa::new(arg_1),
+                        arg_2,
+                        &values,
+                    ) {
+                        Ok(()) => 0,
+                        Err(e) => {
+                            log::error!("Set fields error {:?}", e);
+                            1
+                        }
+                    };
+                    monitor::get_context(*domain, cpuid()).set(VmcsField::GuestRax, res, None)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
@@ -522,7 +570,6 @@ fn handle_exit(
         | VmxExitReason::MovDR
         | VmxExitReason::VirtualizedEoi => {
             log::trace!("Handling {:?} for dom {}", reason, domain.idx());
-            let addr = vs.vcpu.guest_phys_addr()?;
             // TODO(aghosn): for the moment, crash on EPT violations
             // on dom0. Later on, we should route them to the domain in a different
             // way.
@@ -533,6 +580,7 @@ fn handle_exit(
                 Err(e) => {
                     log::error!("Unable to handle {:?}: {:?}", reason, e);
                     if reason == VmxExitReason::EptViolation {
+                        let addr = vs.vcpu.guest_phys_addr()?;
                         log::error!(
                             "Ept Violation! virt: 0x{:x}, phys: 0x{:x} on dom{}",
                             vs.vcpu
@@ -553,8 +601,14 @@ fn handle_exit(
                 "Emulation is not yet implemented for exit reason: {:?}",
                 reason
             );
+            if reason == VmxExitReason::VmxPreemptionTimerExpired {
+                let mut context = monitor::get_context(*domain, cpuid());
+                let val = context.get(VmcsField::VmxPreemptionTimerValue, Some(&vs.vcpu));
+                log::error!("Timer value is {:x?}", val);
+            }
+            let mut context = monitor::get_context(*domain, cpuid());
             log::error!("This happened on domain {}", domain.idx());
-            log::info!("{:?}", vs.vcpu);
+            log::info!("{:x?} {:?}", context.vmcs_gp, vs.vcpu);
             Ok(HandlerResult::Crash)
         }
     }

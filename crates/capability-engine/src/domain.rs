@@ -210,9 +210,9 @@ impl Domain {
     }
 
     pub fn set_config(&mut self, bitmap: Bitmaps, value: u64) -> Result<(), CapaError> {
-        if self.is_sealed() {
+        /*if self.is_sealed() {
             return Err(CapaError::AlreadySealed);
-        }
+        }*/
         if value & !self.config.valid_masks[bitmap as usize] != 0 {
             return Err(CapaError::InvalidOperation);
         }

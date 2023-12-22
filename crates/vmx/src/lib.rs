@@ -781,16 +781,16 @@ impl<'vmx> core::fmt::Debug for ActiveVmcs<'vmx> {
         //    "        rdx: {:#x}",
         //    self.get(VmcsField::GuestRdx).unwrap()
         //)?;
-        //writeln!(
-        //    f,
-        //    "        rip: {:#x}",
-        //    self.get(VmcsField::GuestRip).unwrap()
-        //)?;
-        //writeln!(
-        //    f,
-        //    "        rsp: {:#x}",
-        //    self.get(VmcsField::GuestRsp).unwrap()
-        //)?;
+        writeln!(
+            f,
+            "        rip: {:#x}",
+            self.get(VmcsField::GuestRip).unwrap()
+        )?;
+        writeln!(
+            f,
+            "        rsp: {:#x}",
+            self.get(VmcsField::GuestRsp).unwrap()
+        )?;
         //writeln!(
         //    f,
         //    "        rbp: {:#x}",
@@ -1110,6 +1110,11 @@ impl<'vmx> core::fmt::Debug for ActiveVmcs<'vmx> {
             f,
             "        VMCS ExceptionBitmap: {:?}",
             self.get_exception_bitmap().ok()
+        )?;
+        writeln!(
+            f,
+            "        Timer Value: {:x}",
+            self.get(VmcsField::VmxPreemptionTimerValue).unwrap()
         )?;
         writeln!(f, "        EPT Ptr: {:#x}", self.get_ept_ptr().unwrap())?;
         writeln!(f, "        EPTP List: {:#x}", self.get_eptp_list().unwrap())?;

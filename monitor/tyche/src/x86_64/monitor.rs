@@ -308,11 +308,62 @@ pub fn do_set_all_gp(current: Handle<Domain>, domain: LocalCapa) -> Result<(), C
     Ok(())
 }
 
-pub fn do_get_all_gp(current: Handle<Domain>, domain: LocalCapa) -> Result<(), CapaError> {
+pub fn do_set_fields(
+    current: Handle<Domain>,
+    domain: LocalCapa,
+    core: usize,
+    values: &[(usize, usize); 6],
+) -> Result<(), CapaError> {
+    let mut engine = CAPA_ENGINE.lock();
+    // Check the core.
+    let domain = engine.get_domain_capa(current, domain)?;
+    let core_map = engine.get_domain_config(domain, Bitmaps::CORE);
+    if (1 << core) & core_map == 0 {
+        log::error!("Trying to set registers on the wrong core.");
+        return Err(CapaError::InvalidCore);
+    }
+    // Check switch type.
+    let switch_type = engine.get_domain_config(domain, Bitmaps::SWITCH);
+    let switch_type = InitVMCS::from_u64(switch_type)?;
+    if switch_type == InitVMCS::Shared {
+        log::error!("Setting registers on a shared vcpu");
+        return Err(CapaError::InvalidSwitch);
+    }
+    // Get and set the context.
+    let mut tgt_ctx = get_context(domain, core);
+    if tgt_ctx.vmcs.is_invalid() {
+        log::error!("The VMCS is none on core {}", core);
+        return Err(CapaError::InvalidOperation);
+    }
+    for p in values {
+        let field = p.0;
+        let value = p.1;
+        if field == !(0 as usize) {
+            // We are done.
+            break;
+        }
+        if !FilteredFields::is_valid(field, true) {
+            log::error!("Invalid set field value: {:x}", field);
+            return Err(CapaError::InvalidOperation);
+        }
+        let field = VmcsField::from_u32(field as u32).unwrap();
+        tgt_ctx.set(field, value, None).unwrap();
+        if field == VmcsField::ExceptionBitmap {
+            engine
+                .set_domain_config(domain, Bitmaps::TRAP, !(value as u64))
+                .expect("Bitmap failure");
+        }
+    }
+    Ok(())
+}
+
+pub fn do_get_all_gp(
+    current: Handle<Domain>,
+    domain: LocalCapa,
+    core: usize,
+) -> Result<(), CapaError> {
     let mut engine = CAPA_ENGINE.lock();
     let domain = engine.get_domain_capa(current, domain)?;
-    let core = cpuid();
-
     let core_map = engine.get_domain_config(domain, Bitmaps::CORE);
     if (1 << core) & core_map == 0 {
         return Err(CapaError::InvalidCore);
