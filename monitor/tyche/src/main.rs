@@ -29,12 +29,12 @@ fn tyche_entry_point(hartid: usize, manifest: RVManifest) -> ! {
 
 #[cfg(all(target_arch = "riscv64"), feature = "visionfive2")]
 fn tyche_entry_point(hartid: u64, arg1: u64, next_addr: u64, next_mode: u64) -> ! {
-    use riscv_utils::SERIAL_PORT_BASE_ADDRESS;
+    //use riscv_utils::SERIAL_PORT_BASE_ADDRESS;
     //use riscv_utils::{SERIAL_PORT_BASE_ADDRESS, RV_VF2_UART_BAUD_RATE};
-    use tyche::riscv::launch_guest;
+    //use tyche::riscv::launch_guest;
    
-    let writer = riscv_serial::Writer::new(SERIAL_PORT_BASE_ADDRESS);
-    riscv_serial::init_print(writer);
+    //let writer = riscv_serial::Writer::new(SERIAL_PORT_BASE_ADDRESS);
+    //riscv_serial::init_print(writer);
 
 
     //riscv_serial::_print(core::format_args!("Hello my name is Neelu!"));
@@ -82,17 +82,17 @@ fn tyche_entry_point(hartid: u64, arg1: u64, next_addr: u64, next_mode: u64) -> 
 
     //riscv_serial::_print(core::format_args!("hello meri maata - \r\n"));
 
-    println!("HELLO_WORLD");
+    //println!("HELLO_WORLD");
 
-    println!("============== HELLO FROM TYCHE ===============");
+    //println!("============== HELLO FROM TYCHE ===============");
 
-    println!("***********************************************");
+    //println!("***********************************************");
 
-    println!("neverhaveieverseenthiskindofthingman!");
+    //println!("neverhaveieverseenthiskindofthingman!");
 
     //logger::init(LOG_LEVEL);
-    //arch::arch_entry_point(hartid, arg1, next_addr, next_mode, LOG_LEVEL);
-    launch_guest(hartid, arg1, next_addr, next_mode);
+    arch::arch_entry_point(hartid, arg1, next_addr, next_mode, LOG_LEVEL);
+    //launch_guest(hartid, arg1, next_addr, next_mode);
     qemu::exit(qemu::ExitCode::Success); 
 }
 

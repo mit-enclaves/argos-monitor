@@ -1,7 +1,7 @@
 SECTIONS
 {
   /* Start address */
-  . = 0x40100000;
+  . = 0x40250000;
 
   /* Output a text section */
   .text : ALIGN(0x1000) {
