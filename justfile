@@ -9,6 +9,7 @@ build_features      := "-Zbuild-std-features=compiler-builtins-mem"
 cargo_args          := build_std + " " + build_features
 x86-linker-script   := "RUSTFLAGS='-C link-arg=-Tconfigs/x86-linker-script.x'"
 riscv-linker-script := "RUSTFLAGS='-C link-arg=-Tconfigs/riscv-linker-script.x'"
+#riscv-user-space	:= "RUSTFLAGS='-C target-feature=+crt-static'"
 first-stage         := "--package s1 --features=s1/second-stage"
 tyche               := "--package tyche"
 rawc                := "--features=s1/guest_rawc"
@@ -24,11 +25,12 @@ default_dbg         := "/tmp/dbg-" + env_var('USER')
 default_smp         := "1"
 extra_arg           := ""
 
-qemu-riscv			:= "../qemu/build/riscv64-softmmu/qemu-system-riscv64"
+qemu-riscv			:= "../qemu-riscv/build/riscv64-softmmu/qemu-system-riscv64"
 drive-riscv			:= "ubuntu-22.04.3-preinstalled-server-riscv64+unmatched.img"
 kernel-riscv		:= "builds/linux-riscv/arch/riscv/boot/Image"
 bios-riscv			:= "opensbi-stage1/build/platform/generic/firmware/fw_payload.bin"
 dev-riscv			:= "-device virtio-rng-pci" 
+
 bios-riscv-gdb		:= "opensbi-stage1/build/platform/generic/firmware/fw_payload.elf"
 riscv-linux-dir     := "builds/linux-riscv"
 riscv-vmlinux       := "builds/linux-riscv/vmlinux"
@@ -47,8 +49,6 @@ check:
 	@touch target/x86_64-unknown-kernel/release/tyche
 
 	# Checking code...
-	cargo check --package capa-engine
-	cargo check --package vmx
 	cargo check {{cargo_args}} {{x86_64}} {{first-stage}}
 	cargo check {{cargo_args}} {{x86_64}} {{tyche}}
 	cargo check {{cargo_args}} {{riscv}}  {{tyche}}
@@ -61,9 +61,6 @@ test:
 	cargo test --package vmx
 	cargo test --package capa-engine
 	cargo test --package attest_client
-
-	{{x86-linker-script}} cargo build {{cargo_args}} {{x86_64}} {{tyche}}
-	{{riscv-linker-script}} cargo build {{cargo_args}} {{riscv}} {{tyche}}
 
 # Format all rust code
 format:
@@ -251,6 +248,12 @@ _common-metal TARGET:
 user-space:
 	cargo build --package libtyche --target=x86_64-unknown-linux-musl --release
 
+# Build user-space programs for risc-v 
+#{{riscv-user-space}} cargo build -Z build-std --package libtyche --target=riscv64gc-unknown-linux-musl --release
+#user-space-riscv:
+#	{{riscv-user-space}} cargo build {{cargo_args}} --package libtyche {{riscv}} --release
+	
+
 # Start the software TPM emulator, if not already running
 _tpm:
 	#!/usr/bin/env sh
@@ -268,7 +271,7 @@ run_riscv:
 
 run_riscv_gdb: 
 	{{qemu-riscv}} -nographic -drive "file={{drive-riscv}},format=raw,if=virtio" -cpu rv64,h=true -M virt -m 4G -bios {{bios-riscv}} -kernel {{kernel-riscv}} -append "root=/dev/vda1 rw console=ttyS0 earlycon=sbi quiet" -smp 1 {{dev-riscv}} -gdb tcp::1234 -S 
-	
+
 riscv_monitor_gdb:
 	riscv64-unknown-linux-gnu-gdb -q -ex "file {{bios-riscv-gdb}}" -ex "target remote localhost:1234" -ex "b parse_and_load_elf" -ex "c" 
 
