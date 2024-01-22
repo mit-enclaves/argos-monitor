@@ -8,6 +8,8 @@ use vmx::errors::Trapnr;
 use vmx::{
     ActiveVmcs, ControlRegister, InterruptionType, Register, VmExitInterrupt, VmxExitReason, Vmxon,
 };
+use x86::apic::xapic::XAPIC;
+use x86::apic::{ApicControl, ApicId};
 
 use super::{cpuid, monitor};
 use crate::calls;
@@ -237,6 +239,30 @@ fn handle_exit(
                     monitor::do_switch(*domain, LocalCapa::new(arg_1), cpuid()).expect("TODO");
                     Ok(HandlerResult::Resume)
                 }
+                calls::IPI_TEST => {
+                    let current_core = cpuid();
+                    let lapic_addr: usize = 0xfee00000;
+                    let mut lapic = unsafe {
+                        XAPIC::new(core::slice::from_raw_parts_mut(lapic_addr as _, 0x1000))
+                    };
+                    for core in 0..8 {
+                        if current_core == core {
+                            continue;
+                        }
+                        let apic_id = ApicId::XApic(core as u8);
+                        log::info!(
+                            "CPU {} sending NMI to apic id: {}",
+                            current_core,
+                            core as u8
+                        );
+                        unsafe {
+                            lapic.ipi_init(apic_id);
+                        }
+                    }
+                    vs.vcpu.set(Register::Rax, 0);
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
                 calls::DEBUG => {
                     log::trace!("Debug");
                     monitor::do_debug();
@@ -358,6 +384,10 @@ fn handle_exit(
                     todo!("Unknown VMCall");
                 }
             }
+        }
+        VmxExitReason::InitSignal => {
+            log::info!("cpu {} received init signal", cpuid());
+            Ok(HandlerResult::Resume)
         }
         VmxExitReason::Cpuid => {
             let input_eax = vs.vcpu.get(Register::Rax);
