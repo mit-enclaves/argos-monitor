@@ -2,7 +2,7 @@ use clap::Parser;
 use clap_num::maybe_hex;
 use libtyche::{
     debug, domain_create, duplicate, enumerate, exit, revoke, seal_domain, segment_region, send,
-    switch,
+    switch, send_ipi,
 };
 
 #[derive(clap::Parser)]
@@ -53,6 +53,9 @@ enum Subcommand {
         handle: usize,
         cpu: usize,
     },
+    IpiTest {
+        cpu: usize,
+    },
     Exit,
     List,
     Debug,
@@ -99,6 +102,11 @@ pub fn main() {
             arg3,
         } => {
             seal_domain(domain, core_map, arg1, arg2, arg3).unwrap();
+        }
+        Subcommand::IpiTest {
+            cpu,
+        } => {
+            send_ipi(cpu).unwrap();
         }
         Subcommand::Exit => {
             exit().unwrap();

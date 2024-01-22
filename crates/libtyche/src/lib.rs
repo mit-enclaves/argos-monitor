@@ -19,6 +19,7 @@ pub enum VmCalls {
     Switch            = 0x9,
     Exit              = 0xA,
     Debug             = 0xB,
+    IpiTest           = 0xF,
 }
 
 // —————————————————————————————— Error Codes ——————————————————————————————— //
@@ -140,6 +141,10 @@ pub fn enumerate(next_token: usize) -> Result<Option<(CapaInfo, usize)>, ErrorCo
 pub fn switch(handle: usize, cpu: usize) -> Result<usize, ErrorCode> {
     do_vmcall(VmCalls::Switch, handle, cpu, 0, 0, 0, 0, 0)
         .map(|(return_handle, _, _, _, _, _, _)| return_handle)
+}
+
+pub fn send_ipi(cpu: usize) -> Result<(), ErrorCode> {
+    do_vmcall(VmCalls::IpiTest, cpu, 0, 0, 0, 0, 0, 0).map(|(_, _, _, _, _, _, _)| ())
 }
 
 pub fn exit() -> Result<(), ErrorCode> {
