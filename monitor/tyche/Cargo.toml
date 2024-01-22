@@ -22,7 +22,8 @@ attestation = {path = "../../crates/attestation/"}
 
 # TODO: move the untrusted dependencies behing a feature flag
 qemu = { path = "../../crates/qemu/" }
-
+# temporary, remove after testing
+x86 = "0.52.0"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 vtd = { path = "../../crates/vtd" }
