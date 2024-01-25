@@ -462,6 +462,16 @@ enum CoreUpdate {
     },
 }
 
+fn post_ept_update(cores: u64, domain: Handle<Domain>) {
+    let core_cnt = cores.count_ones();
+    if core_cnt > 1 {
+        unsafe {
+            TLB_FLUSH_BARRIER = spin::barrier::Barrier::new(core_cnt as usize);
+        }
+        notify_cores(core_cnt, cores);
+    }
+}
+
 /// General updates, containing both global updates on the domain's states, and core specific
 /// updates that must be routed to the different cores.
 fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
@@ -469,7 +479,12 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
         log::trace!("Update: {}", update);
         match update {
             // Updates that can be handled locally
-            capa_engine::Update::PermissionUpdate { domain } => update_permission(domain, engine),
+            capa_engine::Update::PermissionUpdate { domain } => {
+                let cores = update_permission(domain, engine);
+                if cores > 0 {
+                    post_ept_update(cores, domain);
+                }
+            }
             capa_engine::Update::RevokeDomain { domain } => revoke_domain(domain),
             capa_engine::Update::CreateDomain { domain } => create_domain(domain),
 
@@ -707,8 +722,9 @@ fn revoke_domain(_domain: Handle<Domain>) {
     // Noop for now, might need to send IPIs once we land multi-core
 }
 
-fn update_domain_ept(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) {
+fn update_domain_ept(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) -> u64 {
     let mut domain = get_domain(domain_handle);
+    let cores = engine[domain_handle].cores();
     let allocator = allocator();
     // TODO: Think of a good way to free the EPT root, otherwise we will trigger ept violations on
     // other cores executing on the current ept root
@@ -751,6 +767,12 @@ fn update_domain_ept(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
     }
 
     domain.ept = Some(ept_root.phys_addr);
+
+    // domain.ept is updated. Now we can push the emit_shootdown into the queue
+    // The TlbShootdown will either be processed by an exit caused by the ipi, or some other exits
+    engine.emit_shootdown(domain_handle);
+
+    cores
 }
 
 fn notify_cores(core_cnt: u32, domain_core_bitmap: u64) {
@@ -765,7 +787,7 @@ fn notify_cores(core_cnt: u32, domain_core_bitmap: u64) {
     }
 }
 
-fn update_domain_iopt(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) {
+fn update_domain_iopt(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) -> u64 {
     let mut domain = get_domain(domain_handle);
     let allocator = allocator();
     if let Some(iopt) = domain.iopt {
@@ -811,13 +833,15 @@ fn update_domain_iopt(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Cap
     iommu.enable_translation();
     log::info!("I/O MMU: {:?}", iommu.get_global_status());
     log::warn!("I/O MMU Fault: {:?}", iommu.get_fault_status());
+
+    0
 }
 
-fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) {
+fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) -> u64 {
     if engine[domain_handle].is_io() {
-        update_domain_iopt(domain_handle, engine);
+        update_domain_iopt(domain_handle, engine)
     } else {
-        update_domain_ept(domain_handle, engine);
+        update_domain_ept(domain_handle, engine)
     }
 }
 

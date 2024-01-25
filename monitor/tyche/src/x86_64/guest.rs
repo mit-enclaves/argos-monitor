@@ -409,7 +409,7 @@ fn handle_exit(
             // - Core 2 process the InitSignal Vmexit, but Tlbshootdown is not yet in the update
             //    queue
             //
-            monitor::push_tlbshootdown(cpuid(), *domain);
+            // monitor::push_tlbshootdown(cpuid(), *domain);
             Ok(HandlerResult::Resume)
         }
         VmxExitReason::Cpuid => {
