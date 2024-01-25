@@ -263,6 +263,12 @@ fn handle_exit(
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
+                calls::EPT_UPDATE => {
+                    monitor::ept_update_test(*domain);
+                    vs.vcpu.set(Register::Rax, 0);
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
                 calls::DEBUG => {
                     log::trace!("Debug");
                     monitor::do_debug();

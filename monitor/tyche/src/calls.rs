@@ -19,3 +19,4 @@ pub const CONFIGURE: usize = 12;
 pub const SET_ENTRY_ON_CORE: usize = 13;
 pub const ENCLAVE_ATTESTATION: usize = 14;
 pub const IPI_TEST: usize = 15;
+pub const EPT_UPDATE: usize = 16;
