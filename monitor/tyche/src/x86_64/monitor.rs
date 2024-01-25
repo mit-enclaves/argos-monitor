@@ -462,7 +462,7 @@ enum CoreUpdate {
     },
 }
 
-fn post_ept_update(cores: u64, domain: Handle<Domain>) {
+fn post_ept_update(cores: u64) {
     let core_cnt = cores.count_ones();
     if core_cnt > 1 {
         unsafe {
@@ -475,15 +475,14 @@ fn post_ept_update(cores: u64, domain: Handle<Domain>) {
 /// General updates, containing both global updates on the domain's states, and core specific
 /// updates that must be routed to the different cores.
 fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
+    let mut tlb_shootdown_cores = 0;
     while let Some(update) = engine.pop_update() {
         log::trace!("Update: {}", update);
         match update {
             // Updates that can be handled locally
             capa_engine::Update::PermissionUpdate { domain } => {
-                let cores = update_permission(domain, engine);
-                if cores > 0 {
-                    post_ept_update(cores, domain);
-                }
+                log::trace!("cpu {} processes PermissionUpdate", cpuid());
+                tlb_shootdown_cores = update_permission(domain, engine);
             }
             capa_engine::Update::RevokeDomain { domain } => revoke_domain(domain),
             capa_engine::Update::CreateDomain { domain } => create_domain(domain),
@@ -522,6 +521,12 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
                 core_updates.push(CoreUpdate::UpdateTrap { bitmap: !trap });
             }
         }
+    }
+
+    // After we have pushed all TlbShootdown updates to its per cpu CORE_UPDATES, we can issue the
+    // IPI now.
+    if tlb_shootdown_cores > 0 {
+        post_ept_update(tlb_shootdown_cores);
     }
 }
 
@@ -768,9 +773,19 @@ fn update_domain_ept(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
 
     domain.ept = Some(ept_root.phys_addr);
 
+    log::trace!(
+        "core{}: domain.ept updated, push shootdown updates to all cores",
+        cpuid()
+    );
+
     // domain.ept is updated. Now we can push the emit_shootdown into the queue
     // The TlbShootdown will either be processed by an exit caused by the ipi, or some other exits
     engine.emit_shootdown(domain_handle);
+
+    // We don't need apply_updates here. update_domain_ept will be called from within the
+    // apply_updates. The previous emit_shootdown will add #core of TlbShootdown to the update
+    // queue, and the current apply_updates will drain the queue and distribute them to each core's
+    // update queue.
 
     cores
 }
