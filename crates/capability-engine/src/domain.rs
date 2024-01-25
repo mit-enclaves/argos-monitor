@@ -562,6 +562,23 @@ pub(crate) fn create_switch(
     insert_capa(domain, capa, regions, domains)
 }
 
+pub(crate) fn permission_update(
+    domain: Handle<Domain>,
+    domains: &mut DomainPool,
+    updates: &mut UpdateBuffer,
+) -> Result<(), CapaError> {
+    let dom = &mut domains[domain];
+
+    // Drop updates on domain in the process of being revoked
+    if dom.is_being_revoked {
+        return Ok(());
+    }
+
+    updates.push(Update::PermissionUpdate { domain });
+
+    Ok(())
+}
+
 // ———————————————————————————— Activate Region ————————————————————————————— //
 
 pub(crate) fn activate_region(
