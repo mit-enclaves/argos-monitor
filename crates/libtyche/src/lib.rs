@@ -20,6 +20,7 @@ pub enum VmCalls {
     Exit              = 0xA,
     Debug             = 0xB,
     IpiTest           = 0xF,
+    EptUpdateTest     = 0x10,
 }
 
 // —————————————————————————————— Error Codes ——————————————————————————————— //
@@ -145,6 +146,10 @@ pub fn switch(handle: usize, cpu: usize) -> Result<usize, ErrorCode> {
 
 pub fn send_ipi(cpu: usize) -> Result<(), ErrorCode> {
     do_vmcall(VmCalls::IpiTest, cpu, 0, 0, 0, 0, 0, 0).map(|(_, _, _, _, _, _, _)| ())
+}
+
+pub fn ept_update_test(handle: usize) -> Result<(), ErrorCode> {
+    do_vmcall(VmCalls::EptUpdateTest, handle, 0, 0, 0, 0, 0, 0).map(|(_, _, _, _, _, _, _)| ())
 }
 
 pub fn exit() -> Result<(), ErrorCode> {
