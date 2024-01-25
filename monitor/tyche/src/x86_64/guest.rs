@@ -359,6 +359,10 @@ fn handle_exit(
                 }
             }
         }
+        VmxExitReason::InitSignal => {
+            log::info!("cpu {} received init signal", cpuid());
+            Ok(HandlerResult::Resume)
+        }
         VmxExitReason::Cpuid => {
             let input_eax = vs.vcpu.get(Register::Rax);
             let input_ecx = vs.vcpu.get(Register::Rcx);
