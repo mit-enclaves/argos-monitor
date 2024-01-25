@@ -613,6 +613,23 @@ pub(crate) fn deactivate_region(
     Ok(())
 }
 
+pub(crate) fn push_tlb_shootdown(
+    domain: Handle<Domain>,
+    core: usize,
+    domains: &mut DomainPool,
+    updates: &mut UpdateBuffer,
+) -> Result<(), CapaError> {
+    let dom = &mut domains[domain];
+
+    // Drop updates on domain in the process of being revoked
+    if dom.is_being_revoked {
+        return Ok(());
+    }
+
+    updates.push(Update::TlbShootdown { core });
+    Ok(())
+}
+
 // —————————————————————————————— Trap Handler —————————————————————————————— //
 
 /// Find the domain's manager who is responsible for handling the provided trap.

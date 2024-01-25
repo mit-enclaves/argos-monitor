@@ -387,6 +387,23 @@ fn handle_exit(
         }
         VmxExitReason::InitSignal => {
             log::info!("cpu {} received init signal", cpuid());
+            // Push a TlbShhotdown update to the update queue, so that we can make sure to have a
+            // TlbShootdown of the current core and process a TlbShootdown at the current vmexit
+            // apply_core_updates.
+            //
+            // Note that this is critical, otherwise we might end up in the following races:
+            //
+            // - Core 0 push TlbShootdown { core = 2 } into the update queue
+            // <- Possible Vmexit on core 2 and processes the Tlbshootdown early, updating to the
+            // original ept root
+            // - Core 2 process the TlbShootdown update in apply_core_updates and update the ept root
+            //
+            // OR
+            //
+            // - Core 2 process the InitSignal Vmexit, but Tlbshootdown is not yet in the update
+            //    queue
+            //
+            monitor::push_tlbshootdown(cpuid(), *domain);
             Ok(HandlerResult::Resume)
         }
         VmxExitReason::Cpuid => {

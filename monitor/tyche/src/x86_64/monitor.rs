@@ -629,6 +629,17 @@ fn switch_domain(
     Ok(())
 }
 
+pub fn push_tlbshootdown(core: usize, domain_handle: Handle<Domain>) {
+    log::trace!(
+        "push_tlbshootdown on core {} with domain_handle={}",
+        core,
+        domain_handle
+    );
+    let mut engine = CAPA_ENGINE.lock();
+    engine.emit_shootdown_on_core(domain_handle, core);
+    apply_updates(&mut engine);
+}
+
 fn create_domain(domain: Handle<Domain>) {
     let mut domain = get_domain(domain);
     let allocator = allocator();
