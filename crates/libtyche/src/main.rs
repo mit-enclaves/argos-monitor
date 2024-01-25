@@ -2,7 +2,7 @@ use clap::Parser;
 use clap_num::maybe_hex;
 use libtyche::{
     debug, domain_create, duplicate, enumerate, exit, revoke, seal_domain, segment_region, send,
-    switch, send_ipi,
+    switch, send_ipi, ept_update_test,
 };
 
 #[derive(clap::Parser)]
@@ -56,6 +56,9 @@ enum Subcommand {
     IpiTest {
         cpu: usize,
     },
+    EptUpdateTest {
+        handle: usize,
+    },
     Exit,
     List,
     Debug,
@@ -108,6 +111,7 @@ pub fn main() {
         } => {
             send_ipi(cpu).unwrap();
         }
+        Subcommand::EptUpdateTest { handle } => { ept_update_test(handle).unwrap(); }
         Subcommand::Exit => {
             exit().unwrap();
         }
