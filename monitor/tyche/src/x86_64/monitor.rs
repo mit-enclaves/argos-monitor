@@ -678,9 +678,11 @@ fn revoke_domain(_domain: Handle<Domain>) {
 fn update_domain_ept(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) {
     let mut domain = get_domain(domain_handle);
     let allocator = allocator();
-    if let Some(ept) = domain.ept {
-        unsafe { free_ept(ept, allocator) };
-    }
+    // TODO: Think of a good way to free the EPT root, otherwise we will trigger ept violations on
+    // other cores executing on the current ept root
+    // if let Some(ept) = domain.ept {
+    //     unsafe { free_ept(ept, allocator) };
+    // }
 
     let ept_root = allocator
         .allocate_frame()
