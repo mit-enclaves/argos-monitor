@@ -10,7 +10,7 @@ mod region;
 mod region_capa;
 mod segment;
 mod update;
-mod utils;
+pub mod utils;
 
 use core::ops::Index;
 
