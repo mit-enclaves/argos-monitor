@@ -8,6 +8,7 @@ use capa_engine::{
 };
 use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator, IoPtFlag, IoPtMapper};
+use spin::barrier::Barrier;
 use spin::{Mutex, MutexGuard};
 use stage_two_abi::Manifest;
 use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
@@ -33,6 +34,7 @@ static CORE_UPDATES: [Mutex<Buffer<CoreUpdate>>; NB_CORES] = [EMPTY_UPDATE_BUFFE
 static CONTEXTS: [[Mutex<ContextData>; NB_CORES]; NB_DOMAINS] = [EMPTY_CONTEXT_ARRAY; NB_DOMAINS];
 static RC_VMCS: Mutex<RCFramePool> =
     Mutex::new(GenArena::new([EMPTY_RCFRAME; { NB_DOMAINS * NB_CORES }]));
+static mut TLB_FLUSH_BARRIER: spin::barrier::Barrier = Barrier::new(0);
 
 pub struct DomainData {
     ept: Option<HostPhysAddr>,
@@ -504,6 +506,21 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
     }
 }
 
+fn tlb_shootdown(core_id: usize, current_domain: &mut Handle<Domain>, vcpu: &mut ActiveVmcs) {
+    log::info!("EPT Root update on core {}", core_id);
+    // Reload the EPTs
+    let domain = get_domain(*current_domain);
+    log::info!(
+        "core {}: domain.ept={:#x}",
+        core_id,
+        domain.ept.unwrap().as_usize()
+    );
+    vcpu.set_ept_ptr(HostPhysAddr::new(
+        domain.ept.unwrap().as_usize() | EPT_ROOT_FLAGS,
+    ))
+    .expect("VMX error, failed to set EPT pointer");
+}
+
 /// Updates that must be applied to a given core.
 pub fn apply_core_updates(
     vmx_state: &mut VmxState,
@@ -517,14 +534,14 @@ pub fn apply_core_updates(
         log::trace!("Core Update: {}", update);
         match update {
             CoreUpdate::TlbShootdown => {
-                log::trace!("TLB Shootdown on core {}", core_id);
-
-                // Reload the EPTs
-                let domain = get_domain(*current_domain);
-                vcpu.set_ept_ptr(HostPhysAddr::new(
-                    domain.ept.unwrap().as_usize() | EPT_ROOT_FLAGS,
-                ))
-                .expect("VMX error, failed to set EPT pointer");
+                // Into a separate function so that we can drop the domain lock before starting to
+                // wait on the TLB_FLUSH_BARRIER
+                tlb_shootdown(core_id, current_domain, vcpu);
+                log::trace!("core {} waits on tlb flush barrier", core_id);
+                unsafe {
+                    TLB_FLUSH_BARRIER.wait();
+                }
+                log::trace!("core {} finished waiting", core_id);
             }
             CoreUpdate::Switch {
                 domain,
