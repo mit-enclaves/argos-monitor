@@ -361,11 +361,7 @@ fn handle_exit(
             }
         }
         VmxExitReason::InitSignal => {
-            log::info!(
-                "CPU{} received InitSignal RIP={:#x}",
-                cpuid(),
-                vs.vcpu.get(Register::Rip)
-            );
+            log::info!("cpu {} received init signal", cpuid());
             Ok(HandlerResult::Resume)
         }
         VmxExitReason::Cpuid => {
