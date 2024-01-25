@@ -661,6 +661,34 @@ pub fn push_tlbshootdown(core: usize, domain_handle: Handle<Domain>) {
     apply_updates(&mut engine);
 }
 
+pub fn ept_update_test(domain_handle: Handle<Domain>) {
+    let mut domain_core_bitmap = 0;
+    log::info!("core {} starts ept update test", cpuid());
+    {
+        let mut engine = CAPA_ENGINE.lock();
+        log::info!("core {} update_domain_ept", cpuid());
+        // let mut domain = get_domain(domain_handle);
+        // log::info!("core {} emit shootdown for other cores", cpuid());
+        // engine.emit_shootdown(domain_handle);
+        domain_core_bitmap = engine[domain_handle].cores();
+        update_domain_ept(domain_handle, &mut engine);
+    }
+    // TODO: Update the EPT root
+    //
+    // wait for the other cores under the same domain to update their ept
+    let core_cnt = domain_core_bitmap.count_ones();
+    let current_core = cpuid();
+
+    if core_cnt > 1 {
+        unsafe {
+            TLB_FLUSH_BARRIER = spin::barrier::Barrier::new(core_cnt as usize);
+        }
+        notify_cores(core_cnt, domain_core_bitmap);
+    }
+
+    // TODO: free_ept
+}
+
 fn create_domain(domain: Handle<Domain>) {
     let mut domain = get_domain(domain);
     let allocator = allocator();
