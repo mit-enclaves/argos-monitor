@@ -338,6 +338,12 @@ impl CapaEngine {
         domain::duplicate_capa(domain, capa, &mut self.regions, &mut self.domains)
     }
 
+    pub fn permission_update(
+        &mut self, domain: Handle<Domain>,
+    ) -> Result<(), CapaError> {
+        domain::permission_update(domain, &mut self.domains, &mut self.updates)
+    }
+
     pub fn send(
         &mut self,
         domain: Handle<Domain>,
