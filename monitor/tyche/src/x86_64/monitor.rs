@@ -2,6 +2,7 @@
 
 use attestation::signature::EnclaveReport;
 use capa_engine::config::{NB_CORES, NB_DOMAINS};
+use capa_engine::utils::BitmapIterator;
 use capa_engine::{
     permission, AccessRights, Bitmaps, Buffer, CapaEngine, CapaError, CapaInfo, Domain, GenArena,
     Handle, LocalCapa, MemOps, NextCapaToken, MEMOPS_ALL,
@@ -17,6 +18,9 @@ use vmx::errors::Trapnr;
 use vmx::msr::{IA32_LSTAR, IA32_STAR};
 use vmx::{ActiveVmcs, ControlRegister, Register, VmExitInterrupt, REGFILE_SIZE};
 use vtd::Iommu;
+// TODO: remove dependency on x86 crates
+use x86::apic::xapic::XAPIC;
+use x86::apic::{ApicControl, ApicId};
 
 use super::cpuid;
 use super::guest::VmxState;
@@ -458,6 +462,16 @@ enum CoreUpdate {
     },
 }
 
+fn post_ept_update(cores: u64) {
+    let core_cnt = cores.count_ones();
+    if core_cnt > 1 {
+        unsafe {
+            TLB_FLUSH_BARRIER = spin::barrier::Barrier::new(core_cnt as usize);
+        }
+        notify_cores(cores);
+    }
+}
+
 /// General updates, containing both global updates on the domain's states, and core specific
 /// updates that must be routed to the different cores.
 fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
@@ -708,6 +722,18 @@ fn update_domain_ept(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
     }
 
     domain.ept = Some(ept_root.phys_addr);
+}
+
+fn notify_cores(domain_core_bitmap: u64) {
+    // initialize lapic
+    let lapic_addr: usize = 0xfee00000;
+    let mut lapic = unsafe { XAPIC::new(core::slice::from_raw_parts_mut(lapic_addr as _, 0x1000)) };
+
+    for core in BitmapIterator::new(domain_core_bitmap) {
+        // send ipi
+        let apic_id = ApicId::XApic(core as u8);
+        unsafe { lapic.ipi_init(apic_id) };
+    }
 }
 
 fn update_domain_iopt(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) {
