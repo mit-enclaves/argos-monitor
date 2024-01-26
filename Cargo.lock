@@ -1280,7 +1280,6 @@ dependencies = [
  "vga",
  "vmx",
  "vtd",
- "x86",
 ]
 
 [[package]]
