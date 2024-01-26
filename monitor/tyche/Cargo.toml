@@ -19,7 +19,6 @@ vga = { path = "../../crates/vga/", optional = true }
 arena = {path = "../../crates/arena"}
 capa-engine = {path = "../../crates/capability-engine/"}
 attestation = {path = "../../crates/attestation/"}
-x86 = "0.52.0"
 # TODO: move the untrusted dependencies behing a feature flag
 qemu = { path = "../../crates/qemu/" }
 

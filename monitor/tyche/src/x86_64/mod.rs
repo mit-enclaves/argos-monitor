@@ -1,5 +1,6 @@
 //! x86_64 backend for stage 2
 
+mod apic;
 mod arch;
 pub mod guest;
 mod init;
