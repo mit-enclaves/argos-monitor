@@ -727,7 +727,9 @@ fn switch_domain(
 
 pub fn ept_update_test(domain_handle: Handle<Domain>) {
     let mut engine = CAPA_ENGINE.lock();
-    engine.permission_update(domain_handle);
+    for _ in 0..10 {
+        engine.permission_update(domain_handle);
+    }
     apply_updates(&mut engine);
 }
 
