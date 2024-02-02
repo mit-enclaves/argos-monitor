@@ -274,9 +274,9 @@ impl Domain {
     }
 
     /// Emit TLB shootdown updates for all cores executing the domain.
-    fn emit_shootdown(&self, updates: &mut UpdateBuffer) {
+    fn emit_shootdown(&self, updates: &mut UpdateBuffer, init_core: usize) {
         for core in BitmapIterator::new(self.cores) {
-            updates.push(Update::TlbShootdown { core })
+            updates.push(Update::TlbShootdown { core, init_core })
         }
     }
 
@@ -581,7 +581,6 @@ pub(crate) fn activate_region(
         .regions
         .add_region(access.start, access.end, access.ops, tracker)?;
     if let PermissionChange::Some = change {
-        dom.emit_shootdown(updates);
         updates.push(Update::PermissionUpdate { domain });
     };
 
@@ -606,7 +605,6 @@ pub(crate) fn deactivate_region(
         .regions
         .remove_region(access.start, access.end, access.ops, tracker)?;
     if let PermissionChange::Some = change {
-        dom.emit_shootdown(updates);
         updates.push(Update::PermissionUpdate { domain });
     };
 
@@ -617,6 +615,7 @@ pub(crate) fn emit_shootdown(
     domain: Handle<Domain>,
     domains: &mut DomainPool,
     updates: &mut UpdateBuffer,
+    init_core: usize,
 ) -> Result<(), CapaError> {
     let dom = &mut domains[domain];
 
@@ -625,7 +624,7 @@ pub(crate) fn emit_shootdown(
         return Ok(());
     }
 
-    dom.emit_shootdown(updates);
+    dom.emit_shootdown(updates, init_core);
 
     Ok(())
 }

@@ -338,8 +338,12 @@ impl CapaEngine {
         domain::duplicate_capa(domain, capa, &mut self.regions, &mut self.domains)
     }
 
-    pub fn emit_shootdown(&mut self, domain: Handle<Domain>) -> Result<(), CapaError> {
-        domain::emit_shootdown(domain, &mut self.domains, &mut self.updates)
+    pub fn emit_shootdown(
+        &mut self,
+        domain: Handle<Domain>,
+        init_core: usize,
+    ) -> Result<(), CapaError> {
+        domain::emit_shootdown(domain, &mut self.domains, &mut self.updates, init_core)
     }
 
     pub fn send(

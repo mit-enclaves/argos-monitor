@@ -14,6 +14,7 @@ pub enum Update {
     },
     TlbShootdown {
         core: usize,
+        init_core: usize,
     },
     RevokeDomain {
         domain: Handle<Domain>,
@@ -102,7 +103,9 @@ impl fmt::Display for Update {
             Update::PermissionUpdate { domain } => write!(f, "PermissionUpdate({})", domain),
             Update::RevokeDomain { domain } => write!(f, "RevokeDomain({})", domain),
             Update::CreateDomain { domain } => write!(f, "CreateDomain({})", domain),
-            Update::TlbShootdown { core } => write!(f, "TlbShootdown({})", core),
+            Update::TlbShootdown { core, init_core } => {
+                write!(f, "TlbShootdown({} init_core {})", core, init_core)
+            }
             Update::Switch { domain, core, .. } => write!(f, "Switch({}, core {})", domain, core),
             Update::Trap {
                 manager,
