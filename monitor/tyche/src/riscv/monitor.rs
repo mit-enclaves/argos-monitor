@@ -312,7 +312,7 @@ enum CoreUpdate {
 fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
     while let Some(update) = engine.pop_update() {
         match update {
-            capa_engine::Update::PermissionUpdate { domain } => (),
+            capa_engine::Update::PermissionUpdate { domain, .. } => (),
             capa_engine::Update::RevokeDomain { domain } => revoke_domain(domain),
             capa_engine::Update::CreateDomain { domain } => create_domain(domain),
 
@@ -341,7 +341,7 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
                     info,
                 });
             }
-            capa_engine::Update::TlbShootdown { core, init_core } => {
+            capa_engine::Update::TlbShootdown { core } => {
                 let mut core_updates = CORE_UPDATES[core as usize].lock();
                 core_updates.push(CoreUpdate::TlbShootdown);
             }

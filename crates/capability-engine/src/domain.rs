@@ -8,7 +8,6 @@ use crate::gen_arena::{Cleanable, GenArena};
 use crate::region::{PermissionChange, RegionTracker, TrackerPool};
 use crate::segment::{self, NewRegionPool};
 use crate::update::{Update, UpdateBuffer};
-use crate::utils::BitmapIterator;
 use crate::{region_capa, AccessRights, CapaError, Handle, RegionPool};
 
 pub type DomainHandle = Handle<Domain>;
@@ -271,13 +270,6 @@ impl Domain {
             log::error!("Removing from a core in which the domains was NOT executing");
         }
         self.cores &= !core_id
-    }
-
-    /// Emit TLB shootdown updates for all cores executing the domain.
-    fn emit_shootdown(&self, updates: &mut UpdateBuffer, init_core: usize) {
-        for core in BitmapIterator::new(self.cores) {
-            updates.push(Update::TlbShootdown { core, init_core })
-        }
     }
 
     pub(crate) fn regions(&self) -> &RegionTracker {
@@ -581,7 +573,7 @@ pub(crate) fn activate_region(
         .regions
         .add_region(access.start, access.end, access.ops, tracker)?;
     if let PermissionChange::Some = change {
-        updates.push(Update::PermissionUpdate { domain });
+        updates.push(Update::PermissionUpdate { domain, init: true });
     };
 
     Ok(())
@@ -605,26 +597,11 @@ pub(crate) fn deactivate_region(
         .regions
         .remove_region(access.start, access.end, access.ops, tracker)?;
     if let PermissionChange::Some = change {
-        updates.push(Update::PermissionUpdate { domain });
+        updates.push(Update::PermissionUpdate {
+            domain,
+            init: false,
+        });
     };
-
-    Ok(())
-}
-
-pub(crate) fn emit_shootdown(
-    domain: Handle<Domain>,
-    domains: &mut DomainPool,
-    updates: &mut UpdateBuffer,
-    init_core: usize,
-) -> Result<(), CapaError> {
-    let dom = &mut domains[domain];
-
-    // Drop updates on domain in the process of being revoked
-    if dom.is_being_revoked {
-        return Ok(());
-    }
-
-    dom.emit_shootdown(updates, init_core);
 
     Ok(())
 }
