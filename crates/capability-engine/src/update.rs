@@ -11,10 +11,10 @@ pub type UpdateBuffer = Buffer<Update>;
 pub enum Update {
     PermissionUpdate {
         domain: Handle<Domain>,
+        init: bool,
     },
     TlbShootdown {
         core: usize,
-        init_core: usize,
     },
     RevokeDomain {
         domain: Handle<Domain>,
@@ -100,12 +100,12 @@ where
 impl fmt::Display for Update {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Update::PermissionUpdate { domain } => write!(f, "PermissionUpdate({})", domain),
+            Update::PermissionUpdate { domain, .. } => {
+                write!(f, "PermissionUpdate({})", domain)
+            }
             Update::RevokeDomain { domain } => write!(f, "RevokeDomain({})", domain),
             Update::CreateDomain { domain } => write!(f, "CreateDomain({})", domain),
-            Update::TlbShootdown { core, init_core } => {
-                write!(f, "TlbShootdown({} init_core {})", core, init_core)
-            }
+            Update::TlbShootdown { core } => write!(f, "TlbShootdown({})", core),
             Update::Switch { domain, core, .. } => write!(f, "Switch({}, core {})", domain, core),
             Update::Trap {
                 manager,

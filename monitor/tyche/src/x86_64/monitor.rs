@@ -1,5 +1,7 @@
 //! Architecture specific monitor state, independant of the CapaEngine.
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use attestation::signature::EnclaveReport;
 use capa_engine::config::{NB_CORES, NB_DOMAINS};
 use capa_engine::utils::BitmapIterator;
@@ -36,7 +38,10 @@ static CORE_UPDATES: [Mutex<Buffer<CoreUpdate>>; NB_CORES] = [EMPTY_UPDATE_BUFFE
 static CONTEXTS: [[Mutex<ContextData>; NB_CORES]; NB_DOMAINS] = [EMPTY_CONTEXT_ARRAY; NB_DOMAINS];
 static RC_VMCS: Mutex<RCFramePool> =
     Mutex::new(GenArena::new([EMPTY_RCFRAME; { NB_DOMAINS * NB_CORES }]));
-static mut TLB_FLUSH_BARRIER: spin::barrier::Barrier = Barrier::new(0);
+const BARRIER: Option<Barrier> = None;
+const FALSE: AtomicBool = AtomicBool::new(false);
+static mut TLB_FLUSH_BARRIERS: [Option<Barrier>; NB_DOMAINS] = [BARRIER; NB_DOMAINS];
+static TLB_FLUSH: [AtomicBool; NB_DOMAINS] = [FALSE; NB_DOMAINS];
 
 pub struct DomainData {
     ept: Option<HostPhysAddr>,
@@ -447,9 +452,7 @@ pub fn handle_trap(
 /// Per-core updates
 #[derive(Debug, Clone, Copy)]
 enum CoreUpdate {
-    TlbShootdown {
-        init_core: usize,
-    },
+    TlbShootdown,
     Switch {
         domain: Handle<Domain>,
         return_capa: LocalCapa,
@@ -464,27 +467,69 @@ enum CoreUpdate {
     },
 }
 
-fn post_ept_update(cores: u64) {
+fn post_ept_update(core_id: usize, cores: u64, domain: &Handle<Domain>) {
     let core_cnt = cores.count_ones();
-    if core_cnt > 1 {
-        unsafe {
-            TLB_FLUSH_BARRIER = spin::barrier::Barrier::new(core_cnt as usize);
-        }
-        notify_cores(cores);
+    log::trace!(
+        "core{}: post_ept_update with core_cnt={}",
+        cpuid(),
+        core_cnt
+    );
+
+    unsafe {
+        TLB_FLUSH_BARRIERS[domain.idx()] = Some(spin::barrier::Barrier::new(core_cnt as usize));
     }
+    notify_cores(core_id, cores);
+
+    unsafe {
+        TLB_FLUSH_BARRIERS[domain.idx()].as_mut().unwrap().wait();
+    }
+
+    // If I am the initiating core, then I'm responsible for freeing the original EPT
+    // root.
+    log::trace!("core {} freeing the original domain EPT", core_id);
+    free_original_ept_root(domain);
+    // We're done with the current TLB flush update
+    log::trace!("core {} allows more TLB flushes", core_id);
+    TLB_FLUSH[domain.idx()].store(false, Ordering::SeqCst);
+}
+
+fn push_core_update(core: usize) {
+    log::trace!("cpu {} pushes Tlbshootdown to core={}", cpuid(), core);
+    let mut core_updates = CORE_UPDATES[core as usize].lock();
+    core_updates.push(CoreUpdate::TlbShootdown);
 }
 
 /// General updates, containing both global updates on the domain's states, and core specific
 /// updates that must be routed to the different cores.
 fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
-    let mut tlb_shootdown_cores = 0;
     while let Some(update) = engine.pop_update() {
         log::trace!("Update: {}", update);
         match update {
             // Updates that can be handled locally
-            capa_engine::Update::PermissionUpdate { domain } => {
-                log::trace!("cpu {} processes PermissionUpdate", cpuid());
-                tlb_shootdown_cores = update_permission(domain, engine);
+            capa_engine::Update::PermissionUpdate { domain, init } => {
+                let core_id = cpuid();
+                log::trace!("cpu {} processes PermissionUpdate", core_id);
+                let core_map = update_permission(domain, engine, init);
+
+                if !init {
+                    log::trace!(
+                        "cpu {} pushes core update with core_map={:b}",
+                        cpuid(),
+                        core_map
+                    );
+                    // Push TlbShootdown directly into the per-core queue
+                    for core in BitmapIterator::new(core_map) {
+                        if core_id != core {
+                            push_core_update(core);
+                        }
+                    }
+
+                    // After we have pushed all TlbShootdown updates to its per cpu CORE_UPDATES, we
+                    // can issue the IPI now.
+                    if core_map > 0 {
+                        post_ept_update(core_id, core_map, &domain);
+                    }
+                }
             }
             capa_engine::Update::RevokeDomain { domain } => revoke_domain(domain),
             capa_engine::Update::CreateDomain { domain } => create_domain(domain),
@@ -514,21 +559,15 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
                     info,
                 });
             }
-            capa_engine::Update::TlbShootdown { core, init_core } => {
+            capa_engine::Update::TlbShootdown { core } => {
                 let mut core_updates = CORE_UPDATES[core as usize].lock();
-                core_updates.push(CoreUpdate::TlbShootdown { init_core });
+                core_updates.push(CoreUpdate::TlbShootdown);
             }
             capa_engine::Update::UpdateTraps { trap, core } => {
                 let mut core_updates = CORE_UPDATES[core as usize].lock();
                 core_updates.push(CoreUpdate::UpdateTrap { bitmap: !trap });
             }
         }
-    }
-
-    // After we have pushed all TlbShootdown updates to its per cpu CORE_UPDATES, we can issue the
-    // IPI now.
-    if tlb_shootdown_cores > 0 {
-        post_ept_update(tlb_shootdown_cores);
     }
 }
 
@@ -547,7 +586,7 @@ fn tlb_shootdown(core_id: usize, current_domain: &mut Handle<Domain>, vcpu: &mut
     .expect("VMX error, failed to set EPT pointer");
 }
 
-fn free_original_ept_root(current_domain: &mut Handle<Domain>) {
+fn free_original_ept_root(current_domain: &Handle<Domain>) {
     let mut domain = get_domain(*current_domain);
     let allocator = allocator();
     if let Some(ept) = domain.ept_old {
@@ -568,22 +607,18 @@ pub fn apply_core_updates(
     while let Some(update) = update_queue.pop() {
         log::trace!("Core Update: {}", update);
         match update {
-            CoreUpdate::TlbShootdown { init_core } => {
+            CoreUpdate::TlbShootdown => {
                 // Into a separate function so that we can drop the domain lock before starting to
                 // wait on the TLB_FLUSH_BARRIER
                 tlb_shootdown(core_id, current_domain, vcpu);
                 log::trace!("core {} waits on tlb flush barrier", core_id);
                 unsafe {
-                    TLB_FLUSH_BARRIER.wait();
+                    TLB_FLUSH_BARRIERS[current_domain.idx()]
+                        .as_mut()
+                        .unwrap()
+                        .wait();
                 }
                 log::trace!("core {} finished waiting", core_id);
-
-                // If I am the initiating core, then I'm responsible for freeing the original EPT
-                // root.
-                if core_id == init_core {
-                    log::trace!("core {} freeing the original domain EPT", core_id);
-                    free_original_ept_root(current_domain);
-                }
             }
             CoreUpdate::Switch {
                 domain,
@@ -706,7 +741,11 @@ fn revoke_domain(_domain: Handle<Domain>) {
     // Noop for now, might need to send IPIs once we land multi-core
 }
 
-fn update_domain_ept(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) -> u64 {
+fn update_domain_ept(
+    domain_handle: Handle<Domain>,
+    engine: &mut MutexGuard<CapaEngine>,
+    init: bool,
+) -> u64 {
     let mut domain = get_domain(domain_handle);
     let cores = engine[domain_handle].cores();
     let allocator = allocator();
@@ -744,29 +783,34 @@ fn update_domain_ept(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
         )
     }
 
+    if !init {
+        loop {
+            match TLB_FLUSH[domain_handle.idx()].compare_exchange(
+                false,
+                true,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(false) => break,
+                _ => continue,
+            }
+        }
+    }
+
+    // The core needs exclusive access before updating the domain's EPT. Otherwise, we might have
+    // miss freeing some EPT roots.
     domain.ept_old = domain.ept;
     domain.ept = Some(ept_root.phys_addr);
-
-    log::trace!(
-        "core{}: domain.ept updated, push shootdown updates to all cores",
-        cpuid()
-    );
-
-    // domain.ept is updated. Now we can push the emit_shootdown into the queue
-    // The TlbShootdown will either be processed by an exit caused by the ipi, or some other exits
-    let _ = engine.emit_shootdown(domain_handle, cpuid());
-
-    // We don't need apply_updates here. update_domain_ept will be called from within the
-    // apply_updates. The previous emit_shootdown will add #core of TlbShootdown to the update
-    // queue, and the current apply_updates will drain the queue and distribute them to each core's
-    // update queue.
 
     cores
 }
 
-fn notify_cores(domain_core_bitmap: u64) {
+fn notify_cores(core_id: usize, domain_core_bitmap: u64) {
     // initialize lapic
     for core in BitmapIterator::new(domain_core_bitmap) {
+        if core == core_id {
+            continue;
+        }
         // send ipi
         let apic_id = apic::ApicId::XApic(core as u8);
         unsafe {
@@ -825,11 +869,15 @@ fn update_domain_iopt(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Cap
     0
 }
 
-fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) -> u64 {
+fn update_permission(
+    domain_handle: Handle<Domain>,
+    engine: &mut MutexGuard<CapaEngine>,
+    init: bool,
+) -> u64 {
     if engine[domain_handle].is_io() {
         update_domain_iopt(domain_handle, engine)
     } else {
-        update_domain_ept(domain_handle, engine)
+        update_domain_ept(domain_handle, engine, init)
     }
 }
 
@@ -848,7 +896,7 @@ unsafe fn free_iopt(iopt: HostPhysAddr, allocator: &impl FrameAllocator) {
 impl core::fmt::Display for CoreUpdate {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            CoreUpdate::TlbShootdown { init_core } => write!(f, "TLB Shootdown({})", init_core),
+            CoreUpdate::TlbShootdown => write!(f, "TLB Shootdown"),
             CoreUpdate::Switch { domain, .. } => write!(f, "Switch({})", domain),
             CoreUpdate::Trap {
                 manager,
