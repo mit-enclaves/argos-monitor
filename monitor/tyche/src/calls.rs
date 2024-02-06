@@ -23,5 +23,5 @@ pub const ALLOC_CORE_CONTEXT: usize = 16;
 pub const READ_ALL_GP: usize = 17;
 pub const WRITE_ALL_GP: usize = 18;
 pub const WRITE_FIELDS: usize = 19;
+pub const SELF_CONFIG: usize = 20;
 pub const DEBUG_MARKER: usize = 0x666;
-pub const DEBUG_MARKER2: usize = 0x777;

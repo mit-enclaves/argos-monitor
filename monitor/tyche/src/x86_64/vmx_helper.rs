@@ -14,6 +14,8 @@ use super::arch;
 use super::context::Contextx86;
 use crate::allocator::{allocator, FrameAllocator};
 
+pub const MSR_IA32_CR_PAT_DEFAULT: usize = 0x0007040600070406;
+
 pub unsafe fn init_vcpu<'vmx>(
     vcpu: &mut ActiveVmcs<'vmx>,
     info: &GuestInfo,
@@ -66,11 +68,17 @@ fn default_vmcs_config(vmcs: &mut ActiveVmcs, info: &GuestInfo, switching: bool)
             vmcs.set_vm_exit_ctrls(
                 ExitControls::HOST_ADDRESS_SPACE_SIZE
                     | ExitControls::LOAD_IA32_EFER
-                    | ExitControls::SAVE_IA32_EFER,
+                    | ExitControls::SAVE_IA32_EFER
+                    | ExitControls::SAVE_IA32_PAT
+                    | ExitControls::LOAD_IA32_PAT,
             )
         })
         .and_then(|_| {
-            vmcs.set_vm_entry_ctrls(EntryControls::IA32E_MODE_GUEST | EntryControls::LOAD_IA32_EFER)
+            vmcs.set_vm_entry_ctrls(
+                EntryControls::IA32E_MODE_GUEST
+                    | EntryControls::LOAD_IA32_EFER
+                    | EntryControls::LOAD_IA32_PAT,
+            )
         })
         //.and_then(|_| vmcs.set_exception_bitmap(ExceptionBitmap::INVALID_OPCODE))
         .and_then(|_| save_host_state(vmcs, info))
@@ -101,6 +109,10 @@ fn default_vmcs_config(vmcs: &mut ActiveVmcs, info: &GuestInfo, switching: bool)
     );
     vmcs.set_secondary_ctrls(secondary_ctrls)
         .expect("Error setting secondary controls");
+
+    // For linux if we want to be able to save/restore pat. No clue why.
+    vmcs.set(VmcsField::GuestIa32Pat, MSR_IA32_CR_PAT_DEFAULT)
+        .expect("Unable to set PAT");
 }
 
 fn configure_msr() -> Result<(), VmxError> {
@@ -249,6 +261,7 @@ fn save_host_state<'vmx>(_vmcs: &mut ActiveVmcs<'vmx>, info: &GuestInfo) -> Resu
     // MSRs
     unsafe {
         VmcsField::HostIa32Efer.vmwrite(info.efer as usize)?;
+        VmcsField::HostIa32Pat.vmwrite(MSR_IA32_CR_PAT_DEFAULT)?;
     }
 
     // Control registers

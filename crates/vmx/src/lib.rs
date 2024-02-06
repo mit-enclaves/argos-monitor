@@ -331,6 +331,12 @@ impl<'vmx> ActiveVmcs<'vmx> {
         self.launched = false;
     }
 
+    pub fn reload(&self) {
+        unsafe {
+            raw::vmptrld(self.region.frame.phys_addr.as_u64()).expect("Unable to reset the vmptr");
+        }
+    }
+
     pub fn copy_into(&mut self, mut dest: Frame) {
         if self.launched {
             self.flush();
@@ -340,6 +346,10 @@ impl<'vmx> ActiveVmcs<'vmx> {
             raw::vmptrld(self.region.frame.phys_addr.as_u64()).expect("Unable to reset the vmptr");
         }
         dest.as_mut().copy_from_slice(self.region.frame().as_ref());
+    }
+
+    pub fn load_from(&mut self, src: Frame) {
+        self.region.frame.as_mut().copy_from_slice(src.as_ref());
     }
 
     pub fn frame(&self) -> &Frame {
@@ -1083,6 +1093,31 @@ impl<'vmx> core::fmt::Debug for ActiveVmcs<'vmx> {
         )?;
         writeln!(
             f,
+            "        sysenter_eip: {:#x}",
+            self.get(VmcsField::GuestSysenterEip).unwrap()
+        )?;
+        writeln!(
+            f,
+            "        sysenter_cs: {:#x}",
+            self.get(VmcsField::GuestSysenterCs).unwrap()
+        )?;
+        writeln!(
+            f,
+            "        sysenter_esp: {:#x}",
+            self.get(VmcsField::GuestSysenterEsp).unwrap()
+        )?;
+        writeln!(
+            f,
+            "        ia32_pat: {:#x}",
+            self.get(VmcsField::GuestIa32Pat).unwrap()
+        )?;
+        writeln!(
+            f,
+            "        Vm exit interrupt info: {:#x}",
+            self.get(VmcsField::VmExitIntrInfo).unwrap()
+        )?;
+        writeln!(
+            f,
             "        VM Entry Controls: {:?}",
             self.get_vm_entry_cntrls().ok()
         )?;
@@ -1116,8 +1151,53 @@ impl<'vmx> core::fmt::Debug for ActiveVmcs<'vmx> {
             "        Timer Value: {:x}",
             self.get(VmcsField::VmxPreemptionTimerValue).unwrap()
         )?;
+        writeln!(
+            f,
+            "        MsrBitmap: {:x}",
+            self.get(VmcsField::MsrBitmap).unwrap()
+        )?;
+        writeln!(
+            f,
+            "        VmExitMsrStoreCount: {:x}",
+            self.get(VmcsField::VmExitMsrStoreCount).unwrap()
+        )?;
+        writeln!(
+            f,
+            "        VmEntryMsrLoadCount: {:x}",
+            self.get(VmcsField::VmEntryMsrLoadCount).unwrap()
+        )?;
+        writeln!(
+            f,
+            "        MsrExitStoreAddr: {:x}",
+            self.get(VmcsField::VmExitMsrStoreAddr).unwrap()
+        )?;
         writeln!(f, "        EPT Ptr: {:#x}", self.get_ept_ptr().unwrap())?;
         writeln!(f, "        EPTP List: {:#x}", self.get_eptp_list().unwrap())?;
+        writeln!(
+            f,
+            "        PostedInterruptAddr: {:#x}",
+            self.get(VmcsField::PostedIntrDescAddr).unwrap()
+        )?;
+        writeln!(
+            f,
+            "        VirtualProcessorId: {:?}",
+            self.get(VmcsField::VirtualProcessorId).unwrap()
+        )?;
+        writeln!(
+            f,
+            "        TPR threshold: {:x?}",
+            self.get(VmcsField::TprThreshold).unwrap()
+        )?;
+        writeln!(
+            f,
+            "        IdtVectoringInfoField: {:x?}",
+            self.get(VmcsField::IdtVectoringInfoField).unwrap()
+        )?;
+        writeln!(
+            f,
+            "        IdtVectoringErrorCode: {:x?}",
+            self.get(VmcsField::IdtVectoringErrorCode).unwrap()
+        )?;
         writeln!(f, "    }}")?;
         writeln!(f, "}}")?;
 

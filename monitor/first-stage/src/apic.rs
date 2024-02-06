@@ -16,22 +16,26 @@ pub fn get_lapic_virt_address() -> usize {
 }
 
 pub fn allocate(
-    lapic_addr: usize,
     allocator: &impl RangeAllocator,
     pt_mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
 ) {
     let lapic_frame = unsafe {
         vmx::Frame::new(
-            HostPhysAddr::new(lapic_addr),
-            HostVirtAddr::new(lapic_addr + allocator.get_physical_offset().as_usize()),
+            HostPhysAddr::new(LAPIC_PHYS_ADDRESS),
+            HostVirtAddr::new(LAPIC_PHYS_ADDRESS + allocator.get_physical_offset().as_usize()),
         )
     };
+    //TODO enable PAT and test if it works.
     pt_mapper.map_range(
         allocator,
         HostVirtAddr::new(lapic_frame.virt_addr as usize),
         lapic_frame.phys_addr,
         0x1000,
-        PtFlag::WRITE | PtFlag::PRESENT | PtFlag::USER | PtFlag::PAGE_CACHE_DISABLE,
+        PtFlag::WRITE
+            | PtFlag::PRESENT
+            | PtFlag::USER
+            | PtFlag::PAGE_CACHE_DISABLE
+            | PtFlag::PAGE_WRITE_THROUGH,
     );
 }
 

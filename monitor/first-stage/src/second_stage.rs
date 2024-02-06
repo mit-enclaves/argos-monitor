@@ -8,6 +8,7 @@ use mmu::frame_allocator::PhysRange;
 use mmu::{PtFlag, PtMapper, RangeAllocator};
 use stage_two_abi::{EntryPoint, Manifest, Smp};
 
+use crate::apic::LAPIC_PHYS_ADDRESS;
 use crate::cpu::MAX_CPU_NUM;
 use crate::elf::{Elf64PhdrType, ElfProgram};
 use crate::guests::ManifestInfo;
@@ -152,6 +153,15 @@ pub fn load(
             PtFlag::PRESENT | PtFlag::WRITE,
         );
     }
+
+    // Map the APIC.
+    loaded_elf.pt_mapper.map_range(
+        stage2_allocator,
+        HostVirtAddr::new(LAPIC_PHYS_ADDRESS),
+        HostPhysAddr::new(LAPIC_PHYS_ADDRESS),
+        0x1000,
+        PtFlag::PRESENT | PtFlag::WRITE | PtFlag::PAGE_WRITE_THROUGH | PtFlag::PAGE_CACHE_DISABLE,
+    );
 
     // If we setup VGA support
     if info.vga_info.is_valid {
