@@ -12,6 +12,7 @@ pub enum Update {
     PermissionUpdate {
         domain: Handle<Domain>,
         init: bool,
+        core_map: u64,
     },
     TlbShootdown {
         core: usize,
