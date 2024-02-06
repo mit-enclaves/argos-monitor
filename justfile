@@ -139,6 +139,13 @@ build-linux-x86:
 build-linux-riscv:
 	@just _build-linux-common riscv CROSS_COMPILE=riscv64-unknown-linux-gnu-
 
+build-linux-x86-nested:
+  cp ./configs/linux-x86-nested.config ./linux/arch/x86/configs/linux-x86-nested_defconfig
+  mkdir -p ./builds/linux-x86-nested
+  make -C ./linux ARCH=x86 O=../builds/linux-x86-nested defconfig KBUILD_DEFCONFIG=linux-x86-nested_defconfig
+  make -C ./linux ARCH=x86 O=../builds/linux-x86-nested -j `nproc`
+  rm ./linux/arch/x86/configs/linux-x86-nested_defconfig
+
 _build-linux-common ARCH CROSS_COMPILE=extra_arg:
 	@just _setup-linux-config {{ARCH}}
 	bear --output ./linux/compile_commands.json -- make -C ./linux ARCH={{ARCH}} O=../builds/linux-{{ARCH}} {{CROSS_COMPILE}} -j `nproc`
@@ -274,6 +281,21 @@ only-linux SMP=default_smp:
   #  -drive format=raw,file=target/x86_64-unknown-kernel/debug/boot-uefi-s1.img \
   #    -bios OVMF-pure-efi.fd \
   #-drive file=_empty.fake_disk,format=raw,media=disk \
+ 
+simple-linux SMP=default_smp:
+  qemu-system-x86_64 \
+  -kernel builds/linux-x86/arch/x86_64/boot/bzImage \
+  -smp {{SMP}} \
+  --no-reboot \
+  -chardev file,path="/tmp/charseabios",logfile="/tmp/seabios",id=seabios -device isa-debugcon,iobase=0x402,chardev=seabios \
+  -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+  -cpu host,+kvm -machine q35 -accel kvm -m 6G \
+  -drive format=raw,file=target/x86_64-unknown-kernel/debug/boot-uefi-s1.img \
+  -bios OVMF-pure-efi.fd \
+  -drive file=ubuntu.qcow2,format=qcow2,media=disk \
+  -nographic \
+  -append "root=/dev/sda1 apic=debug earlyprintk=serial,ttyS0 console=ttyS0 tsc=none" \
+  -chardev socket,path={{default_dbg}},server=on,wait=off,id=gdb0 -gdb chardev:gdb0
 
 dbg-only-linux:
   gdb -ex "target remote {{default_dbg}}" \

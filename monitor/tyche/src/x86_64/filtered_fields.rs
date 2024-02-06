@@ -40,6 +40,25 @@ const DISALLOWED_FIELDS: [VmcsField; 30] = [
     VmcsField::HostRip,
 ];
 
+const SELF_ALLOWED_FIELDS: [VmcsField; 16] = [
+    VmcsField::GuestIa32Pat,
+    VmcsField::GuestIa32PatHigh,
+    VmcsField::GuestIa32Efer,
+    VmcsField::GuestIa32EferHigh,
+    VmcsField::GuestCr0,
+    VmcsField::GuestCr3,
+    VmcsField::GuestCr4,
+    VmcsField::GuestCsSelector,
+    VmcsField::GuestDsSelector,
+    VmcsField::GuestEsSelector,
+    VmcsField::GuestSsSelector,
+    VmcsField::GuestTrSelector,
+    VmcsField::GuestIdtrBase,
+    VmcsField::GuestSysenterCs,
+    VmcsField::GuestSysenterEsp,
+    VmcsField::GuestSysenterEip,
+];
+
 /// API to select which fields are exposed.
 pub struct FilteredFields {}
 
@@ -53,5 +72,12 @@ impl FilteredFields {
             }
         }
         return false;
+    }
+
+    pub fn is_valid_self(field: VmcsField) -> bool {
+        match SELF_ALLOWED_FIELDS.iter().position(|item| *item == field) {
+            Some(_) => return true,
+            _ => return false,
+        }
     }
 }

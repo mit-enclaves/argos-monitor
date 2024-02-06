@@ -27,7 +27,9 @@ bitflags! {
         const PAGE_WRITE_THROUGH = 1 << 3;
         const PAGE_CACHE_DISABLE = 1 << 4;
         const ACCESS = 1 << 5;
+        const DIRTY = 1 << 6;
         const PSIZE = 1 << 7;
+        const GLOBAL = 1 << 8;
         const HALT = 1 << 11;
         const EXEC_DISABLE = 1 << 63;
     }
@@ -121,10 +123,12 @@ where
                 virt_addr,
                 VirtAddr::from_usize(virt_addr.as_usize() + size),
                 &mut |addr, entry, level| {
-                    // TODO(aghosn) handle rewrite of access rights.
                     if (*entry & PtFlag::PRESENT.bits()) != 0 {
-                        *entry = *entry | prot.bits();
-                        *entry = *entry & !PtFlag::EXEC_DISABLE.bits();
+                        if level == Level::L1 {
+                            *entry |= prot.bits();
+                        } else {
+                            *entry |= DEFAULT_PROTS.bits();
+                        }
                         return WalkNext::Continue;
                     }
 

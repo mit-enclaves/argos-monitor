@@ -11,6 +11,7 @@ use super::cpuid_filter::{filter_mpk, filter_tpause};
 use super::{cpuid, monitor};
 use crate::calls;
 use crate::error::TycheError;
+use crate::x86_64::filtered_fields::FilteredFields;
 
 #[derive(PartialEq, Debug)]
 pub enum HandlerResult {
@@ -45,7 +46,7 @@ pub fn main_loop(mut vmx_state: VmxState, mut domain: Handle<Domain>) {
                 res
             }
             Err(err) => {
-                log::error!("Guest crash: {:?}", err);
+                log::error!("Guest crash: {:?}, dom: {}", err, domain.idx());
                 log::error!("Vcpu: {:x?}", vmx_state.vcpu);
                 HandlerResult::Crash
             }
@@ -115,6 +116,19 @@ fn handle_exit(
                         1
                     };
                     monitor::get_context(*domain, cpuid()).set(VmcsField::GuestRax, res, None)?;
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
+                calls::SELF_CONFIG => {
+                    log::trace!("Self config");
+                    let mut context = monitor::get_context(*domain, cpuid());
+                    let field = VmcsField::from_u32(arg_1 as u32).unwrap();
+                    if FilteredFields::is_valid_self(field) {
+                        context.set(field, arg_2, Some(&mut vs.vcpu)).unwrap();
+                        context.set(VmcsField::GuestRax, 0, None).unwrap();
+                    } else {
+                        context.set(VmcsField::GuestRax, 1, None).unwrap();
+                    }
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
@@ -380,12 +394,6 @@ fn handle_exit(
                             return Ok(HandlerResult::Crash);
                         }
                     }
-                    /*log::info!("marker called with {}", arg_1);
-                    vs.vcpu.next_instruction()?;
-                    Ok(HandlerResult::Resume)*/
-                }
-                calls::DEBUG_MARKER2 => {
-                    todo!("Got it");
                 }
                 calls::EXIT => {
                     log::info!("MonCall: exit");
@@ -570,7 +578,7 @@ fn handle_exit(
             };
             Ok(HandlerResult::Resume)
         }
-        VmxExitReason::Xsetbv => {
+        VmxExitReason::Xsetbv if domain.idx() == 0 => {
             let mut context = monitor::get_context(*domain, cpuid());
             let ecx = context.get(VmcsField::GuestRcx, None)?;
             let eax = context.get(VmcsField::GuestRax, None)?;
@@ -676,11 +684,22 @@ fn handle_exit(
         | VmxExitReason::InterruptWindow
         | VmxExitReason::Wbinvd
         | VmxExitReason::MovDR
-        | VmxExitReason::VirtualizedEoi => {
+        | VmxExitReason::VirtualizedEoi
+        | VmxExitReason::ApicAccess
+        | VmxExitReason::VmxPreemptionTimerExpired
+        | VmxExitReason::Hlt => {
             log::trace!("Handling {:?} for dom {}", reason, domain.idx());
             // TODO(aghosn): for the moment, crash on EPT violations
             // on dom0. Later on, we should route them to the domain in a different
             // way.
+            // TODO(aghosn): find a better fix for missing interrupts.
+            if reason == VmxExitReason::ExternalInterrupt {
+                let address_eoi = 0xfee000b0 as *mut u32;
+                unsafe {
+                    // Clear the eoi
+                    *address_eoi = 0;
+                }
+            }
             match monitor::do_handle_violation(*domain) {
                 Ok(_) => {
                     return Ok(HandlerResult::Resume);
@@ -714,7 +733,7 @@ fn handle_exit(
                 let val = context.get(VmcsField::VmxPreemptionTimerValue, Some(&vs.vcpu));
                 log::error!("Timer value is {:x?}", val);
             }
-            let mut context = monitor::get_context(*domain, cpuid());
+            let context = monitor::get_context(*domain, cpuid());
             log::error!("This happened on domain {}", domain.idx());
             log::info!("{:x?} {:?}", context.vmcs_gp, vs.vcpu);
             Ok(HandlerResult::Crash)

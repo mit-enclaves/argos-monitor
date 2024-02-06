@@ -141,9 +141,9 @@ pub unsafe fn boot(
     stage1_allocator: &impl RangeAllocator,
     pt_mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
 ) {
-    let virtoffset = stage1_allocator.get_physical_offset();
+    //let virtoffset = stage1_allocator.get_physical_offset();
 
-    let apic_info = match platform_info.interrupt_model {
+    let _apic_info = match platform_info.interrupt_model {
         InterruptModel::Apic(apic) => apic,
         _ => panic!("unable to retrieve apic informaiton"),
     };
@@ -153,7 +153,7 @@ pub unsafe fn boot(
 
     // Map the LAPIC's 4k MMIO region to virtual memory
     apic::allocate(
-        apic_info.local_apic_address as usize + virtoffset.as_usize(),
+        //apic_info.local_apic_address as usize + virtoffset.as_usize(),
         stage1_allocator,
         pt_mapper,
     );

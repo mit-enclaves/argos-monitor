@@ -23,7 +23,7 @@ pub const EPT_PRESENT: EptEntryFlags = EptEntryFlags::READ
 /// Flags:
 /// 6 << 0; // write-back
 /// 3 << 3; // walk length of 4
-pub const EPT_ROOT_FLAGS: usize = (6 << 0) | (3 << 3);
+pub const EPT_ROOT_FLAGS: usize = (6 << 0) | (3 << 3) | (1 << 6);
 
 unsafe impl Walker for EptMapper {
     type PhysAddr = HostPhysAddr;

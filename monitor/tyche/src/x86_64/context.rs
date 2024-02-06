@@ -831,6 +831,7 @@ impl<const N: usize> Cache<N> {
         self.bitmap &= !(1 << idx);
         return true;
     }
+    #[allow(dead_code)]
     pub fn clear_all(&mut self) {
         self.bitmap = 0;
     }
@@ -1071,6 +1072,57 @@ impl Contextx86 {
             self.vmcs_nat[i] = vcpu
                 .get(ContextNatx86::from_usize(i).as_vmcs_field())
                 .unwrap_or(0);
+        }
+    }
+
+    pub fn compare_to(&self, other: &Contextx86) {
+        // General purpose registers are handled by vmlaunch/vmresume.
+        // 16-bits.
+        for i in 0..Context16x86::size() {
+            if self.vmcs_16[i] != other.vmcs_16[i] {
+                log::info!(
+                    "{:?}: {:x} - {:x}",
+                    Context16x86::from_usize(i),
+                    self.vmcs_16[i],
+                    other.vmcs_16[i]
+                );
+            }
+        }
+
+        // 32-bits.
+        for i in 0..Context32x86::size() {
+            if self.vmcs_32[i] != other.vmcs_32[i] {
+                log::info!(
+                    "{:?}: {:x} - {:x}",
+                    Context32x86::from_usize(i),
+                    self.vmcs_32[i],
+                    other.vmcs_32[i]
+                );
+            }
+        }
+
+        // 64-bits.
+        for i in 0..Context64x86::size() {
+            if self.vmcs_64[i] != other.vmcs_64[i] {
+                log::info!(
+                    "{:?}: {:x} - {:x}",
+                    Context64x86::from_usize(i),
+                    self.vmcs_64[i],
+                    other.vmcs_64[i]
+                );
+            }
+        }
+
+        // Nat-bits.
+        for i in 0..ContextNatx86::size() {
+            if self.vmcs_nat[i] != other.vmcs_nat[i] {
+                log::info!(
+                    "{:?}: {:x} - {:x}",
+                    ContextNatx86::from_usize(i),
+                    self.vmcs_nat[i],
+                    other.vmcs_nat[i]
+                );
+            }
         }
     }
 
