@@ -573,7 +573,11 @@ pub(crate) fn activate_region(
         .regions
         .add_region(access.start, access.end, access.ops, tracker)?;
     if let PermissionChange::Some = change {
-        updates.push(Update::PermissionUpdate { domain, init: true });
+        updates.push(Update::PermissionUpdate {
+            domain,
+            init: true,
+            core_map: dom.cores(),
+        });
     };
 
     Ok(())
@@ -600,6 +604,7 @@ pub(crate) fn deactivate_region(
         updates.push(Update::PermissionUpdate {
             domain,
             init: false,
+            core_map: dom.cores(),
         });
     };
 

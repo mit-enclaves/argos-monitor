@@ -506,12 +506,20 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
         log::trace!("Update: {}", update);
         match update {
             // Updates that can be handled locally
-            capa_engine::Update::PermissionUpdate { domain, init } => {
+            capa_engine::Update::PermissionUpdate {
+                domain,
+                init,
+                core_map,
+            } => {
                 let core_id = cpuid();
-                log::trace!("cpu {} processes PermissionUpdate", core_id);
-                let core_map = update_permission(domain, engine, init);
+                log::trace!(
+                    "cpu {} processes PermissionUpdate with core_map={:b}",
+                    core_id,
+                    core_map
+                );
+                let ept_update = update_permission(domain, engine, init);
 
-                if !init {
+                if !init && ept_update {
                     log::trace!(
                         "cpu {} pushes core update with core_map={:b}",
                         cpuid(),
@@ -526,9 +534,7 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
 
                     // After we have pushed all TlbShootdown updates to its per cpu CORE_UPDATES, we
                     // can issue the IPI now.
-                    if core_map > 0 {
-                        post_ept_update(core_id, core_map, &domain);
-                    }
+                    post_ept_update(core_id, core_map, &domain);
                 }
             }
             capa_engine::Update::RevokeDomain { domain } => revoke_domain(domain),
@@ -745,9 +751,8 @@ fn update_domain_ept(
     domain_handle: Handle<Domain>,
     engine: &mut MutexGuard<CapaEngine>,
     init: bool,
-) -> u64 {
+) -> bool {
     let mut domain = get_domain(domain_handle);
-    let cores = engine[domain_handle].cores();
     let allocator = allocator();
     let ept_root = allocator
         .allocate_frame()
@@ -802,7 +807,7 @@ fn update_domain_ept(
     domain.ept_old = domain.ept;
     domain.ept = Some(ept_root.phys_addr);
 
-    cores
+    true
 }
 
 fn notify_cores(core_id: usize, domain_core_bitmap: u64) {
@@ -819,7 +824,7 @@ fn notify_cores(core_id: usize, domain_core_bitmap: u64) {
     }
 }
 
-fn update_domain_iopt(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) -> u64 {
+fn update_domain_iopt(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) -> bool {
     let mut domain = get_domain(domain_handle);
     let allocator = allocator();
     if let Some(iopt) = domain.iopt {
@@ -866,14 +871,14 @@ fn update_domain_iopt(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Cap
     log::info!("I/O MMU: {:?}", iommu.get_global_status());
     log::warn!("I/O MMU Fault: {:?}", iommu.get_fault_status());
 
-    0
+    false
 }
 
 fn update_permission(
     domain_handle: Handle<Domain>,
     engine: &mut MutexGuard<CapaEngine>,
     init: bool,
-) -> u64 {
+) -> bool {
     if engine[domain_handle].is_io() {
         update_domain_iopt(domain_handle, engine)
     } else {
