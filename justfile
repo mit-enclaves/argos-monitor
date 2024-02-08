@@ -29,6 +29,9 @@ kernel-riscv		:= "builds/linux-riscv/arch/riscv/boot/Image"
 bios-riscv			:= "opensbi-stage1/build/platform/generic/firmware/fw_payload.bin"
 dev-riscv			:= "-device virtio-rng-pci" 
 bios-riscv-gdb		:= "opensbi-stage1/build/platform/generic/firmware/fw_payload.elf"
+riscv-linux-dir     := "builds/linux-riscv"
+riscv-vmlinux       := "builds/linux-riscv/vmlinux"
+
 
 # Print list of commands
 help:
@@ -130,6 +133,7 @@ build:
 # Build the monitor for RISC-V64
 build-riscv:
 	{{riscv-linker-script}} cargo build {{cargo_args}} {{riscv}} {{tyche}} --release
+	./opensbi-stage1/run_build.sh
 
 ## ——————————————————————————— Linux Kernel Build ——————————————————————————— ##
 
@@ -247,17 +251,27 @@ _tpm:
 		swtpm socket --tpm2 --tpmstate dir={{tpm_path}} --ctrl type=unixio,path={{tpm_path}}/sock &
 	fi
 
-run_riscv:
-	{{qemu-riscv}} -nographic -drive "file={{drive-riscv}},format=raw,if=virtio" -cpu rv64,h=true -M virt -m 4G -bios {{bios-riscv}} -kernel {{kernel-riscv}} -append "root=/dev/vda1 rw console=ttyS0 earlycon=sbi quiet" -smp 1 {{dev-riscv}} 
+run_riscv_ramfs:
+	{{qemu-riscv}} -nographic -cpu rv64,h=true -M virt -m 4G -bios {{bios-riscv}} -kernel {{kernel-riscv}} -append "root=/dev/ram rw console=ttyS0 earlycon=sbi nokaslr quiet" -smp 2 
 
-run_riscv_4harts:
-    {{qemu-riscv}} -nographic -drive "file={{drive-riscv}},format=raw,if=virtio" -cpu rv64,h=true -M virt -m 4G -bios {{bios-riscv}} -kernel {{kernel-riscv}} -append "root=/dev/vda1 rw console=ttyS0 earlycon=sbi quiet" -smp 4 {{dev-riscv}}
+#-gdb tcp::1234 -S
+
+run_riscv:
+	{{qemu-riscv}} -nographic -drive "file={{drive-riscv}},format=raw,if=virtio" -cpu rv64,h=true -M virt -m 4G -bios {{bios-riscv}} -kernel {{kernel-riscv}} -append "root=/dev/vda1 rw console=ttyS0 earlycon=sbi nokaslr quiet" -smp 1 {{dev-riscv}} 
+
+run_riscv_2harts:
+	{{qemu-riscv}} -nographic -drive "file={{drive-riscv}},format=raw,if=virtio" -cpu rv64,h=true -M virt -m 4G -bios {{bios-riscv}} -kernel {{kernel-riscv}} -append "root=/dev/vda1 rw console=ttyS0 earlycon=sbi nokaslr quiet" -smp 2 {{dev-riscv}} 
+
+#-gdb tcp::1234 -S 
 
 run_riscv_gdb: 
 	{{qemu-riscv}} -nographic -drive "file={{drive-riscv}},format=raw,if=virtio" -cpu rv64,h=true -M virt -m 4G -bios {{bios-riscv}} -kernel {{kernel-riscv}} -append "root=/dev/vda1 rw console=ttyS0 earlycon=sbi quiet" -smp 1 {{dev-riscv}} -gdb tcp::1234 -S 
 	
 riscv_monitor_gdb:
 	riscv64-unknown-linux-gnu-gdb -q -ex "file {{bios-riscv-gdb}}" -ex "target remote localhost:1234" -ex "b parse_and_load_elf" -ex "c" 
+
+riscv_linux_gdb: 
+	riscv64-unknown-linux-gnu-gdb -q "add-auto-load-safe-path {{riscv-linux-dir}}" -ex "file {{riscv-vmlinux}}" -ex "set riscv use-compressed-breakpoints no" -ex "target remote localhost:1234" -ex "b *0xffffffff80007488" -ex "b *0xffffffff8000752e" -ex "b *0xffffffff80033e72" -ex "b send_ipi_single" -ex "b send_ipi_mask" -ex "b panic" -ex "b __stack_chk_fail" -ex "b smp_send_stop" -ex "b schedule_idle" -ex "b *0xffffffff808ae26c" 
 
 # The following line gives highlighting on vim
 # vim: set ft=make :

@@ -40,10 +40,10 @@ pub fn arch_entry_point(
         monitor::do_debug();
 
         let mip: usize;
-        let mie: usize;
+        let mut mie: usize;
         let mstatus: usize;
         let medeleg: usize;
-        let mideleg: usize; 
+        let mut mideleg: usize; 
 
         unsafe {
             asm!("csrr {}, mip", out(reg) mip);
@@ -52,6 +52,18 @@ pub fn arch_entry_point(
             asm!("csrr {}, medeleg", out(reg) medeleg);
             asm!("csrr {}, mideleg", out(reg) mideleg);
         }
+
+        /* mideleg = mideleg & !(1 << 5);
+
+        unsafe {
+            asm!("csrw mideleg, {}", in(reg) mideleg);
+        }
+
+        mie = mie | 0x20;
+
+        unsafe {
+            asm!("csrw mie, {}", in(reg) mie);
+        } */
 
         log::info!("MIP: {:x} MIE: {:x} MSTATUS: {:x} MEDELEG: {:x} MIDELEG: {:x}", mip, mie, mstatus, medeleg, mideleg);
 
@@ -88,10 +100,10 @@ pub fn arch_entry_point(
 
         //set_mip_ssip();
         let mip: usize;
-        let mie: usize;
+        let mut mie: usize;
         let mstatus: usize;
         let medeleg: usize;
-        let mideleg: usize; 
+        let mut mideleg: usize; 
 
         unsafe {
             asm!("csrr {}, mip", out(reg) mip);
@@ -101,6 +113,19 @@ pub fn arch_entry_point(
             asm!("csrr {}, mideleg", out(reg) mideleg);
             //asm!("csrsi mip, 2");
         }
+
+        /* mideleg = mideleg & !(1 << 5);
+
+        unsafe {
+            asm!("csrw mideleg, {}", in(reg) mideleg);
+        }
+    
+        mie = mie | 0x20;
+
+        unsafe {
+            asm!("csrw mie, {}", in(reg) mie);
+        } */
+ 
 
         log::info!("MIP: {:x} MIE: {:x} MSTATUS: {:x} MEDELEG: {:x} MIDELEG: {:x}", mip, mie, mstatus, medeleg, mideleg);
 
