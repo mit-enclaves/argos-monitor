@@ -353,6 +353,12 @@ fn handle_exit(
                 }
                 calls::SWITCH => {
                     log::trace!("Switch");
+                    {
+                        let mut msr = vmx::msr::Msr::new(0xC000_0080);
+                        unsafe {
+                            msr.write(0xd01);
+                        }
+                    }
                     vs.vcpu.next_instruction()?;
                     monitor::do_switch(*domain, LocalCapa::new(arg_1), cpuid()).expect("TODO");
                     Ok(HandlerResult::Resume)
@@ -365,35 +371,6 @@ fn handle_exit(
                     context.set(VmcsField::GuestRax, 0, None)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
-                }
-                calls::DEBUG_MARKER => {
-                    if domain.idx() == 0 {
-                        log::info!("Marker called {}", arg_1);
-                        vs.vcpu.next_instruction()?;
-                        return Ok(HandlerResult::Resume);
-                    }
-                    let addr = vs.vcpu.guest_phys_addr()?;
-                    match monitor::do_handle_violation(*domain) {
-                        Ok(_) => {
-                            return Ok(HandlerResult::Resume);
-                        }
-                        Err(e) => {
-                            log::error!("Unable to handle {:?}: {:?}", reason, e);
-                            if reason == VmxExitReason::EptViolation {
-                                log::error!(
-                                    "Ept Violation! virt: 0x{:x}, phys: 0x{:x} on dom{}",
-                                    vs.vcpu
-                                        .guest_linear_addr()
-                                        .expect("Unable to get virt addr")
-                                        .as_u64(),
-                                    addr.as_u64(),
-                                    *domain
-                                );
-                            }
-                            log::info!("The vcpu: {:x?}", vs.vcpu);
-                            return Ok(HandlerResult::Crash);
-                        }
-                    }
                 }
                 calls::EXIT => {
                     log::info!("MonCall: exit");

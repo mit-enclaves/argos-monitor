@@ -37,7 +37,11 @@ pub fn setup(cpu_id: usize) {
 
     // Setup the PAT default value.
     let mut ia32_pat = vmx::msr::Msr::new(0x277);
-    unsafe { ia32_pat.write(MSR_IA32_CR_PAT_DEFAULT as u64) }
+    unsafe { ia32_pat.write(MSR_IA32_CR_PAT_DEFAULT as u64) };
+
+    // Setup the EFER value.
+    let mut efer = vmx::msr::Msr::new(0xC000_0080);
+    unsafe { efer.write(0xd01) };
 }
 
 #[repr(C, packed(2))]
