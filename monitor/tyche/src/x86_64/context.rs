@@ -849,7 +849,6 @@ pub const DUMP_FRAME: [(VmcsField, VmcsField); 9] = [
     (VmcsField::GuestR12, VmcsField::VmInstructionError),
 ];
 
-#[derive(Debug)]
 #[allow(dead_code)]
 pub struct Contextx86 {
     // Quick way to mark register groups that need to be visited.
@@ -1159,6 +1158,24 @@ impl Contextx86 {
             self.set(i.0, vcpu.get(i.1)?, None)?;
         }
 
+        Ok(())
+    }
+}
+
+// Partial print of a context for general purpose registers.
+// TODO: make it the default way to print things.
+impl core::fmt::Debug for Contextx86 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        writeln!(f, "GP Registers {{")?;
+        for i in 0..ContextGpx86::size() {
+            writeln!(
+                f,
+                "   {:?}: {:#x}",
+                ContextGpx86::from_usize(i),
+                self.vmcs_gp[i]
+            )?;
+        }
+        writeln!(f, "}}")?;
         Ok(())
     }
 }
