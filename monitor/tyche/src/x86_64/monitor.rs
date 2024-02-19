@@ -369,13 +369,16 @@ pub fn do_get_all_gp(
         return Err(CapaError::InvalidCore);
     }
 
+    //TODO: we need to unify things...
+    //This breaks enclaves.
+    /*
     // Check the domain has the correct vcpu type
     let switch_type = engine.get_domain_config(domain, Bitmaps::SWITCH);
     let switch_type = InitVMCS::from_u64(switch_type)?;
     if switch_type == InitVMCS::Shared {
         log::error!("Trying to get all registers from a shared vcpu.");
         return Err(CapaError::InvalidOperation);
-    }
+    }*/
     let mut curr_ctx = get_context(current, core);
     let tgt_ctx = get_context(domain, core);
     if curr_ctx.vmcs.is_invalid() || tgt_ctx.vmcs.is_invalid() {
