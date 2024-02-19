@@ -10,6 +10,7 @@ mod region;
 mod region_capa;
 mod remapper;
 mod segment;
+pub mod serializer;
 mod update;
 mod utils;
 
@@ -615,6 +616,14 @@ impl CapaEngine {
 
     pub fn set_report(&mut self, domain: Handle<Domain>, rep: EnclaveReport) {
         self.domains[domain].set_report(rep);
+    }
+
+    /// Writes the attestation into the provided buffer.
+    ///
+    /// Returns the number of bytes written. Raises an out of memory error if buffer space is
+    /// insufficient.
+    pub fn serialize_attestation(&self, buff: &mut [u8]) -> Result<usize, CapaError> {
+        serializer::serialize(buff, &self.new_regions)
     }
 
     /// creates a new domain

@@ -21,7 +21,7 @@ pub struct NewRegionCapa {
     domain: Handle<Domain>,
     child_list_head: Option<Handle<NewRegionCapa>>,
     next_sibling: Option<Handle<NewRegionCapa>>,
-    kind: RegionKind,
+    pub(crate) kind: RegionKind,
     pub(crate) is_confidential: bool,
     pub(crate) access: AccessRights,
 }
@@ -464,13 +464,13 @@ impl<'a> Iterator for RegionIterator<'a> {
     }
 }
 
-struct HandleIterator<'a> {
+pub(crate) struct HandleIterator<'a> {
     next: Option<Handle<NewRegionCapa>>,
     regions: &'a NewRegionPool,
 }
 
 impl<'a> HandleIterator<'a> {
-    fn child_list(parent: Handle<NewRegionCapa>, regions: &'a NewRegionPool) -> Self {
+    pub(crate) fn child_list(parent: Handle<NewRegionCapa>, regions: &'a NewRegionPool) -> Self {
         HandleIterator {
             next: regions[parent].child_list_head,
             regions,

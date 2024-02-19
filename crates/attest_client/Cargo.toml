@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 capa-engine = { path = "../../crates/capability-engine/" }
+nom = "7"

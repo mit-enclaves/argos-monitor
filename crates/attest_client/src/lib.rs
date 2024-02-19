@@ -1,3 +1,5 @@
+mod deserializer;
+
 use core::fmt;
 use std::collections::HashSet;
 use std::hash::Hash;
