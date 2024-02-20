@@ -2,6 +2,9 @@
 
 mod apic;
 mod arch;
+mod context;
+mod cpuid_filter;
+mod filtered_fields;
 pub mod guest;
 mod init;
 mod monitor;

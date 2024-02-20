@@ -4,8 +4,6 @@
 
 use bitflags::bitflags;
 
-use super::{ControlRegister, Register};
-
 bitflags! {
     /// Pin-based VM-execution controls.
     ///
@@ -394,6 +392,7 @@ bitflags! {
 
 pub mod exit_qualification {
     use super::*;
+    use crate::fields::VmcsField;
 
     bitflags! {
         pub struct EptViolation: usize {
@@ -438,8 +437,8 @@ pub mod exit_qualification {
     /// See table 27.3.
     #[derive(Clone, Copy, Debug)]
     pub enum ControlRegisterAccesses {
-        MovToCr(ControlRegister, Register),
-        MovFromCr(ControlRegister, Register),
+        MovToCr(VmcsField, VmcsField),
+        MovFromCr(VmcsField, VmcsField),
         Clts(u16),
         LmswRegister(u16),
         LmswMemory(u16),
