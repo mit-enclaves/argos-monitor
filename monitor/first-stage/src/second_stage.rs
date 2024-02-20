@@ -174,7 +174,7 @@ pub fn load(
         HostVirtAddr::new(LAPIC_PHYS_ADDRESS),
         HostPhysAddr::new(LAPIC_PHYS_ADDRESS),
         PAGE_SIZE,
-        PtFlag::PRESENT | PtFlag::WRITE,
+        PtFlag::PRESENT | PtFlag::WRITE | PtFlag::PAGE_WRITE_THROUGH | PtFlag::PAGE_CACHE_DISABLE,
     );
 
     // If we setup VGA support
