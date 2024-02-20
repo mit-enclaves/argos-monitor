@@ -24,3 +24,4 @@ pub const READ_ALL_GP: usize = 17;
 pub const WRITE_ALL_GP: usize = 18;
 pub const WRITE_FIELDS: usize = 19;
 pub const SELF_CONFIG: usize = 20;
+pub const ENCLAVE_ATTESTATION: usize = 21;

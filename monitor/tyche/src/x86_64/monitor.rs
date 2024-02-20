@@ -14,20 +14,11 @@ use mmu::{EptMapper, FrameAllocator, IoPtFlag, IoPtMapper};
 use spin::barrier::Barrier;
 use spin::{Mutex, MutexGuard};
 use stage_two_abi::Manifest;
-use utils::{GuestPhysAddr, GuestPhysAddr, HostPhysAddr, HostPhysAddr, HostVirtAddr};
-use vmx::bitmaps::{EptEntryFlags, EptEntryFlags, ExceptionBitmap};
+use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
+use vmx::bitmaps::EptEntryFlags;
 use vmx::ept::PAGE_SIZE;
-use vmx::errors::Trapnr;
-use vmx::fields::{
-    GeneralPurposeField, GeneralPurposeField, VmcsField, VmcsField, VmcsField, REGFILE_SIZE,
-    REGFILE_SIZE, REGFILE_SIZE,
-};
-use vmx::msr::{IA32_LSTAR, IA32_STAR};
-use vmx::{
-    ActiveVmcs, ActiveVmcs, ControlRegister, Register, Register, VmExitInterrupt, VmExitInterrupt,
-    VmExitInterrupt, VmExitInterrupt, VmExitInterrupt, VmExitInterrupt, Vmxon, Vmxon, Vmxon,
-    REGFILE_CONTEXT_SIZE, REGFILE_SIZE,
-};
+use vmx::fields::{GeneralPurposeField, VmcsField, REGFILE_SIZE};
+use vmx::{ActiveVmcs, VmExitInterrupt, Vmxon};
 use vtd::Iommu;
 
 use super::context::{
@@ -38,11 +29,10 @@ use super::cpuid;
 use super::guest::VmxState;
 use super::init::NB_BOOTED_CORES;
 use super::vmx_helper::{dump_host_state, load_host_state};
-use crate::allocator::{allocator, PAGE_SIZE};
+use crate::allocator::allocator;
 use crate::attestation_domain::{attest_domain, calculate_attestation_hash};
 use crate::rcframe::{drop_rc, RCFrame, RCFramePool, EMPTY_RCFRAME};
 use crate::x86_64::apic;
-use crate::x86_64::exposed_vmx_fields::{GuestRegisterGroups, GuestRegisters};
 use crate::x86_64::filtered_fields::FilteredFields;
 
 // ————————————————————————— Statics & Backend Data ————————————————————————— //
@@ -64,58 +54,6 @@ pub struct DomainData {
     ept: Option<HostPhysAddr>,
     ept_old: Option<HostPhysAddr>,
     iopt: Option<HostPhysAddr>,
-}
-
-pub struct ContextData {
-    pub cr3: usize,
-    pub rip: usize,
-    pub rsp: usize,
-    // General-purpose registers.
-    pub regs: [u64; REGFILE_SIZE],
-    // The MSR(s?) we need to save and restore.
-    pub star: u64,
-    pub lstar: u64,
-    /// Vcpu for this core.
-    pub vmcs: Handle<RCFrame>,
-}
-
-impl ContextData {
-    pub fn save_partial(&mut self, vcpu: &ActiveVmcs<'static>) {
-        self.cr3 = vcpu.get_cr(ControlRegister::Cr3);
-        self.rip = vcpu.get(Register::Rip) as usize;
-        self.rsp = vcpu.get(Register::Rsp) as usize;
-    }
-
-    pub fn save(&mut self, vcpu: &mut ActiveVmcs<'static>) {
-        self.save_partial(vcpu);
-        vcpu.dump_regs(&mut self.regs);
-        self.lstar = unsafe { IA32_LSTAR.read() };
-        self.star = unsafe { IA32_STAR.read() };
-        vcpu.flush();
-    }
-
-    pub fn restore_partial(&self, vcpu: &mut ActiveVmcs<'static>) {
-        log::trace!(
-            "Switching info cr3 : {:#x}, rip : {:#x}, rsp : {:#x}",
-            self.cr3,
-            self.rip as u64,
-            self.rsp as u64
-        );
-        vcpu.set_cr(ControlRegister::Cr3, self.cr3);
-        vcpu.set(Register::Rip, self.rip as u64);
-        vcpu.set(Register::Rsp, self.rsp as u64);
-    }
-
-    pub fn restore(&self, vcpu: &mut ActiveVmcs<'static>) {
-        let locked = RC_VMCS.lock();
-        let rc_frame = locked.get(self.vmcs).unwrap();
-        vcpu.load_regs(&self.regs);
-        unsafe { vmx::msr::Msr::new(IA32_LSTAR.address()).write(self.lstar) };
-        unsafe { vmx::msr::Msr::new(IA32_STAR.address()).write(self.star) };
-        vcpu.switch_frame(rc_frame.frame).unwrap();
-        // Restore partial must be called AFTER we set a valid frame.
-        self.restore_partial(vcpu);
-    }
 }
 
 #[derive(PartialEq)]
@@ -159,7 +97,7 @@ const EMPTY_CONTEXT: Mutex<Contextx86> = Mutex::new(Contextx86 {
     interrupted: false,
     vmcs: Handle::<RCFrame>::new_invalid(),
 });
-const EMPTY_CONTEXT_ARRAY: [Mutex<ContextData>; NB_CORES] = [EMPTY_CONTEXT; NB_CORES];
+const EMPTY_CONTEXT_ARRAY: [Mutex<Contextx86>; NB_CORES] = [EMPTY_CONTEXT; NB_CORES];
 static IOMMU: Mutex<Iommu> =
     Mutex::new(unsafe { Iommu::new(HostVirtAddr::new(usize::max_value())) });
 // ————————————————————————————— Initialization ————————————————————————————— //
@@ -183,7 +121,7 @@ pub fn init(manifest: &'static Manifest) {
         .create_root_region(
             domain,
             AccessRights {
-                start: (manifest.iommu + PAGE_SIZE) as usize,
+                start: (manifest.iommu as usize + PAGE_SIZE),
                 end: manifest.poffset as usize,
                 ops: MEMOPS_ALL,
                 alias: Alias::NoAlias,
@@ -197,7 +135,7 @@ pub fn init(manifest: &'static Manifest) {
     *initial_domain = Some(domain);
 
     // Create and save the I/O domain
-    let io_domain = engine.create_io_domain(domain).unwrap();
+    let io_domain = engine.create_io_domain(domain, false).unwrap();
     let mut initial_io_domain = IO_DOMAIN.lock();
     *initial_io_domain = Some(io_domain);
 
@@ -688,8 +626,9 @@ pub fn do_debug() {
             next_capa = next_next_capa;
             log::trace!(" - {}", info);
         }
-        log::info!("{}", engine[domain].hpa_regions());
-        log::info!("{}", engine[domain].gpa_regions());
+        //TODO aghosn: I'm confused about region iterator vs tracker
+        /*log::info!("{:?}", engine[domain].hpa_regions());
+        log::info!("{:?}", engine[domain].gpa_regions());*/
     }
 }
 
@@ -698,8 +637,9 @@ pub fn do_print_domain(dom: Handle<Domain>) {
     let engine = CAPA_ENGINE.lock();
     let domain = &engine[dom];
     log::info!("{:?}", domain);
-    log::info!("hpas: {}", domain.hpa_regions());
-    log::info!("gpas: {}", domain.gpa_regions());
+    //TODO aghosn: confused about region iterator vs tracker
+    /*log::info!("hpas: {}", domain.hpa_regions());
+    log::info!("gpas: {}", domain.gpa_regions());*/
     {
         let domain = get_domain(dom);
         let allocator = allocator();
@@ -863,11 +803,6 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
                     trap,
                     info,
                 });
-            }
-
-            capa_engine::Update::TlbShootdown { core } => {
-                let mut core_updates = CORE_UPDATES[core as usize].lock();
-                core_updates.push(CoreUpdate::TlbShootdown);
             }
         }
     }
@@ -1084,13 +1019,16 @@ fn update_domain_ept(
         ept_root.phys_addr,
     );
 
+    //TODO(aghosn): this is probably wrong too.
     let regions = if engine[domain_handle].aliased {
         engine[domain_handle].gpa_regions()
     } else {
         engine[domain_handle].hpa_regions()
     };
 
-    for range in regions.permissions() {
+    for range in engine.get_domain_permissions(domain_handle).unwrap()
+    /*regions.permissions()*/
+    {
         if !range.ops.contains(MemOps::READ) {
             log::error!("there is a region without read permission: {}", range);
             continue;

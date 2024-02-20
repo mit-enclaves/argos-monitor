@@ -381,102 +381,115 @@ fn handle_exit(
                     log::trace!("Get attestation!");
                     log::trace!("arg1 {:#x}", arg_1);
                     log::trace!("arg2 {:#x}", arg_2);
+                    let mut context = monitor::get_context(*domain, cpuid());
                     if let Some(report) = monitor::do_domain_attestation(*domain, arg_1, arg_2) {
-                        vs.vcpu.set(Register::Rax, 0 as u64);
+                        context.set(VmcsField::GuestRax, 0, None)?;
                         if arg_2 == 0 {
-                            vs.vcpu.set(
-                                Register::Rdi,
-                                u64::from_le_bytes(
+                            context.set(
+                                VmcsField::GuestRdi,
+                                usize::from_le_bytes(
                                     report.public_key.as_slice()[0..8].try_into().unwrap(),
                                 ),
-                            );
-                            vs.vcpu.set(
-                                Register::Rsi,
-                                u64::from_le_bytes(
+                                None,
+                            )?;
+                            context.set(
+                                VmcsField::GuestRsi,
+                                usize::from_le_bytes(
                                     report.public_key.as_slice()[8..16].try_into().unwrap(),
                                 ),
-                            );
-                            vs.vcpu.set(
-                                Register::Rdx,
-                                u64::from_le_bytes(
+                                None,
+                            )?;
+                            context.set(
+                                VmcsField::GuestRdx,
+                                usize::from_le_bytes(
                                     report.public_key.as_slice()[16..24].try_into().unwrap(),
                                 ),
-                            );
-                            vs.vcpu.set(
-                                Register::Rcx,
-                                u64::from_le_bytes(
+                                None,
+                            )?;
+                            context.set(
+                                VmcsField::GuestRcx,
+                                usize::from_le_bytes(
                                     report.public_key.as_slice()[24..32].try_into().unwrap(),
                                 ),
-                            );
-                            vs.vcpu.set(
-                                Register::R8,
-                                u64::from_le_bytes(
+                                None,
+                            )?;
+                            context.set(
+                                VmcsField::GuestR8,
+                                usize::from_le_bytes(
                                     report.signed_enclave_data.as_slice()[0..8]
                                         .try_into()
                                         .unwrap(),
                                 ),
-                            );
-                            vs.vcpu.set(
-                                Register::R9,
-                                u64::from_le_bytes(
+                                None,
+                            )?;
+                            context.set(
+                                VmcsField::GuestR9,
+                                usize::from_le_bytes(
                                     report.signed_enclave_data.as_slice()[8..16]
                                         .try_into()
                                         .unwrap(),
                                 ),
-                            );
+                                None,
+                            )?;
                         } else if arg_2 == 1 {
-                            vs.vcpu.set(
-                                Register::Rdi,
-                                u64::from_le_bytes(
+                            context.set(
+                                VmcsField::GuestRdi,
+                                usize::from_le_bytes(
                                     report.signed_enclave_data.as_slice()[16..24]
                                         .try_into()
                                         .unwrap(),
                                 ),
-                            );
-                            vs.vcpu.set(
-                                Register::Rsi,
-                                u64::from_le_bytes(
+                                None,
+                            )?;
+                            context.set(
+                                VmcsField::GuestRsi,
+                                usize::from_le_bytes(
                                     report.signed_enclave_data.as_slice()[24..32]
                                         .try_into()
                                         .unwrap(),
                                 ),
-                            );
-                            vs.vcpu.set(
-                                Register::Rdx,
-                                u64::from_le_bytes(
+                                None,
+                            )?;
+                            context.set(
+                                VmcsField::GuestRdx,
+                                usize::from_le_bytes(
                                     report.signed_enclave_data.as_slice()[32..40]
                                         .try_into()
                                         .unwrap(),
                                 ),
-                            );
-                            vs.vcpu.set(
-                                Register::Rcx,
-                                u64::from_le_bytes(
+                                None,
+                            )?;
+                            context.set(
+                                VmcsField::GuestRcx,
+                                usize::from_le_bytes(
                                     report.signed_enclave_data.as_slice()[40..48]
                                         .try_into()
                                         .unwrap(),
                                 ),
-                            );
-                            vs.vcpu.set(
-                                Register::R8,
-                                u64::from_le_bytes(
+                                None,
+                            )?;
+                            context.set(
+                                VmcsField::GuestR8,
+                                usize::from_le_bytes(
                                     report.signed_enclave_data.as_slice()[48..56]
                                         .try_into()
                                         .unwrap(),
                                 ),
-                            );
-                            vs.vcpu.set(
-                                Register::R9,
-                                u64::from_le_bytes(
+                                None,
+                            )?;
+                            context.set(
+                                VmcsField::GuestR9,
+                                usize::from_le_bytes(
                                     report.signed_enclave_data.as_slice()[56..64]
                                         .try_into()
                                         .unwrap(),
                                 ),
-                            );
+                                None,
+                            )?;
                         }
                     } else {
                         log::trace!("Attestation error");
-                        vs.vcpu.set(Register::Rax, 1 as u64);
+                        context.set(VmcsField::GuestRax, 1, None)?;
                     }
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)

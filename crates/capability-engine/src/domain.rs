@@ -5,10 +5,8 @@ use crate::capa::{Capa, IntoCapa};
 use crate::config::{NB_CAPAS_PER_DOMAIN, NB_DOMAINS};
 use crate::free_list::FreeList;
 use crate::gen_arena::{Cleanable, GenArena};
-use crate::region::{PermissionChange, RegionTracker, TrackerPool};
+use crate::region::{Alias, PermissionChange, RegionTracker, TrackerPool};
 use crate::segment::{self, NewRegionPool};
-use crate::gen_arena::GenArena;
-use crate::region::{Alias, PermissionChange, RegionTracker};
 use crate::update::{Update, UpdateBuffer};
 use crate::{region_capa, AccessRights, CapaError, Handle, RegionPool};
 
@@ -294,13 +292,6 @@ impl Domain {
         self.cores &= !core_id
     }
 
-    /// Emit TLB shootdown updates for all cores executing the domain.
-    fn emit_shootdown(&self, updates: &mut UpdateBuffer) {
-        for core in BitmapIterator::new(self.cores) {
-            updates.push(Update::TlbShootdown { core })
-        }
-    }
-
     pub fn hpa_regions(&self) -> &RegionTracker {
         &self.hpa_regions
     }
@@ -353,6 +344,10 @@ impl Domain {
         self.is_io
     }
 
+    pub fn get_manager(&self) -> Option<Handle<Domain>> {
+        self.manager
+    }
+
     fn is_valid(
         &self,
         idx: usize,
@@ -360,12 +355,6 @@ impl Domain {
         old_regions: &RegionPool,
         domains: &DomainPool,
     ) -> bool {
-
-    pub fn get_manager(&self) -> Option<Handle<Domain>> {
-        self.manager
-    }
-
-    fn is_valid(&self, idx: usize, regions: &RegionPool, domains: &DomainPool) -> bool {
         match self.capas[idx] {
             Capa::None => false,
             Capa::Region(handle) => old_regions.get(handle).is_some(),
@@ -417,7 +406,8 @@ impl Cleanable for Domain {
         self.id = usize::MAX;
         self.capas = [INVALID_CAPA; NB_CAPAS_PER_DOMAIN];
         self.free_list = FreeList::new();
-        self.regions.clean();
+        self.gpa_regions.clean();
+        self.hpa_regions.clean();
         self.manager = None;
         self.config = Configuration {
             values: [
@@ -451,38 +441,6 @@ impl core::fmt::Debug for Domain {
             self.config.values[Bitmaps::TRAP as usize]
         )?;
         Ok(())
-    }
-}
-
-impl Cleanable for Domain {
-    fn clean(&mut self) {
-        const INVALID_CAPA: Capa = Capa::None;
-
-        self.id = usize::MAX;
-        self.capas = [INVALID_CAPA; NB_CAPAS_PER_DOMAIN];
-        self.free_list = FreeList::new();
-        self.hpa_regions.clean();
-        self.gpa_regions.clean();
-        self.manager = None;
-        self.config = Configuration {
-            values: [
-                permission::NONE,
-                trap_bits::NONE,
-                core_bits::NONE,
-                switch_bits::NONE,
-            ],
-            valid_masks: [
-                permission::ALL,
-                trap_bits::ALL,
-                core_bits::ALL,
-                switch_bits::ALL,
-            ],
-            initialized: [false; Bitmaps::_SIZE as usize],
-        };
-        self.cores = core_bits::NONE;
-        self.is_being_revoked = false;
-        self.is_sealed = false;
-        self.aliased = false;
     }
 }
 
@@ -653,9 +611,13 @@ pub(crate) fn activate_region(
     if dom.is_being_revoked {
         return Ok(());
     }
-    let mut change =
-        dom.hpa_regions
-            .add_region(access.start, access.end, access.ops, Alias::NoAlias)?;
+    let mut change = dom.hpa_regions.add_region(
+        access.start,
+        access.end,
+        access.ops,
+        tracker,
+        Alias::NoAlias,
+    )?;
 
     // If the domain has aliased memory.
     if dom.aliased {
@@ -664,7 +626,9 @@ pub(crate) fn activate_region(
             Alias::Repeat(a, s) => (a, s + a, Alias::Repeat(access.start, s)),
             Alias::NoAlias => (access.start, access.end, Alias::Alias(access.start)),
         };
-        change = dom.gpa_regions.add_region(start, end, access.ops, alias, tracker)?;
+        change = dom
+            .gpa_regions
+            .add_region(start, end, access.ops, tracker, alias)?;
     }
     if let PermissionChange::Some = change {
         updates.push(Update::PermissionUpdate {
@@ -691,9 +655,9 @@ pub(crate) fn deactivate_region(
         return Ok(());
     }
 
-    let mut change = dom
-        .hpa_regions
-        .remove_region(access.start, access.end, access.ops)?;
+    let mut change =
+        dom.hpa_regions
+            .remove_region(access.start, access.end, access.ops, tracker)?;
 
     // The domain is aliased, updates that count are the gpa ones.
     if dom.aliased {
@@ -702,7 +666,9 @@ pub(crate) fn deactivate_region(
             Alias::NoAlias => (access.start, access.end),
             Alias::Repeat(a, s) => (a, s + a),
         };
-        change = dom.gpa_regions.remove_region(start, end, access.ops, tracker)?;
+        change = dom
+            .gpa_regions
+            .remove_region(start, end, access.ops, tracker)?;
     }
     if let PermissionChange::Some = change {
         updates.push(Update::PermissionUpdate {

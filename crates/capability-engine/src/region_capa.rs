@@ -1,7 +1,7 @@
 use crate::config::NB_REGIONS;
 use crate::domain::{insert_capa, Domain, DomainPool, LocalCapa};
 use crate::gen_arena::{GenArena, Handle};
-use crate::region::{AccessRights, Alias, MemOps, MemOps, TrackerPool};
+use crate::region::{AccessRights, Alias, MemOps, TrackerPool};
 use crate::update::UpdateBuffer;
 use crate::{domain, CapaError};
 

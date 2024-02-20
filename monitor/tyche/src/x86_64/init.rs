@@ -7,7 +7,7 @@ use allocator::FrameAllocator;
 use capa_engine::{Domain, Handle};
 use stage_two_abi::{GuestInfo, Manifest};
 use vmx::fields::VmcsField;
-pub use vmx::{ActiveVmcs, ControlRegister, VmxError as BackendError};
+pub use vmx::ActiveVmcs;
 
 use super::guest::VmxState;
 use super::{arch, cpuid, launch_guest, monitor, vmx_helper};

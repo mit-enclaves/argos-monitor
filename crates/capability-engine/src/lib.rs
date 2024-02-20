@@ -24,8 +24,8 @@ use domain::{insert_capa, remove_capa, DomainHandle, DomainPool};
 pub use domain::{permission, Bitmaps, Domain, LocalCapa, NextCapaToken};
 pub use gen_arena::{GenArena, Handle};
 pub use region::{
-    AccessRights, Alias, MemOps, MemOps, MemoryPermission, Region, RegionIterator, RegionTracker,
-    RegionTracker, MEMOPS_ALL, MEMOPS_ALL,
+    AccessRights, Alias, MemOps, MemoryPermission, Region, RegionIterator, RegionTracker,
+    MEMOPS_ALL,
 };
 use region::{TrackerPool, EMPTY_REGION};
 use region_capa::{RegionCapa, RegionPool};
@@ -86,7 +86,7 @@ pub struct CapaEngine {
 
 impl CapaEngine {
     pub const fn new() -> Self {
-        const EMPTY_DOMAIN: Domain = Domain::new(0, false);
+        const EMPTY_DOMAIN: Domain = Domain::new(0, false, false);
         const EMPTY_CAPA: RegionCapa = RegionCapa::new_invalid();
         const EMPTY_CORE: Core = Core::new();
 
@@ -450,7 +450,7 @@ impl CapaEngine {
         match capa {
             Capa::Region(region) => {
                 {
-                    let mut reg = self
+                    let reg = self
                         .regions
                         .get_mut(region)
                         .expect("Unable to access region");
@@ -466,6 +466,7 @@ impl CapaEngine {
                     region,
                     &mut self.regions,
                     &mut self.domains,
+                    &mut self.tracker,
                     &mut self.updates,
                     to,
                 )?;
@@ -696,7 +697,8 @@ impl CapaEngine {
         let Some(domain) = self.domains.get(domain) else {
             return Err(CapaError::InvalidValue);
         };
-        Ok(domain.regions().iter(&self.tracker))
+        //TODO(aghosn) gpas vs hpas, we need to solve all of that.
+        Ok(domain.hpa_regions().iter(&self.tracker))
     }
 
     pub fn get_domain_permissions<'a>(
@@ -706,7 +708,8 @@ impl CapaEngine {
         let Some(domain) = self.domains.get(domain) else {
             return Err(CapaError::InvalidValue);
         };
-        Ok(domain.regions().permissions(&self.tracker))
+        //TODO: aghosn not sure that this is correct.
+        Ok(domain.hpa_regions().permissions(&self.tracker))
     }
 
     pub fn pop_update(&mut self) -> Option<Update> {

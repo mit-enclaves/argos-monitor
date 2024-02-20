@@ -3,7 +3,6 @@ use core::fmt;
 use bitflags::bitflags;
 
 use crate::config::NB_TRACKER;
-use crate::config::NB_REGIONS_PER_DOMAIN;
 use crate::gen_arena::{Cleanable, GenArena, Handle};
 use crate::CapaError;
 
@@ -88,6 +87,7 @@ impl AccessRights {
             start: 0,
             end: 0,
             ops: MemOps::NONE,
+            alias: Alias::NoAlias,
         }
     }
 
@@ -216,12 +216,6 @@ impl Cleanable for Region {
     }
 }
 
-impl Cleanable for Region {
-    fn clean(&mut self) {
-        *self = EMPTY_REGION;
-    }
-}
-
 // ————————————————————————————— RegionTracker —————————————————————————————— //
 
 pub struct RegionTracker {
@@ -241,9 +235,7 @@ impl RegionTracker {
             alias: Alias::NoAlias,
             next: None,
         };*/
-        Self {
-            head: None,
-        }
+        Self { head: None }
     }
 
     pub fn get_refcount(&self, start: usize, end: usize, tracker: &TrackerPool) -> usize {
@@ -354,6 +346,7 @@ impl RegionTracker {
         end: usize,
         ops: MemOps,
         tracker: &mut TrackerPool,
+        alias: Alias,
     ) -> Result<PermissionChange, CapaError> {
         log::trace!("Adding region [0x{:x}, 0x{:x}]", start, end);
 
@@ -365,7 +358,7 @@ impl RegionTracker {
 
         // There is no region yet, insert head and exit
         let Some(head) = self.head else {
-            self.insert_head(start, end, ops, alias, tracker)?;
+            self.insert_head(start, end, ops, tracker, alias)?;
             return Ok(PermissionChange::Some);
         };
 
@@ -393,7 +386,7 @@ impl RegionTracker {
             } else {
                 let head = &tracker[head];
                 let cursor = core::cmp::min(end, head.start);
-                let previous = self.insert_head(start, cursor, ops, alias, tracker)?;
+                let previous = self.insert_head(start, cursor, ops, tracker, alias)?;
                 change = PermissionChange::Some;
                 (previous, cursor)
             };
@@ -401,7 +394,7 @@ impl RegionTracker {
         // Add the remaining portions of the region
         while cursor < end {
             let (next, update) =
-                self.partial_add_region_after(cursor, end, previous, ops, alias, tracker)?;
+                self.partial_add_region_after(cursor, end, previous, ops, tracker, alias)?;
             previous = next;
             change.update(update);
             cursor = tracker[previous].end;
@@ -752,7 +745,6 @@ impl RegionTracker {
 impl Cleanable for RegionTracker {
     fn clean(&mut self) {
         self.head = None;
-        self.regions.clean_all();
     }
 }
 
@@ -910,7 +902,7 @@ mod tests {
             .unwrap();
         snap("{[0x200, 0x400 | 1 (1 - 1 - 1 - 1)]}", &tracker.iter(&pool));
         tracker
-            .add_region(0x100, 0x300, MEMOPS_ALL, None &mut pool)
+            .add_region(0x100, 0x300, MEMOPS_ALL, None, &mut pool)
             .unwrap();
         snap(
             "{[0x100, 0x200 | 1 (1 - 1 - 1 - 1)] -> [0x200, 0x300 | 2 (2 - 2 - 2 - 2)] -> [0x300, 0x400 | 1 (1 - 1 - 1 - 1)]}",
