@@ -46,3 +46,9 @@ pub const IA32_X2APIC_ICR: u32 = 0x830;
 
 /// If ( CPUID.01H:ECX.\[bit 21\]  = 1 )
 pub const IA32_X2APIC_SELF_IPI: u32 = 0x83f;
+
+/// If ( CPUID.01H:ECX.\[bit 21\]  = 1 )
+pub const IA32_X2APIC_LVT_LINT0: u32 = 0x835;
+
+/// Error Status Register. If ( CPUID.01H:ECX.\[bit 21\]  = 1 )
+pub const IA32_X2APIC_ESR: u32 = 0x828;

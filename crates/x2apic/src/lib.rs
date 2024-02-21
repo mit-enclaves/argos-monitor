@@ -42,6 +42,10 @@ impl X2Apic {
 
             // Clear the ISRs to ensure there are no ISR bits left
             self.clear_isr();
+            let lint0 = 1 << 16 | (1 << 15) | (0b111 << 8) | 0x20;
+            wrmsr(IA32_X2APIC_LVT_LINT0, lint0);
+
+            let _esr = rdmsr(IA32_X2APIC_ESR);
         }
 
         // TODO: The x86 crate also write to the LVT_LINT0 as the following, but I cannot find any
@@ -85,6 +89,10 @@ impl X2Apic {
     }
 
     pub fn send_startup_ipi(&mut self, core: u32, start_page: u8) {
+        unsafe {
+            wrmsr(IA32_X2APIC_ESR, 0);
+            wrmsr(IA32_X2APIC_ESR, 0);
+        }
         let icr: u64 = ((core as u64) << 32)
             | ((0 as u64) << 18)
             | (0x0 << 15)
@@ -96,6 +104,10 @@ impl X2Apic {
     }
 
     pub fn send_init_assert(&mut self, core: u32) {
+        unsafe {
+            wrmsr(IA32_X2APIC_ESR, 0);
+            wrmsr(IA32_X2APIC_ESR, 0);
+        }
         let icr: u64 = ((core as u64) << 32)
             | (0x0 << 18)
             | (0x1 << 15)
@@ -106,6 +118,10 @@ impl X2Apic {
     }
 
     pub fn send_init_deassert(&mut self) {
+        unsafe {
+            wrmsr(IA32_X2APIC_ESR, 0);
+            wrmsr(IA32_X2APIC_ESR, 0);
+        }
         let icr: u64 = ((0x0 as u64) << 32)
             | (0x2 << 18)
             | (0x1 << 15)
