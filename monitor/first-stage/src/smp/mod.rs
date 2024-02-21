@@ -51,6 +51,7 @@ unsafe fn ap_entry() {
     log::info!("CPU {}: vmx {:?}", cpu::id(), vmx::vmx_available());
     CPU_STATUS[cpu::id()].store(true, Ordering::SeqCst);
     log::info!("Hello World from cpu {}", cpu::id());
+    cpu::current().as_mut().unwrap().lapic.software_disable();
     // Wait until all cores has been initialized
     while !BSP_READY.load(Ordering::SeqCst) {
         core::hint::spin_loop();
@@ -185,6 +186,7 @@ pub unsafe fn boot(
 
     restore_code_section(backup_frame);
     cpu::set_cores(ap.len() + 1);
+    cpu::current().as_mut().unwrap().lapic.software_disable();
     log::info!("Booted {} AP.", ap.len());
 }
 
