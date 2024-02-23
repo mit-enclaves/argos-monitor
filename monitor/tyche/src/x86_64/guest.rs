@@ -4,7 +4,11 @@ use core::arch::asm;
 
 use capa_engine::{Context, Domain, Handle, LocalCapa, NextCapaToken};
 use vmx::bitmaps::exit_qualification;
-use vmx::{ActiveVmcs, ControlRegister, Register, VmxExitReason};
+use vmx::errors::Trapnr;
+use vmx::{
+    msr, ActiveVmcs, ControlRegister, InterruptionType, Register, VmExitInterrupt, VmxExitReason,
+    Vmxon,
+};
 
 use super::{cpuid, monitor};
 use crate::calls;
@@ -201,7 +205,11 @@ fn handle_exit(
             }
         }
         VmxExitReason::InitSignal => {
-            log::info!("CPU{} received InitSignal RIP={:#x}", cpuid(), vs.vcpu.get(Register::Rip));
+            log::info!(
+                "CPU{} received InitSignal RIP={:#x}",
+                cpuid(),
+                vcpu.get(Register::Rip)
+            );
             Ok(HandlerResult::Resume)
         }
         VmxExitReason::Cpuid => {
@@ -290,27 +298,47 @@ fn handle_exit(
         }
         VmxExitReason::Wrmsr => {
             let ecx = vcpu.get(Register::Rcx);
-            if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
+
+            if ecx == 0x832 || ecx == 0x838 || ecx == 0x839 || ecx == 0x83e {
+                let mut msr = msr::Msr::new(ecx as u32);
+                let rax = vcpu.get(Register::Rax);
+                let rdx = vcpu.get(Register::Rdx);
+
+                log::info!("rax={}, rdx={}", rax, rdx);
+
+                // let low = value as u32;
+                // let high = (value >> 32) as u32;
+                unsafe { msr.write(((rdx as u64) << 32) | (rax as u64)) };
+
+                // msr.read();
+                Ok(HandlerResult::Resume)
+            } else if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
                 // Custom MSR range, used by KVM
                 // See https://docs.kernel.org/virt/kvm/x86/msr.html
                 // TODO: just ignore them for now, should add support in the future
                 vcpu.next_instruction()?;
                 Ok(HandlerResult::Resume)
             } else {
-                log::error!("Unknown MSR: 0x{:x}", ecx);
+                log::info!("Unknown MSR: 0x{:x}", ecx);
                 Ok(HandlerResult::Crash)
             }
         }
         VmxExitReason::Rdmsr => {
             let ecx = vcpu.get(Register::Rcx);
-            if ecx == 0xc0011029 {
-                // Reading an AMD specifig register, just ignore it
-                vcpu.next_instruction()?;
-                Ok(HandlerResult::Resume)
-            } else {
-                log::error!("Unexpected rdmsr number: {:#x}", ecx);
-                Ok(HandlerResult::Crash)
+            if ecx == 0x832 || ecx == 0x838 || ecx == 0x839 || ecx == 0x83e {
+                let msr = msr::Msr::new(ecx as u32);
+                // let rax = self.get(Register::Rax);
+                // let rdx = self.get(Register::Rdx);
+                // let low = value as u32;
+                // let high = (value >> 32) as u32;
+                let result = unsafe { msr.read() };
+                log::info!("result={}", result);
+                vcpu.set(Register::Rax, result);
+                vcpu.set(Register::Rdx, result << 32);
             }
+            log::info!("MSR: {:#x}", ecx);
+            vcpu.next_instruction()?;
+            Ok(HandlerResult::Resume)
         }
         VmxExitReason::Exception => {
             match vcpu.interrupt_info() {
