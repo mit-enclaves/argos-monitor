@@ -20,7 +20,7 @@ use crate::vmx::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 use crate::{println, vmx};
 
 #[cfg(feature = "guest_linux")]
-const LINUXBYTES: &'static [u8] = include_bytes!("../../../../linux-image/images/vmlinux");
+const LINUXBYTES: &'static [u8] = include_bytes!("../../../../builds/linux-x86/vmlinux");
 #[cfg(not(feature = "guest_linux"))]
 const LINUXBYTES: &'static [u8] = &[0; 10];
 
