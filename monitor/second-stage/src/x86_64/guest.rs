@@ -11,6 +11,7 @@ use vmx::bitmaps::{
     PrimaryControls, SecondaryControls,
 };
 use vmx::fields::traits::*;
+use vmx::msr::Msr;
 use vmx::{
     fields, secondary_controls_capabilities, ActiveVmcs, ControlRegister, Register, VmxError,
     VmxExitReason,
@@ -247,7 +248,21 @@ impl<'vcpu, const N: usize> Guest for VmxGuest<'vcpu, 'vcpu, N> {
             }
             VmxExitReason::Wrmsr => {
                 let ecx = vcpu.get(Register::Rcx);
-                if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
+
+                if ecx == 0x832 || ecx == 0x838 || ecx == 0x839 || ecx == 0x83e {
+                    let mut msr = Msr::new(ecx as u32);
+                    let rax = vcpu.get(Register::Rax);
+                    let rdx = vcpu.get(Register::Rdx);
+
+                    println!("rax={}, rdx={}", rax, rdx);
+
+                    // let low = value as u32;
+                    // let high = (value >> 32) as u32;
+                    unsafe { msr.write(((rdx as u64) << 32) | (rax as u64)) };
+
+                    // msr.read();
+                    Ok(HandlerResult::Resume)
+                } else if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
                     // Custom MSR range, used by KVM
                     // See https://docs.kernel.org/virt/kvm/x86/msr.html
                     // TODO: just ignore them for now, should add support in the future
@@ -257,6 +272,23 @@ impl<'vcpu, const N: usize> Guest for VmxGuest<'vcpu, 'vcpu, N> {
                     println!("Unknown MSR: 0x{:x}", ecx);
                     Ok(HandlerResult::Crash)
                 }
+            }
+            VmxExitReason::Rdmsr => {
+                let ecx = vcpu.get(Register::Rcx);
+                if ecx == 0x832 || ecx == 0x838 || ecx == 0x839 || ecx == 0x83e {
+                    let msr = Msr::new(ecx as u32);
+                    // let rax = self.get(Register::Rax);
+                    // let rdx = self.get(Register::Rdx);
+                    // let low = value as u32;
+                    // let high = (value >> 32) as u32;
+                    let result = unsafe { msr.read() };
+                    println!("result={}", result);
+                    vcpu.set(Register::Rax, result);
+                    vcpu.set(Register::Rdx, result << 32);
+                }
+                println!("MSR: {:#x}", ecx);
+                vcpu.next_instruction()?;
+                Ok(HandlerResult::Resume)
             }
             VmxExitReason::Exception => {
                 match vcpu.interrupt_info() {
