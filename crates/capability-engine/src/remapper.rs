@@ -125,6 +125,8 @@ impl<const N: usize> Remapper<N> {
             prev = cursor;
         }
 
+        // TODO: handle the case where segments overlap
+
         self.segments[new_segment].next = self.segments[prev].next;
         self.segments[prev].next = Some(new_segment);
 
@@ -220,7 +222,7 @@ impl<'a, const N: usize> Iterator for RemapIterator<'a, N> {
         // Move to next segment, if any
         while let Some(segment) = self.next_segment {
             let segment = &self.remapper.segments[segment];
-            if segment.hpa < self.cursor {
+            if segment.hpa + segment.size <= self.cursor {
                 self.next_segment = segment.next;
             } else {
                 break;
@@ -228,22 +230,23 @@ impl<'a, const N: usize> Iterator for RemapIterator<'a, N> {
         }
 
         match self.next_segment {
-            Some(segment) if self.remapper.segments[segment].hpa == self.cursor => {
+            Some(segment) if self.remapper.segments[segment].hpa <= self.cursor => {
                 // We found a segment!
                 let segment = &self.remapper.segments[segment];
-                assert!(segment.hpa + segment.size <= region.end); // Segments can't cross regions
+                let gpa_offset = self.cursor - segment.hpa;
+                let next_cusor = core::cmp::min(segment.hpa + segment.size, region.end);
                 let mapping = Mapping {
-                    hpa: segment.hpa,
-                    gpa: segment.gpa,
-                    size: segment.size,
+                    hpa: self.cursor,
+                    gpa: segment.gpa + gpa_offset,
+                    size: next_cusor - self.cursor,
                     repeat: segment.repeat,
                     ops: region.ops,
                 };
-                self.cursor += segment.size;
+                self.cursor = next_cusor;
                 Some(mapping)
             }
             _ => {
-                // No remapping for this regions
+                // No remapping for this region
                 let end = if let Some(segment) = self.next_segment {
                     let segment_start = self.remapper.segments[segment].hpa;
                     core::cmp::min(region.end, segment_start)
@@ -388,6 +391,79 @@ mod tests {
         remapper.unmap_range(0x10, 0x10).unwrap();
         snap(
             "{[0x10, 0x20 at 0x10, rep 1 | RWXS] -> [0x30, 0x40 at 0x30, rep 1 | RWXS]}",
+            &remapper.remap(tracker.permissions(&pool)),
+        );
+    }
+
+    #[test]
+    fn cross_regions() {
+        let mut pool = TrackerPool::new([EMPTY_REGION; NB_TRACKER]);
+        let mut tracker = RegionTracker::new();
+        let mut remapper: Remapper<32> = Remapper::new();
+
+        // Add two regions with hole
+        tracker
+            .add_region(0x10, 0x30, MEMOPS_ALL, &mut pool)
+            .unwrap();
+        tracker
+            .add_region(0x40, 0x60, MEMOPS_ALL, &mut pool)
+            .unwrap();
+        snap(
+            "{[0x10, 0x30 | 1 (1 - 1 - 1 - 1)] -> [0x40, 0x60 | 1 (1 - 1 - 1 - 1)]}",
+            &tracker.iter(&pool),
+        );
+        snap(
+            "{[0x10, 0x30 at 0x10, rep 1 | RWXS] -> [0x40, 0x60 at 0x40, rep 1 | RWXS]}",
+            &remapper.remap(tracker.permissions(&pool)),
+        );
+
+        // Create a mapping that cross the region boundary
+        remapper.map_range(0x20, 0x100, 0x100, 1).unwrap();
+        snap(
+            "{[0x10, 0x20 at 0x10, rep 1 | RWXS] -> [0x20, 0x30 at 0x100, rep 1 | RWXS] -> [0x40, 0x60 at 0x120, rep 1 | RWXS]}",
+            &remapper.remap(tracker.permissions(&pool)),
+        );
+    }
+
+    #[test]
+    fn update_region() {
+        let mut pool = TrackerPool::new([EMPTY_REGION; NB_TRACKER]);
+        let mut tracker = RegionTracker::new();
+        let mut remapper: Remapper<32> = Remapper::new();
+
+        // Add one region
+        tracker
+            .add_region(0x10, 0x60, MEMOPS_ALL, &mut pool)
+            .unwrap();
+        snap("{[0x10, 0x60 | 1 (1 - 1 - 1 - 1)]}", &tracker.iter(&pool));
+        snap(
+            "{[0x10, 0x60 at 0x10, rep 1 | RWXS]}",
+            &remapper.remap(tracker.permissions(&pool)),
+        );
+
+        // Remap the whole region
+        remapper.map_range(0x10, 0x100, 0x50, 1).unwrap();
+        snap(
+            "{[0x10, 0x60 at 0x100, rep 1 | RWXS]}",
+            &remapper.remap(tracker.permissions(&pool)),
+        );
+
+        // Split the region in two
+        tracker
+            .remove_region(0x10, 0x60, MEMOPS_ALL, &mut pool)
+            .unwrap();
+        tracker
+            .add_region(0x10, 0x20, MEMOPS_ALL, &mut pool)
+            .unwrap();
+        tracker
+            .add_region(0x20, 0x40, MEMOPS_ALL, &mut pool)
+            .unwrap();
+        tracker
+            .add_region(0x40, 0x60, MEMOPS_ALL, &mut pool)
+            .unwrap();
+        snap("{[0x10, 0x60 | 1 (1 - 1 - 1 - 1)]}", &tracker.iter(&pool));
+        snap(
+            "{[0x10, 0x60 at 0x100, rep 1 | RWXS]}",
             &remapper.remap(tracker.permissions(&pool)),
         );
     }
