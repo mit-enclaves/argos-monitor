@@ -7,8 +7,9 @@ use core::mem;
 
 use super::bitmaps::{EntryControls, ExitControls, PinbasedControls};
 use super::errors::{VmxError, VmxFieldError};
+use super::fields;
 use super::fields::traits::*;
-use super::{fields, msr};
+use super::msr;
 
 // ———————————————————————— Main Checking Functions ————————————————————————— //
 
@@ -298,9 +299,9 @@ fn check_guest_state() -> Result<(), VmxError> {
     if (tr_ar >> 16) != 0 {
         return Err(VmxError::Misconfigured(VmxFieldError::GuestTrAccessRights));
     }
-    if (ldtr_ar & UNUSABLE_MASK) == 0 {
-        todo!();
-    }
+    // if (ldtr_ar & UNUSABLE_MASK) == 0 {
+    //     todo!();
+    // }
     if (gdtr_limit >> 16) != 0 {
         return Err(VmxError::Misconfigured(VmxFieldError::GuestGdtrLimit));
     }

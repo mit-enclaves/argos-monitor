@@ -1,8 +1,7 @@
 //! RISC-V 64 implementation
 
-use core::fmt;
-
 use crate::ExitCode;
+use core::fmt;
 
 /// Internal function used to print to stdout when running in Qemu.
 pub fn _print(_args: fmt::Arguments) {

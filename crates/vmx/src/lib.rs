@@ -18,16 +18,17 @@ use core::arch::asm;
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 
+use bitmaps::exit_qualification;
 use bitmaps::{
-    exit_qualification, EntryControls, ExceptionBitmap, ExitControls, PinbasedControls,
-    PrimaryControls, SecondaryControls,
+    EntryControls, ExceptionBitmap, ExitControls, PinbasedControls, PrimaryControls,
+    SecondaryControls,
 };
-use fields::traits::*;
-pub use utils::{Frame, GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
+use fields::{traits::*, CtrlNat};
 
 pub use crate::errors::{
     InterruptionType, VmExitInterrupt, VmxError, VmxExitReason, VmxFieldError,
 };
+pub use utils::{Frame, GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
 
 /// Mask for keeping only the 32 lower bits.
 const LOW_32_BITS_MASK: u64 = (1 << 32) - 1;
@@ -475,7 +476,7 @@ where
         }
     }
 
-    /// Returns the pin-based controls
+    // Returns the pin-based controls
     pub fn get_pin_based_ctrls(&self) -> Result<PinbasedControls, VmxError> {
         let ctrls = unsafe { fields::Ctrl32::PinBasedExecCtrls.vmread()? };
         Ok(PinbasedControls::from_bits_truncate(ctrls))
@@ -531,7 +532,7 @@ where
         }
     }
 
-    /// Returns the VM exit controls
+    // Returns the VM exit controls
     pub fn get_vm_exit_ctrls(&self) -> Result<ExitControls, VmxError> {
         let ctrls = unsafe { fields::Ctrl32::VmExitCtrls.vmread()? };
         Ok(ExitControls::from_bits_truncate(ctrls))
@@ -737,205 +738,61 @@ impl<'active, 'vmx> core::fmt::Debug for ActiveVmcs<'active, 'vmx> {
         writeln!(f, "        cr0: {:#x}", self.get_cr(ControlRegister::Cr0))?;
         writeln!(f, "        cr3: {:#x}", self.get_cr(ControlRegister::Cr3))?;
         writeln!(f, "        cr4: {:#x}", self.get_cr(ControlRegister::Cr4))?;
-        writeln!(
-            f,
-            "        cs.sel: {:#x}",
-            self.get16(fields::GuestState16::CsSelector).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        cs.base: {:#x}",
-            self.get_nat(fields::GuestStateNat::CsBase).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        cs.limit: {:#x}",
-            self.get32(fields::GuestState32::CsLimit).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        cs.ar: {:#x}",
-            self.get32(fields::GuestState32::CsAccessRights).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        ds.sel: {:#x}",
-            self.get16(fields::GuestState16::DsSelector).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        ds.base: {:#x}",
-            self.get_nat(fields::GuestStateNat::DsBase).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        ds.limit: {:#x}",
-            self.get32(fields::GuestState32::DsLimit).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        ds.ar: {:#x}",
-            self.get32(fields::GuestState32::DsAccessRights).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        es.sel: {:#x}",
-            self.get16(fields::GuestState16::EsSelector).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        es.base: {:#x}",
-            self.get_nat(fields::GuestStateNat::EsBase).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        es.limit: {:#x}",
-            self.get32(fields::GuestState32::EsLimit).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        es.ar: {:#x}",
-            self.get32(fields::GuestState32::EsAccessRights).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        fs.sel: {:#x}",
-            self.get16(fields::GuestState16::FsSelector).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        fs.base: {:#x}",
-            self.get_nat(fields::GuestStateNat::FsBase).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        fs.limit: {:#x}",
-            self.get32(fields::GuestState32::FsLimit).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        fs.ar: {:#x}",
-            self.get32(fields::GuestState32::FsAccessRights).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        gs.sel: {:#x}",
-            self.get16(fields::GuestState16::GsSelector).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        gs.base: {:#x}",
-            self.get_nat(fields::GuestStateNat::GsBase).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        gs.limit: {:#x}",
-            self.get32(fields::GuestState32::GsLimit).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        gs.ar: {:#x}",
-            self.get32(fields::GuestState32::GsAccessRights).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        ss.sel: {:#x}",
-            self.get16(fields::GuestState16::SsSelector).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        ss.base: {:#x}",
-            self.get_nat(fields::GuestStateNat::SsBase).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        ss.limit: {:#x}",
-            self.get32(fields::GuestState32::SsLimit).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        ss.ar: {:#x}",
-            self.get32(fields::GuestState32::SsAccessRights).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        ldt.sel: {:#x}",
-            self.get16(fields::GuestState16::LdtrSelector).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        ldt.base: {:#x}",
-            self.get_nat(fields::GuestStateNat::LdtrBase).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        ldt.limit: {:#x}",
-            self.get32(fields::GuestState32::LdtrLimit).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        ldt.ar: {:#x}",
-            self.get32(fields::GuestState32::LdtrAccessRights).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        tr.sel: {:#x}",
-            self.get16(fields::GuestState16::TrSelector).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        tr.base: {:#x}",
-            self.get_nat(fields::GuestStateNat::TrBase).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        tr.limit: {:#x}",
-            self.get32(fields::GuestState32::TrLimit).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        tr.ar: {:#x}",
-            self.get32(fields::GuestState32::TrAccessRights).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        idt.base: {:#x}",
-            self.get_nat(fields::GuestStateNat::IdtrBase).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        idt.limit: {:#x}",
-            self.get32(fields::GuestState32::IdtrLimit).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        gdt.base: {:#x}",
-            self.get_nat(fields::GuestStateNat::GdtrBase).unwrap()
-        )?;
-        writeln!(
-            f,
-            "        gdt.limit: {:#x}",
-            self.get32(fields::GuestState32::GdtrLimit).unwrap()
-        )?;
+        writeln!(f, "        cs.sel: {:#x}", self.get16(fields::GuestState16::CsSelector).unwrap())?;
+        writeln!(f, "        cs.base: {:#x}", self.get_nat(fields::GuestStateNat::CsBase).unwrap())?;
+        writeln!(f, "        cs.limit: {:#x}", self.get32(fields::GuestState32::CsLimit).unwrap())?;
+        writeln!(f, "        cs.ar: {:#x}", self.get32(fields::GuestState32::CsAccessRights).unwrap())?;
+        writeln!(f, "        ds.sel: {:#x}", self.get16(fields::GuestState16::DsSelector).unwrap())?;
+        writeln!(f, "        ds.base: {:#x}", self.get_nat(fields::GuestStateNat::DsBase).unwrap())?;
+        writeln!(f, "        ds.limit: {:#x}", self.get32(fields::GuestState32::DsLimit).unwrap())?;
+        writeln!(f, "        ds.ar: {:#x}", self.get32(fields::GuestState32::DsAccessRights).unwrap())?;
+        writeln!(f, "        es.sel: {:#x}", self.get16(fields::GuestState16::EsSelector).unwrap())?;
+        writeln!(f, "        es.base: {:#x}", self.get_nat(fields::GuestStateNat::EsBase).unwrap())?;
+        writeln!(f, "        es.limit: {:#x}", self.get32(fields::GuestState32::EsLimit).unwrap())?;
+        writeln!(f, "        es.ar: {:#x}", self.get32(fields::GuestState32::EsAccessRights).unwrap())?;
+        writeln!(f, "        fs.sel: {:#x}", self.get16(fields::GuestState16::FsSelector).unwrap())?;
+        writeln!(f, "        fs.base: {:#x}", self.get_nat(fields::GuestStateNat::FsBase).unwrap())?;
+        writeln!(f, "        fs.limit: {:#x}", self.get32(fields::GuestState32::FsLimit).unwrap())?;
+        writeln!(f, "        fs.ar: {:#x}", self.get32(fields::GuestState32::FsAccessRights).unwrap())?;
+        writeln!(f, "        gs.sel: {:#x}", self.get16(fields::GuestState16::GsSelector).unwrap())?;
+        writeln!(f, "        gs.base: {:#x}", self.get_nat(fields::GuestStateNat::GsBase).unwrap())?;
+        writeln!(f, "        gs.limit: {:#x}", self.get32(fields::GuestState32::GsLimit).unwrap())?;
+        writeln!(f, "        gs.ar: {:#x}", self.get32(fields::GuestState32::GsAccessRights).unwrap())?;
+        writeln!(f, "        ss.sel: {:#x}", self.get16(fields::GuestState16::SsSelector).unwrap())?;
+        writeln!(f, "        ss.base: {:#x}", self.get_nat(fields::GuestStateNat::SsBase).unwrap())?;
+        writeln!(f, "        ss.limit: {:#x}", self.get32(fields::GuestState32::SsLimit).unwrap())?;
+        writeln!(f, "        ss.ar: {:#x}", self.get32(fields::GuestState32::SsAccessRights).unwrap())?;
+        writeln!(f, "        ldt.sel: {:#x}", self.get16(fields::GuestState16::LdtrSelector).unwrap())?;
+        writeln!(f, "        ldt.base: {:#x}", self.get_nat(fields::GuestStateNat::LdtrBase).unwrap())?;
+        writeln!(f, "        ldt.limit: {:#x}", self.get32(fields::GuestState32::LdtrLimit).unwrap())?;
+        writeln!(f, "        ldt.ar: {:#x}", self.get32(fields::GuestState32::LdtrAccessRights).unwrap())?;
+        writeln!(f, "        tr.sel: {:#x}", self.get16(fields::GuestState16::TrSelector).unwrap())?;
+        writeln!(f, "        tr.base: {:#x}", self.get_nat(fields::GuestStateNat::TrBase).unwrap())?;
+        writeln!(f, "        tr.limit: {:#x}", self.get32(fields::GuestState32::TrLimit).unwrap())?;
+        writeln!(f, "        tr.ar: {:#x}", self.get32(fields::GuestState32::TrAccessRights).unwrap())?;
+        writeln!(f, "        idt.base: {:#x}", self.get_nat(fields::GuestStateNat::IdtrBase).unwrap())?;
+        writeln!(f, "        idt.limit: {:#x}", self.get32(fields::GuestState32::IdtrLimit).unwrap())?;
+        writeln!(f, "        gdt.base: {:#x}", self.get_nat(fields::GuestStateNat::GdtrBase).unwrap())?;
+        writeln!(f, "        gdt.limit: {:#x}", self.get32(fields::GuestState32::GdtrLimit).unwrap())?;
         writeln!(
             f,
             "        cr0 read shadow: {:#x}",
-            self.get_ctrlnat(fields::CtrlNat::Cr0ReadShadow).unwrap()
+            self.get_ctrlnat(CtrlNat::Cr0ReadShadow).unwrap()
         )?;
         writeln!(
             f,
             "        cr0 mask: {:#x}",
-            self.get_ctrlnat(fields::CtrlNat::Cr0Mask).unwrap()
+            self.get_ctrlnat(CtrlNat::Cr0Mask).unwrap()
         )?;
         writeln!(
             f,
             "        cr4 read shadow: {:#x}",
-            self.get_ctrlnat(fields::CtrlNat::Cr4ReadShadow).unwrap()
+            self.get_ctrlnat(CtrlNat::Cr4ReadShadow).unwrap()
         )?;
         writeln!(
             f,
             "        cr4 mask: {:#x}",
-            self.get_ctrlnat(fields::CtrlNat::Cr4Mask).unwrap()
+            self.get_ctrlnat(CtrlNat::Cr4Mask).unwrap()
         )?;
         writeln!(
             f,
@@ -967,8 +824,16 @@ impl<'active, 'vmx> core::fmt::Debug for ActiveVmcs<'active, 'vmx> {
             "        VMCS SeconaryControls: {:?}",
             self.get_secondary_ctrls().ok()
         )?;
-        writeln!(f, "        EPT Ptr: {:#x}", self.get_ept_ptr().unwrap())?;
-        writeln!(f, "        EPTP List: {:#x}", self.get_eptp_list().unwrap())?;
+        writeln!(
+            f,
+            "        EPT Ptr: {:#x}",
+            self.get_ept_ptr().unwrap()
+        )?;
+        writeln!(
+            f,
+            "        EPTP List: {:#x}",
+            self.get_eptp_list().unwrap()
+        )?;
         writeln!(f, "    }}")?;
         writeln!(f, "}}")?;
 

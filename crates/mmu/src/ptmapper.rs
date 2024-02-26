@@ -1,10 +1,8 @@
-use core::marker::PhantomData;
-
-use bitflags::bitflags;
-use utils::HostVirtAddr;
-
 use super::frame_allocator::FrameAllocator;
 use super::walker::{Address, Level, WalkNext, Walker};
+use bitflags::bitflags;
+use core::marker::PhantomData;
+use utils::HostVirtAddr;
 
 static PAGE_MASK: usize = !(0x1000 - 1);
 
@@ -159,14 +157,8 @@ where
         }
     }
 
-    /// Prints the permissions of page tables for the given range.
-    pub fn debug_range(
-        &mut self,
-        virt_addr: VirtAddr,
-        size: usize,
-        dept: Level,
-        print: impl Fn(core::fmt::Arguments),
-    ) {
+    /*/// Prints the permissions of page tables for the given range.
+    pub fn debug_range(&mut self, virt_addr: VirtAddr, size: usize) {
         unsafe {
             self.walk_range(
                 virt_addr,
@@ -174,33 +166,21 @@ where
                 &mut |addr, entry, level| {
                     let flags = PtFlag::from_bits_truncate(*entry);
                     let phys = *entry & ((1 << 63) - 1) & (PAGE_MASK as u64);
-
-                    // Do not go too deep
-                    match (dept, level) {
-                        (Level::L4, Level::L3)
-                        | (Level::L4, Level::L2)
-                        | (Level::L4, Level::L1) => return WalkNext::Leaf,
-                        (Level::L3, Level::L2) | (Level::L3, Level::L1) => return WalkNext::Leaf,
-                        (Level::L2, Level::L1) => return WalkNext::Leaf,
-                        _ => (),
+                    let padding = match level {
+                        Level::L4 => "",
+                        Level::L3 => "  ",
+                        Level::L2 => "    ",
+                        Level::L1 => "      ",
                     };
-
-                    // Print if present
+                    crate::println!(
+                        "{}{:?} Virt: 0x{:x} - Phys: 0x{:x} - {:?}",
+                        padding,
+                        level,
+                        addr.as_usize(),
+                        phys,
+                        flags
+                    );
                     if flags.contains(PtFlag::PRESENT) {
-                        let padding = match level {
-                            Level::L4 => "",
-                            Level::L3 => "  ",
-                            Level::L2 => "    ",
-                            Level::L1 => "      ",
-                        };
-                        print(core::format_args!(
-                            "{}{:?} Virt: 0x{:x} - Phys: 0x{:x} - {:?}\n",
-                            padding,
-                            level,
-                            addr.as_usize(),
-                            phys,
-                            flags
-                        ));
                         WalkNext::Continue
                     } else {
                         WalkNext::Leaf
@@ -209,5 +189,5 @@ where
             )
             .expect("Failed to print PTs");
         }
-    }
+    }*/
 }

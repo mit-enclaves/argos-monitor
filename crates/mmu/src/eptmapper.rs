@@ -1,11 +1,12 @@
 //! EPT mapper implementation
 
-use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
-use vmx::bitmaps::EptEntryFlags;
-use vmx::ept::{GIANT_PAGE_SIZE, HUGE_PAGE_SIZE, PAGE_SIZE};
-
 use crate::frame_allocator::FrameAllocator;
 use crate::walker::{Level, WalkNext, Walker};
+use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
+use vmx::{
+    bitmaps::EptEntryFlags,
+    ept::{GIANT_PAGE_SIZE, HUGE_PAGE_SIZE, PAGE_SIZE},
+};
 
 pub struct EptMapper {
     host_offset: usize,
@@ -79,6 +80,7 @@ impl EptMapper {
 
                     let end = gpa.as_usize() + size;
                     let hphys = hpa.as_usize() + (addr.as_usize() - gpa.as_usize());
+                    /*
                     if level == Level::L3 {
                         if (addr.as_usize() + GIANT_PAGE_SIZE <= end)
                             && (hphys % GIANT_PAGE_SIZE == 0)
@@ -87,6 +89,7 @@ impl EptMapper {
                             return WalkNext::Leaf;
                         }
                     }
+                    */
                     if level == Level::L2 {
                         if (addr.as_usize() + HUGE_PAGE_SIZE <= end)
                             && (hphys % HUGE_PAGE_SIZE == 0)

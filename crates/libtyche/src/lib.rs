@@ -17,6 +17,7 @@ pub enum VmCalls {
     ConfigReadRegion  = 0x401,
     Exit              = 0x500,
     DebugIommu        = 0x600,
+    SendIPI           = 0x700,
     Transition        = 0x999,
 }
 
@@ -104,6 +105,10 @@ pub fn exit() -> Result<(), ErrorCode> {
 
 pub fn debug_iommu() -> Result<(), ErrorCode> {
     do_vmcall(VmCalls::DebugIommu, 0, 0, 0).map(|_| ())
+}
+
+pub fn debug_ipi(vector: usize) -> Result<(), ErrorCode> {
+    do_vmcall(VmCalls::SendIPI, vector, 0, 0).map(|_| ())
 }
 
 fn do_vmcall(

@@ -3,7 +3,8 @@
 #![no_std]
 
 use core::assert;
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::AtomicU64;
+use core::sync::atomic::Ordering;
 
 #[no_mangle]
 pub static STAGE2_POFF: AtomicU64 = AtomicU64::new(0);

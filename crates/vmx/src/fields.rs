@@ -35,14 +35,14 @@
 //!
 //! See Intel 3D Appendix B.
 
+use super::VmxError;
+use crate::msr::VMX_VMCS_ENUM;
+use crate::raw;
+
 // ————————————————————————————————— Traits ————————————————————————————————— //
 
 // Bring all traits into current scope
 use traits::*;
-
-use super::VmxError;
-use crate::msr::VMX_VMCS_ENUM;
-use crate::raw;
 
 pub mod traits {
     use super::*;

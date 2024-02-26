@@ -8,7 +8,8 @@ use core::arch::asm;
 
 use crate::bitmaps::RFlags;
 use crate::errors::{VmxError, VmxInstructionError};
-use crate::{fields, ActiveVmcs, Register};
+use crate::fields;
+use crate::{ActiveVmcs, Register};
 
 /// Executes VMXON.
 ///

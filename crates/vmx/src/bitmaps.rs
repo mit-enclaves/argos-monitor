@@ -2,9 +2,8 @@
 //!
 //! Wrappers for simple and tape safe manipulation of bitmaps used throughout VMX operations.
 
-use bitflags::bitflags;
-
 use super::{ControlRegister, Register};
+use bitflags::bitflags;
 
 bitflags! {
     /// Pin-based VM-execution controls.

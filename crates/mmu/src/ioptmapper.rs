@@ -1,8 +1,8 @@
 use bitflags::bitflags;
-use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
 
 use crate::frame_allocator::FrameAllocator;
 use crate::walker::{Level, WalkNext, Walker};
+use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
 
 pub struct IoPtMapper {
     host_offset: usize,

@@ -3,7 +3,6 @@
 //! This module provides abstractions for manipulating virtual memory mappings (i.e. page tables).
 
 use core::slice;
-
 use utils::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr};
 
 /// Number of entries per page.
