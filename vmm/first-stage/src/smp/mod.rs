@@ -17,8 +17,6 @@ use core::sync::atomic::*;
 
 use crate::smx;
 
-use bit_field::BitField;
-
 global_asm!(include_str!("trampoline.S"));
 
 const START_PAGE: u8 = 7;
@@ -168,7 +166,7 @@ pub unsafe fn boot(
             assert!(CPU_STATUS[cpu.local_apic_id as usize].load(Ordering::SeqCst) == false);
 
             allocate_stack_section(stage1_allocator, pt_mapper);
-            let apic_id = ApicId::X2Apic(cpu.local_apic_id);
+            let apic_id = ApicId::XApic(cpu.local_apic_id as u8);
 
             // BSP sends AP an INIT IPI (Level Interrupt)
             lapic.ipi_init(apic_id);
@@ -192,19 +190,6 @@ pub unsafe fn boot(
             }
         }
     });
-
-    // Switching the LAPIC from X2APIC to XAPIC mode to make Linux happy
-    // If we have EN=1 and Extd=1, Linux panics when it initializes local APIC
-    //            EN=0 and Extd=0, Linux thinks the local APIC does not exist...
-    // The only value that works is EN=1 and Extd=0, which says X2APIC is enabled but XAPIC is not
-    // To transition from EN=1 and Extd=1 to EN=1 and Extd=0, we have to set EN=0 and Extd=0 first
-    // Otherwise, we will have a GP exception
-    // Please check the Figure 2-9 (Local X2APIC State Transitions) for more details
-    let mut base = x86::msr::rdmsr(x86::msr::IA32_APIC_BASE);
-    lapic.detach();
-    base.set_bit(10, false);
-    base.set_bit(11, true);
-    x86::msr::wrmsr(x86::msr::IA32_APIC_BASE, base);
 
     // Restore the original trampoline content after all APs have booted up
     core::ptr::copy_nonoverlapping(&content as *const u8, CODE_PADDR as _, 0x1000);

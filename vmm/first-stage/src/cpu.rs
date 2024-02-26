@@ -1,7 +1,7 @@
 use crate::println;
 use crate::{apic, gdt::Gdt};
 use core::sync::atomic::*;
-use x86::apic::x2apic;
+use x86::apic::xapic;
 use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
 
 pub const MAX_CPU_NUM: usize = 256;
@@ -13,7 +13,7 @@ static mut CPUS: [Option<Cpu>; MAX_CPU_NUM] = [INITCPU; MAX_CPU_NUM];
 pub struct Cpu {
     pub local_apic_id: usize,
     pub gdt: Gdt,
-    pub lapic: x2apic::X2APIC,
+    pub lapic: xapic::XAPIC,
 }
 
 impl Cpu {
@@ -21,17 +21,15 @@ impl Cpu {
         Self {
             local_apic_id: id(),
             gdt: Gdt::new(),
-            lapic: apic::lapic_new(),
+            // FIXME: it's amazing that this doesn't crash before the memory allocator is
+            //        initialized on CPU0...
+            lapic: apic::lapic_new(apic::LAPIC_VIRT_ADDRESS),
         }
     }
 
     pub fn setup(&'static mut self) {
         self.gdt.setup();
-
-        // Only attach BSP's x2apic
-        if self.local_apic_id == 0 {
-            apic::lapic_setup(&mut self.lapic);
-        }
+        apic::lapic_setup(&mut self.lapic);
 
         initialize_cpu();
         print_vmx_info();
