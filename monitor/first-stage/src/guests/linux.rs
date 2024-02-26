@@ -1,12 +1,7 @@
 //! Linux Guest
 
-use bootloader::boot_info::MemoryRegionKind;
-use mmu::{IoPtFlag, IoPtMapper, RangeAllocator};
-use stage_two_abi::GuestInfo;
-use vmx::HostPhysAddr;
-use vtd::Iommu;
-
-use super::{Guest, HandlerResult};
+use super::Guest;
+use super::HandlerResult;
 use crate::acpi::AcpiInfo;
 use crate::elf::{ElfMapping, ElfProgram};
 use crate::guests::boot_params::{
@@ -16,8 +11,14 @@ use crate::guests::boot_params::{
 use crate::guests::common::setup_iommu_context;
 use crate::guests::ManifestInfo;
 use crate::mmu::MemoryMap;
+use crate::println;
+use crate::vmx;
 use crate::vmx::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
-use crate::{println, vmx};
+use bootloader::boot_info::MemoryRegionKind;
+use mmu::{IoPtFlag, IoPtMapper, PtFlag, RangeAllocator};
+use stage_two_abi::GuestInfo;
+use vmx::HostPhysAddr;
+use vtd::Iommu;
 
 #[cfg(feature = "guest_linux")]
 const LINUXBYTES: &'static [u8] = include_bytes!("../../../../builds/linux-x86/vmlinux");
@@ -34,11 +35,11 @@ const SETUP_HDR: u64 = 0x1f1;
 // WARNING: Don't forget that the command line must be null terminated ('\0')!
 #[cfg(not(feature = "bare_metal"))]
 static COMMAND_LINE: &'static [u8] =
-    b"root=/dev/sdb2 apic=debug earlyprintk=serial,ttyS0 console=ttyS0\0";
+    b"root=/dev/sdb2 apic=debug earlyprintk=serial,ttyS0 console=ttyS0 nr_cpus=1\0";
 #[cfg(feature = "bare_metal")]
 static COMMAND_LINE: &'static [u8] =
-    b"root=/dev/sdb2 apic=debug earlyprintk=serial,ttyS0,115200 console=ttyS0,115200 nr_cpus=2\0";
-
+    b"root=/dev/sdb2 apic=debug earlyprintk=serial,ttyS0,115200 console=ttyS0,115200 nr_cpus=1\0";
+// pci=earlydump sched_verbose bootmem_debug debug debugpat loglevel=7 show_lapic=all earlyprintk=serial,ttyS0,115200 console=ttyS0,115200 
 pub struct Linux {}
 
 pub const LINUX: Linux = Linux {};
@@ -93,6 +94,15 @@ impl Guest for Linux {
                 println!("I/O MMU Fault: {:?}", iommu.get_fault_status());
             }
         }
+
+        // FIXME: Linux reserves the first 1MiB for real-mode address space
+        loaded_linux.pt_mapper.map_range(
+            guest_allocator,
+            GuestVirtAddr::new(0x0),
+            GuestPhysAddr::new(0x0),
+            1 << 20,
+            PtFlag::PRESENT | PtFlag::WRITE,
+        );
 
         // Build the boot params
         let mut boot_params = build_bootparams(&memory_map);

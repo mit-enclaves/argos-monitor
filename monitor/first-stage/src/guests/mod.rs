@@ -1,13 +1,14 @@
 use core::arch::asm;
 
-use mmu::RangeAllocator;
-use stage_two_abi::{GuestInfo, VgaInfo};
-
 use crate::acpi::AcpiInfo;
 use crate::mmu::MemoryMap;
 use crate::println;
-use crate::vmx::bitmaps::{exit_qualification, ExceptionBitmap};
+use crate::vmx::bitmaps::exit_qualification;
+use crate::vmx::bitmaps::ExceptionBitmap;
 use crate::vmx::{ActiveVmcs, ControlRegister, Register, VmxError, VmxExitReason};
+use mmu::RangeAllocator;
+
+use stage_two_abi::{GuestInfo, VgaInfo};
 
 pub mod boot_params;
 pub mod common;

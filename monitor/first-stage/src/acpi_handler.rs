@@ -1,9 +1,6 @@
-use core::ptr::NonNull;
-
-use acpi::{AcpiHandler, PhysicalMapping};
-
-use crate::mmu::get_physical_memory_offset;
 use crate::HostVirtAddr;
+use acpi::{AcpiHandler, PhysicalMapping};
+use core::ptr::NonNull;
 
 #[derive(Clone)]
 pub struct TycheACPIHandler;
@@ -14,8 +11,8 @@ impl AcpiHandler for TycheACPIHandler {
         physical_address: usize,
         size: usize,
     ) -> PhysicalMapping<Self, T> {
-        let virtual_address =
-            HostVirtAddr::new(physical_address + get_physical_memory_offset().as_usize());
+        // FIXME: ganze schlechte ad-hoc Lösungen... aber funktioniert
+        let virtual_address = HostVirtAddr::new(physical_address + 0x18000000000);
 
         PhysicalMapping::new(
             usize::from(physical_address),

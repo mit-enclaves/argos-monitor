@@ -5,14 +5,13 @@ mod ffi;
 use alloc::vec::Vec;
 use core::str::from_utf8;
 
+use crate::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 pub use ffi::{
     Elf64Hdr, Elf64Phdr, Elf64PhdrFlags, Elf64PhdrType, Elf64Shdr, Elf64ShdrType, Elf64Sym,
     FromBytes,
 };
 use mmu::walker::Address;
 use mmu::{PtFlag, PtMapper, RangeAllocator};
-
-use crate::{GuestPhysAddr, GuestVirtAddr, HostVirtAddr};
 
 const PAGE_SIZE: usize = 0x1000;
 
@@ -295,8 +294,7 @@ impl ElfProgram {
 
         let start = segment.p_offset as usize;
         let end = (segment.p_offset + segment.p_filesz) as usize;
-        let source = &self.bytes[start..end];
-        dest.copy_from_slice(source);
+        dest.copy_from_slice(&self.bytes[start..end]);
 
         // In case the segment is longer than the file size, zero out the rest.
         if segment.p_filesz < segment.p_memsz {

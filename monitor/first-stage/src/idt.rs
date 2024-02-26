@@ -2,7 +2,10 @@ use lazy_static::lazy_static;
 use x86_64::registers::control::Cr2;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
-use crate::{gdt, getsec, println};
+use crate::cpu;
+use crate::gdt;
+use crate::getsec;
+use crate::println;
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -48,70 +51,76 @@ pub fn init() {
 }
 
 extern "x86-interrupt" fn divide_by_zero_handler(stack_frame: InterruptStackFrame) {
-    panic!("EXCEPTION: DIVIDE BY ZERO\n{:#?}", stack_frame);
+    panic!("CPU{} EXCEPTION: DIVIDE BY ZERO\n{:#?}", cpu::id(), stack_frame);
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
-    println!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
+    println!("CPU{} EXCEPTION: BREAKPOINT\n{:#?}", cpu::id(), stack_frame);
 }
 
 extern "x86-interrupt" fn general_protection_fault_handler(
     stack_frame: InterruptStackFrame,
-    _error_code: u64,
+    error_code: u64,
 ) {
-    panic!("EXCEPTION: GENERAL PROTECTION FAULT\n{:#?}", stack_frame);
+    panic!(
+        "CPU{} Error code: 0x{:x}\nEXCEPTION: GENERAL PROTECTION FAULT\n{:#?}",
+        cpu::id(), error_code, stack_frame
+    );
 }
 
 extern "x86-interrupt" fn debug_handler(stack_frame: InterruptStackFrame) {
-    panic!("EXCEPTION: DEBUG\n{:#?}", stack_frame);
+    panic!("CPU{} EXCEPTION: DEBUG\n{:#?}", cpu::id(), stack_frame);
 }
 
 extern "x86-interrupt" fn non_maskable_interrupt_handler(stack_frame: InterruptStackFrame) {
-    panic!("EXCEPTION: NON MASKABLE INTERRUPT\n{:#?}", stack_frame);
+    panic!("CPU{} EXCEPTION: NON MASKABLE INTERRUPT\n{:#?}", cpu::id(), stack_frame);
 }
 
 extern "x86-interrupt" fn virtualization_handler(stack_frame: InterruptStackFrame) {
-    panic!("EXCEPTION: VIRTUALIZATION\n{:#?}", stack_frame);
+    panic!("CPU{} EXCEPTION: VIRTUALIZATION\n{:#?}", cpu::id(), stack_frame);
 }
 
 extern "x86-interrupt" fn device_not_available_handler(stack_frame: InterruptStackFrame) {
-    panic!("EXCEPTION: DEVICE NOT AVAILABLE\n{:#?}", stack_frame);
-}
-
-extern "x86-interrupt" fn invalid_tss_handler(stack_frame: InterruptStackFrame, _error_code: u64) {
-    panic!("EXCEPTION: INVALID TSS\n{:#?}", stack_frame);
+    panic!("CPU{} EXCEPTION: DEVICE NOT AVAILABLE\n{:#?}", cpu::id(), stack_frame);
 }
 
 extern "x86-interrupt" fn stack_segment_fault_handler(
     stack_frame: InterruptStackFrame,
     _error_code: u64,
 ) {
-    panic!("EXCEPTION: STACK SEGMENT FAULT\n{:#?}", stack_frame);
+    panic!("CPU{} EXCEPTION: STACK SEGMENT FAULT\n{:#?}", cpu::id(), stack_frame);
+}
+
+extern "x86-interrupt" fn invalid_tss_handler(stack_frame: InterruptStackFrame, error_code: u64) {
+    panic!(
+        "CPU{} EXCEPTION: INVALID TSS\n{:#?}\n Error Code: 0x{:x}",
+        cpu::id(), stack_frame, error_code
+    );
 }
 
 extern "x86-interrupt" fn segment_not_present_handler(
     stack_frame: InterruptStackFrame,
     _error_code: u64,
 ) {
-    panic!("EXCEPTION: SEGMENT NOT PRESENT\n{:#?}", stack_frame);
+    panic!("CPU{} EXCEPTION: SEGMENT NOT PRESENT\n{:#?}", cpu::id(), stack_frame);
 }
 
 extern "x86-interrupt" fn machine_check_handler(stack_frame: InterruptStackFrame) -> ! {
-    panic!("EXCEPTION: MACHINE CHECK\n{:#?}", stack_frame);
+    panic!("CPU{} EXCEPTION: MACHINE CHECK\n{:#?}", cpu::id(), stack_frame);
 }
 
 extern "x86-interrupt" fn double_fault_handler(
     stack_frame: InterruptStackFrame,
     _error_code: u64,
 ) -> ! {
-    panic!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
+    panic!("CPU{} EXCEPTION: DOUBLE FAULT\n{:#?}", cpu::id(), stack_frame);
 }
 
 extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
-    println!("EXCEPTION: PAGE FAULT");
+    println!("CPU{} EXCEPTION: PAGE FAULT", cpu::id());
     println!("Accessed Address: {:?}", Cr2::read());
     println!("Error code:       {:?}", error_code);
     println!("Error code (raw): 0x{:x}", error_code.bits());
@@ -120,7 +129,7 @@ extern "x86-interrupt" fn page_fault_handler(
 }
 
 extern "x86-interrupt" fn invalid_opcode_handler(stack_frame: InterruptStackFrame) {
-    panic!("EXCEPTION: INVALID OPCODE\n{:#?}", stack_frame);
+    panic!("CPU{} EXCEPTION: INVALID OPCODE\n{:#?}", cpu::id(), stack_frame);
 }
 
 /*

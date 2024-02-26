@@ -1,11 +1,11 @@
 //! Empty guest
 
-use mmu::FrameAllocator;
-
-use super::{Guest, HandlerResult, ManifestInfo};
+use super::HandlerResult;
+use super::{Guest, ManifestInfo};
 use crate::acpi::AcpiInfo;
 use crate::mmu::MemoryMap;
 use crate::vmx;
+use mmu::FrameAllocator;
 
 pub struct VoidGuest {}
 

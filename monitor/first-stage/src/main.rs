@@ -6,22 +6,27 @@
 
 extern crate alloc;
 
-use core::panic::PanicInfo;
-use core::sync::atomic::Ordering;
-
 use acpi::AcpiTables;
 use bootloader::{entry_point, BootInfo};
+use core::panic::PanicInfo;
+use core::sync::atomic::*;
 use first_stage::acpi::AcpiInfo;
-use first_stage::acpi_handler::TycheACPIHandler;
 use first_stage::getsec::configure_getsec;
+use first_stage::acpi_handler::TycheACPIHandler;
+use first_stage::guests;
 use first_stage::guests::Guest;
 use first_stage::mmu::MemoryMap;
+use first_stage::println;
+use first_stage::second_stage;
+use first_stage::smp;
 use first_stage::smx::senter;
-use first_stage::{guests, println, second_stage, smp, HostPhysAddr, HostVirtAddr};
+use first_stage::{HostPhysAddr, HostVirtAddr};
 use mmu::{PtMapper, RangeAllocator};
+use qemu;
 use stage_two_abi::VgaInfo;
-use x86_64::registers::control::Cr4;
-use {qemu, vtd};
+use vmx;
+use vtd;
+use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
 
 entry_point!(kernel_main);
 
@@ -32,19 +37,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         vga_info = first_stage::init_display(buffer);
     }
     println!("============= First Stage =============");
-
-    // Initialize memory management
-    let physical_memory_offset = HostVirtAddr::new(
-        boot_info
-            .physical_memory_offset
-            .into_option()
-            .expect("The bootloader must be configured with 'map-physical-memory'")
-            as usize,
-    );
-    let (host_allocator, guest_allocator, memory_map, mut pt_mapper) = unsafe {
-        first_stage::init_memory(physical_memory_offset, &mut boot_info.memory_regions)
-            .expect("Failed to initialize memory")
-    };
 
     // Initialize kernel structures
     first_stage::init();
@@ -83,6 +75,20 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
         run_tests();
     }
 
+    // Initialize memory management
+    let physical_memory_offset = HostVirtAddr::new(
+        boot_info
+            .physical_memory_offset
+            .into_option()
+            .expect("The bootloader must be configured with 'map-physical-memory'")
+            as usize,
+    );
+
+    let (host_allocator, guest_allocator, memory_map, mut pt_mapper) = unsafe {
+        first_stage::init_memory(physical_memory_offset, &mut boot_info.memory_regions)
+            .expect("Failed to initialize memory")
+    };
+
     // Parse RSDP tables
     let rsdp = boot_info
         .rsdp_addr
@@ -91,12 +97,12 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     let acpi_tables = match unsafe { AcpiTables::from_rsdp(TycheACPIHandler, rsdp as usize) } {
         Ok(acpi_tables) => acpi_tables,
-        Err(_) => panic!("Failed to parse the ACPI table!"),
+        Err(err) => panic!("Failed to parse the ACPI table: {:?}", err),
     };
 
     let acpi_platform_info = match acpi_tables.platform_info() {
         Ok(platform_info) => platform_info,
-        Err(_) => panic!("Unable to get platform info from the ACPI table!"),
+        Err(err) => panic!("Unable to get platform info from the ACPI table: {:?}", err),
     };
 
     let acpi_info = unsafe { first_stage::acpi::AcpiInfo::from_rsdp(rsdp, physical_memory_offset) };
@@ -115,11 +121,15 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     // Initiates the SMP boot process
     unsafe {
-        smp::boot(acpi_platform_info, &host_allocator, &mut pt_mapper);
+        smp::boot(
+            acpi_platform_info,
+            &host_allocator,
+            &mut pt_mapper,
+        );
     }
 
     // Enable interrupts
-    x86_64::instructions::interrupts::enable();
+    x86_64::instructions::interrupts::disable();
 
     // Select appropriate guest depending on selected features
     if cfg!(feature = "guest_linux") {

@@ -1,17 +1,21 @@
+use crate::println;
 use alloc::vec::Vec;
-use core::arch::global_asm;
-use core::arch::x86_64::_rdtsc;
-use core::sync::atomic::*;
 
 use acpi::platform::interrupt::InterruptModel;
-use acpi::platform::{PlatformInfo, Processor, ProcessorState};
-use mmu::{PtFlag, PtMapper, RangeAllocator};
-use x86::apic::{ApicControl, ApicId};
-use x86_64::instructions::tlb;
+use acpi::platform::PlatformInfo;
+use acpi::platform::{Processor, ProcessorState};
 
-use crate::mmu::PAGE_SIZE;
+use core::arch::global_asm;
+use core::arch::x86_64::_rdtsc;
+use x86::apic::{ApicControl, ApicId};
+
 use crate::vmx::{HostPhysAddr, HostVirtAddr};
-use crate::{apic, cpu, idt, println};
+use core::sync::atomic::*;
+
+use crate::{apic, cpu, idt};
+
+use mmu::{PtFlag, PtMapper, RangeAllocator};
+
 use crate::smx;
 
 global_asm!(include_str!("trampoline.S"));
@@ -57,38 +61,36 @@ unsafe fn ap_entry() {
     while !BSP_READY.load(Ordering::SeqCst) {
         core::hint::spin_loop();
     }
+    x86_64::instructions::interrupts::disable();
     // APs enter the 2nd stage and spins until BSP gets the manifest
     smx::senter();
 }
 
-/// Write the AP trampoline code to one of the 256 first frame.
-///
-/// The original content of the frame is backed up on another frame returned by this function.
+// FIXME: the two allocation functions here uses the same address for physical and virtual address
+// for debugging purposes. We should switch to virtual address once we're done
 unsafe fn allocate_code_section(
-    allocator: &impl RangeAllocator,
+    _allocator: &impl RangeAllocator,
     mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
-) -> vmx::Frame {
-    let phys_addr = HostPhysAddr::new(CODE_PADDR as usize);
-    let backup_frame = allocator
-        .allocate_frame()
-        .expect("Failed to allocate a backup frame for AP trampoline code");
+) -> [u8; 0x1000] {
+    // As we **must** have the frame on code_paddr for the AP to boot up,
+    // I bypass the memory allocator to directly allocate the memory here
+    let frame = vmx::Frame {
+        phys_addr: HostPhysAddr::new(CODE_PADDR as usize),
+        virt_addr: CODE_PADDR as *mut u8,
+    };
 
-    // Identity map the AP boot trampoline
+    let mut content: [u8; 0x1000] = [0; 0x1000];
+
     mapper.map_range(
-        allocator,
-        HostVirtAddr::new(phys_addr.as_usize()),
-        phys_addr,
+        _allocator,
+        HostVirtAddr::new(frame.phys_addr.as_usize()),
+        frame.phys_addr,
         0x1000,
         PtFlag::WRITE | PtFlag::PRESENT | PtFlag::USER,
     );
-    tlb::flush_all();
 
-    // Backup the frame before writing to it.
-    // The frame might be use by the bootloader, for e.g. page tables or other resources.
-    // We need to restore it as soon as possible.
-    let backup = core::slice::from_raw_parts_mut(backup_frame.virt_addr, PAGE_SIZE);
-    let trampoline = core::slice::from_raw_parts(CODE_PADDR as usize as *mut u8, PAGE_SIZE);
-    backup.copy_from_slice(trampoline);
+    let trampoline = core::slice::from_raw_parts(CODE_PADDR as *mut u8, 0x1000);
+    content.clone_from_slice(trampoline);
 
     // Copy the cr3 register to cr3_ptr and share with AP
     (CR3_PTR_PADDR as *mut usize).write(x86::controlregs::cr3() as usize);
@@ -102,17 +104,7 @@ unsafe fn allocate_code_section(
         ap_trampoline_end as usize - ap_trampoline_start as usize,
     );
 
-    backup_frame
-}
-
-/// Restore the frame used for the AP trampoline.
-///
-/// This might be needed as there is no guarantee the page wasn't used by the bootloader for system
-/// resources (e.g. page tables).
-unsafe fn restore_code_section(backup_frame: vmx::Frame) {
-    let backup = core::slice::from_raw_parts(backup_frame.virt_addr, PAGE_SIZE);
-    let trampoline = core::slice::from_raw_parts_mut(CODE_PADDR as usize as *mut u8, PAGE_SIZE);
-    trampoline.copy_from_slice(backup);
+    content
 }
 
 unsafe fn allocate_stack_section(
@@ -165,8 +157,7 @@ pub unsafe fn boot(
     assert!(!bsp.is_ap);
     assert!(lapic.id() == bsp.local_apic_id);
 
-    println!("Setting up AP trampoline");
-    let backup_frame = allocate_code_section(stage1_allocator, pt_mapper);
+    let content = allocate_code_section(stage1_allocator, pt_mapper);
 
     // Intel MP Spec B.4: Universal Start-up Algorithm
     ap.iter().for_each(|cpu| {
@@ -202,6 +193,6 @@ pub unsafe fn boot(
         }
     });
 
-    restore_code_section(backup_frame);
-    println!("Booted {} AP.", ap.len());
+    // Restore the original trampoline content after all APs have booted up
+    core::ptr::copy_nonoverlapping(&content as *const u8, CODE_PADDR as _, 0x1000);
 }

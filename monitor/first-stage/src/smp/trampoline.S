@@ -88,7 +88,7 @@ ap_trampoline64_start:
     mov     ds, ax
     mov     es, ax
     mov     fs, ax
-    mov     gs, ax
+    mov     gs, ax 
     mov     ss, ax
 
     # enter the entry function

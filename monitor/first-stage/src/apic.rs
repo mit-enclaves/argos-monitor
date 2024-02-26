@@ -1,19 +1,13 @@
-use alloc::vec::Vec;
-
+use crate::vmx::{HostPhysAddr, HostVirtAddr};
 use acpi::platform::interrupt;
+use alloc::vec::Vec;
 use mmu::{PtFlag, PtMapper, RangeAllocator};
 use x86::apic::{ioapic, xapic};
-
-use crate::mmu::get_physical_memory_offset;
-use crate::vmx::{HostPhysAddr, HostVirtAddr};
 
 // FIXME: LAPIC address should be parsed from ACPI, but parsing the table occurs after we
 //        initialize the BSP...
 pub const LAPIC_PHYS_ADDRESS: usize = 0xfee00000;
-
-pub fn get_lapic_virt_address() -> usize {
-    return LAPIC_PHYS_ADDRESS + get_physical_memory_offset().as_usize();
-}
+pub const LAPIC_VIRT_ADDRESS: usize = LAPIC_PHYS_ADDRESS + 0x18000000000;
 
 pub fn allocate(
     lapic_addr: usize,
@@ -44,7 +38,7 @@ pub fn lapic_setup(lapic: &mut xapic::XAPIC) {
     lapic.attach();
 }
 
-// Only the BSP is responsible for instantiating the IOAPIC
+// Only the BSP is responsible for instantiateing the IOAPIC
 unsafe fn _ioapic_new(entries: Vec<&interrupt::IoApic>) -> Vec<ioapic::IoApic> {
     entries
         .iter()

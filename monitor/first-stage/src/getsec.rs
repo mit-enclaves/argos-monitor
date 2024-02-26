@@ -7,11 +7,10 @@
 //! IMPORTANT: When relying on GETSEC emulation, the SMXE bit in CR4 must _not_ be set, otherwhise
 //! GETSEC causes a VM exit and KVM will kill the VM.
 
-use alloc::vec::Vec;
-use core::arch::asm;
-
 use crate::second_stage::Stage2;
 use crate::{cpu, println};
+use alloc::vec::Vec;
+use core::arch::asm;
 
 const GETSEC_OPCODE: u16 = 0x370F;
 const CAPABILITIES_CHIPSET: u64 = 1;
