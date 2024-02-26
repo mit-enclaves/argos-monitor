@@ -42,47 +42,6 @@ pub const VMX_TRUE_ENTRY_CTLS: Msr = Msr::new(0x490);
 pub const VMX_VMFUNC: Msr = Msr::new(0x491);
 pub const IA32_EFER: Msr = Msr::new(0xC000_0080);
 
-// X2APIC
-pub const IA32_X2APIC_APICID: Msr = Msr::new(0x802);
-pub const IA32_X2APIC_VERSION: Msr = Msr::new(0x803);
-pub const IA32_X2APIC_TPR: Msr = Msr::new(0x808);
-pub const IA32_X2APIC_PPR: Msr = Msr::new(0x80a);
-pub const IA32_X2APIC_EOI: Msr = Msr::new(0x80b);
-pub const IA32_X2APIC_LDR: Msr = Msr::new(0x80d);
-pub const IA32_X2APIC_SIVR: Msr = Msr::new(0x80f);
-// TMR
-pub const IA32_X2APIC_TMR0: Msr = Msr::new(0x818);
-pub const IA32_X2APIC_TMR1: Msr = Msr::new(0x819);
-pub const IA32_X2APIC_TMR2: Msr = Msr::new(0x81a);
-pub const IA32_X2APIC_TMR3: Msr = Msr::new(0x81b);
-pub const IA32_X2APIC_TMR4: Msr = Msr::new(0x81c);
-pub const IA32_X2APIC_TMR5: Msr = Msr::new(0x81d);
-pub const IA32_X2APIC_TMR6: Msr = Msr::new(0x81e);
-pub const IA32_X2APIC_TMR7: Msr = Msr::new(0x81f);
-// ISR
-pub const IA32_X2APIC_ISR0: Msr = Msr::new(0x810);
-pub const IA32_X2APIC_ISR1: Msr = Msr::new(0x811);
-pub const IA32_X2APIC_ISR2: Msr = Msr::new(0x812);
-pub const IA32_X2APIC_ISR3: Msr = Msr::new(0x813);
-pub const IA32_X2APIC_ISR4: Msr = Msr::new(0x814);
-pub const IA32_X2APIC_ISR5: Msr = Msr::new(0x815);
-pub const IA32_X2APIC_ISR6: Msr = Msr::new(0x816);
-pub const IA32_X2APIC_ISR7: Msr = Msr::new(0x817);
-// IRR
-pub const IA32_X2APIC_IRR0: Msr = Msr::new(0x820);
-pub const IA32_X2APIC_IRR1: Msr = Msr::new(0x821);
-pub const IA32_X2APIC_IRR2: Msr = Msr::new(0x822);
-pub const IA32_X2APIC_IRR3: Msr = Msr::new(0x823);
-pub const IA32_X2APIC_IRR4: Msr = Msr::new(0x824);
-pub const IA32_X2APIC_IRR5: Msr = Msr::new(0x825);
-pub const IA32_X2APIC_IRR6: Msr = Msr::new(0x826);
-pub const IA32_X2APIC_IRR7: Msr = Msr::new(0x827);
-// IPI
-pub const IA32_X2APIC_ICR0: Msr = Msr::new(0x830);
-pub const IA32_X2APIC_ICR1: Msr = Msr::new(0x831);
-// Timer
-pub const IA32_X2APIC_LVT_TIMER: Msr = Msr::new(0x832);
-
 // —————————————————————————————————— MSR ——————————————————————————————————— //
 
 #[derive(Debug, Clone, Copy)]
