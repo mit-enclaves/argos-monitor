@@ -11,7 +11,8 @@ use x86_64::instructions::tlb;
 
 use crate::mmu::PAGE_SIZE;
 use crate::vmx::{HostPhysAddr, HostVirtAddr};
-use crate::{apic, cpu, idt, println, second_stage};
+use crate::{apic, cpu, idt, println};
+use crate::smx;
 
 global_asm!(include_str!("trampoline.S"));
 
@@ -57,7 +58,7 @@ unsafe fn ap_entry() {
         core::hint::spin_loop();
     }
     // APs enter the 2nd stage and spins until BSP gets the manifest
-    second_stage::enter();
+    smx::senter();
 }
 
 /// Write the AP trampoline code to one of the 256 first frame.
@@ -202,6 +203,5 @@ pub unsafe fn boot(
     });
 
     restore_code_section(backup_frame);
-    cpu::set_cores(ap.len() + 1);
     println!("Booted {} AP.", ap.len());
 }

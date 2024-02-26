@@ -6,7 +6,6 @@
 #![feature(abi_x86_interrupt)]
 #![feature(const_mut_refs)]
 #![feature(naked_functions)]
-#![feature(atomic_from_mut)]
 #![test_runner(crate::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 

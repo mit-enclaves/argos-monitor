@@ -57,7 +57,7 @@ impl Manifest {
         F: Fn(&str) -> Option<usize>,
     {
         // Find manifest
-        let manifest = find_symbol("__manifest")?;
+        let manifest = find_symbol("__manifest")? as usize;
         let manifest = &mut *(manifest as *mut Manifest);
 
         Some(manifest)

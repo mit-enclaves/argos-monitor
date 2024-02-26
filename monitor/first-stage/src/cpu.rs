@@ -1,5 +1,4 @@
 use core::sync::atomic::*;
-
 use x86::apic::xapic;
 use x86_64::registers::control::{Cr0, Cr0Flags, Cr4, Cr4Flags};
 
@@ -11,7 +10,6 @@ const FALSE: AtomicBool = AtomicBool::new(false);
 static CPU_INIT: [AtomicBool; MAX_CPU_NUM] = [FALSE; MAX_CPU_NUM];
 const INITCPU: Option<Cpu> = None;
 static mut CPUS: [Option<Cpu>; MAX_CPU_NUM] = [INITCPU; MAX_CPU_NUM];
-static NB_CORES: AtomicUsize = AtomicUsize::new(0);
 
 pub struct Cpu {
     pub gdt: Gdt,
@@ -82,16 +80,12 @@ pub fn init() {
     }
 }
 
-pub fn set_cores(nb_cores: usize) {
-    NB_CORES
-        .compare_exchange(0, nb_cores, Ordering::SeqCst, Ordering::SeqCst)
-        .expect("The number of cores must be set only once");
-}
-
 pub fn cores() -> usize {
-    match NB_CORES.load(Ordering::SeqCst) {
-        0 => panic!("Looked up the number of cores before setting it"),
-        n => n,
+    unsafe {
+        CPUS.iter().fold(0, |sum, cpu| match &cpu {
+            Some(_) => sum + 1,
+            _ => sum,
+        })
     }
 }
 

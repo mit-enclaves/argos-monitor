@@ -4,7 +4,6 @@ mod arch;
 pub mod guest;
 
 use core::arch::asm;
-use core::sync::atomic::{AtomicBool, Ordering};
 
 use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator};
@@ -22,13 +21,6 @@ use crate::println;
 
 /// Maximum number of CPU supported.
 const MAX_NB_CPU: usize = 128;
-
-// ————————————————————————————— Entry Barrier —————————————————————————————— //
-
-/// APs will wait for the entry barrier to be `true` before jumping into stage 2.
-#[used]
-#[export_name = "__entry_barrier"]
-static ENTRY_BARRIER: AtomicBool = AtomicBool::new(false);
 
 // —————————————————————————————— x86_64 Arch ——————————————————————————————— //
 
@@ -238,12 +230,6 @@ pub fn init(manifest: &Manifest, cpuid: usize) {
         );
         vga::init_print(writer);
     }
-
-    // The ENTRY_BARRIER is consumed (set to false) when an AP enters stage 2, once stage 2
-    // initialization is done, the AP set the ENTRY_BARRIER back to true.
-    ENTRY_BARRIER
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .expect("Unexpected ENTRY_BARRIER value");
 }
 
 pub fn cpuid() -> usize {

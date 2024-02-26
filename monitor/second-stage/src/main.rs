@@ -2,7 +2,7 @@
 #![no_main]
 
 use core::panic::PanicInfo;
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use second_stage;
 use second_stage::arch::guest::launch_guest;
@@ -16,44 +16,28 @@ entry_point!(second_stage_entry_point);
 const FALSE: AtomicBool = AtomicBool::new(false);
 static BSP_READY: AtomicBool = FALSE;
 static CPU_STATUS: [AtomicBool; 256] = [FALSE; 256];
-static NB_BOOTED_CORES: AtomicUsize = AtomicUsize::new(0);
 static mut MANIFEST: Option<&'static Manifest> = None;
 
 fn second_stage_entry_point() -> ! {
     if arch::cpuid() == 0 {
-        println!("CPU{}: Hello from second stage!", arch::cpuid());
         // Safety: The BSP is responsible for retrieving the manifest
-        let manifest = unsafe {
+        unsafe {
             MANIFEST = Some(get_manifest());
-            MANIFEST.as_ref().unwrap()
-        };
-        second_stage::init(manifest, 0);
-        println!("Waiting for {} cores", manifest.smp);
-        while NB_BOOTED_CORES.load(Ordering::SeqCst) + 1 < manifest.smp {
-            core::hint::spin_loop();
+            second_stage::init(MANIFEST.as_ref().unwrap(), 0);
+            BSP_READY.store(true, Ordering::SeqCst);
         }
-        println!("Stage 2 initialized");
-
-        // TODO: mark the BSP as ready to launch guest on all APs.
-        // BSP_READY.store(true, Ordering::SeqCst);
     }
     // The APs spin until the manifest is fetched, and then initialize the second stage
     else {
-        println!("CPU{}: Hello from second stage!", arch::cpuid());
-
+        while !BSP_READY.load(Ordering::SeqCst) {
+            core::hint::spin_loop();
+        }
         // SAFETY: we only perform read accesses and we ensure the BSP initialized the manifest.
         let manifest = unsafe {
             assert!(!MANIFEST.is_none());
             MANIFEST.as_ref().unwrap()
         };
-
         second_stage::init(manifest, arch::cpuid());
-
-        // Wait until the BSP mark second stage as initialized (e.g. all APs are up).
-        NB_BOOTED_CORES.fetch_add(1, Ordering::SeqCst);
-        while !BSP_READY.load(Ordering::SeqCst) {
-            core::hint::spin_loop();
-        }
 
         println!("CPU{}: Hello from second stage!", arch::cpuid());
 
