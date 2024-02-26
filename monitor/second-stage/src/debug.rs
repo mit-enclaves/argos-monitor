@@ -39,12 +39,12 @@ macro_rules! println {
 // —————————————————————————————————— Qemu —————————————————————————————————— //
 
 pub mod qemu {
-    pub use qemu::ExitCode;
-
     #[cfg(target_arch = "riscv64")]
     use crate::riscv::hlt;
     #[cfg(target_arch = "x86_64")]
     use crate::x86_64::hlt;
+
+    pub use qemu::ExitCode;
 
     pub fn exit(exit_code: ExitCode) -> ! {
         println!("========= Exiting Second Stage =========");

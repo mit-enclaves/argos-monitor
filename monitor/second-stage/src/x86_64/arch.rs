@@ -1,10 +1,10 @@
 //! Architecture specific structures
 
+use crate::x86_64::MAX_NB_CPU;
 use core::arch::asm;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicBool, Ordering};
-
-use crate::x86_64::MAX_NB_CPU;
+use utils::HostVirtAddr;
 
 // ———————————————————— Interrupt-related Initialization ———————————————————— //
 
@@ -60,6 +60,9 @@ static GDT_IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// Guard used to ensure a single thread tries to initialize the GDT.
 static GDT_IS_LOCKED: AtomicBool = AtomicBool::new(false);
 
+/// TSS double fault IST entry index
+const DOUBLE_FAULT_IST_INDEX: usize = 0;
+
 /// Initializes the IDT.
 ///
 /// This function must be called prior to accessing the IDT.
@@ -73,8 +76,16 @@ pub fn initialize_gdt() {
         GDT[1] = CODE_SEGMENT;
         for cpu_id in 0..MAX_NB_CPU {
             // Configure TSS
-            let tss = EMPTY_TSS;
+            let mut tss = EMPTY_TSS;
             // TODO: set tss.ist
+            tss.ist[DOUBLE_FAULT_IST_INDEX] = {
+                const STACK_SIZE: usize = 4096 * 5;
+                static mut STACK: [u8; STACK_SIZE] = [0; STACK_SIZE];
+
+                let stack_start = HostVirtAddr::new(&STACK as *const _ as usize);
+                let stack_end = stack_start + STACK_SIZE;
+                stack_end.as_u64()
+            };
             // TODO: set tss.rsp
             TSS_ARRAY[cpu_id] = tss;
 

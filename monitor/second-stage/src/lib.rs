@@ -10,6 +10,7 @@ mod free_list;
 pub mod guest;
 pub mod hypercalls;
 pub mod statics;
+pub mod vcpu;
 
 #[cfg(target_arch = "riscv64")]
 pub mod riscv;

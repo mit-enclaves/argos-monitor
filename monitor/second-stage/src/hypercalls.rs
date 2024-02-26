@@ -1,10 +1,12 @@
 //! Applicatioe Binary Interface
 
-use mmu::FrameAllocator;
-use stage_two_abi::Manifest;
-
 use crate::arena::{ArenaItem, Handle, TypedArena};
 use crate::statics::{NB_DOMAINS, NB_REGIONS, NB_REGIONS_PER_DOMAIN, NB_SWITCH_PER_DOMAIN};
+use mmu::FrameAllocator;
+use stage_two_abi::Manifest;
+use vmx::msr;
+
+pub static mut TIMER_INTERRUPT_COUNTER: usize = 0;
 
 // ——————————————————————————————— Hypercalls ——————————————————————————————— //
 
@@ -23,6 +25,8 @@ pub mod vmcalls {
     pub const CONFIG_READ_REGION: usize  = 0x401;
     pub const EXIT: usize                = 0x500;
     pub const DEBUG_IOMMU: usize         = 0x600;
+    pub const SEND_IPI: usize            = 0x700;
+    pub const TIMER_INTERRUPT_HANDLER: usize = 0x800;
     pub const DOMAIN_SWITCH: usize       = 0x999;
 }
 
@@ -414,18 +418,19 @@ where
     pub fn new<'a>(
         manifest: &Manifest,
         mut backend: B,
-        vcpu: &mut B::Vcpu<'a>,
+        vcpus: &mut [Option<B::Vcpu<'a>>],
         allocator: &impl FrameAllocator,
         domains_arena: &'static mut DomainArena<B>,
         regions_arena: &'static mut RegionArena,
     ) -> Self {
         let root_region = Self::create_root_region(manifest, regions_arena);
         let root_domain = Self::create_root_domain(
+            manifest,
             root_region,
             domains_arena,
             regions_arena,
             &mut backend,
-            vcpu,
+            vcpus,
             allocator,
         );
 
@@ -450,11 +455,12 @@ where
     }
 
     fn create_root_domain<'a>(
+        _manifest: &Manifest,
         root_region: RegionHandle,
         domains_arena: &mut DomainArena<B>,
         regions_arena: &RegionArena,
         backend: &mut B,
-        vcpu: &mut B::Vcpu<'a>,
+        vcpus: &mut [Option<B::Vcpu<'a>>],
         allocator: &impl FrameAllocator,
     ) -> DomainHandle<B> {
         let handle = domains_arena
@@ -493,11 +499,23 @@ where
             .expect("Failed to add root region");
         let fake_context = B::EMPTY_CONTEXT;
         backend
-            .domain_restore(&root_domain.store, &fake_context, vcpu)
+            .domain_restore(
+                &root_domain.store,
+                &fake_context,
+                vcpus[0].as_mut().unwrap(),
+            )
             .expect("Failed to switch to root domain");
         root_domain.nb_initial_regions = 1;
         root_domain.initial_regions_capa[0] = root_region_capa;
         handle
+    }
+
+    pub fn init<'a>(&self, backend: &mut B, vcpu: &mut B::Vcpu<'a>) {
+        let root_domain = &self.domains_arena[self.current_domain];
+        let fake_context = B::EMPTY_CONTEXT;
+        backend
+            .domain_restore(&root_domain.store, &fake_context, vcpu)
+            .expect("Failed to switch to root domain");
     }
 
     pub fn dispatch<'a>(
@@ -526,6 +544,8 @@ where
             vmcalls::DOMAIN_SEAL => {
                 self.domain_seal(params.arg_1, params.arg_2, params.arg_3, params.arg_4)
             }
+            vmcalls::TIMER_INTERRUPT_HANDLER => self.handle_guest_timer_interrupt(),
+            vmcalls::SEND_IPI => self.send_ipi(params.arg_1 as u8),
             _ => Err(ErrorCode::UnknownVmCall),
         }
     }
@@ -1016,5 +1036,74 @@ where
         let domain = &mut self.domains_arena[self.current_domain];
         self.backend
             .domain_seal(handle, domain, reg_1, reg_2, reg_3)
+    }
+
+    fn handle_guest_timer_interrupt(&mut self) -> HypercallResult {
+        // crate::println!("handling timer interrupt...");
+
+        unsafe { TIMER_INTERRUPT_COUNTER += 1 };
+
+        Ok(Registers {
+            ..Default::default()
+        })
+    }
+
+    fn send_ipi(&mut self, vector: u8) -> HypercallResult {
+        // Assume Local APIC is at 0xfee00000
+        crate::println!("send_ipi ...");
+
+        unsafe fn write_icr(icr: u64) {
+            // ICR1
+            core::ptr::write_volatile(0xfee00310 as *mut u32, (icr >> 32) as u32);
+            // ICR0
+            core::ptr::write_volatile(0xfee00300 as *mut u32, (icr & 0xffff_ffff) as u32);
+        }
+
+        for i in 0..8 {
+            crate::println!("Sending IPI with vector {} to CPU {}", vector, i);
+
+            // Assert the level interrupt
+            // Check Intel SDM 11.6.1 for more details
+            let vector = 0;
+            let delivery_mode = 5; // INIT
+            let destination_mode = 0; // Physical
+            let delivery_status = 0; // Idle
+            let level = 1; // Assert
+            let trigger_mode = 1; // Level-Triggered
+            let destination_shorthand = 0; // No Shorthand
+            let destination = i;
+
+            let icr = (destination as u64) << 56
+                | (destination_shorthand as u64) << 18
+                | (trigger_mode as u64) << 15
+                | (level as u64) << 14
+                | (delivery_status as u64) << 12
+                | (destination_mode as u64) << 11
+                | (delivery_mode as u64) << 8
+                | (vector as u64);
+
+            unsafe { write_icr(icr) };
+
+            // Deassert the level interrupt
+
+            let level = 0; // Deassert
+
+            let icr = (destination as u64) << 56
+                | (destination_shorthand as u64) << 18
+                | (trigger_mode as u64) << 15
+                | (level as u64) << 14
+                | (delivery_status as u64) << 12
+                | (destination_mode as u64) << 11
+                | (delivery_mode as u64) << 8
+                | (vector as u64);
+
+            unsafe { write_icr(icr) };
+
+            crate::println!("Sent IPI with vector {} to CPU {}", vector, i);
+        }
+
+        Ok(Registers {
+            ..Default::default()
+        })
     }
 }

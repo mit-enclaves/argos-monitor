@@ -3,10 +3,9 @@
 //! Memory can be allocated dynamically for some pre-configured types. Each type gets a statically
 //! allocated regions (the arena) from which objetcs can be allocated.
 
+use crate::free_list::FreeList;
 use core::marker::PhantomData;
 use core::ops::{Index, IndexMut};
-
-use crate::free_list::FreeList;
 
 // ——————————————————————————————— Item Trait ——————————————————————————————— //
 

@@ -7,11 +7,10 @@
 //! the function is called, and panic on following calls. This ensures we don"t emit more than one
 //! mutable reference with static lifetime.
 
-use stage_two_abi::make_manifest;
-
 use crate::allocator::{FreeListAllocator, Page, PAGE_SIZE};
 use crate::arena::{Handle, TypedArena};
 use crate::hypercalls::{access, Backend, Domain, Region, RegionCapability, RevokInfo, Switch};
+use stage_two_abi::make_manifest;
 
 // ————————————————————— Static Resources Configuration ————————————————————— //
 
