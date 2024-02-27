@@ -99,6 +99,7 @@ impl EptMapper {
 
                     let end = gpa.as_usize() + size;
                     let hphys = hpa.as_usize() + (addr.as_usize() - gpa.as_usize());
+                    /*
                     if level == Level::L3 {
                         if (addr.as_usize() + GIANT_PAGE_SIZE <= end)
                             && (hphys % GIANT_PAGE_SIZE == 0)
@@ -107,6 +108,7 @@ impl EptMapper {
                             return WalkNext::Leaf;
                         }
                     }
+                    */
                     if level == Level::L2 {
                         if (addr.as_usize() + HUGE_PAGE_SIZE <= end)
                             && (hphys % HUGE_PAGE_SIZE == 0)
