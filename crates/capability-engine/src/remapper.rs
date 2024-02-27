@@ -77,6 +77,13 @@ impl<const N: usize> Remapper<N> {
         }
     }
 
+    pub fn debug_iter(&self) -> RemapperDebugIterator<'_, N> {
+        RemapperDebugIterator {
+            remapper: self,
+            next_segment: self.head,
+        }
+    }
+
     pub fn map_range(
         &mut self,
         hpa: usize,
@@ -282,6 +289,44 @@ impl<'a, const N: usize> Iterator for RemapIterator<'a, N> {
                     ops: region.ops,
                 })
             }
+        }
+    }
+}
+
+/// An iterator over the remapper segments, mostly used for debugging.
+#[derive(Clone)]
+pub struct RemapperDebugIterator<'a, const N: usize> {
+    remapper: &'a Remapper<N>,
+    next_segment: Option<Handle<Segment>>,
+}
+
+#[derive(Debug)]
+pub struct DebugSegment {
+    /// Host Physical Address
+    hpa: usize,
+    /// Guest Physical Address
+    gpa: usize,
+    /// Size of the segment to remap
+    size: usize,
+    /// Number of repetitions
+    repeat: usize,
+}
+
+impl<'a, const N: usize> Iterator for RemapperDebugIterator<'a, N> {
+    type Item = DebugSegment;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(next) = self.next_segment {
+            let segment = &self.remapper.segments[next];
+            self.next_segment = segment.next;
+            Some(DebugSegment {
+                hpa: segment.hpa,
+                gpa: segment.gpa,
+                size: segment.size,
+                repeat: segment.repeat,
+            })
+        } else {
+            None
         }
     }
 }
@@ -535,6 +580,21 @@ mod tests {
             &remapper.remap(tracker.permissions(&pool)),
         );
     }
+
+    #[test]
+    fn debug_iterator() {
+        let mut remapper: Remapper<32> = Remapper::new();
+
+        remapper.map_range(0x10, 0x100, 0x20, 2).unwrap();
+        snap("{[0x10, 0x30 at 0x100, rep 2]}", &remapper.debug_iter());
+        remapper.map_range(0x30, 0x200, 0x20, 1).unwrap();
+        snap(
+            "{[0x10, 0x30 at 0x100, rep 2] -> [0x30, 0x50 at 0x200, rep 1]}",
+            &remapper.debug_iter(),
+        );
+        remapper.map_range(0x80, 0x100, 0x20, 1).unwrap();
+        snap("{[0x10, 0x30 at 0x100, rep 2] -> [0x30, 0x50 at 0x200, rep 1] -> [0x80, 0xa0 at 0x100, rep 1]}", &remapper.debug_iter());
+    }
 }
 
 // ———————————————————————————————— Display ————————————————————————————————— //
@@ -557,6 +617,29 @@ impl<'a, const N: usize> fmt::Display for RemapIterator<'a, N> {
                 mapping.gpa,
                 mapping.repeat,
                 mapping.ops,
+            )?;
+        }
+        write!(f, "}}")
+    }
+}
+
+impl<'a, const N: usize> fmt::Display for RemapperDebugIterator<'a, N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first = true;
+        write!(f, "{{")?;
+        for segment in self.clone() {
+            if first {
+                first = false;
+            } else {
+                write!(f, " -> ")?;
+            }
+            write!(
+                f,
+                "[0x{:x}, 0x{:x} at 0x{:x}, rep {}]",
+                segment.hpa,
+                segment.hpa + segment.size,
+                segment.gpa,
+                segment.repeat,
             )?;
         }
         write!(f, "}}")
