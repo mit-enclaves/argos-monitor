@@ -582,6 +582,29 @@ mod tests {
     }
 
     #[test]
+    fn current_bug() {
+        let mut pool = TrackerPool::new([EMPTY_REGION; NB_TRACKER]);
+        let mut tracker = RegionTracker::new();
+        let mut remapper: Remapper<32> = Remapper::new();
+
+        tracker
+            .add_region(0x12fcb6000, 0x12fcf6000, MEMOPS_ALL, &mut pool)
+            .unwrap();
+        remapper
+            .map_range(0x12fcb6000, 0xfffc0000, 0x40000, 1)
+            .unwrap();
+        tracker
+            .add_region(0x12fcd6000, 0x12fcf6000, MEMOPS_ALL, &mut pool)
+            .unwrap();
+        remapper
+            .map_range(0x12fcd6000, 0xe0000, 0x20000, 1)
+            .unwrap();
+        snap("{[0x12fcb6000, 0x12fcd6000 | 1 (1 - 1 - 1 - 1)] -> [0x12fcd6000, 0x12fcf6000 | 2 (2 - 2 - 2 - 2)]}", &tracker.iter(&pool));
+
+        snap("{[0x12fcb6000, 0x12fcf6000 at 0xfffc0000, rep 1] -> [0x12fcd6000, 0x12fcf6000 at 0xe0000, rep 1]}", remapper.debug_iter());
+    }
+
+    #[test]
     fn debug_iterator() {
         let mut remapper: Remapper<32> = Remapper::new();
 
