@@ -84,6 +84,9 @@ impl<const N: usize> Remapper<N> {
         size: usize,
         repeat: usize,
     ) -> Result<(), ()> {
+        // First unmap the range to ensure there is no overlap
+        self.unmap_range(hpa, size)?;
+
         let new_segment = self
             .segments
             .allocate(Segment {
@@ -125,8 +128,6 @@ impl<const N: usize> Remapper<N> {
             prev = cursor;
         }
 
-        // TODO: handle the case where segments overlap
-
         self.segments[new_segment].next = self.segments[prev].next;
         self.segments[prev].next = Some(new_segment);
 
@@ -134,47 +135,64 @@ impl<const N: usize> Remapper<N> {
     }
 
     pub fn unmap_range(&mut self, hpa: usize, size: usize) -> Result<(), ()> {
-        let Some(head) = self.head else {
-            return Err(());
-        };
+        let start = hpa;
+        let end = hpa + size;
 
-        // Check if unmapping the head
-        let head_segment = &self.segments[head];
-        if head_segment.hpa == hpa {
-            assert_eq!(
-                head_segment.size, size,
-                "For now we require unmap to match a mapped range"
-            );
-            self.head = head_segment.next;
-            self.segments.free(head);
-            return Ok(());
-        }
-
-        // Search for the segment to unmap
-        let mut prev = head;
-        let mut cursor = head_segment.next;
+        // Search for segments to unmap
+        let mut prev = None;
+        let mut cursor = self.head;
         while let Some(cur) = cursor {
             let segment = &self.segments[cur];
+            let segment_start = segment.hpa;
+            let segment_end = segment.hpa + segment.size;
 
-            // Remove segment
-            if segment.hpa == hpa {
-                assert_eq!(
-                    segment.size, size,
-                    "For now we require unmap to match a mapped range"
-                );
-                let next = segment.next;
-                self.segments[prev].next = next;
-                self.segments.free(cur);
-                return Ok(());
+            // Terminate if there is no more overlap
+            if end <= segment_start {
+                break;
+            }
+
+            // Check for overlaps
+            if start < segment_end {
+                if start <= segment_start && end >= segment_end {
+                    // Complete overlap, remove the segment
+                    if let Some(prev) = prev {
+                        // Not the head, patch the linked list
+                        self.segments[prev].next = self.segments[cur].next;
+                    } else {
+                        // The segment is the head
+                        self.head = self.segments[cur].next;
+                    }
+                    cursor = self.segments[cur].next;
+                    self.segments.free(cur);
+                    continue;
+                } else if start > segment_start && end < segment_end {
+                    // Create a hole in the current segment
+                    let new_segment = Segment {
+                        hpa: end,
+                        gpa: segment.gpa + (end - segment_start),
+                        size: segment_end - end,
+                        repeat: segment.repeat,
+                        next: segment.next,
+                    };
+                    self.segments[cur].size = start - segment_start;
+                    let new_handle = self.segments.allocate(new_segment).ok_or(())?;
+                    self.segments[cur].next = Some(new_handle);
+                } else if start <= segment_start {
+                    // Overlap at the beginning
+                    self.segments[cur].hpa = start;
+                } else if end >= segment_end {
+                    // Overlap at the end
+                    self.segments[cur].size = start - segment_start;
+                }
             }
 
             // Or move to next one
-            prev = cur;
-            cursor = segment.next;
+            prev = Some(cur);
+            cursor = self.segments[cur].next;
         }
 
-        // Couldn't find segment
-        Err(())
+        // Couldn't find segment, nothing to do
+        Ok(())
     }
 }
 
@@ -421,6 +439,56 @@ mod tests {
         remapper.map_range(0x20, 0x100, 0x100, 1).unwrap();
         snap(
             "{[0x10, 0x20 at 0x10, rep 1 | RWXS] -> [0x20, 0x30 at 0x100, rep 1 | RWXS] -> [0x40, 0x60 at 0x120, rep 1 | RWXS]}",
+            &remapper.remap(tracker.permissions(&pool)),
+        );
+    }
+
+    #[test]
+    fn backward_overlap() {
+        let mut pool = TrackerPool::new([EMPTY_REGION; NB_TRACKER]);
+        let mut tracker = RegionTracker::new();
+        let mut remapper: Remapper<32> = Remapper::new();
+
+        tracker
+            .add_region(0x10, 0x40, MEMOPS_ALL, &mut pool)
+            .unwrap();
+        tracker
+            .add_region(0x30, 0x40, MEMOPS_ALL, &mut pool)
+            .unwrap();
+        snap(
+            "{[0x10, 0x30 | 1 (1 - 1 - 1 - 1)] -> [0x30, 0x40 | 2 (2 - 2 - 2 - 2)]}",
+            &tracker.iter(&pool),
+        );
+
+        remapper.map_range(0x10, 0x100, 0x30, 1).unwrap();
+        remapper.map_range(0x30, 0x50, 0x10, 1).unwrap();
+        snap(
+            "{[0x10, 0x30 at 0x100, rep 1 | RWXS] -> [0x30, 0x40 at 0x50, rep 1 | RWXS]}",
+            &remapper.remap(tracker.permissions(&pool)),
+        );
+    }
+
+    #[test]
+    fn forward_overlap() {
+        let mut pool = TrackerPool::new([EMPTY_REGION; NB_TRACKER]);
+        let mut tracker = RegionTracker::new();
+        let mut remapper: Remapper<32> = Remapper::new();
+
+        tracker
+            .add_region(0x10, 0x40, MEMOPS_ALL, &mut pool)
+            .unwrap();
+        snap("{[0x10, 0x40 | 1 (1 - 1 - 1 - 1)]}", &tracker.iter(&pool));
+
+        remapper.map_range(0x20, 0x100, 0x10, 1).unwrap();
+        remapper.map_range(0x30, 0x200, 0x10, 1).unwrap();
+        snap(
+            "{[0x10, 0x20 at 0x10, rep 1 | RWXS] -> [0x20, 0x30 at 0x100, rep 1 | RWXS] -> [0x30, 0x40 at 0x200, rep 1 | RWXS]}",
+            &remapper.remap(tracker.permissions(&pool)),
+        );
+
+        remapper.map_range(0x10, 0x300, 0x30, 1).unwrap();
+        snap(
+            "{[0x10, 0x40 at 0x300, rep 1 | RWXS]}",
             &remapper.remap(tracker.permissions(&pool)),
         );
     }
