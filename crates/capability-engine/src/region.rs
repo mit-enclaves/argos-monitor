@@ -1024,6 +1024,22 @@ impl<'a> fmt::Display for RegionIterator<'a> {
     }
 }
 
+impl<'a> fmt::Display for PermissionIterator<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut is_first = true;
+        write!(f, "{{")?;
+        for permission in self.clone() {
+            if !is_first {
+                write!(f, " -> ")?;
+            } else {
+                is_first = false;
+            }
+            write!(f, "{}", permission)?;
+        }
+        write!(f, "}}")
+    }
+}
+
 impl fmt::Display for MemoryPermission {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[0x{:x}, 0x{:x} | {}]", self.start, self.end, self.ops)

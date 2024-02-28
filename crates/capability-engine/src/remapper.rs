@@ -1,9 +1,9 @@
 //! Remapper
 //!
 //! The remapper is not part of the capa-engine, but a wrapper that can be used to keep trap of
-//! virtual addresses for platform such as x86 that needs to emulate secon-level page tables.
+//! virtual addresses for platform such as x86 that needs to emulate second-level page tables.
 
-use core::fmt;
+use core::{cmp, fmt};
 
 use crate::region::{MemoryPermission, PermissionIterator};
 use crate::{GenArena, Handle, MemOps};
@@ -27,7 +27,8 @@ pub struct Mapping {
     pub ops: MemOps,
 }
 
-struct Segment {
+#[derive(Clone)]
+pub struct Segment {
     /// Host Physical Address
     hpa: usize,
     /// Guest Physical Address
@@ -50,6 +51,7 @@ const EMPTY_SEGMENT: Segment = Segment {
 
 impl Segment {
     /// Check if the two segment overlap on the host address space
+    #[allow(unused)]
     fn overlap(&self, other: &Segment) -> bool {
         if (other.hpa + other.size) > self.hpa && other.hpa < (self.hpa + other.size) {
             return true;
@@ -70,15 +72,17 @@ impl<const N: usize> Remapper<N> {
     pub fn remap<'a>(&'a self, regions: PermissionIterator<'a>) -> RemapIterator<'a, N> {
         RemapIterator {
             regions,
-            next_region: None,
-            remapper: self,
-            next_segment: self.head,
+            next_region_start: None,
+            segments: self.iter_segments(),
+            next_segment_start: None,
             cursor: 0,
+            ongoing_segment: None,
+            max_segment: None,
         }
     }
 
-    pub fn debug_iter(&self) -> RemapperDebugIterator<'_, N> {
-        RemapperDebugIterator {
+    pub fn iter_segments(&self) -> RemapperSegmentIterator<'_, N> {
+        RemapperSegmentIterator {
             remapper: self,
             next_segment: self.head,
         }
@@ -91,9 +95,6 @@ impl<const N: usize> Remapper<N> {
         size: usize,
         repeat: usize,
     ) -> Result<(), ()> {
-        // First unmap the range to ensure there is no overlap
-        self.unmap_range(hpa, size)?;
-
         let new_segment = self
             .segments
             .allocate(Segment {
@@ -112,10 +113,6 @@ impl<const N: usize> Remapper<N> {
 
         // Check if the new segment should become the new head
         if hpa < self.segments[head].hpa {
-            if self.segments[new_segment].overlap(&self.segments[head]) {
-                return Err(()); // No overlap allowed for now
-            }
-
             self.head = Some(new_segment);
             self.segments[new_segment].next = Some(head);
             return Ok(());
@@ -208,32 +205,173 @@ impl<const N: usize> Remapper<N> {
 #[derive(Clone)]
 pub struct RemapIterator<'a, const N: usize> {
     regions: PermissionIterator<'a>,
-    next_region: Option<MemoryPermission>,
-    remapper: &'a Remapper<N>,
-    next_segment: Option<Handle<Segment>>,
+    segments: RemapperSegmentIterator<'a, N>,
     cursor: usize,
+    next_region_start: Option<usize>,
+    next_segment_start: Option<usize>,
+    max_segment: Option<usize>,
+    ongoing_segment: Option<SingleSegmentIterator<'a>>,
 }
 
 impl<'a, const N: usize> Iterator for RemapIterator<'a, N> {
     type Item = Mapping;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // Retrieve the current region
-        let region = match self.next_region {
-            Some(region) => region,
-            None => {
-                if let Some(region) = self.regions.next() {
-                    // Move to next region
-                    self.next_region = Some(region);
-                    region
-                } else {
-                    // No more region to process
-                    return None;
+        // First, if there is an ongoing segment being remapped, continue
+        if let Some(ongoing_segment) = &mut self.ongoing_segment {
+            match ongoing_segment.next() {
+                Some(mapping) => {
+                    return Some(mapping);
+                }
+                None => {
+                    self.ongoing_segment = None;
                 }
             }
+        }
+
+        // Update next region and segment start, if needed
+        if self.next_region_start.is_none() {
+            self.next_region_start = self.regions.clone().next().map(|region| region.start);
+        }
+        if self.next_segment_start.is_none() {
+            self.next_segment_start = self.segments.clone().next().map(|segment| segment.hpa);
+        }
+
+        match (self.next_segment_start, self.next_region_start) {
+            (None, None) => {
+                // Nothing more to process
+                return None;
+            }
+            (Some(_), None) => {
+                // There are more segments but no more regions
+                return None;
+            }
+            (None, Some(next_region)) => {
+                // There are only regions left
+                let region = self.regions.next().unwrap();
+                let max_segment = self.max_segment.unwrap_or(0);
+                self.next_region_start = None;
+
+                // Skip empty regions
+                if self.cursor == region.end {
+                    return self.next();
+                }
+
+                assert!(self.cursor <= next_region);
+                assert!(self.cursor < region.end);
+                let cursor = cmp::max(self.cursor, region.start);
+                self.cursor = region.end;
+
+                if max_segment >= region.end {
+                    // Skip this region, already covered
+                    return self.next();
+                }
+                let start = cmp::max(cursor, max_segment);
+
+                let mapping = Mapping {
+                    hpa: start,
+                    gpa: start,
+                    size: region.end - start,
+                    repeat: 1,
+                    ops: region.ops,
+                };
+                return Some(mapping);
+            }
+            (Some(next_segment), Some(next_region)) => {
+                assert!(self.cursor <= next_region);
+                assert!(self.cursor <= next_segment);
+
+                if next_segment <= next_region {
+                    // If a segment comes first, build a segment remapper and retry
+                    self.cursor = next_segment;
+                    let segment = self.segments.next().unwrap();
+                    self.next_segment_start = None;
+                    self.max_segment = Some(cmp::max(
+                        self.max_segment.unwrap_or(0),
+                        segment.hpa + segment.size,
+                    ));
+                    self.ongoing_segment = Some(SingleSegmentIterator {
+                        regions: self.regions.clone(),
+                        next_region: None,
+                        cursor: self.cursor,
+                        segment: segment.clone(),
+                    });
+                    return self.next();
+                } else {
+                    // A region comes first, we emit a mapping if no segment covered it
+                    let region = self.regions.clone().next().unwrap();
+                    let max_segment = self.max_segment.unwrap_or(0);
+                    let mapping_end = cmp::min(region.end, next_segment);
+                    let cursor = cmp::max(region.start, self.cursor);
+                    let cursor = cmp::min(mapping_end, cmp::max(max_segment, cursor));
+
+                    // Move cursor and consume region if needed
+                    self.cursor = mapping_end;
+                    if mapping_end == region.end {
+                        self.next_region_start = None;
+                        self.regions.next();
+                    } else {
+                        self.next_region_start = Some(mapping_end);
+                    }
+
+                    if cursor >= max_segment && cursor < mapping_end {
+                        // Emit a mapping
+                        assert_ne!(cursor, mapping_end);
+                        let mapping = Mapping {
+                            hpa: cursor,
+                            gpa: cursor,
+                            size: mapping_end - cursor,
+                            repeat: 1,
+                            ops: region.ops,
+                        };
+
+                        return Some(mapping);
+                    } else {
+                        // Otherwise move on to next iteration
+                        return self.next();
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+struct SingleSegmentIterator<'a> {
+    regions: PermissionIterator<'a>,
+    next_region: Option<MemoryPermission>,
+    cursor: usize,
+    segment: Segment,
+}
+
+impl<'a> SingleSegmentIterator<'a> {
+    fn next(&mut self) -> Option<Mapping> {
+        // Retrieve the current region and segment
+        let segment = &self.segment;
+        let mut next_region = self.next_region;
+        if next_region.is_none() {
+            next_region = self.regions.next();
+        }
+        loop {
+            match next_region {
+                Some(region) if region.end <= segment.hpa => {
+                    // Move to next region
+                    next_region = self.regions.next();
+                }
+                _ => break,
+            }
+        }
+        let Some(region) = next_region else {
+            if self.cursor <= segment.hpa + segment.size {
+                self.cursor = segment.hpa + segment.size;
+            }
+            return None;
         };
 
         // Move cursor
+        if self.cursor < segment.hpa {
+            self.cursor = segment.hpa;
+        }
         if self.cursor < region.start {
             self.cursor = region.start;
         } else if self.cursor == region.end {
@@ -241,90 +379,46 @@ impl<'a, const N: usize> Iterator for RemapIterator<'a, N> {
             self.next_region = None;
             return self.next();
         }
+
         assert!(self.cursor >= region.start);
         assert!(self.cursor < region.start + region.size());
+        assert!(self.cursor >= segment.hpa);
 
-        // Move to next segment, if any
-        while let Some(segment) = self.next_segment {
-            let segment = &self.remapper.segments[segment];
-            if segment.hpa + segment.size <= self.cursor {
-                self.next_segment = segment.next;
-            } else {
-                break;
-            }
+        // Check if we reached the end of the segment
+        if self.cursor >= segment.hpa + segment.size {
+            return None;
         }
 
-        match self.next_segment {
-            Some(segment) if self.remapper.segments[segment].hpa <= self.cursor => {
-                // We found a segment!
-                let segment = &self.remapper.segments[segment];
-                let gpa_offset = self.cursor - segment.hpa;
-                let next_cusor = core::cmp::min(segment.hpa + segment.size, region.end);
-                let mapping = Mapping {
-                    hpa: self.cursor,
-                    gpa: segment.gpa + gpa_offset,
-                    size: next_cusor - self.cursor,
-                    repeat: segment.repeat,
-                    ops: region.ops,
-                };
-                self.cursor = next_cusor;
-                Some(mapping)
-            }
-            _ => {
-                // No remapping for this region
-                let end = if let Some(segment) = self.next_segment {
-                    let segment_start = self.remapper.segments[segment].hpa;
-                    core::cmp::min(region.end, segment_start)
-                } else {
-                    region.end
-                };
-                let hpa = self.cursor;
-                let size = end - hpa;
-                self.cursor = end;
-                Some(Mapping {
-                    hpa,
-                    gpa: hpa,
-                    size,
-                    repeat: 1,
-                    ops: region.ops,
-                })
-            }
-        }
+        // Otherwise produce the next mapping and update the cursor
+        let gpa_offset = self.cursor - segment.hpa;
+        let next_cusor = core::cmp::min(segment.hpa + segment.size, region.end);
+        let mapping = Mapping {
+            hpa: self.cursor,
+            gpa: segment.gpa + gpa_offset,
+            size: next_cusor - self.cursor,
+            repeat: segment.repeat,
+            ops: region.ops,
+        };
+        self.cursor = next_cusor;
+        Some(mapping)
     }
 }
 
-/// An iterator over the remapper segments, mostly used for debugging.
+/// An iterator over the remapper segments.
 #[derive(Clone)]
-pub struct RemapperDebugIterator<'a, const N: usize> {
+pub struct RemapperSegmentIterator<'a, const N: usize> {
     remapper: &'a Remapper<N>,
     next_segment: Option<Handle<Segment>>,
 }
 
-#[derive(Debug)]
-pub struct DebugSegment {
-    /// Host Physical Address
-    hpa: usize,
-    /// Guest Physical Address
-    gpa: usize,
-    /// Size of the segment to remap
-    size: usize,
-    /// Number of repetitions
-    repeat: usize,
-}
-
-impl<'a, const N: usize> Iterator for RemapperDebugIterator<'a, N> {
-    type Item = DebugSegment;
+impl<'a, const N: usize> Iterator for RemapperSegmentIterator<'a, N> {
+    type Item = &'a Segment;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(next) = self.next_segment {
             let segment = &self.remapper.segments[next];
             self.next_segment = segment.next;
-            Some(DebugSegment {
-                hpa: segment.hpa,
-                gpa: segment.gpa,
-                size: segment.size,
-                repeat: segment.repeat,
-            })
+            Some(segment)
         } else {
             None
         }
@@ -508,7 +602,13 @@ mod tests {
         remapper.map_range(0x10, 0x100, 0x30, 1).unwrap();
         remapper.map_range(0x30, 0x50, 0x10, 1).unwrap();
         snap(
-            "{[0x10, 0x30 at 0x100, rep 1 | RWXS] -> [0x30, 0x40 at 0x50, rep 1 | RWXS]}",
+            "{[0x10, 0x40 at 0x100, rep 1] -> [0x30, 0x40 at 0x50, rep 1]}",
+            remapper.iter_segments(),
+        );
+        snap(
+            // Note: here for some reason the tracker do not properly merge the two contiguous
+            // regions. We should figure that out at some point and optimize the tracker.
+            "{[0x10, 0x30 at 0x100, rep 1 | RWXS] -> [0x30, 0x40 at 0x120, rep 1 | RWXS] -> [0x30, 0x40 at 0x50, rep 1 | RWXS]}",
             &remapper.remap(tracker.permissions(&pool)),
         );
     }
@@ -533,7 +633,7 @@ mod tests {
 
         remapper.map_range(0x10, 0x300, 0x30, 1).unwrap();
         snap(
-            "{[0x10, 0x40 at 0x300, rep 1 | RWXS]}",
+            "{[0x10, 0x40 at 0x300, rep 1 | RWXS] -> [0x20, 0x30 at 0x100, rep 1 | RWXS] -> [0x30, 0x40 at 0x200, rep 1 | RWXS]}",
             &remapper.remap(tracker.permissions(&pool)),
         );
     }
@@ -582,7 +682,7 @@ mod tests {
     }
 
     #[test]
-    fn current_bug() {
+    fn split_region() {
         let mut pool = TrackerPool::new([EMPTY_REGION; NB_TRACKER]);
         let mut tracker = RegionTracker::new();
         let mut remapper: Remapper<32> = Remapper::new();
@@ -600,8 +700,7 @@ mod tests {
             .map_range(0x12fcd6000, 0xe0000, 0x20000, 1)
             .unwrap();
         snap("{[0x12fcb6000, 0x12fcd6000 | 1 (1 - 1 - 1 - 1)] -> [0x12fcd6000, 0x12fcf6000 | 2 (2 - 2 - 2 - 2)]}", &tracker.iter(&pool));
-
-        snap("{[0x12fcb6000, 0x12fcf6000 at 0xfffc0000, rep 1] -> [0x12fcd6000, 0x12fcf6000 at 0xe0000, rep 1]}", remapper.debug_iter());
+        snap("{[0x12fcb6000, 0x12fcf6000 at 0xfffc0000, rep 1] -> [0x12fcd6000, 0x12fcf6000 at 0xe0000, rep 1]}", remapper.iter_segments());
     }
 
     #[test]
@@ -609,14 +708,94 @@ mod tests {
         let mut remapper: Remapper<32> = Remapper::new();
 
         remapper.map_range(0x10, 0x100, 0x20, 2).unwrap();
-        snap("{[0x10, 0x30 at 0x100, rep 2]}", &remapper.debug_iter());
+        snap("{[0x10, 0x30 at 0x100, rep 2]}", &remapper.iter_segments());
         remapper.map_range(0x30, 0x200, 0x20, 1).unwrap();
         snap(
             "{[0x10, 0x30 at 0x100, rep 2] -> [0x30, 0x50 at 0x200, rep 1]}",
-            &remapper.debug_iter(),
+            &remapper.iter_segments(),
         );
         remapper.map_range(0x80, 0x100, 0x20, 1).unwrap();
-        snap("{[0x10, 0x30 at 0x100, rep 2] -> [0x30, 0x50 at 0x200, rep 1] -> [0x80, 0xa0 at 0x100, rep 1]}", &remapper.debug_iter());
+        snap("{[0x10, 0x30 at 0x100, rep 2] -> [0x30, 0x50 at 0x200, rep 1] -> [0x80, 0xa0 at 0x100, rep 1]}", &remapper.iter_segments());
+    }
+
+    #[test]
+    fn single_segment_iterator() {
+        let mut pool = TrackerPool::new([EMPTY_REGION; NB_TRACKER]);
+        let mut tracker = RegionTracker::new();
+
+        // Create a single region
+        tracker
+            .add_region(0x30, 0x60, MEMOPS_ALL, &mut pool)
+            .unwrap();
+        snap("{[0x30, 0x60 | 1 (1 - 1 - 1 - 1)]}", &tracker.iter(&pool));
+
+        let iterator = SingleSegmentIterator {
+            regions: tracker.permissions(&pool),
+            next_region: None,
+            cursor: 0,
+            segment: dummy_segment(0x10, 0x100, 0x10, 1),
+        };
+        snap("", iterator);
+
+        let iterator = SingleSegmentIterator {
+            regions: tracker.permissions(&pool),
+            next_region: None,
+            cursor: 0,
+            segment: dummy_segment(0x70, 0x100, 0x10, 1),
+        };
+        snap("", iterator);
+
+        let iterator = SingleSegmentIterator {
+            regions: tracker.permissions(&pool),
+            next_region: None,
+            cursor: 0,
+            segment: dummy_segment(0x20, 0x100, 0x20, 1),
+        };
+        snap("[0x30, 0x40 at 0x110, rep 1 | RWXS]", iterator);
+
+        let iterator = SingleSegmentIterator {
+            regions: tracker.permissions(&pool),
+            next_region: None,
+            cursor: 0,
+            segment: dummy_segment(0x50, 0x100, 0x20, 1),
+        };
+        snap("[0x50, 0x60 at 0x100, rep 1 | RWXS]", iterator);
+
+        let iterator = SingleSegmentIterator {
+            regions: tracker.permissions(&pool),
+            next_region: None,
+            cursor: 0,
+            segment: dummy_segment(0x40, 0x100, 0x10, 1),
+        };
+        snap("[0x40, 0x50 at 0x100, rep 1 | RWXS]", iterator);
+
+        let iterator = SingleSegmentIterator {
+            regions: tracker.permissions(&pool),
+            next_region: None,
+            cursor: 0,
+            segment: dummy_segment(0x20, 0x100, 0x50, 1),
+        };
+        snap("[0x30, 0x60 at 0x110, rep 1 | RWXS]", iterator);
+
+        // Let's experiment with multiple regions now
+        tracker
+            .add_region(0x70, 0x80, MEMOPS_ALL, &mut pool)
+            .unwrap();
+        snap(
+            "{[0x30, 0x60 | 1 (1 - 1 - 1 - 1)] -> [0x70, 0x80 | 1 (1 - 1 - 1 - 1)]}",
+            &tracker.iter(&pool),
+        );
+
+        let iterator = SingleSegmentIterator {
+            regions: tracker.permissions(&pool),
+            next_region: None,
+            cursor: 0,
+            segment: dummy_segment(0x20, 0x100, 0x80, 1),
+        };
+        snap(
+            "[0x30, 0x60 at 0x110, rep 1 | RWXS] -> [0x70, 0x80 at 0x150, rep 1 | RWXS]",
+            iterator,
+        );
     }
 }
 
@@ -646,7 +825,7 @@ impl<'a, const N: usize> fmt::Display for RemapIterator<'a, N> {
     }
 }
 
-impl<'a, const N: usize> fmt::Display for RemapperDebugIterator<'a, N> {
+impl<'a, const N: usize> fmt::Display for RemapperSegmentIterator<'a, N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut first = true;
         write!(f, "{{")?;
@@ -666,5 +845,35 @@ impl<'a, const N: usize> fmt::Display for RemapperDebugIterator<'a, N> {
             )?;
         }
         write!(f, "}}")
+    }
+}
+
+impl<'a> fmt::Display for SingleSegmentIterator<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first = true;
+        let mut iter = self.clone();
+        loop {
+            let next = iter.next();
+            let mapping = match next {
+                Some(mapping) => mapping,
+                None => {
+                    return Ok(());
+                }
+            };
+            if first {
+                first = false;
+            } else {
+                write!(f, " -> ")?;
+            }
+            write!(
+                f,
+                "[0x{:x}, 0x{:x} at 0x{:x}, rep {} | {}]",
+                mapping.hpa,
+                mapping.hpa + mapping.size,
+                mapping.gpa,
+                mapping.repeat,
+                mapping.ops,
+            )?;
+        }
     }
 }
