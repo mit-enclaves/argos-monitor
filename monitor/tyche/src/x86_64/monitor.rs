@@ -530,9 +530,7 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
                     );
                     // Push TlbShootdown directly into the per-core queue
                     for core in BitmapIterator::new(core_map) {
-                        if core_id != core {
-                            push_core_update(core);
-                        }
+                        push_core_update(core);
                     }
 
                     // After we have pushed all TlbShootdown updates to its per cpu CORE_UPDATES, we
