@@ -36,21 +36,16 @@ error() {
 }
 
 error_part3() {
-  echo "Failed to mount on sdb2, try sdb3"
+  echo "Failed to mount"
   umount /newroot
-  mknod /dev/sdb3 b 8 19
-  mount /dev/sdb3 /newroot || error
 }
 ##
 ### Install disk
-### We have a disk B with 2 partitions for now
-mknod /dev/sdb  b 8 16
-mknod /dev/sdb1 b 8 17
-mknod /dev/sdb2 b 8 18
+mknod /dev/nvme0n1p6 b 259 6
 ###
 #### Create new root
 mkdir /newroot
-mount /dev/sdb2 /newroot || error_part3
+mount /dev/nvme0n1p6 /newroot || error_part3
 ls /newroot/sbin || error_part3
 ###
 #### Switch root
