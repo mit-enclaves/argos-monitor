@@ -58,8 +58,8 @@ impl Guest for Linux {
             .expect("Failed to load guest");
 
         // Setup I/O MMU
-        if let Some(iommus) = &acpi.iommu {
-            manifest.iommu = iommus[0].base_address.as_u64();
+        if let Some(_) = &acpi.iommu {
+            manifest.iommu = 0;
         }
 
         // Build the boot params
