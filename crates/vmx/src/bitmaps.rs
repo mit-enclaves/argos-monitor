@@ -334,6 +334,14 @@ bitflags! {
         const SUPPRESS_VE = 1 << 63;
     }
 
+    pub struct EptMemoryType: u64 {
+        const UC = (0 << 3);
+        const WC = (1 << 3);
+        const WT = (4 << 3);
+        const WP = (5 << 3);
+        const WB = (6 << 3);
+    }
+
     /// The RFLAGS register.
     pub struct RFlags: u64 {
         /// Processor feature identification flag.

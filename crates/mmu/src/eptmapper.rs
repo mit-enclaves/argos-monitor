@@ -1,7 +1,7 @@
 //! EPT mapper implementation
 
 use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
-use vmx::bitmaps::EptEntryFlags;
+use vmx::bitmaps::{EptEntryFlags, EptMemoryType};
 use vmx::ept::{GIANT_PAGE_SIZE, HUGE_PAGE_SIZE, PAGE_SIZE};
 
 use crate::frame_allocator::FrameAllocator;
@@ -112,7 +112,10 @@ impl EptMapper {
                         if (addr.as_usize() + GIANT_PAGE_SIZE <= end)
                             && (hphys % GIANT_PAGE_SIZE == 0)
                         {
-                            *entry = hphys as u64 | EptEntryFlags::PAGE.bits() | prot.bits();
+                            *entry = hphys as u64
+                                | EptEntryFlags::PAGE.bits()
+                                | prot.bits()
+                                | EptMemoryType::WB.bits();
                             return WalkNext::Leaf;
                         }
                     }
@@ -120,13 +123,16 @@ impl EptMapper {
                         if (addr.as_usize() + HUGE_PAGE_SIZE <= end)
                             && (hphys % HUGE_PAGE_SIZE == 0)
                         {
-                            *entry = hphys as u64 | EptEntryFlags::PAGE.bits() | prot.bits();
+                            *entry = hphys as u64
+                                | EptEntryFlags::PAGE.bits()
+                                | prot.bits()
+                                | EptMemoryType::WB.bits();
                             return WalkNext::Leaf;
                         }
                     }
                     if level == Level::L1 {
                         assert!(hphys % PAGE_SIZE == 0);
-                        *entry = hphys as u64 | prot.bits();
+                        *entry = hphys as u64 | prot.bits() | EptMemoryType::WB.bits();
                         return WalkNext::Leaf;
                     }
                     let frame = allocator
