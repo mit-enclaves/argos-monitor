@@ -4,7 +4,7 @@ use core::arch::x86_64::_rdtsc;
 use core::sync::atomic::*;
 
 use acpi::platform::interrupt::InterruptModel;
-use acpi::platform::{PlatformInfo, Processor};
+use acpi::platform::{PlatformInfo, Processor, ProcessorState};
 use mmu::{PtFlag, PtMapper, RangeAllocator};
 use x86::apic::{ApicControl, ApicId};
 use x86_64::instructions::tlb;
@@ -116,7 +116,6 @@ unsafe fn restore_code_section(backup_frame: vmx::Frame) {
 }
 
 unsafe fn allocate_stack_section(
-    _cpuid: u8, // seems not important as the allocation is random...
     stack_allocator: &impl RangeAllocator,
     mapper: &mut PtMapper<HostPhysAddr, HostVirtAddr>,
 ) {
@@ -170,33 +169,38 @@ pub unsafe fn boot(
     let backup_frame = allocate_code_section(stage1_allocator, pt_mapper);
 
     // Intel MP Spec B.4: Universal Start-up Algorithm
-    for id in 1..(ap.len() + 1) as u8 {
-        allocate_stack_section(id, stage1_allocator, pt_mapper);
-        let apic_id = ApicId::XApic(id);
+    ap.iter().for_each(|cpu| {
+        if cpu.state == ProcessorState::Disabled {
+            log::error!("AP {:x?} is disabled, skip...", cpu);
+        } else {
+            log::info!("Waking up AP: {:x?}", cpu);
+            assert!(CPU_STATUS[cpu.local_apic_id as usize].load(Ordering::SeqCst) == false);
 
-        assert!(CPU_STATUS[id as usize].load(Ordering::SeqCst) == false);
+            allocate_stack_section(stage1_allocator, pt_mapper);
+            let apic_id = ApicId::XApic(cpu.local_apic_id as u8);
 
-        // BSP sends AP an INIT IPI (Level Interrupt)
-        lapic.ipi_init(apic_id);
-        spin(200);
-        lapic.ipi_init_deassert();
-        // BSP delays (10ms)
-        spin(10_000);
-        // BSP sends AP a STARTUP IPI (1st try), AP should start executing at 000VV000h
-        lapic.ipi_startup(apic_id, START_PAGE);
-        // BSP delays (200us)
-        spin(200);
-        // BSP sends AP a STARTUP IPI (2nd try)
-        // lapic.ipi_startup(apic_id, START_PAGE);
-        // BSP delays (200us)
-        spin(200);
-        // Wait for AP to startup
-        spin(20000);
-        // BSP verifies synchronization with executing AP
-        while !CPU_STATUS[id as usize].load(Ordering::SeqCst) {
-            core::hint::spin_loop();
+            // BSP sends AP an INIT IPI (Level Interrupt)
+            lapic.ipi_init(apic_id);
+            spin(200);
+            lapic.ipi_init_deassert();
+            // BSP delays (10ms)
+            spin(10_000);
+            // BSP sends AP a STARTUP IPI (1st try), AP should start executing at 000VV000h
+            lapic.ipi_startup(apic_id, START_PAGE);
+            // BSP delays (200us)
+            spin(200);
+            // BSP sends AP a STARTUP IPI (2nd try)
+            // lapic.ipi_startup(apic_id, START_PAGE);
+            // BSP delays (200us)
+            spin(200);
+            // Wait for AP to startup
+            spin(20000);
+            // BSP verifies synchronization with executing AP
+            while !CPU_STATUS[cpu.local_apic_id as usize].load(Ordering::SeqCst) {
+                core::hint::spin_loop();
+            }
         }
-    }
+    });
 
     restore_code_section(backup_frame);
     cpu::set_cores(ap.len() + 1);
