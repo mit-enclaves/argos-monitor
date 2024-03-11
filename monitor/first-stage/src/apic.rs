@@ -31,7 +31,11 @@ pub fn allocate(
         HostVirtAddr::new(lapic_frame.virt_addr as usize),
         lapic_frame.phys_addr,
         0x1000,
-        PtFlag::WRITE | PtFlag::PRESENT | PtFlag::USER | PtFlag::PAGE_CACHE_DISABLE,
+        PtFlag::WRITE
+            | PtFlag::PRESENT
+            | PtFlag::USER
+            | PtFlag::PAGE_CACHE_DISABLE
+            | PtFlag::PAGE_WRITE_THROUGH,
     );
 }
 
