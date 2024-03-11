@@ -115,7 +115,8 @@ impl EptMapper {
                             *entry = hphys as u64
                                 | EptEntryFlags::PAGE.bits()
                                 | prot.bits()
-                                | EptMemoryType::WB.bits();
+                                | EptMemoryType::WB.bits()
+                                | (1 << 7);
                             return WalkNext::Leaf;
                         }
                     }
