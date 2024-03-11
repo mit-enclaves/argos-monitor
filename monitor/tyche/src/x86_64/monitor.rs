@@ -861,12 +861,14 @@ fn update_domain_iopt(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Cap
     //               context table, instead of reallocating the whole root table
     // Remap the DMA region on IOMMU
     let mut iommu = IOMMU.lock();
-    let root_addr: HostPhysAddr = vtd::setup_iommu_context(iopt_mapper.get_root(), allocator);
-    iommu.set_root_table_addr(root_addr.as_u64() | (0b00 << 10)); // Set legacy mode
-    iommu.update_root_table_addr();
-    iommu.enable_translation();
-    log::info!("I/O MMU: {:?}", iommu.get_global_status());
-    log::warn!("I/O MMU Fault: {:?}", iommu.get_fault_status());
+    if iommu.get_addr() as usize != 0 {
+        let root_addr: HostPhysAddr = vtd::setup_iommu_context(iopt_mapper.get_root(), allocator);
+        iommu.set_root_table_addr(root_addr.as_u64() | (0b00 << 10)); // Set legacy mode
+        iommu.update_root_table_addr();
+        iommu.enable_translation();
+        log::info!("I/O MMU: {:?}", iommu.get_global_status());
+        log::warn!("I/O MMU Fault: {:?}", iommu.get_fault_status());
+    }
 
     false
 }
