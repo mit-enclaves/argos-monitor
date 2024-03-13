@@ -145,9 +145,9 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         asm!("csrr {}, satp", out(reg)satp);
     }
 
-    log::debug!("###### TRAP FROM HART {} ######", hartid);
+    log::trace!("###### TRAP FROM HART {} ######", hartid);
 
-    log::debug!(
+    log::trace!(
         "mcause {:x}, mepc {:x} mstatus {:x} mtval {:x} mie {:x} mip {:x} mideleg {:x} ra {:x} a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x} satp: {:x}",
         mcause,
         mepc,
@@ -223,7 +223,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         //Default - just print whatever information you can about the trap.
     }
 
-    log::debug!("Returning from Trap on Hart {}", hartid);
+    log::trace!("Returning from Trap on Hart {}", hartid);
     // Return to the next instruction after the trap.
     // i.e. mepc += 4
     // TODO: This shouldn't happen in case of switch.
@@ -452,7 +452,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                         1
                     }
                 };
-                reg_state.a1 = res;
+                reg_state.a0 = res;
             }
             calls::SELF_CONFIG => {
                 todo!("Implement that one only if needed.");
