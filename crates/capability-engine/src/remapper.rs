@@ -37,6 +37,8 @@ pub struct Segment {
     size: usize,
     /// Number of repetitions
     repeat: usize,
+    /// Tombstones mark segments that have been overriden in guest physical address space
+    is_tombstone: bool,
     /// Next segment in the linked list
     next: Option<Handle<Segment>>,
 }
@@ -46,6 +48,7 @@ const EMPTY_SEGMENT: Segment = Segment {
     gpa: 0,
     size: 0,
     repeat: 0,
+    is_tombstone: false,
     next: None,
 };
 
@@ -95,47 +98,15 @@ impl<const N: usize> Remapper<N> {
         size: usize,
         repeat: usize,
     ) -> Result<(), ()> {
-        let new_segment = self
-            .segments
-            .allocate(Segment {
-                hpa,
-                gpa,
-                size,
-                repeat,
-                next: None,
-            })
-            .ok_or(())?;
-        let Some(head) = self.head else {
-            // No segment yet, add as the head
-            self.head = Some(new_segment);
-            return Ok(());
-        };
-
-        // Check if the new segment should become the new head
-        if hpa < self.segments[head].hpa {
-            self.head = Some(new_segment);
-            self.segments[new_segment].next = Some(head);
-            return Ok(());
-        }
-
-        // Iterate segments
-        let mut prev = head;
-        let mut current = self.segments[head].next;
-
-        while let Some(cursor) = current {
-            if hpa < self.segments[cursor].hpa {
-                // Let's insert before
-                break;
-            }
-
-            current = self.segments[cursor].next;
-            prev = cursor;
-        }
-
-        self.segments[new_segment].next = self.segments[prev].next;
-        self.segments[prev].next = Some(new_segment);
-
-        Ok(())
+        self.unmap_gpa_range(gpa, size * repeat)?;
+        self.insert_segment(Segment {
+            hpa,
+            gpa,
+            size,
+            repeat,
+            is_tombstone: false,
+            next: None,
+        })
     }
 
     pub fn unmap_range(&mut self, hpa: usize, size: usize) -> Result<(), ()> {
@@ -176,6 +147,7 @@ impl<const N: usize> Remapper<N> {
                         gpa: segment.gpa + (end - segment_start),
                         size: segment_end - end,
                         repeat: segment.repeat,
+                        is_tombstone: false,
                         next: segment.next,
                     };
                     self.segments[cur].size = start - segment_start;
@@ -196,6 +168,128 @@ impl<const N: usize> Remapper<N> {
         }
 
         // Couldn't find segment, nothing to do
+        Ok(())
+    }
+
+    fn unmap_gpa_range(&mut self, gpa: usize, size: usize) -> Result<(), ()> {
+        let Some(head) = self.head else {
+            // No segment yet, nothing to do
+            return Ok(());
+        };
+        if size == 0 {
+            // Nothing to do
+            return Ok(());
+        }
+
+        let end = gpa + size;
+        let mut cursor = head;
+        let mut next;
+        loop {
+            let current = &self.segments[cursor];
+            let curr_gpa = current.gpa;
+            let curr_end = curr_gpa + current.size * current.repeat;
+            next = current.next;
+
+            if gpa <= curr_gpa && end > curr_gpa {
+                assert!(current.repeat == 1, "Repeat not yet supported");
+                // Need to disable the segment start
+                self.segments[cursor].is_tombstone = true;
+                if end < curr_end {
+                    // We also need to insert a new segment because the overlap is not complete
+                    let offset = end - curr_gpa;
+                    let current = &self.segments[cursor];
+                    let new_segment = Segment {
+                        hpa: current.hpa + offset,
+                        gpa: current.gpa + offset,
+                        size: current.size - offset,
+                        repeat: current.repeat,
+                        is_tombstone: false,
+                        next: None,
+                    };
+                    self.insert_segment(new_segment)?;
+                }
+            } else if gpa >= curr_gpa && gpa < curr_end {
+                assert!(current.repeat == 1, "Repeat not yet supported");
+                // We need to shorten the segment and insert a tombstone
+                let offset = gpa - curr_gpa;
+                let total_size = self.segments[cursor].size;
+                self.segments[cursor].size = offset;
+                let current = &self.segments[cursor];
+                // We then need to add either a single tombsone, ot a tombstone plus a new valid
+                // segment
+                if end >= curr_end {
+                    self.insert_segment(Segment {
+                        hpa: current.hpa + offset,
+                        gpa: current.gpa + offset,
+                        size: total_size - offset,
+                        repeat: current.repeat,
+                        is_tombstone: true,
+                        next: None,
+                    })?;
+                } else {
+                    assert!(end > curr_gpa && end < curr_end);
+                    let second_offset = end - curr_gpa;
+                    self.insert_segment(Segment {
+                        hpa: current.hpa + offset,
+                        gpa: curr_gpa + offset,
+                        size: second_offset - offset,
+                        repeat: current.repeat,
+                        is_tombstone: true,
+                        next: None,
+                    })?;
+                    let current = &self.segments[cursor];
+                    self.insert_segment(Segment {
+                        hpa: current.hpa + second_offset,
+                        gpa: current.gpa + second_offset,
+                        size: total_size - second_offset,
+                        repeat: current.repeat,
+                        is_tombstone: false,
+                        next: None,
+                    })?;
+                }
+            }
+
+            if let Some(next) = next {
+                cursor = next;
+            } else {
+                return Ok(());
+            }
+        }
+    }
+
+    fn insert_segment(&mut self, segment: Segment) -> Result<(), ()> {
+        let hpa = segment.hpa;
+        let new_segment = self.segments.allocate(segment).ok_or(())?;
+        let Some(head) = self.head else {
+            // No segment yet, add as the head
+            self.head = Some(new_segment);
+            return Ok(());
+        };
+
+        // Check if the new segment should become the new head
+        if hpa < self.segments[head].hpa {
+            self.head = Some(new_segment);
+            self.segments[new_segment].next = Some(head);
+            return Ok(());
+        }
+
+        // Iterate segments
+        let mut prev = head;
+        let mut current = self.segments[head].next;
+
+        while let Some(cursor) = current {
+            if hpa < self.segments[cursor].hpa {
+                // Let's insert before
+                break;
+            }
+
+            current = self.segments[cursor].next;
+            prev = cursor;
+        }
+
+        self.segments[new_segment].next = self.segments[prev].next;
+        self.segments[prev].next = Some(new_segment);
+
         Ok(())
     }
 }
@@ -349,7 +443,11 @@ impl<'a> SingleSegmentIterator<'a> {
         // Retrieve the current region and segment
         let segment = &self.segment;
         let mut next_region = self.next_region;
-        if next_region.is_none() {
+        if segment.is_tombstone {
+            // This is a tombstone, do not emmit a mapping
+            return None;
+        } else if next_region.is_none() {
+            // Move to the next region
             next_region = self.regions.next();
         }
         loop {
@@ -441,6 +539,7 @@ mod tests {
             gpa,
             size,
             repeat,
+            is_tombstone: false,
             next: None,
         }
     }
@@ -704,6 +803,38 @@ mod tests {
     }
 
     #[test]
+    fn gpa_overlap() {
+        let mut pool = TrackerPool::new([EMPTY_REGION; NB_TRACKER]);
+        let mut tracker = RegionTracker::new();
+        let mut remapper: Remapper<32> = Remapper::new();
+
+        tracker
+            .add_region(0x20, 0x80, MEMOPS_ALL, &mut pool)
+            .unwrap();
+        snap("{[0x20, 0x80 | 1 (1 - 1 - 1 - 1)]}", &tracker.iter(&pool));
+        remapper.map_range(0x20, 0x200, 0x60, 1).unwrap();
+        snap("{[0x20, 0x80 at 0x200, rep 1]}", remapper.iter_segments());
+        snap(
+            "{[0x20, 0x80 at 0x200, rep 1 | RWXS]}",
+            &remapper.remap(tracker.permissions(&pool)),
+        );
+
+        tracker
+            .add_region(0x80, 0xa0, MEMOPS_ALL, &mut pool)
+            .unwrap();
+        snap("{[0x20, 0xa0 | 1 (1 - 1 - 1 - 1)]}", &tracker.iter(&pool));
+        remapper.map_range(0x80, 0x220, 0x20, 1).unwrap();
+        snap(
+            "{[0x20, 0x40 at 0x200, rep 1] -> [0x40, 0x60 at 0x220, rep 1, †] -> [0x60, 0x80 at 0x240, rep 1] -> [0x80, 0xa0 at 0x220, rep 1]}",
+            remapper.iter_segments()
+        );
+        snap(
+            "{[0x20, 0x40 at 0x200, rep 1 | RWXS] -> [0x60, 0x80 at 0x240, rep 1 | RWXS] -> [0x80, 0xa0 at 0x220, rep 1 | RWXS]}",
+            &remapper.remap(tracker.permissions(&pool)),
+        );
+    }
+
+    #[test]
     fn debug_iterator() {
         let mut remapper: Remapper<32> = Remapper::new();
 
@@ -714,8 +845,8 @@ mod tests {
             "{[0x10, 0x30 at 0x100, rep 2] -> [0x30, 0x50 at 0x200, rep 1]}",
             &remapper.iter_segments(),
         );
-        remapper.map_range(0x80, 0x100, 0x20, 1).unwrap();
-        snap("{[0x10, 0x30 at 0x100, rep 2] -> [0x30, 0x50 at 0x200, rep 1] -> [0x80, 0xa0 at 0x100, rep 1]}", &remapper.iter_segments());
+        remapper.map_range(0x80, 0x300, 0x20, 1).unwrap();
+        snap("{[0x10, 0x30 at 0x100, rep 2] -> [0x30, 0x50 at 0x200, rep 1] -> [0x80, 0xa0 at 0x300, rep 1]}", &remapper.iter_segments());
     }
 
     #[test]
@@ -841,13 +972,15 @@ impl<'a, const N: usize> fmt::Display for RemapperSegmentIterator<'a, N> {
             } else {
                 write!(f, " -> ")?;
             }
+            let tombstone = if segment.is_tombstone { ", †" } else { "" };
             write!(
                 f,
-                "[0x{:x}, 0x{:x} at 0x{:x}, rep {}]",
+                "[0x{:x}, 0x{:x} at 0x{:x}, rep {}{}]",
                 segment.hpa,
                 segment.hpa + segment.size,
                 segment.gpa,
                 segment.repeat,
+                tombstone
             )?;
         }
         write!(f, "}}")
