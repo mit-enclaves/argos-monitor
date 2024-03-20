@@ -2,6 +2,10 @@ use std::fs::{read_to_string};
 use std::path::PathBuf;
 use hex::encode;
 use ring;
+<<<<<<< HEAD
+=======
+use untrusted;
+>>>>>>> Added TPM signature verification on Tychools's side
 
 
 use ed25519_compact::{PublicKey, Signature};
@@ -135,9 +139,15 @@ pub fn attest(src: &PathBuf, offset: u64, riscv_enabled: bool) -> (u128, u128) {
 const MSG_SZ: usize = 32 + 8;
 const PB_KEY_SZ: usize = 32;
 const ENC_DATA_SZ: usize = 64;
+<<<<<<< HEAD
 
 const TPM_SIG_SZ: usize = 384;
 const TPM_ATT_SZ: usize = 129;
+=======
+const TPM_SIG_SZ: usize = 384;
+const TPM_ATT_SZ: usize = 129;
+
+>>>>>>> Added TPM signature verification on Tychools's side
 const PB_KEY_SZ_1: usize = 31;
 const ENC_DATA_SZ_1: usize = 63;
 const TPM_SIG_SZ_1: usize = 383;
@@ -181,6 +191,7 @@ pub fn attestation_check(
     //read lines from file and make public key and encrypted data
     for line in read_to_string(src_att).unwrap().lines() {
         let num: u32 = line.parse().unwrap();
+
 
         //RISC-V parsing of enclave report (we have DRoT w/ OpenSBI)
         if riscv_enabled {
@@ -267,6 +278,7 @@ pub fn attestation_check(
     copy_arr(&mut message, &u128::to_le_bytes(hash_low), 0);
     copy_arr(&mut message, &u128::to_le_bytes(hash_high), 16);
     copy_arr(&mut message, &u64::to_le_bytes(nonce), 32);
+    log::trace!("The input to the sig verif is : {:?}", message);
     {
         let mut data_file = File::create("tychools_response.txt").expect("creation failed");
 
@@ -279,9 +291,13 @@ pub fn attestation_check(
                 .write(b"Message was not verified\n")
                 .expect("Write failed");
         }
-
+//@Alexandre: Please resolve the two conflicts here
+<<<<<<< HEAD
         if riscv_enabled {
         if tpm_sig_verified {
+=======
+        if let Ok(_t) = tpm_rsa_pkey.verify(&tpm_att_arr, &tpm_sig_arr) {
+>>>>>>> Added TPM signature verification on Tychools's side
             log::info!("TPM signature is verified!");
             data_file.write(b"TPM signature is verified").expect("Write failed");
         } else {
@@ -290,7 +306,10 @@ pub fn attestation_check(
                 .write(b"TPM signature  was not verified\n")
                 .expect("Write failed");
         }
+<<<<<<< HEAD
         }
+=======
+>>>>>>> Added TPM signature verification on Tychools's side
 
     }
 }
