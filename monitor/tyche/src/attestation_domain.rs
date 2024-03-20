@@ -122,21 +122,26 @@ pub fn attest_domain(
 ) -> Option<EnclaveReport> {
     if mode == 0 {
         let enc_hash = engine[current].get_hash();
+        log::info!("Tyche calculated the following hash: {:x}{:x}", enc_hash.low, enc_hash.high);
+
         let mut sign_data: [u8; ATTESTATION_DATA_SZ] = [0; ATTESTATION_DATA_SZ];
         enc_hash.to_byte_arr(&mut sign_data, 0);
         copy_array(&mut sign_data, &usize::to_le_bytes(nonce), 32);
+        log::info!("The input to the attestation is : {:?}", sign_data);
         let (pb_key, priv_key) = get_attestation_keys();
         let signed_enc_data = signature::sign_attestation_data(&sign_data, priv_key);
         let rep = EnclaveReport {
             public_key: pb_key,
             signed_enclave_data: signed_enc_data,
+            tpm_signature: TPM_HARDCODED_SIGNATURE,
+            tpm_modulus: TPM_HARDCODED_MODULUS,
+            tpm_attestation: TPM_HARDCODED_ATTESTATION,
         };
+        log::info!("Public key is : {:?}", pb_key);
+        log::info!("Signature  is : {:?}", signed_enc_data);
         engine.set_report(current, rep);
         Some(rep)
-    } else if mode == 1 {
-        engine[current].get_report()
     } else {
-        log::trace!("Wrong mode");
-        None
+        engine[current].get_report()
     }
 }
