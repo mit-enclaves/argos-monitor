@@ -474,7 +474,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                     reg_state.a0 = 0;
                     match arg_2{
                         0 => {
-                                reg_state.a1 = usize::from_le_bytes(
+                                reg_state.a1 = isize::from_le_bytes(
                                     report.public_key.as_slice()[0..8].try_into().unwrap(),
                                 );
                                 reg_state.a2 = usize::from_le_bytes(
@@ -498,7 +498,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                                 ) as usize;
                         },
                     1 => {
-                                reg_state.a1 = usize::from_le_bytes(
+                                reg_state.a1 = isize::from_le_bytes(
                                     report.signed_enclave_data.as_slice()[16..24]
                                         .try_into()
                                         .unwrap(),
@@ -532,7 +532,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                      2..=9 => {
                                 let mut offset : usize = (arg_2-2)*6*8;
                                 let mut upper_bound: usize = offset+8;
-                                reg_state.a1 = usize::from_le_bytes(
+                                reg_state.a1 = isize::from_le_bytes(
                                     report.tpm_signature.as_slice()[offset..upper_bound]
                                     .try_into()
                                     .unwrap(),
@@ -570,7 +570,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                         },
                     10..=17 => {
                                 let mut offset : usize  = (arg_2-10)*6*8;
-                                reg_state.a1 = usize::from_le_bytes(
+                                reg_state.a1 = isize::from_le_bytes(
                                     report.tpm_modulus.as_slice()[offset..offset+8]
                                     .try_into()
                                     .unwrap(),
@@ -608,7 +608,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                         },
                     18 | 19 => {
                                 let mut offset : usize  = (arg_2-18)*6*8;
-                                reg_state.a1 = usize::from_le_bytes(
+                                reg_state.a1 = isize::from_le_bytes(
                                     report.tpm_attestation.as_slice()[offset..offset+8]
                                     .try_into()
                                     .unwrap(),
@@ -645,7 +645,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                                 );
                         },
                     20 => {
-                                reg_state.a1 = usize::from_le_bytes(
+                                reg_state.a1 = isize::from_le_bytes(
                                     report.tpm_attestation.as_slice()[96..104]
                                     .try_into()
                                     .unwrap(),
@@ -680,7 +680,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                 //We consider we can request the size no matter whether the report exists yet or
                 //not.
                 reg_state.a0 = 0x0;
-                reg_state.a1 = ATTESTATION_TOTAL_SZ;
+                reg_state.a1 = ATTESTATION_TOTAL_SZ as isize;
             }
             _ => {
                 /*TODO: Invalid Tyche Call*/
