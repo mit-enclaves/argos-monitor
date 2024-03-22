@@ -22,7 +22,7 @@ typedef struct backend_info_t backend_info_t;
 // FSGSBASE: 16
 // OSXSAVE: 18
 // SMEP: 20
-#define DEFAULT_CR4 ((1U << 4) | (1U << 5) | (1U << 6) | (1U << 7) | (1U << 9) | (1U << 10) | (1U << 11) | (1U << 16) | (1U << 18) | (1U << 20))
+#define DEFAULT_CR4 ((1U << 4) | (1U << 5) | (1U << 6) | (1U << 7) | (1U << 9) | (1U << 10) | (1U << 16) | (1U << 18) | (1U << 20))
 
 // VMXE: 13
 #define DEFAULT_CR4_EXTRAS ((1 << 13))
