@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 spin = "0.5.2"
+riscv_utils = { path = "../riscv_utils/" }

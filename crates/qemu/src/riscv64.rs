@@ -1,26 +1,20 @@
 //! RISC-V 64 implementation
 
 use core::arch::asm;
-use core::fmt;
-use core::fmt::Write;
+//use core::fmt;
+//use core::fmt::Write;
 
 use riscv_utils::SERIAL_PORT_BASE_ADDRESS;
 use spin::Mutex;
 
-//#[cfg(not(feature = "visionfive2"))]
 use uart_16550::MmioSerialPort;
-
-//#[cfg(feature = "visionfive2")]
-//use uart8250::MmioUart8250; 
 
 use crate::ExitCode;
 
 /// Internal function used to print to stdout when running in Qemu.
 
-//#[cfg(not(feature = "visionfive2"))]
 pub fn _print(_args: fmt::Arguments) {
     static mut SERIAL_PORT: Option<Mutex<MmioSerialPort>> = None;
-
     unsafe {
         let serial_port = Mutex::new(MmioSerialPort::new(SERIAL_PORT_BASE_ADDRESS));
         let mut serial = serial_port.lock();
@@ -37,24 +31,6 @@ pub fn _print(_args: fmt::Arguments) {
         }
     }
 }
-
-/* #[cfg(feature = "visionfive2")]
-pub fn _print(_args: fmt::Arguments) {
-    static mut SERIAL_PORT: Option<MmioUart8250> = None;
-
-    unsafe {
-        let serial_port = MmioUart8250::new(SERIAL_PORT_BASE_ADDRESS);
-        serial_port.init(24000000, RV_VF2_UART_BAUD_RATE);
-        SERIAL_PORT = Some(serial_port);
-
-        if let Some(ref mut serial_port) = SERIAL_PORT {
-            serial_port
-                .write_fmt(_args)
-                .expect("Printing to serial failed");
-        }
-    }
-} */
-
 
 // —————————————————————————————— Exiting QEMU —————————————————————————————— //
 
