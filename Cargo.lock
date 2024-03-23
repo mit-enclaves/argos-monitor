@@ -802,6 +802,7 @@ dependencies = [
 name = "riscv_serial"
 version = "0.1.0"
 dependencies = [
+ "riscv_utils",
  "spin 0.5.2",
 ]
 

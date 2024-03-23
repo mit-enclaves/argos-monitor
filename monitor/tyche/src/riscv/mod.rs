@@ -26,7 +26,7 @@ pub enum BackendError {}
 pub fn launch_guest(hartid: usize, arg1: usize, next_addr: usize, next_mode: usize) {
     // 0. TODO: Sanity check for next_mode and misa-extension.
 
-    //println!("============= Launching Linux from Tyche =============");
+    println!("============= Launching Linux from Tyche =============");
 
     // 1. Update MSTATUS - MPP=01 (S-mode), and MPIE = 0.
     let mut mstatus: usize;
