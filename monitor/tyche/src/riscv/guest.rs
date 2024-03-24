@@ -9,7 +9,7 @@ use riscv_sbi::ipi::process_ipi;
 use riscv_sbi::sbi::EXT_IPI;
 use riscv_utils::{
     aclint_mtimer_set_mtimecmp, clear_mie_mtie, clear_mip_seip, RegisterState,
-    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, NUM_HARTS, TIMER_EVENT_TICK,
+    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, NUM_HARTS, TIMER_EVENT_TICK, system_opcode_insr,
 };
 use spin::Mutex;
 
@@ -17,6 +17,7 @@ use super::monitor;
 use crate::arch::cpuid;
 use crate::calls;
 use crate::riscv::monitor::apply_core_updates;
+use crate::println;
 
 const EMPTY_ACTIVE_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
 static ACTIVE_DOMAIN: [Mutex<Option<Handle<Domain>>>; NUM_HARTS] = [EMPTY_ACTIVE_DOMAIN; NUM_HARTS];
@@ -31,78 +32,73 @@ pub extern "C" fn machine_trap_handler() {
         asm!(
             "csrrw sp, mscratch, sp
         addi sp, sp, -34*8
-        sd ra, 0*8(sp)
-        sd a0, 1*8(sp)
-        sd a1, 2*8(sp)
-        sd a2, 3*8(sp)
-        sd a3, 4*8(sp)
-        sd a4, 5*8(sp)
-        sd a5, 6*8(sp)
-        sd a6, 7*8(sp)
-        sd a7, 8*8(sp)
-        sd t0, 9*8(sp)
-        sd t1, 10*8(sp)
-        sd t2, 11*8(sp)
-        sd t3, 12*8(sp)
-        sd t4, 13*8(sp)
-        sd t5, 14*8(sp)
-        sd t6, 15*8(sp)
-        sd zero, 16*8(sp)
-        sd gp, 17*8(sp)
-        sd tp, 18*8(sp)
-        sd s0, 19*8(sp)
-        sd s1, 20*8(sp)
-        sd s2, 21*8(sp)
-        sd s3, 22*8(sp)
-        sd s4, 23*8(sp)
-        sd s5, 24*8(sp)
-        sd s6, 25*8(sp)
-        sd s7, 26*8(sp)
-        sd s8, 27*8(sp)
-        sd s9, 28*8(sp)
-        sd s10, 29*8(sp)
-        sd s11, 30*8(sp)
-        //csrr t1, mepc 
-        //sd t1, 31*8(sp)
-        //csrr t1, mstatus
-        //sd t1, 32*8(sp)
+        sd zero, 0*8(sp)
+        sd ra, 1*8(sp)
+        sd zero, 2*8(sp)    //uninitialised sp 
+        sd gp, 3*8(sp)
+        sd tp, 4*8(sp)
+        sd t0, 5*8(sp)
+        sd t1, 6*8(sp)
+        sd t2, 7*8(sp)
+        sd s0, 8*8(sp)
+        sd s1, 9*8(sp)
+        sd a0, 10*8(sp)
+        sd a1, 11*8(sp)
+        sd a2, 12*8(sp)
+        sd a3, 13*8(sp)
+        sd a4, 14*8(sp)
+        sd a5, 15*8(sp)
+        sd a6, 16*8(sp)
+        sd a7, 17*8(sp)
+        sd s2, 18*8(sp)
+        sd s3, 19*8(sp)
+        sd s4, 20*8(sp)
+        sd s5, 21*8(sp)
+        sd s6, 22*8(sp)
+        sd s7, 23*8(sp)
+        sd s8, 24*8(sp)
+        sd s9, 25*8(sp)
+        sd s10, 26*8(sp)
+        sd s11, 27*8(sp)
+        sd t3, 28*8(sp)
+        sd t4, 29*8(sp)
+        sd t5, 30*8(sp)
+        sd t6, 31*8(sp)
         mv a0, sp      //arg to trap_handler
         auipc x1, 0x0
         addi x1, x1, 10
         j {trap_handler}
-        //ld t1, 31*8(sp)
-        //csrw mepc, t1
-        ld ra, 0*8(sp)
-        ld a0, 1*8(sp)
-        ld a1, 2*8(sp)
-        ld a2, 3*8(sp)
-        ld a3, 4*8(sp)
-        ld a4, 5*8(sp)
-        ld a5, 6*8(sp)
-        ld a6, 7*8(sp)
-        ld a7, 8*8(sp)
-        ld t0, 9*8(sp)
-        ld t1, 10*8(sp)
-        ld t2, 11*8(sp)
-        ld t3, 12*8(sp)
-        ld t4, 13*8(sp)
-        ld t5, 14*8(sp)
-        ld t6, 15*8(sp)
-        ld zero, 16*8(sp)
-        ld gp, 17*8(sp)
-        ld tp, 18*8(sp)
-        ld s0, 19*8(sp)
-        ld s1, 20*8(sp)
-        ld s2, 21*8(sp)
-        ld s3, 22*8(sp)
-        ld s4, 23*8(sp)
-        ld s5, 24*8(sp)
-        ld s6, 25*8(sp)
-        ld s7, 26*8(sp)
-        ld s8, 27*8(sp)
-        ld s9, 28*8(sp)
-        ld s10, 29*8(sp)
-        ld s11, 30*8(sp)
+        ld zero, 0*8(sp)
+        ld ra, 1*8(sp)
+        ld gp, 3*8(sp)
+        ld tp, 4*8(sp)
+        ld t0, 5*8(sp)
+        ld t1, 6*8(sp)
+        ld t2, 7*8(sp)
+        ld s0, 8*8(sp)
+        ld s1, 9*8(sp)
+        ld a0, 10*8(sp)
+        ld a1, 11*8(sp)
+        ld a2, 12*8(sp)
+        ld a3, 13*8(sp)
+        ld a4, 14*8(sp)
+        ld a5, 15*8(sp)
+        ld a6, 16*8(sp)
+        ld a7, 17*8(sp)
+        ld s2, 18*8(sp)
+        ld s3, 19*8(sp)
+        ld s4, 20*8(sp)
+        ld s5, 21*8(sp)
+        ld s6, 22*8(sp)
+        ld s7, 23*8(sp)
+        ld s8, 24*8(sp)
+        ld s9, 25*8(sp)
+        ld s10, 26*8(sp)
+        ld s11, 27*8(sp)
+        ld t3, 28*8(sp)
+        ld t4, 29*8(sp)
+        ld t5, 30*8(sp)
+        ld t6, 31*8(sp)
         addi sp, sp, 34*8
         csrrw sp, mscratch, sp
         mret",
@@ -150,10 +146,17 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         asm!("csrr {}, satp", out(reg)satp);
     }
 
+<<<<<<< HEAD
     log::trace!("###### TRAP FROM HART {} ######", hartid);
 
     log::trace!(
         "mcause {:x}, mepc {:x} mstatus {:x} mtval {:x} mie {:x} mip {:x} mideleg {:x} ra {:x} a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x} satp: {:x}",
+=======
+    println!("mepc: {:x}", mepc);
+
+    /* println!(
+        "Trap arguments: mcause {:x}, mepc {:x} mstatus {:x} mtval {:x} mie {:x} mip {:x} mideleg {:x} ra {:x} a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x} satp: {:x}",
+>>>>>>> 679fd01d (WIP: Added CSR read emulation - required for u-boot. The emulation works, but something is going wrong since u-boot never stops causing the trap (it causes the same trap quite a few times in opensbi too but moves on at some point).)
         mcause,
         mepc,
         mstatus,
@@ -171,7 +174,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         reg_state.a6,
         reg_state.a7,
         satp
-    );
+    ); */
 
     // Check which trap it is
     // mcause register holds the cause of the machine mode trap
@@ -198,7 +201,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             panic!("MEI");
         }
         mcause::ILLEGAL_INSTRUCTION => {
-            illegal_instruction_handler(mepc, mtval, mstatus, mip, mie);
+            illegal_instruction_handler(mepc, mstatus, mtval, reg_state);
         }
         mcause::ECALL_FROM_SMODE => {
             if reg_state.a7 == 0x5479636865 {
@@ -246,17 +249,40 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     }
 }
 
-pub fn illegal_instruction_handler(
-    mepc: usize,
-    mtval: usize,
-    mstatus: usize,
-    mip: usize,
-    mie: usize,
-) {
-    panic!(
-        "Illegal Instruction Trap! mepc: {:x} mtval: {:x} mstatus: {:x} mip: {:x} mie: {:x}",
-        mepc, mtval, mstatus, mip, mie
-    );
+pub fn illegal_instruction_handler(mepc: usize, mstatus: usize, mtval: usize, reg_state: &mut RegisterState) {
+    /* let mut mepc_instr_opcode: usize = 0;
+
+    // Read the instruction which caused the trap. (mepc points to the VA of this instruction).
+    // Need to set mprv before reading the instruction pointed to by mepc (to enable VA to PA
+    // translation in M-mode. Reset mprv once done.
+
+    let mut mprv_index: usize = 1 << mstatus::MPRV;
+
+    //clear_pmp();
+
+    unsafe {
+        asm!("csrs mstatus, {}", in(reg) mprv_index);
+        asm!("csrr a0, mepc");
+        asm!("lw a1, (a0)");
+        asm!("csrc mstatus, {}", in(reg) mprv_index);
+        asm!("mv {}, a1", out(reg) mepc_instr_opcode);
+    }
+
+    println!(
+        "Illegal instruction trap from {} mode, caused by instruction with opcode {:x}",
+        ((mstatus >> mstatus::MPP_LOW) & mstatus::MPP_MASK),
+        mepc_instr_opcode
+    ); */
+
+    if (mtval & 3) == 3 {
+        if ((mtval & 0x7c) >> 2) == 0x1c {
+            system_opcode_instr(mtval, mstatus, reg_state); 
+        } else {
+            panic!("Non-Truly Illegal Instruction Trap!");
+        }
+    } else {
+        panic!("Truly Illegal Instruction Trap!");
+    }
 }
 
 pub fn misaligned_load_handler(reg_state: &mut RegisterState) {

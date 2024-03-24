@@ -4,7 +4,8 @@ use core::fmt::Write;
 use core::{fmt, ptr}; 
 use spin::Mutex;
 use core::arch::asm;
-use riscv_utils::SERIAL_PORT_BASE_ADDRESS;
+
+pub const SERIAL_PORT_BASE_ADDRESS: usize = 0x1000_0000;
 
 //pub static WRITER: Mutex<Option<Writer>> = Mutex::new(None);
 pub static WRITER: Mutex<Writer> = Mutex::new(Writer::new(SERIAL_PORT_BASE_ADDRESS));

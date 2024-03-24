@@ -752,7 +752,6 @@ name = "qemu"
 version = "0.1.0"
 dependencies = [
  "riscv_serial",
- "riscv_utils",
  "spin 0.5.2",
  "uart_16550",
 ]
@@ -802,7 +801,6 @@ dependencies = [
 name = "riscv_serial"
 version = "0.1.0"
 dependencies = [
- "riscv_utils",
  "spin 0.5.2",
 ]
 
@@ -814,7 +812,12 @@ version = "0.1.0"
 name = "riscv_utils"
 version = "0.1.0"
 dependencies = [
+<<<<<<< HEAD
  "log",
+=======
+ "qemu",
+ "riscv_csrs",
+>>>>>>> 679fd01d (WIP: Added CSR read emulation - required for u-boot. The emulation works, but something is going wrong since u-boot never stops causing the trap (it causes the same trap quite a few times in opensbi too but moves on at some point).)
 ]
 
 [[package]]
