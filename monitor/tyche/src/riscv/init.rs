@@ -198,6 +198,7 @@ pub fn arch_entry_point(
     logger::init(log_level);
 
     arch::init();
+
     launch_guest(hartid, arg1, next_addr, next_mode);
     qemu::exit(qemu::ExitCode::Success); 
 }
