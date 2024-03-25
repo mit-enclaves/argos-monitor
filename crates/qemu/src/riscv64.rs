@@ -1,12 +1,11 @@
 //! RISC-V 64 implementation
 
 use core::arch::asm;
-//use core::fmt;
-//use core::fmt::Write;
+use core::fmt;
+use core::fmt::Write;
 
-use riscv_utils::SERIAL_PORT_BASE_ADDRESS;
 use spin::Mutex;
-
+pub const SERIAL_PORT_BASE_ADDRESS: usize = 0x1000_0000;
 use uart_16550::MmioSerialPort;
 
 use crate::ExitCode;
