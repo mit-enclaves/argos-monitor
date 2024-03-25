@@ -29,27 +29,7 @@ fn tyche_entry_point(hartid: usize, manifest: RVManifest) -> ! {
 
 #[cfg(all(target_arch = "riscv64"), feature = "visionfive2")]
 fn tyche_entry_point(hartid: u64, arg1: u64, next_addr: u64, next_mode: u64) -> ! {
-    //use riscv_utils::SERIAL_PORT_BASE_ADDRESS;
-    //use riscv_utils::{SERIAL_PORT_BASE_ADDRESS, RV_VF2_UART_BAUD_RATE};
-    //use tyche::riscv::launch_guest;
-   
-    //let writer = riscv_serial::Writer::new(SERIAL_PORT_BASE_ADDRESS);
-    //riscv_serial::init_print(writer);
-
-
-    //riscv_serial::_print(core::format_args!("Hello my name is Neelu!"));
-
-    //use uart8250::MmioUart8250; 
-
-    //static mut SERIAL_PORT: Option<MmioUart8250> = None; 
-
-    /*unsafe { 
-        let serial_port = MmioUart8250::new(SERIAL_PORT_BASE_ADDRESS);
-        serial_port.init(24000000, RV_VF2_UART_BAUD_RATE);
-        serial_port.write_byte(0x41);
-        serial_port.write_byte(0x42);
-    }*/
-
+    //If logging doesn't work ^ ^ try the following. Loaded in t0 is the serial port base address.    
     /* unsafe {
         asm!(
             "li t0, 0x10000000",
@@ -59,41 +39,10 @@ fn tyche_entry_point(hartid: u64, arg1: u64, next_addr: u64, next_mode: u64) -> 
             "sb t1, 0(t0)",
             "li t1, 0x43",
             "sb t1, 0(t0)",
-            "li t1, 0x44",
-            "sb t1, 0(t0)",
-            "li t1, 0x45",
-            "sb t1, 0(t0)",
-            "li t1, 0x46",
-            "sb t1, 0(t0)",
-            "li t1, 0x47",
-            "sb t1, 0(t0)",
-            "li t1, 0x48",
-            "sb t1, 0(t0)",
-            "li t1, 0x49",
-            "sb t1, 0(t0)",
-            "li t1, 0x4a",
-            "sb t1, 0(t0)",
-            "li t1, 0x4b",
-            "sb t1, 0(t0)",
-            "li t1, 0x4c",
-            "sb t1, 0(t0)",
         );
     } */
 
-    //riscv_serial::_print(core::format_args!("hello meri maata - \r\n"));
-
-    //println!("HELLO_WORLD");
-
-    //println!("============== HELLO FROM TYCHE ===============");
-
-    //println!("***********************************************");
-
-    //println!("neverhaveieverseenthiskindofthingman!");
-
-    //logger::init(LOG_LEVEL);
     arch::arch_entry_point(hartid, arg1, next_addr, next_mode, LOG_LEVEL);
-    //launch_guest(hartid, arg1, next_addr, next_mode);
-    //qemu::exit(qemu::ExitCode::Success); 
 }
 
 #[panic_handler]

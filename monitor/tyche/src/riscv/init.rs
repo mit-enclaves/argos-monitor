@@ -156,49 +156,28 @@ pub fn arch_entry_point(
     next_mode: u64,
     log_level: log::LevelFilter,
 ) -> ! {
-    /* unsafe {
-        asm!(
-            "li t0, 0x10000000",
-            "li t1, 0x41",
-            "sb t1, 0(t0)",
-        );
-    } 
-    //let writer = riscv_serial::Writer::new(SERIAL_PORT_BASE_ADDRESS);
     
-    unsafe {
-        asm!(
-            "li t0, 0x10000000",
-            "li t1, 0x42",
-            "sb t1, 0(t0)",
-        );
-    }
-
-    //riscv_serial::init_print(writer);
-
-    unsafe {
-        asm!(
-            "li t0, 0x10000000",
-            "li t1, 0x45",
-            "sb t1, 0(t0)",
-        );
-    }
- 
     logger::init(log_level);
-    
-    unsafe {
-        asm!(
-            "li t0, 0x10000000",
-            "li t1, 0x45",
-            "sb t1, 0(t0)",
-        );
-    } */
 
     println!("============= Hello from Second Stage =============");
 
-    logger::init(log_level);
+    /* monitor::init();
 
+    let mut domain = monitor::start_initial_domain_on_cpu();
+
+    log::info!("Initial domain is ready.");
+
+    // Switches mtvec to point to Tyche's handler, puts Tyche's stack pointer in mscratch, etc.  
     arch::init();
 
+    unsafe {
+        //Set the active domain.
+        guest::set_active_dom(domain);
+    }
+
+    monitor::do_debug(); */ 
+
+    arch::init();
     launch_guest(hartid, arg1, next_addr, next_mode);
     qemu::exit(qemu::ExitCode::Success); 
 }

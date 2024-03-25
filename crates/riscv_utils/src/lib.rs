@@ -8,7 +8,6 @@ use qemu::println;
 use riscv_csrs::mstatus;
 
 //uart base address
-pub const SERIAL_PORT_BASE_ADDRESS: usize = 0x1000_0000;
 pub const RV_VF2_UART_BAUD_RATE: usize = 115200;
 
 //SIFIVE TEST SYSCON
