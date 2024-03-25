@@ -30,7 +30,7 @@ static ACTIVE_DOMAIN: [Mutex<Option<Handle<Domain>>>; NUM_HARTS] = [EMPTY_ACTIVE
 pub extern "C" fn machine_trap_handler() {
     unsafe {
         asm!(
-            "csrrw sp, mscratch, sp
+        "csrrw sp, mscratch, sp
         addi sp, sp, -34*8
         sd zero, 0*8(sp)
         sd ra, 1*8(sp)
@@ -146,15 +146,27 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         asm!("csrr {}, satp", out(reg)satp);
     }
 
-<<<<<<< HEAD
     log::trace!("###### TRAP FROM HART {} ######", hartid);
 
-    log::trace!(
-        "mcause {:x}, mepc {:x} mstatus {:x} mtval {:x} mie {:x} mip {:x} mideleg {:x} ra {:x} a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x} satp: {:x}",
-=======
     println!("mepc: {:x}", mepc);
+    /* if(mepc == 0x4022e050) {
+        println!(
+            "Handling trap: a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x}  mepc {:x} mstatus {:x}",
+            reg_state.a0,
+            reg_state.a1,
+            reg_state.a2,
+            reg_state.a3,
+            reg_state.a4,
+            reg_state.a5,
+            reg_state.a6,
+            reg_state.a7,
+            mepc,
+            mstatus,
+        ); 
+    } */
 
-    /* println!(
+
+    /*println!(
         "Trap arguments: mcause {:x}, mepc {:x} mstatus {:x} mtval {:x} mie {:x} mip {:x} mideleg {:x} ra {:x} a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x} satp: {:x}",
 >>>>>>> 679fd01d (WIP: Added CSR read emulation - required for u-boot. The emulation works, but something is going wrong since u-boot never stops causing the trap (it causes the same trap quite a few times in opensbi too but moves on at some point).)
         mcause,
@@ -249,6 +261,22 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             asm!("addi t0, t0, 0x4");
             asm!("csrw mepc, t0");
         }
+    /* if(mepc == 0x4022e050) {
+        println!(
+            "Returning from trap: a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x}  mepc {:x} mstatus {:x}",
+            reg_state.a0,
+            reg_state.a1,
+            reg_state.a2,
+            reg_state.a3,
+            reg_state.a4,
+            reg_state.a5,
+            reg_state.a6,
+            reg_state.a7,
+            mepc,
+            mstatus,
+        ); 
+    } */
+
     }
 }
 
