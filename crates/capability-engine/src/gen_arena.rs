@@ -6,11 +6,6 @@ use core::ops::{Index, IndexMut};
 use super::free_list::{FreeList, FreeListIterator};
 use crate::CapaError;
 
-pub trait Cleanable {
-    /// Reset self to a known good default value.
-    fn clean(&mut self);
-}
-
 // ——————————————————————————— Generational Arena ——————————————————————————— //
 
 /// A generational arena.
@@ -46,34 +41,6 @@ impl<T, const N: usize> GenArena<T, N> {
             self[handle] = item;
             handle
         })
-    }
-
-    pub fn allocate_clean(&mut self) -> Option<Handle<T>>
-    where
-        T: Cleanable,
-    {
-        self.free_list.allocate().map(|idx| {
-            let gen = self.gen[idx];
-            let handle = Handle {
-                idx,
-                gen,
-                _type: PhantomData,
-            };
-
-            self[handle].clean();
-            handle
-        })
-    }
-
-    pub fn clean_all(&mut self)
-    where
-        T: Cleanable,
-    {
-        self.gen = [0; N];
-        self.free_list = FreeList::new();
-        for item in &mut self.store {
-            item.clean();
-        }
     }
 
     /// Free the handle and allocated memory. This invalidate all existing handles to that object.

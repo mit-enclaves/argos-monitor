@@ -4,7 +4,7 @@ use attestation::signature::EnclaveReport;
 use crate::capa::{Capa, IntoCapa};
 use crate::config::{NB_CAPAS_PER_DOMAIN, NB_DOMAINS};
 use crate::free_list::FreeList;
-use crate::gen_arena::{Cleanable, GenArena};
+use crate::gen_arena::GenArena;
 use crate::region::{PermissionChange, RegionTracker, TrackerPool};
 use crate::segment::{self, RegionPool};
 use crate::update::{Update, UpdateBuffer};
@@ -355,28 +355,6 @@ impl Domain {
         } else {
             HashEnclave { low: 0, high: 0 }
         }
-    }
-}
-
-impl Cleanable for Domain {
-    fn clean(&mut self) {
-        const INVALID_CAPA: Capa = Capa::None;
-
-        self.id = usize::MAX;
-        self.capas = [INVALID_CAPA; NB_CAPAS_PER_DOMAIN];
-        self.free_list = FreeList::new();
-        self.regions.clean();
-        self.manager = None;
-        self.config = Configuration {
-            values: [permission::NONE, trap_bits::NONE, core_bits::NONE],
-            valid_masks: [permission::ALL, trap_bits::ALL, core_bits::ALL],
-            initialized: [false; Bitmaps::_SIZE as usize],
-        };
-        self.cores = core_bits::NONE;
-        self.is_being_revoked = false;
-        self.is_sealed = false;
-        self.attestation_hash = None;
-        self.attestation_report = None;
     }
 }
 
