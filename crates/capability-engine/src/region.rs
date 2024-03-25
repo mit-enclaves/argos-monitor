@@ -3,7 +3,7 @@ use core::fmt;
 use bitflags::bitflags;
 
 use crate::config::NB_TRACKER;
-use crate::gen_arena::{Cleanable, GenArena, Handle};
+use crate::gen_arena::{GenArena, Handle};
 use crate::CapaError;
 
 bitflags! {
@@ -189,12 +189,6 @@ impl Region {
 
     pub fn get_end(&self) -> usize {
         self.end
-    }
-}
-
-impl Cleanable for Region {
-    fn clean(&mut self) {
-        *self = EMPTY_REGION;
     }
 }
 
@@ -698,12 +692,6 @@ impl RegionTracker {
             pool,
             next: self.head,
         }
-    }
-}
-
-impl Cleanable for RegionTracker {
-    fn clean(&mut self) {
-        self.head = None;
     }
 }
 
