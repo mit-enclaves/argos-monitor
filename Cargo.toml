@@ -24,6 +24,7 @@ members = [
     "crates/capability-engine",
     "crates/tychools",
     "vendor/forked_signature",
+    "crates/attest_client",
     "crates/attestation",
     "crates/bricks",
     "boot_toolchain",
