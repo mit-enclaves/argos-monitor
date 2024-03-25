@@ -140,7 +140,7 @@ build-riscv:
 
 # Build the monitor for RISC-V64
 build-riscv-vf2:
-	{{vf2-linker-script}} cargo build {{cargo_args}} {{riscv}} {{tyche}} --release
+	{{vf2-linker-script}} cargo build {{cargo_args}}  --features "visionfive2" {{riscv}} {{tyche}} --release
 
 
 ## ——————————————————————————— Linux Kernel Build ——————————————————————————— ##
