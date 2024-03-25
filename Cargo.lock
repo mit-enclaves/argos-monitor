@@ -75,6 +75,13 @@ name = "arena"
 version = "0.1.0"
 
 [[package]]
+name = "attest_client"
+version = "0.1.0"
+dependencies = [
+ "capa-engine",
+]
+
+[[package]]
 name = "attestation"
 version = "0.1.0"
 dependencies = [
