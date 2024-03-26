@@ -22,12 +22,12 @@ fn tyche_entry_point() -> ! {
     arch::arch_entry_point(LOG_LEVEL);
 }
 
-#[cfg(all(target_arch = "riscv64"), not(feature = "visionfive2"))]
+#[cfg(all(target_arch = "riscv64", not(feature = "visionfive2")))]
 fn tyche_entry_point(hartid: usize, manifest: RVManifest) -> ! {
     arch::arch_entry_point(hartid, manifest, LOG_LEVEL);
 }
 
-#[cfg(all(target_arch = "riscv64"), feature = "visionfive2")]
+#[cfg(all(target_arch = "riscv64", feature = "visionfive2"))]
 fn tyche_entry_point(hartid: u64, arg1: u64, next_addr: u64, next_mode: u64) -> ! {
     //If logging doesn't work ^ ^ try the following. Loaded in t0 is the serial port base address.    
     /* unsafe {

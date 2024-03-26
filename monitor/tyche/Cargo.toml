@@ -7,7 +7,7 @@ edition = "2021"
 default = []
 vga = ["dep:vga"] # Print to VGA text mode
 bare_metal = []
-visionfive2 = ["dep:riscv_serial"]
+visionfive2 = ["dep:riscv_serial","stage_two_abi/visionfive2"]
 
 [dependencies]
 log = { workspace = true }
