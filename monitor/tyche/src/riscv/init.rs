@@ -178,7 +178,7 @@ pub fn arch_entry_point(
     monitor::do_debug(); */ 
 
     arch::init();
-    launch_guest(hartid, arg1, next_addr, next_mode);
+    launch_guest(hartid as usize, arg1 as usize, next_addr as usize, next_mode as usize);
     qemu::exit(qemu::ExitCode::Success); 
 }
 
