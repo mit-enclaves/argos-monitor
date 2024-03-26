@@ -9,7 +9,7 @@ use riscv_sbi::ipi::process_ipi;
 use riscv_sbi::sbi::EXT_IPI;
 use riscv_utils::{
     aclint_mtimer_set_mtimecmp, clear_mie_mtie, clear_mip_seip, RegisterState,
-    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, NUM_HARTS, TIMER_EVENT_TICK, system_opcode_insr,
+    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, NUM_HARTS, TIMER_EVENT_TICK, system_opcode_instr,
 };
 use spin::Mutex;
 
@@ -148,7 +148,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
 
     log::trace!("###### TRAP FROM HART {} ######", hartid);
 
-    println!("mepc: {:x}", mepc);
+    //println!("mepc: {:x}", mepc);
     /* if(mepc == 0x4022e050) {
         println!(
             "Handling trap: a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x}  mepc {:x} mstatus {:x}",
@@ -228,6 +228,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
                 ecall_handler(&mut ret, &mut err, &mut out_val, *reg_state);
                 reg_state.a0 = ret;
                 reg_state.a1 = out_val as isize;
+                log::info!("Done handling Ecall");
             }
         }
         mcause::LOAD_ADDRESS_MISALIGNED => {
@@ -330,7 +331,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
 
         match tyche_call {
             calls::CREATE_DOMAIN => {
-                log::debug!("Create Domain");
+                log::info!("Create Domain");
                 let capa = monitor::do_create_domain(active_dom).expect("TODO");
                 reg_state.a0 = 0x0;
                 reg_state.a1 = capa.as_usize() as isize;
@@ -339,19 +340,19 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                 //not yet. Must be handled after addition of more exception handling in Tyche.
             }
             calls::SEAL_DOMAIN => {
-                log::debug!("Seal Domain");
+                log::info!("Seal Domain");
                 let capa = monitor::do_seal(active_dom, LocalCapa::new(arg_1)).expect("TODO");
                 reg_state.a0 = 0x0;
                 reg_state.a1 = capa.as_usize() as isize;
             }
             calls::SEND => {
-                log::debug!("Send");
+                log::info!("Send");
                 monitor::do_send(active_dom, LocalCapa::new(arg_1), LocalCapa::new(arg_2))
                     .expect("TODO");
                 reg_state.a0 = 0x0;
             }
             calls::SEGMENT_REGION => {
-                log::debug!("Segment Region");
+                log::info!("Segment Region");
                 let (to_send, to_revoke) = monitor::do_segment_region(
                     active_dom,
                     LocalCapa::new(arg_1),
@@ -367,18 +368,18 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
             }
             // There are no aliases on riscv so we just ignore the alias info.
             calls::REVOKE | calls::REVOKE_ALIASED_REGION => {
-                log::debug!("Revoke");
+                log::info!("Revoke");
                 monitor::do_revoke(active_dom, LocalCapa::new(arg_1)).expect("TODO");
                 reg_state.a0 = 0x0;
             }
             calls::DUPLICATE => {
-                log::debug!("Duplicate");
+                log::info!("Duplicate");
                 let capa = monitor::do_duplicate(active_dom, LocalCapa::new(arg_1)).expect("TODO");
                 reg_state.a0 = 0x0;
                 reg_state.a1 = capa.as_usize() as isize;
             }
             calls::ENUMERATE => {
-                log::debug!("Enumerate");
+                log::info!("Enumerate");
                 if let Some((info, next)) =
                     monitor::do_enumerate(active_dom, NextCapaToken::from_usize(arg_1))
                 {
@@ -394,7 +395,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                 reg_state.a0 = 0x0;
             }
             calls::SWITCH => {
-                log::debug!("Switch");
+                log::info!("Switch");
                 monitor::do_switch(active_dom, LocalCapa::new(arg_1), hartid, reg_state)
                     .expect("TODO");
             }

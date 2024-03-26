@@ -6,7 +6,7 @@ edition = "2021"
 [features]
 # Print to VGA text mode
 vga = ["dep:vga"]
-visionfive2 = ["dep:riscv_serial"]
+visionfive2 = ["dep:riscv_serial","stage_two_abi/visionfive2"]
 
 [dependencies]
 log = { workspace = true }
