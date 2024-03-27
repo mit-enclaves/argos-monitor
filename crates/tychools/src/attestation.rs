@@ -2,11 +2,7 @@ use std::fs::{read_to_string};
 use std::path::PathBuf;
 use hex::encode;
 use ring;
-<<<<<<< HEAD
-=======
 use untrusted;
->>>>>>> Added TPM signature verification on Tychools's side
-
 
 use ed25519_compact::{PublicKey, Signature};
 use object::elf::{PF_R, PF_W, PF_X};
@@ -139,15 +135,10 @@ pub fn attest(src: &PathBuf, offset: u64, riscv_enabled: bool) -> (u128, u128) {
 const MSG_SZ: usize = 32 + 8;
 const PB_KEY_SZ: usize = 32;
 const ENC_DATA_SZ: usize = 64;
-<<<<<<< HEAD
 
 const TPM_SIG_SZ: usize = 384;
 const TPM_ATT_SZ: usize = 129;
-=======
-const TPM_SIG_SZ: usize = 384;
-const TPM_ATT_SZ: usize = 129;
 
->>>>>>> Added TPM signature verification on Tychools's side
 const PB_KEY_SZ_1: usize = 31;
 const ENC_DATA_SZ_1: usize = 63;
 const TPM_SIG_SZ_1: usize = 383;
@@ -191,7 +182,6 @@ pub fn attestation_check(
     //read lines from file and make public key and encrypted data
     for line in read_to_string(src_att).unwrap().lines() {
         let num: u32 = line.parse().unwrap();
-
 
         //RISC-V parsing of enclave report (we have DRoT w/ OpenSBI)
         if riscv_enabled {
@@ -278,7 +268,6 @@ pub fn attestation_check(
     copy_arr(&mut message, &u128::to_le_bytes(hash_low), 0);
     copy_arr(&mut message, &u128::to_le_bytes(hash_high), 16);
     copy_arr(&mut message, &u64::to_le_bytes(nonce), 32);
-    log::trace!("The input to the sig verif is : {:?}", message);
     {
         let mut data_file = File::create("tychools_response.txt").expect("creation failed");
 
