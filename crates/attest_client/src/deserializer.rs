@@ -1,6 +1,6 @@
 use capa_engine::serializer::serde;
 
-use crate::{Context, RegionKind, Region};
+use crate::{Capa, Context, Domain, Region, RegionKind};
 
 pub fn deserialize(buff: &[u8]) -> Result<Context, ()> {
     let mut ctx = Context::new();
@@ -30,18 +30,47 @@ fn deserialize_regions(ctx: &mut Context, buff: &mut Buffer) {
                 let handle = ctx.regions.as_handle(idx).unwrap();
                 RegionKind::Carve(handle)
             }
-            _ => panic!("Invalid region kind")
+            _ => panic!("Invalid region kind"),
         };
         let ops = buff.u8();
         let start = buff.u64();
         let end = buff.u64();
-        ctx.regions.push(Region { start, end, kind, ops });
+        ctx.regions.push(Region {
+            start,
+            end,
+            kind,
+            ops,
+        });
     }
     assert_eq!(serde::END_MARKER, buff.u8());
 }
 
-fn deserialize_domains(_ctx: &mut Context, _buff: &mut Buffer) {
-    // TODO
+fn deserialize_domains(ctx: &mut Context, buff: &mut Buffer) {
+    assert_eq!(serde::DOMAIN_HEADER, buff.u8());
+    while buff.peek_u8() != serde::END_MARKER {
+        let id = buff.u64();
+        let permissions = buff.u64();
+        let mut td = Domain::new(id, permissions);
+        assert_eq!(serde::DOMAIN_CAPA_START, buff.u8());
+        while buff.peek_u8() != serde::DOMAIN_CAPA_END {
+            match buff.u8() {
+                serde::CAPA_REGION => {
+                    let region_id = buff.u64();
+                    let handle = ctx.regions.as_handle(region_id as usize).unwrap();
+                    td.capa.push(Capa::Region(handle));
+                }
+                serde::CAPA_DOMAIN => {
+                    let td_id = buff.u64();
+                    let handle = ctx.domains.as_unknown_handle(td_id as usize);
+                    td.capa.push(Capa::Management(handle));
+                }
+                _ => panic!("Invalid capa, could not deserialize"),
+            }
+        }
+        assert_eq!(serde::DOMAIN_CAPA_END, buff.u8());
+        ctx.domains.push(td);
+    }
+    assert_eq!(serde::END_MARKER, buff.u8());
 }
 
 // ————————————————————————————————— Buffer ————————————————————————————————— //
@@ -78,17 +107,5 @@ impl<'a> Buffer<'a> {
 
     fn peek_u8(&self) -> u8 {
         self.buff[self.cursor]
-    }
-}
-
-// ————————————————————————————————— Tests —————————————————————————————————— //
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn region() {
-        // TODO
     }
 }

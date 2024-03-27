@@ -1,7 +1,6 @@
 mod deserializer;
 
 use core::fmt;
-use std::collections::HashSet;
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
@@ -19,6 +18,7 @@ pub enum RegionKind {
 pub struct Region {
     start: u64,
     end: u64,
+    #[allow(unused)]
     ops: u8,
     kind: RegionKind,
 }
@@ -46,13 +46,22 @@ impl IntoCapa for Handle<Domain> {
 }
 
 pub struct Domain {
-    capa: HashSet<Capa>,
+    id: u64,
+    capa: Vec<Capa>,
     permissions: u64,
 }
 
 impl Domain {
+    pub fn new(id: u64, permissions: u64) -> Self {
+        Domain {
+            id,
+            permissions,
+            capa: Vec::new(),
+        }
+    }
+
     pub fn add(&mut self, capa: impl IntoCapa) -> &mut Self {
-        self.capa.insert(capa.into_capa());
+        self.capa.push(capa.into_capa());
         self
     }
 }
@@ -81,7 +90,13 @@ impl Context {
         self.regions.push(region)
     }
 
-    pub fn alias(&mut self, parent: Handle<Region>, start: u64, end: u64, ops: u8) -> Handle<Region> {
+    pub fn alias(
+        &mut self,
+        parent: Handle<Region>,
+        start: u64,
+        end: u64,
+        ops: u8,
+    ) -> Handle<Region> {
         // TODO: check validity
         let region = Region {
             start,
@@ -92,7 +107,13 @@ impl Context {
         self.regions.push(region)
     }
 
-    pub fn carve(&mut self, parent: Handle<Region>, start: u64, end: u64, ops: u8) -> Handle<Region> {
+    pub fn carve(
+        &mut self,
+        parent: Handle<Region>,
+        start: u64,
+        end: u64,
+        ops: u8,
+    ) -> Handle<Region> {
         // TODO: check validity
         let region = Region {
             start,
@@ -103,10 +124,11 @@ impl Context {
         self.regions.push(region)
     }
 
-    pub fn add_domain(&mut self, permissions: u64) -> Handle<Domain> {
+    pub fn add_domain(&mut self, id: u64, permissions: u64) -> Handle<Domain> {
         self.domains.push(Domain {
-            capa: HashSet::new(),
+            id,
             permissions,
+            capa: Vec::new(),
         })
     }
 }
@@ -189,6 +211,13 @@ impl<T> Arena<T> {
             None
         }
     }
+
+    pub fn as_unknown_handle(&self, idx: usize) -> Handle<T> {
+        Handle {
+            idx,
+            _t: PhantomData,
+        }
+    }
 }
 
 impl<T> Index<Handle<T>> for Arena<T> {
@@ -242,7 +271,7 @@ fn display_permissions(f: &mut fmt::Formatter<'_>, permissions: u64) -> fmt::Res
     Ok(())
 }
 
-fn display_capas(f: &mut fmt::Formatter<'_>, capas: &HashSet<Capa>) -> fmt::Result {
+fn display_capas(f: &mut fmt::Formatter<'_>, capas: &Vec<Capa>) -> fmt::Result {
     let mut first = true;
     for capa in capas.iter() {
         if first {
@@ -269,9 +298,11 @@ impl fmt::Debug for Context {
         let mut idx = 0;
         for region in &self.regions.store {
             match region.kind {
-                RegionKind::Root => {
-                    writeln!(f, "  r{} = root 0x{:x} 0x{:x}", idx, region.start, region.end)?
-                }
+                RegionKind::Root => writeln!(
+                    f,
+                    "  r{} = root 0x{:x} 0x{:x}",
+                    idx, region.start, region.end
+                )?,
                 RegionKind::Alias(r) => writeln!(
                     f,
                     "  r{} = alias r{} 0x{:x} 0x{:x}",
@@ -286,9 +317,8 @@ impl fmt::Debug for Context {
             idx += 1;
         }
 
-        let mut idx = 0;
         for domain in &self.domains.store {
-            write!(f, "  d{} = domain {{ ", idx)?;
+            write!(f, "  d{} = domain {{ ", domain.id)?;
             display_capas(f, &domain.capa)?;
             write!(f, "}} with ")?;
             display_permissions(f, domain.permissions)?;

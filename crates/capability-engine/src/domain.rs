@@ -1,3 +1,6 @@
+use core::cell::Cell;
+use core::iter::Iterator;
+
 use attestation::hashing::HashEnclave;
 use attestation::signature::EnclaveReport;
 
@@ -162,6 +165,8 @@ pub struct Domain {
     attestation_report: Option<EnclaveReport>,
     /// Is it an I/O domain?
     is_io: bool,
+    /// Temporary ID used for attestation
+    pub(crate) temporary_id: Cell<u64>,
 }
 
 impl Domain {
@@ -185,6 +190,7 @@ impl Domain {
             attestation_hash: None,
             attestation_report: None,
             is_io: io,
+            temporary_id: Cell::new(0),
         }
     }
 
@@ -249,6 +255,10 @@ impl Domain {
             }
         }
         return None;
+    }
+
+    pub(crate) fn iter_capa(&self) -> DomainCapaIterator {
+        DomainCapaIterator { td: self, idx: 0 }
     }
 
     /// Mark the domain as executing on the given core.
@@ -717,4 +727,30 @@ pub(crate) fn revoke_capa(
     *capa = Capa::None;
 
     Ok(())
+}
+
+// ———————————————————————————————— Iterator ———————————————————————————————— //
+
+pub struct DomainCapaIterator<'a> {
+    td: &'a Domain,
+    idx: usize,
+}
+
+impl<'a> Iterator for DomainCapaIterator<'a> {
+    type Item = Capa;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.idx < self.td.capas.len() {
+            let idx = self.idx;
+            self.idx += 1;
+
+            // Skip to next if no capa there
+            if self.td.free_list.is_free(idx) {
+                continue;
+            } else {
+                return Some(self.td.capas[idx]);
+            }
+        }
+        None
+    }
 }
