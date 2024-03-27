@@ -265,8 +265,19 @@ _tpm:
 		mkdir -p {{tpm_path}}/
 		swtpm socket --tpm2 --tpmstate dir={{tpm_path}} --ctrl type=unixio,path={{tpm_path}}/sock &
 	fi
+_tpm_riscv:
+	#!/usr/bin/env sh
+	if pgrep -u $USER swtpm;
+	then
+		echo "TPM is running"
+	else
+		echo "Starting TPM with RISC-V arguments"
+		mkdir -p {{tpm_path}}/
+		swtpm socket --tpm2 --tpmstate dir={{tpm_path}} --ctrl type=unixio,path={{tpm_path}}/sock --log file={{tpm_path}}/logs,level=30 --locality allow-set-locality &
+	fi
 
 run_riscv:
+	@just _tpm_riscv
 	{{qemu-riscv}} -nographic -drive "file={{drive-riscv}},format=raw,if=virtio" -cpu rv64,h=true -M virt -m 4G -bios {{bios-riscv}} -kernel {{kernel-riscv}} -append "root=/dev/vda1 rw console=ttyS0 earlycon=sbi quiet" -smp 1 {{dev-riscv}} 
 
 run_riscv_gdb: 

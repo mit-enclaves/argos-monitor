@@ -2,7 +2,6 @@ use std::fs::{read_to_string};
 use std::path::PathBuf;
 use hex::encode;
 use ring;
-use untrusted;
 
 
 use ed25519_compact::{PublicKey, Signature};
@@ -77,6 +76,46 @@ fn hash_segments_info(enclave: &Box<ModifiedELF>, hasher: &mut Sha256, offset: u
     }
 }
 
+fn construct_der_rsa_pkey(modulus: &[u8]) -> Vec<u8>{
+    let mut der_payload : Vec<u8>  = std::vec::Vec::new();
+    let mut add_0 :u8 = 0;
+    if modulus[0]>127 {
+        add_0 = add_0 +1;
+    }
+    // DER shenanigans
+    //// Sequence tag
+    der_payload.push(0x30); 
+    //// Long form length encoding
+    der_payload.push(0x82);
+    //// Length bytes (394)
+    der_payload.extend([1, (137+add_0)]);
+    //// Modulus object
+    //// Integer tag
+    der_payload.push(0x02);
+    //// Long form length encoding
+    der_payload.push(0x82);
+    //// Length of 384 bytes (+1 0x0 sometimes)
+    der_payload.extend([1, 128+add_0]);
+    //// Modulus data
+    //Context-specific byte : if first byte of modulus is >128, add 0x0 byte in front to make it
+    //positive.
+    if add_0 > 0 {
+        der_payload.push(0x0);
+    }
+
+    der_payload.extend(modulus);
+    //// public exponent object
+    der_payload.push(0x02);
+
+
+    // Short form length
+    der_payload.push(0x03);
+    // 65537
+    der_payload.extend([1, 0, 1]);
+
+    der_payload
+}
+
 pub fn attest(src: &PathBuf, offset: u64, riscv_enabled: bool) -> (u128, u128) {
     let data = std::fs::read(src).expect("Unable to read source file");
     let mut hasher = Sha256::default();
@@ -96,9 +135,9 @@ pub fn attest(src: &PathBuf, offset: u64, riscv_enabled: bool) -> (u128, u128) {
 const MSG_SZ: usize = 32 + 8;
 const PB_KEY_SZ: usize = 32;
 const ENC_DATA_SZ: usize = 64;
+
 const TPM_SIG_SZ: usize = 384;
 const TPM_ATT_SZ: usize = 129;
-
 const PB_KEY_SZ_1: usize = 31;
 const ENC_DATA_SZ_1: usize = 63;
 const TPM_SIG_SZ_1: usize = 383;
@@ -132,6 +171,7 @@ pub fn attestation_check(
     let mut tpm_sig_arr: [u8; TPM_SIG_SZ] = [0; TPM_SIG_SZ]; 
     let mut tpm_mod_arr: [u8; TPM_SIG_SZ] = [0; TPM_SIG_SZ]; 
     let mut tpm_att_arr: [u8; TPM_ATT_SZ] = [0; TPM_ATT_SZ];
+    let mut tpm_sig_verified: bool = false;
     let mut index_pub = 0;
     let mut index_enc = 0;
     let mut index_sig = 0;
@@ -142,6 +182,8 @@ pub fn attestation_check(
     for line in read_to_string(src_att).unwrap().lines() {
         let num: u32 = line.parse().unwrap();
 
+        //RISC-V parsing of enclave report (we have DRoT w/ OpenSBI)
+        if riscv_enabled {
         match cnt{
             ..=PB_KEY_SZ_1 if index_enc == 0 =>{
                 pub_key_arr[index_pub] = num as u8;
@@ -174,59 +216,46 @@ pub fn attestation_check(
             }
             _ => {}
         }
+        //x86 parsing (we don't have TPM support)
+        } //else {
+           // if cnt<PB_KEY_SZ {
+           //     pub_key_arr[index_pub] = num as u8;
+           //     index_pub += 1;
+           // }else {
+           //     enc_data_arr[index_enc] = num as u8;
+           //     index_enc += 1;
+           // }
+        //}
         cnt += 1;
     }
 
 
-    log::info!("Public_key is : {:?}", pub_key_arr);
-    log::info!("Signature  is : {:?}", enc_data_arr);
-    log::info!("TPM_PCR_REDIGEST IS : {}", TPM_PCR_REDIGEST);
-    if encode(&(tpm_att_arr[81..])) == TPM_PCR_REDIGEST {
-        log::info!("PCR is verified!");
-    }else{
-        log::info!("PCR digest has not been verified");
+    if riscv_enabled {
+
+        log::info!("TPM_PCR_REDIGEST IS : {}", TPM_PCR_REDIGEST);
+        if encode(&(tpm_att_arr[81..])) == TPM_PCR_REDIGEST {
+            log::info!("PCR is verified!");
+        }else{
+            log::info!("PCR digest has not been verified");
+        }
+
+        let der_payload = construct_der_rsa_pkey(&tpm_mod_arr);
+
+        let tpm_rsa_pkey =
+            ring::signature::UnparsedPublicKey::new(&ring::signature::RSA_PKCS1_3072_8192_SHA384, der_payload);
+
+        if let Ok(_t) = tpm_rsa_pkey.verify(&tpm_att_arr, &tpm_sig_arr) {
+            tpm_sig_verified = true;
+        } else {
+            tpm_sig_verified = false;
+        }
+        let mut tpm_hasher = Sha384::new();
+        tpm_hasher.input(&tpm_att_arr);
+        let rehash : [u8; 48]  = tpm_hasher.result().as_slice().try_into().expect("Ain't working that way");
+        log::info!("Computed attestation rehash is:");
+        log::info!("{}", encode(&rehash));
+
     }
-
-    let mut der_payload : Vec<u8>  = std::vec::Vec::new();
-    // DER shenanigans
-    //// Sequence tag
-    der_payload.push(0x30); 
-    //// Long form length encoding
-    der_payload.push(0x82);
-    //// Length bytes (394)
-    der_payload.extend([1, 138]);
-    //// Modulus object
-    //// Integer tag
-    der_payload.push(0x02);
-    //// Long form length encoding
-    der_payload.push(0x82);
-    //// Length of 384 bytes (+1 0x0 sometimes)
-    der_payload.extend([1, 129]);
-    //// Modulus data
-    //Context-specific byte : if first byte of modulus is >128, add 0x0 byte in front to make it
-    //positive.
-    der_payload.push(0x0);
-    der_payload.extend(tpm_mod_arr);
-    //// public exponent object
-    der_payload.push(0x02);
-    // Short form length
-    der_payload.push(0x03);
-    // 65537
-    der_payload.extend([1, 0, 1]);
-
-
-    let tpm_rsa_pkey =
-        ring::signature::UnparsedPublicKey::new(&ring::signature::RSA_PKCS1_3072_8192_SHA384, der_payload);
-
-    let mut hasher = Sha256::new();
-    let mut tpm_hasher = Sha384::new();
-    tpm_hasher.input(&tpm_att_arr);
-    let rehash : [u8; 48]  = tpm_hasher.result().as_slice().try_into().expect("Ain't working that way");
-    log::info!("Computed attestation rehash is:");
-    log::info!("{}", encode(&rehash));
-
-
-    
 
     let pkey: PublicKey = PublicKey::new(pub_key_arr);
     let sig: Signature = Signature::new(enc_data_arr);
@@ -238,7 +267,6 @@ pub fn attestation_check(
     copy_arr(&mut message, &u128::to_le_bytes(hash_low), 0);
     copy_arr(&mut message, &u128::to_le_bytes(hash_high), 16);
     copy_arr(&mut message, &u64::to_le_bytes(nonce), 32);
-    log::trace!("The input to the sig verif is : {:?}", message);
     {
         let mut data_file = File::create("tychools_response.txt").expect("creation failed");
 
@@ -252,7 +280,8 @@ pub fn attestation_check(
                 .expect("Write failed");
         }
 
-        if let Ok(_t) = tpm_rsa_pkey.verify(&tpm_att_arr, &tpm_sig_arr) {
+        if riscv_enabled {
+        if tpm_sig_verified {
             log::info!("TPM signature is verified!");
             data_file.write(b"TPM signature is verified").expect("Write failed");
         } else {
@@ -261,6 +290,8 @@ pub fn attestation_check(
                 .write(b"TPM signature  was not verified\n")
                 .expect("Write failed");
         }
+        }
 
     }
 }
+
