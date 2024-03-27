@@ -3,19 +3,26 @@
 //! This module expose an interface to serialize the internal capa-engine representation into a
 //! inter-operable attestation format.
 
+use crate::domain::DomainPool;
 use crate::segment::{HandleIterator, RegionCapa, RegionPool};
-use crate::{CapaError, Handle};
+use crate::{Capa, CapaError, Domain, Handle};
 
 /// Serialization-Deserialization constants
 #[rustfmt::skip]
 pub mod serde {
     pub const MAGIC: [u8; 4] = *b"capa";
     pub const REGION_HEADER: u8 = 0b00000001;
-    pub const END_MARKER:    u8 = 0b00000000;
+    pub const DOMAIN_HEADER: u8 = 0b00000010;
+    pub const END_MARKER:    u8 = 0b11111111;
 
     pub const REGION_ROOT:   u8 = 0b10000000;
     pub const REGION_ALIAS:  u8 = 0b10000001;
     pub const REGION_CARVE:  u8 = 0b10000010;
+
+    pub const DOMAIN_CAPA_START: u8 = 0b01000000;
+    pub const DOMAIN_CAPA_END:   u8 = 0b01000001;
+    pub const CAPA_REGION:       u8 = 0b00100000;
+    pub const CAPA_DOMAIN:       u8 = 0b00100001;
 }
 
 // ————————————————————————————————— Buffer ————————————————————————————————— //
@@ -58,13 +65,17 @@ impl<'a> Buffer<'a> {
 
 // ————————————————————————————— Serialization —————————————————————————————— //
 
-pub(crate) fn serialize(buff: &mut [u8], regions: &RegionPool) -> Result<usize, CapaError> {
+pub(crate) fn serialize(
+    buff: &mut [u8],
+    domains: &DomainPool,
+    regions: &RegionPool,
+) -> Result<usize, CapaError> {
     let mut buff = Buffer::new(buff);
     buff.write_bytes(serde::MAGIC)?;
     serialize_regions(&mut buff, regions)?;
+    serialize_domains(&mut buff, domains, regions)?;
     buff.u8(serde::END_MARKER)?;
 
-    // TODO: serialize domains
     Ok(buff.idx + 1)
 }
 
@@ -92,6 +103,7 @@ fn serialize_region(
 ) -> Result<(), CapaError> {
     let region = &regions[handle];
     let region_idx = *idx;
+    region.temporary_id.set(region_idx);
     *idx += 1;
 
     // Serialize region
@@ -113,5 +125,55 @@ fn serialize_region(
         serialize_region(buff, child, idx, region_idx, regions)?;
     }
 
+    Ok(())
+}
+
+fn serialize_domains(
+    buff: &mut Buffer,
+    domains: &DomainPool,
+    regions: &RegionPool,
+) -> Result<(), CapaError> {
+    buff.u8(serde::DOMAIN_HEADER)?;
+
+    // Set temporary IDs
+    let mut idx = 0;
+    for d in domains {
+        domains[d].temporary_id.set(idx);
+        idx += 1;
+    }
+
+    // Serialize domains
+    for d in domains {
+        let td = &domains[d];
+        serialize_domain(buff, td, domains, regions)?;
+    }
+
+    buff.u8(serde::END_MARKER)?;
+    Ok(())
+}
+
+fn serialize_domain(
+    buff: &mut Buffer,
+    td: &Domain,
+    domains: &DomainPool,
+    regions: &RegionPool,
+) -> Result<(), CapaError> {
+    buff.u64(td.temporary_id.get())?;
+    buff.u64(td.permissions())?;
+    buff.u8(serde::DOMAIN_CAPA_START)?;
+    for capa in td.iter_capa() {
+        match capa {
+            Capa::None | Capa::RegionRevoke(_) | Capa::Channel(_) | Capa::Switch { .. } => (),
+            Capa::Region(h) => {
+                buff.u8(serde::CAPA_REGION)?;
+                buff.u64(regions[h].temporary_id.get() as u64)?;
+            }
+            Capa::Management(h) => {
+                buff.u8(serde::CAPA_DOMAIN)?;
+                buff.u64(domains[h].temporary_id.get())?;
+            }
+        }
+    }
+    buff.u8(serde::DOMAIN_CAPA_END)?;
     Ok(())
 }

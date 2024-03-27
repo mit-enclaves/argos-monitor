@@ -577,7 +577,7 @@ impl CapaEngine {
     /// Returns the number of bytes written. Raises an out of memory error if buffer space is
     /// insufficient.
     pub fn serialize_attestation(&self, buff: &mut [u8]) -> Result<usize, CapaError> {
-        serializer::serialize(buff, &self.regions)
+        serializer::serialize(buff, &self.domains, &self.regions)
     }
 
     /// creates a new domain

@@ -1,5 +1,7 @@
 //! Region Capabilities
 
+use core::cell::Cell;
+
 use crate::config::NB_REGIONS;
 use crate::debug::debug_check;
 use crate::domain::{activate_region, deactivate_region, insert_capa, DomainPool};
@@ -23,6 +25,8 @@ pub struct RegionCapa {
     pub(crate) kind: RegionKind,
     pub(crate) is_confidential: bool,
     pub(crate) access: AccessRights,
+    /// A temporary ID used when building an attestation
+    pub(crate) temporary_id: Cell<u32>,
 }
 
 impl RegionCapa {
@@ -34,6 +38,7 @@ impl RegionCapa {
             next_sibling: None,
             is_confidential: false,
             access: AccessRights::none(),
+            temporary_id: Cell::new(0),
         }
     }
 
@@ -45,6 +50,7 @@ impl RegionCapa {
             next_sibling: None,
             is_confidential: false,
             access,
+            temporary_id: Cell::new(0),
         }
     }
 

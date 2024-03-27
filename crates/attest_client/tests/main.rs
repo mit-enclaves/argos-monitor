@@ -75,7 +75,6 @@ fn scenario_1() {
     let mut buff = vec![0; 4096];
     let n = engine.serialize_attestation(&mut buff).unwrap();
     assert!(n > 0);
-    // snap!("114", format!("{}", n));
     snap!(
         r#"Context {
   r0 = root 0x0 0x100
@@ -83,6 +82,9 @@ fn scenario_1() {
   r2 = carve r0 0x30 0x50
   r3 = alias r2 0x40 0x50
   r4 = carve r0 0x60 0x80
+  d0 = domain { d1, d2, r0 } with SPAWN | SEND | ALIAS | CARVE
+  d1 = domain { r1, r2 } with NONE
+  d2 = domain { r3, r4 } with NONE
 }
 "#,
         deserialize(&buff[..n]).unwrap()
