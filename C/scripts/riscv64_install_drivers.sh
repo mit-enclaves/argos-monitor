@@ -1,6 +1,6 @@
 #!/bin/bash
 
-sudo insmod /tyche/drivers/tyche.ko
+#sudo insmod /tyche/drivers/tyche.ko
 sudo chmod 777 /dev/tyche
 sudo cp -r /tyche/programs /root
 

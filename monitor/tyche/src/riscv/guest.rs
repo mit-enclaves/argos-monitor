@@ -9,7 +9,7 @@ use riscv_sbi::ipi::process_ipi;
 use riscv_sbi::sbi::EXT_IPI;
 use riscv_utils::{
     aclint_mtimer_set_mtimecmp, clear_mie_mtie, clear_mip_seip, RegisterState,
-    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, NUM_HARTS, TIMER_EVENT_TICK, system_opcode_instr,
+    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, NUM_HARTS, TIMER_EVENT_TICK, system_opcode_instr, TrapState,
 };
 use spin::Mutex;
 
@@ -134,6 +134,8 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     let mut mideleg: usize = 0;
     let mut satp: usize = 0;
     let hartid: usize = cpuid();
+    let mut tyche_call_flag: bool = false;
+    let mut tyche_call_id: usize = 0;
 
     unsafe {
         asm!("csrr {}, mcause", out(reg) mcause);
@@ -222,17 +224,21 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
                     log::trace!("Tyche is clearing SIP.SEIE");
                     clear_mip_seip();
                 } else {
-                    misaligned_load_handler(reg_state);
+                    tyche_call_flag = true;
+                    tyche_call_id = reg_state.a0.try_into().unwrap();
+                    tyche_call_handler(reg_state);
                 }
             } else {
                 ecall_handler(&mut ret, &mut err, &mut out_val, *reg_state);
                 reg_state.a0 = ret;
                 reg_state.a1 = out_val as isize;
-                log::info!("Done handling Ecall");
+                //log::info!("Done handling Ecall");
             }
         }
         mcause::LOAD_ADDRESS_MISALIGNED => {
-            panic!("Load address misaligned.");
+            //Note: Hypervisor extension is not supported
+            misaligned_load_handler(mtval, reg_state);
+            //panic!("Load address misaligned mepc: {:x} mtval: {:x} mstatus: {:x}.", mepc, mtval, mstatus);
         }
         mcause::STORE_ACCESS_FAULT
         | mcause::LOAD_ACCESS_FAULT
@@ -243,7 +249,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             );
         }
         mcause::INSTRUCTION_PAGE_FAULT | mcause::LOAD_PAGE_FAULT | mcause::STORE_PAGE_FAULT => {
-            panic!("Page Fault!");
+            panic!("Page Fault mepc: {:x} mstatus: {:x} mcause: {:x}!", mepc, mstatus, mcause);
         }
         _ => exit_handler_failed(mcause),
         //Default - just print whatever information you can about the trap.
@@ -275,6 +281,12 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         ); 
     } */
 
+    }
+    if tyche_call_flag {
+        unsafe {
+            asm!("csrr {}, mepc", out(reg) mepc);
+        }
+        log::info!("Returning from Tyche Call {} to MEPC: {:x} and RA: {:x}", tyche_call_id, mepc, reg_state.ra);
     }
 }
 
@@ -314,7 +326,93 @@ pub fn illegal_instruction_handler(mepc: usize, mstatus: usize, mtval: usize, re
     }
 }
 
-pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
+//Todo: Move this to riscv-utils crate
+pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut RegisterState) {
+    //Assumption: No H-mode extension. MTVAL2 and MTINST are zero. 
+    //Implies: trapped instr value is zero or special value. 
+
+    //get insn....
+    let mut trap_state: TrapState;
+    let mut mtvec = sbi_expected_trap as *const ();
+    let mstatus: usize;
+    let mut instr: usize = 0;
+    let mprv_bits: usize = (1 << mstatus::MPRV) | (1 << mstatus::MXR);
+    let instr_len: usize;
+
+    unsafe {
+        asm!(
+        "mv a3, {trap_st}
+        csrrw {tvec}, mtvec, {tvec} 
+        csrrs {status}, mstatus, {mprv}
+        lhu {inst}, ({epc})
+        andi a4, {inst}, 3
+        addi a4, a4, -3
+        bne a4, zero, 2f
+        lhu a4, 2({epc})
+        sll a4, a4, 16
+        add {inst}, {inst}, a4
+        2: csrw mstatus, {status}
+        csrw mtvec, {tvec}
+        ",
+        trap_st = in(reg) &trap_state,
+        tvec = inout(reg) mtvec,
+        status = inout(reg) mstatus,
+        mprv = in(reg) mprv_bits,
+        inst = inout(reg) instr,
+        epc = in(reg) mepc,
+        out("a3") _,
+        out("a4") _,
+        );
+
+
+       /*  asm!("mv a3, {}", in(reg) &trap_state, );
+        asm!("csrrw {}, mtvec, {}", out(reg) mtvec, in(reg) mtvec);
+        asm!("csrrs {}, mstatus, {}", out(reg) mstatus, in(reg) mprv);
+        asm!("lhu {}, ({})", in(reg) instr, in(reg) mepc);
+        asm!("andi a4, {}, 3", in(reg)instr, );
+        asm!("addi a4, a4, -3");
+        asm!("bne a4, zero, 2f");
+        asm!("lhu a4, 2({})",in(reg) mepc);
+        asm!("sll a4, a4, 16");
+        asm!("add {}, {}, a4", out(reg) instr, in(reg) instr);
+        asm!("2: csrw mstatus, {}", in(reg) mstatus);
+        asm!("csrw mtvec, {}", in(reg)mtvec); */
+    }
+
+    if trap_state.cause != 0 {
+        panic!("Misaligned load handler: Fetch fault {:x}", trap_state.cause);
+    }
+
+    if (instr & 0x3) != 0x3 {
+        instr_len = 2;
+    } else {
+        instr_len = 4;
+    }
+
+    let len: usize = 4;
+
+
+    
+
+}
+
+#[repr(align(4))]
+#[naked]
+pub extern "C" fn sbi_expected_trap {
+    asm!(
+    "csrr a4, mepc
+    sd a4, 0*8(a3)
+    csrr a4, mcause 
+    sd a4, 1*8(a3)
+    csrr a4, mtval
+    sd a4, 2*8(a3)
+    csrr a4, mepc
+    addi a4, a4, 4
+    csrw mepc, a4
+    mret");
+}
+
+pub fn tyche_call_handler(reg_state: &mut RegisterState) {
     if reg_state.a7 == 0x5479636865 {
         //It's a Tyche Call
         let tyche_call: usize = reg_state.a0.try_into().unwrap();
@@ -400,18 +498,18 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                     .expect("TODO");
             }
             calls::EXIT => {
-                log::debug!("Tyche Call: Exit");
+                log::info!("Tyche Call: Exit");
                 //TODO
                 //let capa = monitor::.do_().expect("TODO");
                 reg_state.a0 = 0x0;
             }
             calls::DEBUG => {
-                log::debug!("Debug");
+                log::info!("Debug");
                 //monitor::do_debug();
                 reg_state.a0 = 0x0;
             }
             calls::CONFIGURE => {
-                log::debug!("Configure");
+                log::info!("Configure");
                 if let Ok(bitmap) = Bitmaps::from_usize(arg_1) {
                     match monitor::do_set_config(
                         active_dom,
@@ -434,13 +532,13 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                 }
             }
             calls::SEND_REGION => {
-                log::debug!("Send");
+                log::info!("Send");
                 monitor::do_send_region(active_dom, LocalCapa::new(arg_1), LocalCapa::new(arg_2))
                     .expect("TODO");
                 reg_state.a0 = 0x0;
             }
             calls::CONFIGURE_CORE => {
-                log::debug!("Configure Core");
+                log::info!("Configure Core");
                 let res = match monitor::do_configure_core(
                     active_dom,
                     LocalCapa::new(arg_1),
@@ -473,7 +571,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                 reg_state.a1 = value as isize;
             }
             calls::ALLOC_CORE_CONTEXT => {
-                log::debug!("Alloc core context");
+                log::info!("Alloc core context");
                 let res = match monitor::do_init_child_context(
                     active_dom,
                     LocalCapa::new(arg_1),
@@ -494,7 +592,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                 todo!("Implement write all gp");
             }
             calls::WRITE_FIELDS => {
-                log::debug!("Write fields");
+                log::info!("Write fields");
                 let res = match monitor::do_set_field(
                     active_dom,
                     LocalCapa::new(arg_1),
@@ -579,7 +677,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
             }
             _ => {
                 /*TODO: Invalid Tyche Call*/
-                log::debug!("Invalid Tyche Call: {:x}", reg_state.a0);
+                log::info!("Invalid Tyche Call: {:x}", reg_state.a0);
                 todo!("Unknown Tyche Call.");
             }
         }
