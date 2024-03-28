@@ -26,8 +26,15 @@ pub fn init(hartid: usize) {
 
 #[cfg(feature = "visionfive2")]
 pub fn init() {
+    let mut medeleg: usize;
     unsafe {
         asm!("csrw mscratch, {}", in(reg) VF2_TYCHE_STACK_POINTER);
+        asm!("csrr {}, medeleg", out(reg) medeleg);
+    }
+    medeleg = medeleg | (1 << 4);
+
+    unsafe {
+        asm!("csrw medeleg, {}", in(reg) medeleg);
     }
 
     // Configuring mtvec direct base address to point to Tyche's trap handler.

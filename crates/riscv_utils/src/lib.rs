@@ -128,6 +128,24 @@ impl RegisterState {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct TrapState {
+    pub epc: usize,
+    pub cause: usize,
+    pub tval: usize,
+}
+
+impl TrapState {
+    pub const fn const_default() -> TrapState {
+        TrapState {
+            epc: 0,
+            cause: 0,
+            tval: 0,
+        }
+    }
+}
+
+
 pub fn read_mscratch() -> usize {
     let mut mscratch: usize;
 

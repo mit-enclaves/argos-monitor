@@ -23,6 +23,7 @@ use cores::{Core, CoreList};
 use domain::{insert_capa, remove_capa, DomainHandle, DomainPool};
 pub use domain::{permission, Bitmaps, Domain, LocalCapa, NextCapaToken};
 pub use gen_arena::{GenArena, Handle};
+use log::info;
 pub use region::{
     AccessRights, MemOps, MemoryPermission, Region, RegionIterator, RegionTracker, MEMOPS_ALL,
     MEMOPS_EXTRAS,
@@ -533,6 +534,12 @@ impl CapaEngine {
     ) -> Option<(CapaInfo, NextCapaToken)> {
         let (index, next_token) =
             domain::next_capa(domain, token, &self.regions, &mut self.domains)?;
+
+        match self.domains[domain].get(index).ok()?.as_switch() {
+            Ok(_) => log::info!("Hello!! We are Enumerating a Switch Capa"),
+            _ => (),
+        }
+
         let capa = self.domains[domain].get(index).unwrap();
         let info = capa.info(&self.regions, &self.domains)?;
         Some((info, next_token))

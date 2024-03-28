@@ -640,6 +640,7 @@ fn switch_domain(
     current_ctx.medeleg = read_medeleg();
 
     //Switch domain
+    log::info!("Writing satp {:x}, sp {:x}, mepc {:x}", next_ctx.satp, next_ctx.sp, next_ctx.mepc);
     write_satp(next_ctx.satp);
     write_mscratch(next_ctx.sp);
     write_mepc(next_ctx.mepc);
