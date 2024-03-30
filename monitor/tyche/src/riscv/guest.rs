@@ -108,12 +108,12 @@ pub extern "C" fn machine_trap_handler() {
     }
 }
 
-pub extern "C" fn exit_handler_failed(mcause: usize) {
+pub extern "C" fn exit_handler_failed(mcause: usize, mepc: usize) {
     // TODO: Currently, interrupts must be getting redirected here too. Confirm this and then fix
     // it.
     panic!(
-        "*******WARNING: Cannot handle this trap with mcause: {:x} !*******",
-        mcause
+        "*******WARNING: Cannot handle this trap with mcause: {:x} mepc: {:x} !*******",
+        mcause, mepc
     );
 }
 
@@ -240,9 +240,9 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         mcause::LOAD_ADDRESS_MISALIGNED => {
             //Note: Hypervisor extension is not supported
             //log::info!("Misaligned load");
-            //println!("MIS ALIGNED LOADDDDD");
-            //misaligned_load_handler(mtval, mepc, reg_state);
-            panic!("Load address misaligned mepc: {:x} mtval: {:x} mstatus: {:x}.", mepc, mtval, mstatus);
+            println!("MIS ALIGNED LOADDDDD");
+            misaligned_load_handler(mtval, mepc, reg_state);
+            //panic!("Load address misaligned mepc: {:x} mtval: {:x} mstatus: {:x}.", mepc, mtval, mstatus);
         }
         mcause::STORE_ACCESS_FAULT
         | mcause::LOAD_ACCESS_FAULT
@@ -258,7 +258,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
                 mcause, mepc, mtval
             );
         }
-        _ => exit_handler_failed(mcause),
+        _ => exit_handler_failed(mcause, mepc),
         //Default - just print whatever information you can about the trap.
     }
 
@@ -339,7 +339,7 @@ pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut Regist
     //Assumption: No H-mode extension. MTVAL2 and MTINST are zero. 
     //Implies: trapped instr value is zero or special value. 
 
-   /*  println!("Misaligned load handler: mtval {:x} mepc: {:x}", mtval, mepc);
+    println!("Misaligned load handler: mtval {:x} mepc: {:x}", mtval, mepc);
 
     //get insn....
     let mut trap_state: TrapState = TrapState { epc: 0, cause: 0, tval: 0 };
@@ -448,7 +448,7 @@ pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut Regist
         asm!("csrr t0, mepc");
         asm!("add t0, t0, {}", in(reg) instr_len);
         asm!("csrw mepc, t0");
-    } */
+    } 
 }
 
 #[repr(align(4))]
