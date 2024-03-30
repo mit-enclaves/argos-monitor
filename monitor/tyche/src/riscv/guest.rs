@@ -9,7 +9,7 @@ use riscv_sbi::ipi::process_ipi;
 use riscv_sbi::sbi::EXT_IPI;
 use riscv_utils::{
     aclint_mtimer_set_mtimecmp, clear_mie_mtie, clear_mip_seip, RegisterState,
-    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, NUM_HARTS, TIMER_EVENT_TICK, system_opcode_instr, TrapState,
+    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, NUM_HARTS, TIMER_EVENT_TICK, system_opcode_instr, TrapState, set_rd,
 };
 use spin::Mutex;
 
@@ -150,7 +150,9 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
 
     log::trace!("###### TRAP FROM HART {} ######", hartid);
 
-    //println!("mepc: {:x}", mepc);
+    if mepc == 0xffffffff80388bb6 {
+        println!("mepc: {:x} mtval: {:x} mcause: {:x}", mepc, mtval, mcause);
+    } 
     /* if(mepc == 0x4022e050) {
         println!(
             "Handling trap: a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x}  mepc {:x} mstatus {:x}",
@@ -237,8 +239,10 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         }
         mcause::LOAD_ADDRESS_MISALIGNED => {
             //Note: Hypervisor extension is not supported
-            misaligned_load_handler(mtval, reg_state);
-            //panic!("Load address misaligned mepc: {:x} mtval: {:x} mstatus: {:x}.", mepc, mtval, mstatus);
+            //log::info!("Misaligned load");
+            //println!("MIS ALIGNED LOADDDDD");
+            //misaligned_load_handler(mtval, mepc, reg_state);
+            panic!("Load address misaligned mepc: {:x} mtval: {:x} mstatus: {:x}.", mepc, mtval, mstatus);
         }
         mcause::STORE_ACCESS_FAULT
         | mcause::LOAD_ACCESS_FAULT
@@ -259,7 +263,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     // Return to the next instruction after the trap.
     // i.e. mepc += 4
     // TODO: This shouldn't happen in case of switch.
-    if (mcause & (1 << 63)) != (1 << 63) {
+    if ((mcause & (1 << 63)) != (1 << 63)) && mcause != mcause::LOAD_ADDRESS_MISALIGNED {
         unsafe {
             asm!("csrr t0, mepc");
             asm!("addi t0, t0, 0x4");
@@ -326,15 +330,18 @@ pub fn illegal_instruction_handler(mepc: usize, mstatus: usize, mtval: usize, re
     }
 }
 
-//Todo: Move this to riscv-utils crate
+//Todo: Move this to riscv-utils crate -- this is a quite low-level impl. so it's better to
+//modularise it appropriately. 
 pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut RegisterState) {
     //Assumption: No H-mode extension. MTVAL2 and MTINST are zero. 
     //Implies: trapped instr value is zero or special value. 
 
+   /*  println!("Misaligned load handler: mtval {:x} mepc: {:x}", mtval, mepc);
+
     //get insn....
-    let mut trap_state: TrapState;
+    let mut trap_state: TrapState = TrapState { epc: 0, cause: 0, tval: 0 };
     let mut mtvec = sbi_expected_trap as *const ();
-    let mstatus: usize;
+    let mut mstatus: usize = 0;
     let mut instr: usize = 0;
     let mprv_bits: usize = (1 << mstatus::MPRV) | (1 << mstatus::MXR);
     let instr_len: usize;
@@ -352,8 +359,7 @@ pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut Regist
         sll a4, a4, 16
         add {inst}, {inst}, a4
         2: csrw mstatus, {status}
-        csrw mtvec, {tvec}
-        ",
+        csrw mtvec, {tvec}",
         trap_st = in(reg) &trap_state,
         tvec = inout(reg) mtvec,
         status = inout(reg) mstatus,
@@ -363,7 +369,9 @@ pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut Regist
         out("a3") _,
         out("a4") _,
         );
-
+    }
+    
+    println!("Done reading instr: {:x}", instr); 
 
        /*  asm!("mv a3, {}", in(reg) &trap_state, );
         asm!("csrrw {}, mtvec, {}", out(reg) mtvec, in(reg) mtvec);
@@ -377,7 +385,6 @@ pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut Regist
         asm!("add {}, {}, a4", out(reg) instr, in(reg) instr);
         asm!("2: csrw mstatus, {}", in(reg) mstatus);
         asm!("csrw mtvec, {}", in(reg)mtvec); */
-    }
 
     if trap_state.cause != 0 {
         panic!("Misaligned load handler: Fetch fault {:x}", trap_state.cause);
@@ -390,26 +397,74 @@ pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut Regist
     }
 
     let len: usize = 4;
-
-
     
+    //get value....
+    let mut value: usize = 0;
+    let mut tmp_value: u8 = 0;
+    mstatus = 0;
+    mtvec = sbi_expected_trap as *const ();
+    for i in 0..len {
+        let load_address = mtval + i;
+        let mut load_trap_state: TrapState = TrapState { epc: 0, cause: 0, tval: 0 }; 
+        unsafe {
+           asm!(
+            "mv a3, {trap_st}
+            csrrw {tvec}, mtvec, {tvec} 
+            csrrs {status}, mstatus, {mprv} 
+            .option push
+            .option norvc
+            lbu {val}, 0({addr})
+            .option pop
+            csrw mstatus, {status}
+            csrw mtvec, {tvec}
+            ",
+            trap_st = in(reg) &load_trap_state,
+            tvec = inout(reg) mtvec,
+            status = inout(reg) mstatus,
+            mprv = in(reg) mprv_bits,
+            val = out(reg) tmp_value,
+            addr = in(reg) load_address,
+            out("a3") _,
+            out("a4") _,
+            );
+        }
 
+        if i > 0 {
+            value = value << 8;
+        } 
+        value = value | tmp_value as usize;
+        if load_trap_state.cause != 0 {
+            panic!("Misaligned load handler: Load fault {:x}", load_trap_state.cause);  
+        }
+    } 
+
+    println!("Done reading value: {:x} and instr_len : {}", value, instr_len);
+    set_rd(instr, reg_state, value);
+    
+    unsafe {
+        asm!("csrr t0, mepc");
+        asm!("add t0, t0, {}", in(reg) instr_len);
+        asm!("csrw mepc, t0");
+    } */
 }
 
 #[repr(align(4))]
 #[naked]
-pub extern "C" fn sbi_expected_trap {
-    asm!(
-    "csrr a4, mepc
-    sd a4, 0*8(a3)
-    csrr a4, mcause 
-    sd a4, 1*8(a3)
-    csrr a4, mtval
-    sd a4, 2*8(a3)
-    csrr a4, mepc
-    addi a4, a4, 4
-    csrw mepc, a4
-    mret");
+pub extern "C" fn sbi_expected_trap() {
+    unsafe { 
+        asm!(
+        "csrr a4, mepc
+        sd a4, 0*8(a3)
+        csrr a4, mcause 
+        sd a4, 1*8(a3)
+        csrr a4, mtval
+        sd a4, 2*8(a3)
+        csrr a4, mepc
+        addi a4, a4, 4
+        csrw mepc, a4
+        mret",
+        options(noreturn));
+    }
 }
 
 pub fn tyche_call_handler(reg_state: &mut RegisterState) {
