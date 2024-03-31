@@ -4,12 +4,15 @@ use core::sync::atomic::Ordering;
 use capa_engine::Buffer;
 use riscv_utils::{
     RegisterState, AVAILABLE_HART_MASK, HART_IPI_SYNC, HART_START, HART_START_ADDR,
-    HART_START_ARG1, IPI_TYPE_SMODE, IPI_TYPE_TLB, NUM_HARTS, NUM_HARTS_AVAILABLE,
+    HART_START_ARG1, IPI_TYPE_SMODE, IPI_TYPE_TLB, NUM_HARTS, NUM_HARTS_AVAILABLE, aclint_mtimer_set_mtimecmp, clear_mip_stip, set_mie_mtie,
 };
 use spin::Mutex;
 
+use qemu::println;
+use riscv_serial::write_char;
+
 use crate::ipi::{aclint_mswi_send_ipi, ipi_handling_failed, process_tlb_ipi};
-use crate::rfence::local_sfence_vma_asid;
+use crate::rfence::{local_sfence_vma_asid, local_ifence};
 use crate::{
     sbi, sbi_ext_base, sbi_ext_hsm, sbi_ext_ipi, sbi_ext_rfence, IPIRequest, ECALL_IMPID,
     ECALL_VERSION_MAJOR, ECALL_VERSION_MINOR, SPEC_VERSION_MAJOR_MASK, SPEC_VERSION_MAJOR_OFFSET,
@@ -63,6 +66,18 @@ pub fn ecall_handler(
             reg_state.a4,
             reg_state.a6,
         ),
+        sbi::EXT_TIME => {
+            //println!("[TYCHE] YOLO TIMER");
+            let hartid: usize;
+            unsafe {
+                asm!("csrr {}, mhartid", out(reg) hartid);
+            }
+            aclint_mtimer_set_mtimecmp(hartid, reg_state.a0.try_into().unwrap());
+            //clear mip.stip
+            clear_mip_stip();
+            //setting mie.mtie is already taken care of during set_mtimecmp.
+        }
+        sbi::EXT_PUTCHAR_LEGACY => write_char(reg_state.a0 as u8 as char), 
         _ => ecall_handler_failed(reg_state.a7, reg_state.a6),
     }
 }
@@ -77,7 +92,7 @@ pub fn sbi_ext_base_handler(
 ) {
     //let mut a6: usize;
     //unsafe { asm!("mv {}, a6", out(reg) a6); }
-    //println!("base_handler a6: {:x}",a6);
+    println!("[TYCHE] SBI_base_handler a6: {:x}",a6);
     *ret = 0;
     match a6 {
         sbi_ext_base::GET_SPEC_VERSION => *out_val = get_sbi_spec_version(),
@@ -87,8 +102,10 @@ pub fn sbi_ext_base_handler(
             *out_val = get_m_x_id(a6)
         }
         sbi_ext_base::PROBE_EXT => (*ret, *out_val) = probe(a0, a6),
+        sbi_ext_base::PMU_EXT => (),    //Do nothing.
         _ => ecall_handler_failed(sbi::EXT_BASE, a6),
     }
+    println!("[TYCHE] SBI_base_handler complete");
 }
 
 pub fn sbi_ext_hsm_handler(
@@ -102,13 +119,13 @@ pub fn sbi_ext_hsm_handler(
 ) {
     //Todo: Need to support various HSM extension calls - for now just processing hart start
     if a0 > 3 {
-        log::info!("Invalid hart id!");
+        println!("Invalid hart id!");
         return;
     }
 
     match a6 {
         sbi_ext_hsm::HART_START => {
-            log::info!("SBI_HSM_HART_START!");
+            println!("SBI_HSM_HART_START!");
             //unsafe { asm!("csrsi mip, 2"); }
             //a0: hartid, a1: start_addr, a2: arg1
             HART_START_ADDR[a0].store(a1, Ordering::SeqCst);
@@ -137,6 +154,8 @@ pub fn sbi_ext_ipi_handler(
 
     //Todo: The implementation doesn't check for HART STATE at this point. Need to add metadata in
     //Tyche to track this.
+
+    panic!("IPI bhejne ko bol raha hai linux :/");
 
     let src_hartid: usize;
     unsafe {
@@ -199,6 +218,8 @@ pub fn sbi_ext_rfence_handler(
 ) {
     //a0: hart_mask, a1: hart_mask_base, a2: start, a3: size, a4: asid
 
+    //println!("[TYCHE] Rfence service call");
+
     let src_hartid: usize;
     unsafe {
         asm!("csrr {}, mhartid", out(reg) src_hartid);
@@ -207,10 +228,12 @@ pub fn sbi_ext_rfence_handler(
 
     match a6 {
         sbi_ext_rfence::REMOTE_SFENCE_VMA_ASID => {
+            panic!("Remote sfence vma asid");
             if a1 == -1 {
                 //Send IPI to all available harts.
                 for i in 0..number_of_harts {
                     if i == src_hartid {
+                        println!("[TYCHE] Servicing local rfence.");
                         local_sfence_vma_asid(start, size, asid);
                     } else {
                         //Push req into buffer
@@ -242,6 +265,7 @@ pub fn sbi_ext_rfence_handler(
                 for i in a1.try_into().unwrap()..number_of_harts {
                     if ((available_hart_mask & 0x1) & (target_hart_mask & 1)) == 1 {
                         if i == src_hartid {
+                            println!("[TYCHE] Servicing local rfence."); 
                             local_sfence_vma_asid(start, size, asid);
                         } else {
                             //Push req into buffer
@@ -269,16 +293,19 @@ pub fn sbi_ext_rfence_handler(
                 }
             }
         }
-        //sbi_ext_rfence::REMOTE_FENCE_I => ecall_handler_failed(),
+        sbi_ext_rfence::REMOTE_FENCE_I => {
+            //println!("Remote sfence i"); 
+            local_ifence();   //Todo: It's not handled for multi-core yet.
+        }
         //sbi_ext_rfence::REMOTE_SFENCE_VMA => panic!("Cannot handle SFENCE.VMA"),
         _ => ecall_handler_failed(sbi::EXT_RFENCE, a6),
     }
 
     //SYNC:
 
-    while HART_IPI_SYNC[src_hartid].load(Ordering::SeqCst) > 0 {
+   /*  while HART_IPI_SYNC[src_hartid].load(Ordering::SeqCst) > 0 {
         //Try to process local hart ipis instead of defaulting to busy wait so as to prevent deadlocks, or else just spin loop
-        //log::info!("Waiting in hart {}",src_hartid);
+        println!("Waiting in hart {}",src_hartid);
         //process_ipi(src_hartid);
         //core::hint::spin_loop();
         let mut ipi_requests = HART_IPI_BUFFER[src_hartid].lock();
@@ -296,7 +323,8 @@ pub fn sbi_ext_rfence_handler(
             }
         }
         drop(ipi_requests);
-    }
+    } */
+    //println!("[TYCHE] DONE Rfence service call"); 
     //log::info!("Done waiting in hart {}",src_hartid);
 }
 
@@ -306,12 +334,12 @@ pub fn get_sbi_spec_version() -> usize {
     spec_ver = (ECALL_VERSION_MAJOR << SPEC_VERSION_MAJOR_OFFSET)
         & (SPEC_VERSION_MAJOR_MASK << SPEC_VERSION_MAJOR_OFFSET);
     spec_ver |= ECALL_VERSION_MINOR;
-    //println!("Computed spec_version: {:x}",spec_ver);
+    println!("Computed spec_version: {:x}",spec_ver);
     return spec_ver;
 }
 
 pub fn probe(a0: usize, a6: usize) -> (isize, usize) {
-    //println!("probing a0 {:x}",a0);
+    println!("probing a0 {:x}",a0);
     let mut ret: isize = 0;
     let mut out_val: usize = 0;
 
@@ -319,13 +347,13 @@ pub fn probe(a0: usize, a6: usize) -> (isize, usize) {
         sbi::EXT_HSM => {
             match a6 {
                 sbi_ext_hsm::HART_SUSPEND => {
-                    log::info!("Hart_suspend");
+                    println!("Hart_suspend");
                     ret = 0;
                     out_val = 1;
                     //sbi_hsm_hart_suspend();
                 }
                 sbi_ext_hsm::HART_START | sbi_ext_hsm::HART_STOP | sbi_ext_hsm::HART_GET_STATUS => {
-                    log::info!("Hart start/stop/status");
+                    println!("Hart start/stop/status");
                     ret = 0;
                     out_val = 0;
                 }
@@ -335,7 +363,7 @@ pub fn probe(a0: usize, a6: usize) -> (isize, usize) {
         sbi::EXT_TIME | sbi::EXT_IPI | sbi::EXT_RFENCE => {
             ret = 0;
             out_val = 1;
-            log::info!("PROBING sbi::EXT_TIME/IPI/RFENCE.")
+            println!("PROBING sbi::EXT_TIME/IPI/RFENCE.")
         }
         //Handlers for the corresponding ecall are not yet implemented.
         //sbi::EXT_RFENCE => {
@@ -343,10 +371,11 @@ pub fn probe(a0: usize, a6: usize) -> (isize, usize) {
         //    log::info!("PROBING sbi::EXT_RFENCE")
         //}
         sbi::EXT_SRST => out_val = sbi_ext_srst_probe(a0),
+        sbi_ext_base::PMU_EXT => ret = -2, 
         _ => ecall_handler_failed(sbi::EXT_BASE, a0),
     }
 
-    //println!("Returning from probe {}",ret);
+    println!("Returning from probe {}",ret);
 
     return (ret, out_val);
 }
@@ -401,5 +430,5 @@ pub fn sbi_ext_srst_probe(_a0: usize) -> usize {
 }
 
 pub fn ecall_handler_failed(a7: usize, a6: usize) {
-    log::trace!("SBI ecall not supported: a7 {:x} a6 {:x}.", a7, a6);
+    panic!("SBI ecall not supported: a7 {:x} a6 {:x}.", a7, a6);
 }

@@ -324,17 +324,17 @@ pub fn set_mip_ssip() {
 
 pub fn aclint_mtimer_set_mtimecmp(target_hartid: usize, value: usize) {
     let target_addr: usize = ACLINT_MTIMECMP_BASE_ADDR + target_hartid * ACLINT_MTIMECMP_SIZE;
-    let val = value + LAST_TIMER_TICK[target_hartid].load(Ordering::SeqCst);
-    LAST_TIMER_TICK[target_hartid].store(val, Ordering::SeqCst);
+    //let val = value + LAST_TIMER_TICK[target_hartid].load(Ordering::SeqCst);
+    //LAST_TIMER_TICK[target_hartid].store(val, Ordering::SeqCst);
 
-    log::info!(
+    /*println!(
         "[Hart {}] Setting mtimecmp at addr {:x} with value: {:x}",
         target_hartid,
         target_addr,
-        val
-    );
+        value
+    );*/
     unsafe {
-        asm!("sw {}, 0({})", in(reg) val, in(reg) target_addr);
+        asm!("sd {}, 0({})", in(reg) value, in(reg) target_addr);
     }
     set_mie_mtie();
 }
@@ -380,6 +380,35 @@ pub fn clear_mip_seip() {
         asm!("csrw mip, {}", in(reg) mip);
     }
 }
+
+pub fn clear_mip_stip() {
+    let mut mip: usize;
+
+    unsafe {
+        asm!("csrr {}, mip", out(reg) mip);
+    }
+
+    mip = mip & !(0x20);
+
+    unsafe {
+        asm!("csrw mip, {}", in(reg) mip);
+    }
+}
+
+pub fn set_mip_stip() {
+    let mut mip: usize;
+
+    unsafe {
+        asm!("csrr {}, mip", out(reg) mip);
+    }
+
+    mip = mip | 0x20; 
+
+    unsafe {
+        asm!("csrw mip, {}", in(reg) mip);
+    }
+}
+
 
 pub fn system_opcode_instr(mtval: usize, mstatus: usize, reg_state: &mut RegisterState) {
     let rs1_num: usize = (mtval >> 15) & 0x1f;

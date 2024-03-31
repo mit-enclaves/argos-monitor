@@ -791,7 +791,9 @@ version = "0.1.0"
 dependencies = [
  "capa-engine",
  "log",
+ "qemu",
  "riscv_csrs",
+ "riscv_serial",
  "riscv_utils",
  "spin 0.9.4",
 ]
