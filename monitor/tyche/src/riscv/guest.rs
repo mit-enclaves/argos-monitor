@@ -9,7 +9,7 @@ use riscv_sbi::ipi::process_ipi;
 use riscv_sbi::sbi::EXT_IPI;
 use riscv_utils::{
     aclint_mtimer_set_mtimecmp, clear_mie_mtie, clear_mip_seip, RegisterState,
-    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, NUM_HARTS, TIMER_EVENT_TICK, system_opcode_instr, TrapState, set_rd,
+    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, NUM_HARTS, TIMER_EVENT_TICK, system_opcode_instr, TrapState, set_rd, get_rs2,
 };
 use spin::Mutex;
 
@@ -150,9 +150,9 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
 
     log::trace!("###### TRAP FROM HART {} ######", hartid);
 
-    if mepc == 0xffffffff80388bb6 {
+    /*if mepc == 0xffffffff80388bb6 {
         println!("mepc: {:x} mtval: {:x} mcause: {:x}", mepc, mtval, mcause);
-    } 
+    } */
     /* if(mepc == 0x4022e050) {
         println!(
             "Handling trap: a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x}  mepc {:x} mstatus {:x}",
@@ -240,9 +240,12 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         mcause::LOAD_ADDRESS_MISALIGNED => {
             //Note: Hypervisor extension is not supported
             //log::info!("Misaligned load");
-            println!("MIS ALIGNED LOADDDDD");
+            //println!("MIS ALIGNED LOADDDDD");
             misaligned_load_handler(mtval, mepc, reg_state);
             //panic!("Load address misaligned mepc: {:x} mtval: {:x} mstatus: {:x}.", mepc, mtval, mstatus);
+        }
+        mcause::STORE_ADDRESS_MISALIGNED => {
+            misaligned_store_handler(mtval, mepc, reg_state); 
         }
         mcause::STORE_ACCESS_FAULT
         | mcause::LOAD_ACCESS_FAULT
@@ -266,7 +269,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     // Return to the next instruction after the trap.
     // i.e. mepc += 4
     // TODO: This shouldn't happen in case of switch.
-    if ((mcause & (1 << 63)) != (1 << 63)) && mcause != mcause::LOAD_ADDRESS_MISALIGNED {
+    if ((mcause & (1 << 63)) != (1 << 63)) && mcause != mcause::LOAD_ADDRESS_MISALIGNED && mcause != mcause::STORE_ADDRESS_MISALIGNED {
         unsafe {
             asm!("csrr t0, mepc");
             asm!("addi t0, t0, 0x4");
@@ -339,7 +342,7 @@ pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut Regist
     //Assumption: No H-mode extension. MTVAL2 and MTINST are zero. 
     //Implies: trapped instr value is zero or special value. 
 
-    println!("Misaligned load handler: mtval {:x} mepc: {:x}", mtval, mepc);
+    //println!("Misaligned load handler: mtval {:x} mepc: {:x}", mtval, mepc);
 
     //get insn....
     let mut trap_state: TrapState = TrapState { epc: 0, cause: 0, tval: 0 };
@@ -374,20 +377,7 @@ pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut Regist
         );
     }
     
-    println!("Done reading instr: {:x}", instr); 
-
-       /*  asm!("mv a3, {}", in(reg) &trap_state, );
-        asm!("csrrw {}, mtvec, {}", out(reg) mtvec, in(reg) mtvec);
-        asm!("csrrs {}, mstatus, {}", out(reg) mstatus, in(reg) mprv);
-        asm!("lhu {}, ({})", in(reg) instr, in(reg) mepc);
-        asm!("andi a4, {}, 3", in(reg)instr, );
-        asm!("addi a4, a4, -3");
-        asm!("bne a4, zero, 2f");
-        asm!("lhu a4, 2({})",in(reg) mepc);
-        asm!("sll a4, a4, 16");
-        asm!("add {}, {}, a4", out(reg) instr, in(reg) instr);
-        asm!("2: csrw mstatus, {}", in(reg) mstatus);
-        asm!("csrw mtvec, {}", in(reg)mtvec); */
+    //println!("Done reading instr: {:x}", instr); 
 
     if trap_state.cause != 0 {
         panic!("Misaligned load handler: Fetch fault {:x}", trap_state.cause);
@@ -432,16 +422,15 @@ pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut Regist
             );
         }
 
-        if i > 0 {
-            value = value << 8;
-        } 
-        value = value | tmp_value as usize;
+        value = (value) | ((tmp_value as usize) << (i*8));
         if load_trap_state.cause != 0 {
             panic!("Misaligned load handler: Load fault {:x}", load_trap_state.cause);  
         }
     } 
 
-    println!("Done reading value: {:x} and instr_len : {}", value, instr_len);
+    if mepc == 0xffffffff80388bb6 {
+        println!("Misaligned load value{:x}", value);
+    }
     set_rd(instr, reg_state, value);
     
     unsafe {
@@ -449,6 +438,106 @@ pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut Regist
         asm!("add t0, t0, {}", in(reg) instr_len);
         asm!("csrw mepc, t0");
     } 
+}
+
+//Todo: There is a lot of repeated code between misaligned load/store handlers. Make it common.
+pub fn misaligned_store_handler(mtval: usize, mepc: usize, reg_state: &mut RegisterState) {
+    //println!("Misaligned store handler: mtval {:x} mepc: {:x}", mtval, mepc);
+
+    //get insn....
+    let mut trap_state: TrapState = TrapState { epc: 0, cause: 0, tval: 0 };
+    let mut mtvec = sbi_expected_trap as *const ();
+    let mut mstatus: usize = 0;
+    let mut instr: usize = 0;
+    let mprv_bits: usize = (1 << mstatus::MPRV) | (1 << mstatus::MXR);
+    let instr_len: usize;
+
+    unsafe {
+        asm!(
+        "mv a3, {trap_st}
+        csrrw {tvec}, mtvec, {tvec} 
+        csrrs {status}, mstatus, {mprv}
+        lhu {inst}, ({epc})
+        andi a4, {inst}, 3
+        addi a4, a4, -3
+        bne a4, zero, 2f
+        lhu a4, 2({epc})
+        sll a4, a4, 16
+        add {inst}, {inst}, a4
+        2: csrw mstatus, {status}
+        csrw mtvec, {tvec}",
+        trap_st = in(reg) &trap_state,
+        tvec = inout(reg) mtvec,
+        status = inout(reg) mstatus,
+        mprv = in(reg) mprv_bits,
+        inst = inout(reg) instr,
+        epc = in(reg) mepc,
+        out("a3") _,
+        out("a4") _,
+        );
+    }
+    
+    //println!("Done reading instr: {:x}", instr);  
+
+    if trap_state.cause != 0 {
+        panic!("Misaligned store handler: Fetch fault {:x}", trap_state.cause);
+    }
+
+    if (instr & 0x3) != 0x3 {
+        instr_len = 2;
+    } else {
+        instr_len = 4;
+    }
+
+    let len: usize = 4;
+
+    //set value ...... 
+    let mut value: usize = get_rs2(instr, reg_state);
+    if mepc == 0xffffffff80388be2 {
+        println!("Misaligned store val: {:x}", value);
+    }
+    mstatus = 0;
+    mtvec = sbi_expected_trap as *const ();
+    for i in 0..len {
+        let store_address = mtval + i;
+        let tmp_value: u8 = (value & 0xff) as u8;
+        value = value >> 8;
+        let mut store_trap_state: TrapState = TrapState { epc: 0, cause: 0, tval: 0 }; 
+        unsafe {
+           asm!(
+            "mv a3, {trap_st}
+            csrrw {tvec}, mtvec, {tvec} 
+            csrrs {status}, mstatus, {mprv} 
+            .option push
+            .option norvc
+            sb {val}, 0({addr})
+            .option pop
+            csrw mstatus, {status}
+            csrw mtvec, {tvec}
+            ",
+            trap_st = in(reg) &store_trap_state,
+            tvec = inout(reg) mtvec,
+            status = inout(reg) mstatus,
+            mprv = in(reg) mprv_bits,
+            val = in(reg) tmp_value,
+            addr = in(reg) store_address,
+            out("a3") _,
+            out("a4") _,
+            );
+        }
+
+        if store_trap_state.cause != 0 {
+            panic!("Misaligned store handler: Store fault {:x}", store_trap_state.cause);  
+        }
+    } 
+
+    //println!("Done storing value: {:x} and instr_len : {}", value, instr_len);
+
+    unsafe {
+        asm!("csrr t0, mepc");
+        asm!("add t0, t0, {}", in(reg) instr_len);
+        asm!("csrw mepc, t0");
+    }
 }
 
 #[repr(align(4))]
