@@ -431,6 +431,15 @@ pub fn get_rs1(mtval: usize, reg_state: &mut RegisterState) -> u64 {
     }
 }
 
+pub fn get_rs2(instr: usize, reg_state: &mut RegisterState) -> usize {
+    let reg_offset = (instr >> 20) & 0x1f; 
+    let reg_state_ptr = reg_state as *mut RegisterState as *const usize;
+    unsafe { 
+        let reg_ptr = reg_state_ptr.offset(reg_offset as isize);
+        *reg_ptr
+    } 
+}
+
 pub fn set_rd(mtval: usize, reg_state: &mut RegisterState, val: usize) {
     let reg_offset = (mtval >> 7) & 0x1f;
 
