@@ -15,10 +15,7 @@ pub mod serial {
 
 #[cfg(target_arch = "riscv64")]
 pub mod serial {
-    #[cfg(not(feature = "visionfive2"))]
     pub use qemu::_print;
-    #[cfg(feature = "visionfive2")]
-    pub use riscv_serial::_print;
 }
 
 #[macro_export]

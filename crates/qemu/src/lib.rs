@@ -8,7 +8,12 @@ pub use x86_64::{_print, exit};
 #[cfg(target_arch = "riscv64")]
 mod riscv64;
 #[cfg(target_arch = "riscv64")]
-pub use riscv64::{ exit, _print};
+pub use riscv64::{ exit };
+
+#[cfg(all(target_arch = "riscv64", feature = "visionfive2"))]
+pub use riscv_serial::{_print};
+#[cfg(all(target_arch = "riscv64", not(feature = "visionfive2")))]
+pub use riscv64::_print;
 
 // ———————————————————————————— Print Utilities ————————————————————————————— //
 

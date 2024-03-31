@@ -9,7 +9,7 @@ use riscv_sbi::ipi::process_ipi;
 use riscv_sbi::sbi::EXT_IPI;
 use riscv_utils::{
     aclint_mtimer_set_mtimecmp, clear_mie_mtie, clear_mip_seip, RegisterState,
-    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, NUM_HARTS, TIMER_EVENT_TICK, system_opcode_instr, TrapState, set_rd, get_rs2,
+    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, NUM_HARTS, TIMER_EVENT_TICK, system_opcode_instr, TrapState, set_rd, get_rs2, set_mip_stip,
 };
 use spin::Mutex;
 
@@ -150,9 +150,9 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
 
     log::trace!("###### TRAP FROM HART {} ######", hartid);
 
-    /*if mepc == 0xffffffff80388bb6 {
-        println!("mepc: {:x} mtval: {:x} mcause: {:x}", mepc, mtval, mcause);
-    } */
+    //if mepc == 0xffffffff80388bb6 {
+    //println!("mepc: {:x} mtval: {:x} mcause: {:x}", mepc, mtval, mcause);
+    //} 
     /* if(mepc == 0x4022e050) {
         println!(
             "Handling trap: a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x}  mepc {:x} mstatus {:x}",
@@ -196,6 +196,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     // mcause register holds the cause of the machine mode trap
     match mcause {
         mcause::MSWI => {
+            panic!("Servicing mcause: {:x}",mcause);   //URGENT TODO: Remove this
             process_ipi(hartid);
             let active_dom = get_active_dom(hartid);
             match active_dom {
@@ -204,6 +205,8 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             }
         }
         mcause::MTI => {
+            //panic!("Servicing mcause: {:x}",mcause);   //URGENT TODO: Remove this
+            //println!("[TYCHE Timer Interrupt] mepc: {:x} mtval: {:x} mcause: {:x}", mepc, mtval, mcause);
             clear_mie_mtie();
             log::info!(
                 "\nHART {} MTIMER: MEPC: {:x} RA: {:x}\n",
@@ -211,15 +214,18 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
                 mepc,
                 reg_state.ra
             );
-            aclint_mtimer_set_mtimecmp(hartid, TIMER_EVENT_TICK);
+            set_mip_stip();
+            //aclint_mtimer_set_mtimecmp(hartid, TIMER_EVENT_TICK);
         }
         mcause::MEI => {
             panic!("MEI");
         }
         mcause::ILLEGAL_INSTRUCTION => {
+            //println!("[TYCHE Illegal Instruction Handler]");
             illegal_instruction_handler(mepc, mstatus, mtval, reg_state);
         }
         mcause::ECALL_FROM_SMODE => {
+            //println!("TYCHE ECall");
             if reg_state.a7 == 0x5479636865 {
                 //Tyche call
                 if reg_state.a0 == 0x5479636865 {
@@ -389,8 +395,22 @@ pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut Regist
         instr_len = 4;
     }
 
-    let len: usize = 4;
-    
+    let mut len: usize = 0;
+    let mut shift: usize = 0;
+    if (instr & 0x707f) == 0x2003 {  //Matching insn_match_lw
+        len = 4;
+        shift = 8*4;    
+    } else if (instr & 0xe003) == 0x4000 { //Matching insn_match_c_lw
+        len = 4;
+        shift = 8*4;
+        instr = (8 + ((instr >> 2) & ((1 << 3) - 1))) << 7; //Todo: Needs to be cleaned - check
+                                                            //insn_match_c_lw (rvc_rs2s << sh_rd)
+    } else {
+        panic!("Cannot handle this misaligned load!");
+    }
+   
+    //TODO: Is shifting needed? 
+
     //get value....
     let mut value: usize = 0;
     let mut tmp_value: u8 = 0;
@@ -428,10 +448,9 @@ pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut Regist
         }
     } 
 
-    if mepc == 0xffffffff80388bb6 {
-        println!("Misaligned load value{:x}", value);
-    }
-    set_rd(instr, reg_state, value);
+    //println!("Misaligned load value{:x}", value);
+    
+    set_rd(instr, reg_state, (value << shift) as usize >> shift);
     
     unsafe {
         asm!("csrr t0, mepc");
@@ -489,13 +508,27 @@ pub fn misaligned_store_handler(mtval: usize, mepc: usize, reg_state: &mut Regis
         instr_len = 4;
     }
 
-    let len: usize = 4;
+    let mut value: usize = get_rs2(instr, reg_state);
+    //println!("Misaligned store val: {:x}", value);
+
+    let mut len: usize = 0;
+    if (instr & 0x707f) == 0x2023 { //Matching insn_match_sw
+        len = 4;
+    } else if (instr & 0xe003) == 0xc003 {
+        len = 4;
+        value = 8 + ((instr >> 2) & ((1 << 3) - 1)); //get rs2s 
+        //Again a bit of repetition - need to modularise get rs1/rs2/rs2s. 
+        let reg_offset = value & 0x1f;
+        let reg_state_ptr = reg_state as *mut RegisterState as *const u64;
+        unsafe {
+            let reg_ptr = reg_state_ptr.offset(reg_offset as isize);
+            value = *reg_ptr as usize;
+        }
+    } else {
+        panic!("Cannot handle this misaligned store!");
+    }
 
     //set value ...... 
-    let mut value: usize = get_rs2(instr, reg_state);
-    if mepc == 0xffffffff80388be2 {
-        println!("Misaligned store val: {:x}", value);
-    }
     mstatus = 0;
     mtvec = sbi_expected_trap as *const ();
     for i in 0..len {

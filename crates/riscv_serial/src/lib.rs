@@ -80,3 +80,9 @@ pub fn _print(args: fmt::Arguments) {
     drop(writer);
     //enable interrupts 
 }
+
+pub fn write_char(c: char) {
+    let mut writer = WRITER.lock();
+    writer.write_char(c);
+    drop(writer);
+}
