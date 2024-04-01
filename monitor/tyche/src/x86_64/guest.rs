@@ -632,15 +632,17 @@ fn handle_exit(
         VmxExitReason::Rdmsr if domain.idx() == 0 => {
             let mut context = monitor::get_context(*domain, cpuid());
             let ecx = context.get(VmcsField::GuestRcx, None)?;
-            log::trace!("rdmsr");
-            if ecx == 0xc0011029 || (ecx >= 0xc0010200 && ecx <= 0xc001020b) {
+            log::trace!("rdmsr 0x{:x}", ecx);
+            if ecx >= 0xc0010000 && ecx <= 0xc0020000 {
                 // Reading an AMD specific register, just ignore it
                 // The other interval seems to be related to pmu...
                 // TODO: figure this out and why it only works on certain hardware.
                 vs.vcpu.next_instruction()?;
+                log::trace!("rdmsr ignoring amd registers");
                 Ok(HandlerResult::Resume)
             } else {
                 let msr_reg = vmx::msr::Msr::new(ecx as u32);
+                log::trace!("rdmsr: about to read");
                 let (low, high) = unsafe { msr_reg.read_raw() };
                 log::trace!("Emulated read of msr {:x} = h:{:x};l:{:x}", ecx, high, low);
                 context.set(VmcsField::GuestRax, low as usize, None)?;
