@@ -10,7 +10,7 @@ config_t* shared = NULL;
 
 static int tyche_domain_attestation(usize nonce, unsigned long long* ans, int mode) {
   vmcall_frame_t frame = {
-    .vmcall = 21,
+    .vmcall = 20,
     .arg_1 = nonce,
     .arg_2 = mode,
   };

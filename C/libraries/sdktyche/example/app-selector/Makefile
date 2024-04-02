@@ -84,6 +84,10 @@ ifeq ($(KVM), 1)
 	APP_INCLUDES+=-I$(CONTALLOC)/include 
 endif
 
+ifeq ($(ARCH), riscv)
+	APP_INCLUDES+=-pthread
+endif 
+
 ## ————————————————————— Configuration for the install —————————————————————— ##
 ifeq ($(ARCH), x86)
 	DISK_PATH ?= /tmp/mount/tyche/programs 

@@ -227,7 +227,10 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             );
         }
         mcause::INSTRUCTION_PAGE_FAULT | mcause::LOAD_PAGE_FAULT | mcause::STORE_PAGE_FAULT => {
-            panic!("Page Fault!");
+            panic!(
+                "Page Fault! mcause: {:x} mepc: {:x} mtval: {:x}",
+                mcause, mepc, mtval
+            );
         }
         _ => exit_handler_failed(mcause),
         //Default - just print whatever information you can about the trap.

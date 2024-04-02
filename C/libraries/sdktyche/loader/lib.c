@@ -208,7 +208,7 @@ failure:
 // This should work as pn is basically the page address if everything was
 // initialized from address 0. We go through segments looking for the one that
 // contains the (pn >> PAGE_SIZE)th page over all allocations.
-static int find_phys_address(tyche_domain_t *domain, usize pn, usize *result, int is_pipe) {
+static int find_phys_address(tyche_domain_t *domain, usize pn, usize *result, int is_pipe, int is_page_table_root) {
   domain_mslot_t *slot = NULL;
   usize accumulated_size = 0;
   if (domain == NULL || result == NULL) {
@@ -220,7 +220,15 @@ static int find_phys_address(tyche_domain_t *domain, usize pn, usize *result, in
       if (pn >= accumulated_size && pn < (accumulated_size + slot->size)) {
         // offset within that slot.
         usize offset = pn - accumulated_size;
+#if defined(CONFIG_X86) || defined(__x86_64__)
         *result = slot->physoffset + offset;
+#elif defined(CONFIG_RISCV) || defined(__riscv)
+        if (is_page_table_root) {
+            *result = slot->physoffset + offset;
+        } else {
+            *result = ((slot->physoffset >> PT_PAGE_WIDTH) + (offset >> PT_FLAGS_RESERVED)) << PT_FLAGS_RESERVED;
+        }
+#endif
         return SUCCESS;
       }
       accumulated_size += slot->size;
@@ -230,7 +238,15 @@ static int find_phys_address(tyche_domain_t *domain, usize pn, usize *result, in
       if (pn >= accumulated_size && pn < (accumulated_size + slot->size)) {
         // offset within that slot.
         usize offset = pn - accumulated_size;
+#if defined(CONFIG_X86) || defined(__x86_64__)
         *result = slot->physoffset + offset;
+#elif defined(CONFIG_RISCV) || defined(__riscv)
+        if (is_page_table_root) {
+            *result = slot->physoffset + offset;
+        } else {
+            *result = ((slot->physoffset >> PT_PAGE_WIDTH) + (offset >> PT_FLAGS_RESERVED)) << PT_FLAGS_RESERVED;
+        }
+#endif 
         return SUCCESS;
       }
       accumulated_size += slot->size;
@@ -484,11 +500,10 @@ int load_domain(tyche_domain_t* domain)
       //We should go through the segments and find the right address and fix it.
       for (; start < end; start++) {
         if (*start != 0) {
-            //TODO @Neelu figure something out here, we need to define it for riscv.
             uint64_t page = (*start & PT_PHYS_PAGE_MASK);
             int is_pipe = (*start & PT_PAGE_PIPE) == PT_PAGE_PIPE;
             usize fixed_addr = 0;
-            if (find_phys_address(domain, page, &fixed_addr, is_pipe) != SUCCESS) {
+            if (find_phys_address(domain, page, &fixed_addr, is_pipe, 0) != SUCCESS) {
               ERROR("Unable to find the physaddress for %lx", page);
               goto failure;
             }
@@ -502,7 +517,7 @@ int load_domain(tyche_domain_t* domain)
       }
       // Fix the root page tables here.
       usize fixed_cr3 = 0;
-      if (find_phys_address(domain, domain->config.page_table_root, &fixed_cr3, 0) != SUCCESS) {
+      if (find_phys_address(domain, domain->config.page_table_root, &fixed_cr3, 0, 1) != SUCCESS) {
         ERROR("Unable to find the cr3 in the mslots");
         goto failure;
       }

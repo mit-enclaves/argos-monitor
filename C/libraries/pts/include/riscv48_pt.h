@@ -62,6 +62,8 @@
 #define PT_BIT_A (6ULL)
 #define PT_BIT_D (7ULL)
 
+#define PT_BITS_RESERVED (54ULL)
+
 // ——————————————————————————————— PTE Flags ———————————————————————————————— //
 
 #define PT_V (1ULL << PT_BIT_V)
@@ -72,6 +74,8 @@
 #define PT_G (1ULL << PT_BIT_G)
 #define PT_A (1ULL << PT_BIT_A)
 #define PT_D (1ULL << PT_BIT_D)
+
+#define PT_PAGE_PIPE (3ULL << PT_BITS_RESERVED)
 
 // ———————————————————————————— Default profile ————————————————————————————— //
 extern const pt_profile_t riscv64_sv48_profile;
