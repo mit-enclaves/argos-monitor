@@ -280,13 +280,8 @@ pub fn attestation_check(
                 .write(b"Message was not verified\n")
                 .expect("Write failed");
         }
-//@Alexandre: Please resolve the two conflicts here
-<<<<<<< HEAD
         if riscv_enabled {
         if tpm_sig_verified {
-=======
-        if let Ok(_t) = tpm_rsa_pkey.verify(&tpm_att_arr, &tpm_sig_arr) {
->>>>>>> Added TPM signature verification on Tychools's side
             log::info!("TPM signature is verified!");
             data_file.write(b"TPM signature is verified").expect("Write failed");
         } else {
@@ -295,10 +290,7 @@ pub fn attestation_check(
                 .write(b"TPM signature  was not verified\n")
                 .expect("Write failed");
         }
-<<<<<<< HEAD
         }
-=======
->>>>>>> Added TPM signature verification on Tychools's side
 
     }
 }
