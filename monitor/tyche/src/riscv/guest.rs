@@ -15,6 +15,7 @@ use spin::Mutex;
 use attestation::signature::ATTESTATION_TOTAL_SZ;
 
 use super::monitor;
+use crate::riscv::riscv_tpm_attestation::pass_attestation;
 use crate::arch::cpuid;
 use crate::calls;
 use crate::riscv::monitor::apply_core_updates;
@@ -471,208 +472,216 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
             calls::ENCLAVE_ATTESTATION => {
                 log::info!("Get attestation!");
                 if let Some(report) = monitor::do_domain_attestation(active_dom, arg_1, arg_2) {
-                    reg_state.a0 = 0;
-                    match arg_2{
-                        0 => {
-                                reg_state.a1 = isize::from_le_bytes(
-                                    report.public_key.as_slice()[0..8].try_into().unwrap(),
-                                );
-                                reg_state.a2 = usize::from_le_bytes(
-                                    report.public_key.as_slice()[8..16].try_into().unwrap(),
-                                );
-                                reg_state.a3 = usize::from_le_bytes(
-                                    report.public_key.as_slice()[16..24].try_into().unwrap(),
-                                ) as usize;
-                                reg_state.a4 = usize::from_le_bytes(
-                                    report.public_key.as_slice()[24..32].try_into().unwrap(),
-                                ) as usize;
-                                reg_state.a5 = usize::from_le_bytes(
-                                    report.signed_enclave_data.as_slice()[0..8]
-                                        .try_into()
-                                        .unwrap(),
-                                ) as usize;
-                                reg_state.a6 = usize::from_le_bytes(
-                                    report.signed_enclave_data.as_slice()[8..16]
-                                        .try_into()
-                                        .unwrap(),
-                                ) as usize;
-                        },
-                    1 => {
-                                reg_state.a1 = isize::from_le_bytes(
-                                    report.signed_enclave_data.as_slice()[16..24]
-                                        .try_into()
-                                        .unwrap(),
-                                );
-                                reg_state.a2 = usize::from_le_bytes(
-                                    report.signed_enclave_data.as_slice()[24..32]
-                                        .try_into()
-                                        .unwrap(),
-                                );
-                                reg_state.a3 = usize::from_le_bytes(
-                                    report.signed_enclave_data.as_slice()[32..40]
-                                        .try_into()
-                                        .unwrap(),
-                                );
-                                reg_state.a4 = usize::from_le_bytes(
-                                    report.signed_enclave_data.as_slice()[40..48]
-                                        .try_into()
-                                        .unwrap(),
-                                );
-                                reg_state.a5 = usize::from_le_bytes(
-                                    report.signed_enclave_data.as_slice()[48..56]
-                                        .try_into()
-                                        .unwrap(),
-                                );
-                                reg_state.a6 = usize::from_le_bytes(
-                                    report.signed_enclave_data.as_slice()[56..64]
-                                        .try_into()
-                                        .unwrap(),
-                                );
-                        },
-                     2..=9 => {
-                                let mut offset : usize = (arg_2-2)*6*8;
-                                let mut upper_bound: usize = offset+8;
-                                reg_state.a1 = isize::from_le_bytes(
-                                    report.tpm_signature.as_slice()[offset..upper_bound]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                                offset += 8;
-                                reg_state.a2 = usize::from_le_bytes(
-                                    report.tpm_signature.as_slice()[offset..offset+8]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                                offset += 8;
-                                reg_state.a3 = usize::from_le_bytes(
-                                    report.tpm_signature.as_slice()[offset..offset+8]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                                offset+=8;
-                                reg_state.a4 = usize::from_le_bytes(
-                                    report.tpm_signature.as_slice()[offset..offset+8]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                                offset+=8;
-                                reg_state.a5 = usize::from_le_bytes(
-                                    report.tpm_signature.as_slice()[offset..offset+8]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                                offset+=8;
-                                reg_state.a6 = usize::from_le_bytes(
-                                    report.tpm_signature.as_slice()[offset..offset+8]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                        },
-                    10..=17 => {
-                                let mut offset : usize  = (arg_2-10)*6*8;
-                                reg_state.a1 = isize::from_le_bytes(
-                                    report.tpm_modulus.as_slice()[offset..offset+8]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                                offset += 8;
-                                reg_state.a2 = usize::from_le_bytes(
-                                    report.tpm_modulus.as_slice()[offset..offset+8]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                                offset += 8;
-                                reg_state.a3 = usize::from_le_bytes(
-                                    report.tpm_modulus.as_slice()[offset..offset+8]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                                offset+=8;
-                                reg_state.a4 = usize::from_le_bytes(
-                                    report.tpm_modulus.as_slice()[offset..offset+8]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                                offset+=8;
-                                reg_state.a5 = usize::from_le_bytes(
-                                    report.tpm_modulus.as_slice()[offset..offset+8]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                                offset+=8;
-                                reg_state.a6 = usize::from_le_bytes(
-                                    report.tpm_modulus.as_slice()[offset..offset+8]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                        },
-                    18 | 19 => {
-                                let mut offset : usize  = (arg_2-18)*6*8;
-                                reg_state.a1 = isize::from_le_bytes(
-                                    report.tpm_attestation.as_slice()[offset..offset+8]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                                offset += 8;
-                                reg_state.a2 = usize::from_le_bytes(
-                                    report.tpm_attestation.as_slice()[offset..offset+8]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                                offset += 8;
-                                reg_state.a3 = usize::from_le_bytes(
-                                    report.tpm_attestation.as_slice()[offset..offset+8]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                                offset+=8;
-                                reg_state.a4 = usize::from_le_bytes(
-                                    report.tpm_attestation.as_slice()[offset..offset+8]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                                offset+=8;
-                                reg_state.a5 = usize::from_le_bytes(
-                                    report.tpm_attestation.as_slice()[offset..offset+8]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                                offset+=8;
-                                reg_state.a6 = usize::from_le_bytes(
-                                    report.tpm_attestation.as_slice()[offset..offset+8]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                        },
-                    20 => {
-                                reg_state.a1 = isize::from_le_bytes(
-                                    report.tpm_attestation.as_slice()[96..104]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                                reg_state.a2 = usize::from_le_bytes(
-                                    report.tpm_attestation.as_slice()[104..112]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                                reg_state.a3 = usize::from_le_bytes(
-                                    report.tpm_attestation.as_slice()[112..120]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                                reg_state.a4 = usize::from_le_bytes(
-                                    report.tpm_attestation.as_slice()[120..128]
-                                    .try_into()
-                                    .unwrap(),
-                                );
-                                reg_state.a5 =
-                                    usize::from(report.tpm_attestation[128]); 
-                        },
-                    _ => {
-                                log::trace!("Attestation error");
-                                reg_state.a0 = 1;
-                        },
-                    }
+                    let regs : (isize, isize, [usize; 5]) = pass_attestation(&report, arg_2);
+                    reg_state.a0 = regs.0;
+                    reg_state.a1 = regs.1;
+                    reg_state.a2 = regs.2[0];
+                    reg_state.a3 = regs.2[1];
+                    reg_state.a4 = regs.2[2];
+                    reg_state.a5 = regs.2[3];
+                    reg_state.a6 = regs.2[4];
+
+                   // match arg_2{
+                   //     0 => {
+                   //             reg_state.a1 = isize::from_le_bytes(
+                   //                 report.public_key.as_slice()[0..8].try_into().unwrap(),
+                   //             );
+                   //             reg_state.a2 = usize::from_le_bytes(
+                   //                 report.public_key.as_slice()[8..16].try_into().unwrap(),
+                   //             );
+                   //             reg_state.a3 = usize::from_le_bytes(
+                   //                 report.public_key.as_slice()[16..24].try_into().unwrap(),
+                   //             ) as usize;
+                   //             reg_state.a4 = usize::from_le_bytes(
+                   //                 report.public_key.as_slice()[24..32].try_into().unwrap(),
+                   //             ) as usize;
+                   //             reg_state.a5 = usize::from_le_bytes(
+                   //                 report.signed_enclave_data.as_slice()[0..8]
+                   //                     .try_into()
+                   //                     .unwrap(),
+                   //             ) as usize;
+                   //             reg_state.a6 = usize::from_le_bytes(
+                   //                 report.signed_enclave_data.as_slice()[8..16]
+                   //                     .try_into()
+                   //                     .unwrap(),
+                   //             ) as usize;
+                   //     },
+                   // 1 => {
+                   //             reg_state.a1 = isize::from_le_bytes(
+                   //                 report.signed_enclave_data.as_slice()[16..24]
+                   //                     .try_into()
+                   //                     .unwrap(),
+                   //             );
+                   //             reg_state.a2 = usize::from_le_bytes(
+                   //                 report.signed_enclave_data.as_slice()[24..32]
+                   //                     .try_into()
+                   //                     .unwrap(),
+                   //             );
+                   //             reg_state.a3 = usize::from_le_bytes(
+                   //                 report.signed_enclave_data.as_slice()[32..40]
+                   //                     .try_into()
+                   //                     .unwrap(),
+                   //             );
+                   //             reg_state.a4 = usize::from_le_bytes(
+                   //                 report.signed_enclave_data.as_slice()[40..48]
+                   //                     .try_into()
+                   //                     .unwrap(),
+                   //             );
+                   //             reg_state.a5 = usize::from_le_bytes(
+                   //                 report.signed_enclave_data.as_slice()[48..56]
+                   //                     .try_into()
+                   //                     .unwrap(),
+                   //             );
+                   //             reg_state.a6 = usize::from_le_bytes(
+                   //                 report.signed_enclave_data.as_slice()[56..64]
+                   //                     .try_into()
+                   //                     .unwrap(),
+                   //             );
+                   //     },
+                   //  2..=9 => {
+                   //             let mut offset : usize = (arg_2-2)*6*8;
+                   //             let mut upper_bound: usize = offset+8;
+                   //             reg_state.a1 = isize::from_le_bytes(
+                   //                 report.tpm_signature.as_slice()[offset..upper_bound]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //             offset += 8;
+                   //             reg_state.a2 = usize::from_le_bytes(
+                   //                 report.tpm_signature.as_slice()[offset..offset+8]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //             offset += 8;
+                   //             reg_state.a3 = usize::from_le_bytes(
+                   //                 report.tpm_signature.as_slice()[offset..offset+8]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //             offset+=8;
+                   //             reg_state.a4 = usize::from_le_bytes(
+                   //                 report.tpm_signature.as_slice()[offset..offset+8]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //             offset+=8;
+                   //             reg_state.a5 = usize::from_le_bytes(
+                   //                 report.tpm_signature.as_slice()[offset..offset+8]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //             offset+=8;
+                   //             reg_state.a6 = usize::from_le_bytes(
+                   //                 report.tpm_signature.as_slice()[offset..offset+8]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //     },
+                   // 10..=17 => {
+                   //             let mut offset : usize  = (arg_2-10)*6*8;
+                   //             reg_state.a1 = isize::from_le_bytes(
+                   //                 report.tpm_modulus.as_slice()[offset..offset+8]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //             offset += 8;
+                   //             reg_state.a2 = usize::from_le_bytes(
+                   //                 report.tpm_modulus.as_slice()[offset..offset+8]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //             offset += 8;
+                   //             reg_state.a3 = usize::from_le_bytes(
+                   //                 report.tpm_modulus.as_slice()[offset..offset+8]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //             offset+=8;
+                   //             reg_state.a4 = usize::from_le_bytes(
+                   //                 report.tpm_modulus.as_slice()[offset..offset+8]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //             offset+=8;
+                   //             reg_state.a5 = usize::from_le_bytes(
+                   //                 report.tpm_modulus.as_slice()[offset..offset+8]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //             offset+=8;
+                   //             reg_state.a6 = usize::from_le_bytes(
+                   //                 report.tpm_modulus.as_slice()[offset..offset+8]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //     },
+                   // 18 | 19 => {
+                   //             let mut offset : usize  = (arg_2-18)*6*8;
+                   //             reg_state.a1 = isize::from_le_bytes(
+                   //                 report.tpm_attestation.as_slice()[offset..offset+8]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //             offset += 8;
+                   //             reg_state.a2 = usize::from_le_bytes(
+                   //                 report.tpm_attestation.as_slice()[offset..offset+8]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //             offset += 8;
+                   //             reg_state.a3 = usize::from_le_bytes(
+                   //                 report.tpm_attestation.as_slice()[offset..offset+8]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //             offset+=8;
+                   //             reg_state.a4 = usize::from_le_bytes(
+                   //                 report.tpm_attestation.as_slice()[offset..offset+8]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //             offset+=8;
+                   //             reg_state.a5 = usize::from_le_bytes(
+                   //                 report.tpm_attestation.as_slice()[offset..offset+8]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //             offset+=8;
+                   //             reg_state.a6 = usize::from_le_bytes(
+                   //                 report.tpm_attestation.as_slice()[offset..offset+8]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //     },
+                   // 20 => {
+                   //             reg_state.a1 = isize::from_le_bytes(
+                   //                 report.tpm_attestation.as_slice()[96..104]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //             reg_state.a2 = usize::from_le_bytes(
+                   //                 report.tpm_attestation.as_slice()[104..112]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //             reg_state.a3 = usize::from_le_bytes(
+                   //                 report.tpm_attestation.as_slice()[112..120]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //             reg_state.a4 = usize::from_le_bytes(
+                   //                 report.tpm_attestation.as_slice()[120..128]
+                   //                 .try_into()
+                   //                 .unwrap(),
+                   //             );
+                   //             reg_state.a5 =
+                   //                 usize::from(report.tpm_attestation[128]); 
+                   //     },
+                   // _ => {
+                   //             log::trace!("Attestation error");
+                   //             reg_state.a0 = 1;
+                   //     },
+                   // }
             }
             }
             calls::ENCLAVE_ATTESTATION_SIZE => {
