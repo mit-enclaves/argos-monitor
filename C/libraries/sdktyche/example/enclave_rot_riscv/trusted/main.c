@@ -1,16 +1,55 @@
 #include "sdk_tyche_rt.h"
+#include "common.h"
 #include "tyche_api.h"
-#include <stdio.h>
 #include "enclave_app.h"
 // ———————————————————————————————— Globals ————————————————————————————————— //
 config_t* shared = NULL;
+// ————————————————————————— Static define  —————————————————————————— //
+static int tyche_domain_attestation(usize nonce, unsigned long long* ans, int mode) {
+	vmcall_frame_t frame = {
+		.vmcall = 20,
+		.arg_1 = nonce,
+		.arg_2 = mode,
+	};
+	if (tyche_call(&frame) != SUCCESS) {
+		goto failure;
+	}
+
+	ans[0] = frame.value_1;
+	ans[1] = frame.value_2;
+	ans[2] = frame.value_3;
+	ans[3] = frame.value_4;
+	ans[4] = frame.value_5;
+	ans[5] = frame.value_6;
+
+	return SUCCESS;
+failure:
+	return FAILURE;
+
+}
+
+static int tyche_domain_attestation_size(unsigned long long* val){
+	vmcall_frame_t frame = {
+		.vmcall = 22,
+	};
+	if (tyche_call(&frame) != SUCCESS) {
+		goto failure;
+	}
+
+	*val = frame.value_1;
+
+	return SUCCESS;
+failure:
+	return FAILURE;
+}
+
 
 // ————————————————————————— HELLO_WORLD Functions —————————————————————————— //
+//
 
 const char* message = "Hello World!\n\t\0";
 const char* message2 = "Bye Bye! :)!\n\t\0";
 const char* message3 = "Done attestation!\n\t\0";
-const char* message4 = "Got the attestation size!\n\t\0";
 
 void put_bytes_in_arr(char* arr, unsigned long long val) {
   for(int i = 0; i < 8;i++) {
@@ -77,13 +116,13 @@ void print_message(void* input, int size)
   my_memcpy(msg->reply, input, size);
 }
 
-void hello_world(frame_t* frame)
+void hello_world(void)
 {
   hello_world_t* msg = (hello_world_t*) (&(shared->args));
   print_message((void*) message, 15);
   
   // Do a return.
-  gate_call(frame);
+  gate_call();
   nonce_t nonce = msg->nonce;
 
   //Sample call to retrieve the size of the attestation in case it's unknown.
@@ -98,12 +137,8 @@ void hello_world(frame_t* frame)
 
 // ————————————————————————————— Entry Function ————————————————————————————— //
 
-void trusted_entry(frame_t* frame)
+void trusted_entry(void)
 {
-  // Error.
-  if (frame == NULL) {
-    return;
-  }
   shared = (config_t*) get_default_shared_buffer();
-  hello_world(frame);
+  hello_world();
 }

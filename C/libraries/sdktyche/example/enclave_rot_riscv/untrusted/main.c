@@ -1,15 +1,16 @@
 #define _GNU_SOURCE
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <time.h>
-#include <signal.h>
-#include <ucontext.h>
-#include <sys/ucontext.h>
 #include "common.h"
-#include "sdk_tyche_rt.h"
-#include "sdk_tyche.h"
+#include "common_log.h"
 #include "enclave_app.h"
+#include "sdk_tyche.h"
+#include "sdk_tyche_rt.h"
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ucontext.h>
+#include <time.h>
+#include <ucontext.h>
 
 // ———————————————————————————— Local Variables ————————————————————————————— //
 
@@ -33,7 +34,7 @@ static void* find_default_shared(tyche_domain_t* enclave)
     goto failure;
   }
   // Find the shared region.
-  dll_foreach(&(enclave->config.shared_regions), shared_sec, list) {
+  dll_foreach(&(enclave->shared_regions), shared_sec, list) {
       if (shared_sec->segment->p_type == KERNEL_SHARED) {
         return (void*)(shared_sec->untrusted_vaddr);
       }
@@ -117,7 +118,7 @@ int hello_world()
   msg->nonce = nonce;
 
   // Call the enclave.
-  if (sdk_call_domain(enclave, NULL) != SUCCESS) {
+  if (sdk_call_domain(enclave) != SUCCESS) {
     ERROR("Unable to call the enclave %d!", enclave->handle);
     goto failure;
   }
@@ -125,14 +126,15 @@ int hello_world()
 
   // Call to enclave, which will do attestation
   LOG("Calling enclave to execute attestation");
-  if (sdk_call_domain(enclave, NULL) != SUCCESS) {
+  if (sdk_call_domain(enclave) != SUCCESS) {
     ERROR("Unable to call the enclave a second time %lld!", enclave->handle);
     goto failure;
   }
   LOG("Second enclave message: \n%s", msg->reply);
   write_to_tychools(msg);
   LOG("Calling the command to tychools to compare the result\n");
-  call_tychools(msg->nonce, enclave->map.physoffset);
+  //TODO: copy fix from simple-enclave
+  call_tychools(msg->nonce, /*enclave->map.physoffset*/ 0);
   read_tychools_response();
 
   // Clean up.
@@ -158,7 +160,7 @@ int main(int argc, char *argv[]) {
   // Init the enclave.
     if (sdk_create_domain(
           enclave, argv[0],
-          DEFAULT_CORES, ALL_TRAPS, DEFAULT_PERM, CopyVCPU) != SUCCESS) {
+          DEFAULT_CORES, ALL_TRAPS, DEFAULT_PERM) != SUCCESS) {
       ERROR("Unable to parse the enclave");
       goto failure;
     }
