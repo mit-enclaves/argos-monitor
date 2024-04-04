@@ -2,7 +2,6 @@ use std::fs::{read_to_string};
 use std::path::PathBuf;
 use hex::encode;
 use ring;
-use untrusted;
 
 use ed25519_compact::{PublicKey, Signature};
 use object::elf::{PF_R, PF_W, PF_X};
