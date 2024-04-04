@@ -94,7 +94,7 @@ pub(crate) fn create_root_region(
 ) -> Result<LocalCapa, CapaError> {
     // Check capacity (one region + one local handle)
     regions.has_capacity_for(1)?;
-    domains[domain].has_capacity_for(1)?;
+    domain::has_capacity_for(domain, 1, regions, domains)?;
 
     // Validate region
     if !access.is_valid() {
@@ -149,7 +149,7 @@ pub(crate) fn alias(
 
     // Check capacity (1 region + 1 local capa)
     regions.has_capacity_for(1)?;
-    domains[domain].has_capacity_for(1)?;
+    domain::has_capacity_for(domain, 1, regions, domains)?;
 
     let new_handle = alias_region(handle, regions, access)?;
     debug_check!(validate_child_list(handle, regions));
@@ -194,7 +194,7 @@ pub(crate) fn carve(
 
     // Check capacity (1 region + 1 local capa)
     regions.has_capacity_for(1)?;
-    domains[domain].has_capacity_for(1)?;
+    domain::has_capacity_for(domain, 1, regions, domains)?;
 
     let new_handle = carve_region(handle, regions, access)?;
     debug_check!(validate_child_list(handle, regions));

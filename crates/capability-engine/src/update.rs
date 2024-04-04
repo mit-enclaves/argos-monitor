@@ -94,6 +94,19 @@ where
         }
         return false;
     }
+
+    pub fn capacity(&self) -> usize {
+        let available = if self.write >= self.read {
+            // Write pointer is ahead of or equal to read pointer
+            self.buff.len() - (self.write - self.read)
+        } else {
+            // Read pointer has looped around and is ahead of write pointer
+            self.read - self.write
+        };
+
+        // We keep one empty space
+        available - 1
+    }
 }
 
 // ———————————————————————————————— Display ————————————————————————————————— //

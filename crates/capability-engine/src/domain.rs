@@ -334,15 +334,6 @@ impl Domain {
         }
     }
 
-    /// Return OK if the arena has enough capacity for `count` objects, Err otherwise.
-    pub fn has_capacity_for(&self, count: usize) -> Result<(), CapaError> {
-        if self.free_list.capacity() >= count {
-            Ok(())
-        } else {
-            Err(CapaError::OutOfMemory)
-        }
-    }
-
     pub fn set_hash(&mut self, hash: HashEnclave) {
         self.attestation_hash = Some(hash);
     }
@@ -406,6 +397,26 @@ pub(crate) fn remove_capa(
     let capa = domain.get(index)?;
     domain.free_list.free(index.idx);
     Ok(capa)
+}
+
+/// Return OK if the arena has enough capacity for `count` objects, Err otherwise.
+pub fn has_capacity_for(
+    domain: Handle<Domain>,
+    count: usize,
+    regions: &mut RegionPool,
+    domains: &mut DomainPool,
+) -> Result<(), CapaError> {
+    if domains[domain].free_list.capacity() >= count {
+        Ok(())
+    } else {
+        // Run the garbage collection and retry
+        free_invalid_capas(domain, regions, domains);
+        if domains[domain].free_list.capacity() >= count {
+            Ok(())
+        } else {
+            Err(CapaError::OutOfMemory)
+        }
+    }
 }
 
 /// Run garbage collection on the domain's capabilities.
@@ -567,14 +578,14 @@ pub(crate) fn deactivate_region(
 ) -> Result<(), CapaError> {
     let dom = &mut domains[domain];
 
+    let change = dom
+        .regions
+        .remove_region(access.start, access.end, access.ops, tracker)?;
+
     // Drop updates on domain in the process of being revoked
     if dom.is_being_revoked {
         return Ok(());
     }
-
-    let change = dom
-        .regions
-        .remove_region(access.start, access.end, access.ops, tracker)?;
 
     let filter = |up: Update| match up {
         Update::PermissionUpdate {

@@ -252,7 +252,7 @@ impl CapaEngine {
         region: LocalCapa,
     ) -> Result<LocalCapa, CapaError> {
         let region = self.domains[domain].get(region)?.as_region()?;
-        self.domains[domain].has_capacity_for(1)?;
+        domain::has_capacity_for(domain, 1, &mut self.regions, &mut self.domains)?;
         let revoke_capa = Capa::RegionRevoke(region);
         insert_capa(domain, revoke_capa, &mut self.regions, &mut self.domains)
     }
@@ -289,7 +289,7 @@ impl CapaEngine {
         //TODO(all) as some code might fail below, we should not remove the capa
         // first.
         let to = self.domains[domain].get(to)?.as_channel()?;
-        self.domains[to].has_capacity_for(1)?; // Check capacity
+        domain::has_capacity_for(to, 1, &mut self.regions, &mut self.domains)?;
         let capa = remove_capa(domain, capa, &mut self.domains)?;
         match capa {
             // No side effect for those capas
@@ -520,6 +520,23 @@ impl CapaEngine {
         let domain = self.domains.into_iter().skip(token.as_usize()).next()?;
         let next = NextCapaToken::from_usize(token.as_usize() + 1);
         Some((domain, next))
+    }
+
+    /// Returns the capacity of internal memory arena.
+    ///
+    /// In order, returns:
+    /// - The domain pool capacity
+    /// - The region pool capacity
+    /// - The tracker pool capacity
+    /// - Update buffer capacity
+    /// This functions is mostly intended for debugging memory leaks in the capa engine.
+    pub fn get_capacity(&self) -> (usize, usize, usize, usize) {
+        (
+            self.domains.capacity(),
+            self.regions.capacity(),
+            self.tracker.capacity(),
+            self.updates.capacity(),
+        )
     }
 
     pub fn get_domain_capa(

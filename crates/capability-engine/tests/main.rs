@@ -1446,6 +1446,93 @@ fn vital_regions() {
     snap!("{Region([0x0, 0x1000 | _URWXS])}", capas(d0, engine));
 }
 
+/// Test if the capa-engine frees resources appropriately.
+/// If that is not the case we would get an out of memory error.
+#[test]
+fn free_resources() {
+    const NB_ENCLAVES: usize = 200;
+    const NB_REGIONS_PER_ENCLAVE: usize = 30;
+
+    let engine = unsafe { static_engine!() };
+    let core = 0;
+
+    // Create initial domain
+    let d0 = engine.create_manager_domain(permission::ALL).unwrap();
+    let _ctx = engine.start_domain_on_core(d0, core).unwrap();
+    // Create initial region
+    let r0 = engine
+        .create_root_region(
+            d0,
+            AccessRights {
+                start: 0,
+                end: 0x1000,
+                ops: MEMOPS_ALL,
+            },
+        )
+        .unwrap();
+
+    // Drain updates
+    while let Some(_) = engine.pop_update() {
+        // Draining...
+    }
+
+    // Record the capacity of each component
+    let (domain_pool_capacity, region_pool_capacity, tracker_pool_capacity, update_capacity) =
+        engine.get_capacity();
+
+    for _ in 0..NB_ENCLAVES {
+        // Create a new domain
+        let d1 = engine.create_domain(d0).unwrap();
+
+        // send a bunch of regions to that domain
+        for _ in 0..NB_REGIONS_PER_ENCLAVE {
+            let r = engine
+                .alias_region(
+                    d0,
+                    r0,
+                    AccessRights {
+                        start: 0x200,
+                        end: 0x300,
+                        ops: MEMOPS_ALL | MemOps::CLEANUP,
+                    },
+                )
+                .unwrap();
+            engine.send(d0, r, d1).unwrap();
+        }
+
+        // Destroy domain, that should revoke all its regions
+        engine.revoke(d0, d1).unwrap();
+        // Drain updates
+        while let Some(_) = engine.pop_update() {
+            // Draining...
+        }
+
+        // The pools should have the same capacity after cleanup
+        let (
+            new_domain_pool_capacity,
+            new_region_pool_capacity,
+            new_tracker_pool_capacity,
+            new_update_capacity,
+        ) = engine.get_capacity();
+        assert_eq!(
+            domain_pool_capacity, new_domain_pool_capacity,
+            "Memory leak in domain pool"
+        );
+        assert_eq!(
+            region_pool_capacity, new_region_pool_capacity,
+            "Memory leak in region pool"
+        );
+        assert_eq!(
+            tracker_pool_capacity, new_tracker_pool_capacity,
+            "Memory leak in tracker pool"
+        );
+        assert_eq!(
+            update_capacity, new_update_capacity,
+            "Memory leak in update buffer"
+        );
+    }
+}
+
 // —————————————————————————— Adversarial Enclave ——————————————————————————— //
 
 #[test]

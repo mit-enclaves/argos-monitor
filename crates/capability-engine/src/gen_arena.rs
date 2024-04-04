@@ -76,6 +76,10 @@ impl<T, const N: usize> GenArena<T, N> {
             Err(CapaError::OutOfMemory)
         }
     }
+
+    pub fn capacity(&self) -> usize {
+        self.free_list.capacity()
+    }
 }
 
 // ———————————————————————————————— Indexing ———————————————————————————————— //
