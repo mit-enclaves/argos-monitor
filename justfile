@@ -16,7 +16,8 @@ linux               := "--features=s1/guest_linux"
 no-guest            := "--features=s1/no_guest"
 vga-s1              := "--features=s1/vga"
 vga-s2              := "--features=tyche/vga"
-bare-metal          := "--features=s1/bare_metal"
+bare-metal-s1       := "--features=s1/bare_metal"
+bare-metal-tyche    := "--features=tyche/bare_metal"
 build_path          := justfile_directory() + "/builds"
 tpm_path            := "/tmp/tpm-dev-" + env_var('USER')
 default_dbg         := "/tmp/dbg-" + env_var('USER')
@@ -242,8 +243,8 @@ build-metal-linux:
 	@just _common-metal {{linux}}
 
 _common-metal TARGET:
-	{{x86-linker-script}} cargo build {{cargo_args}} {{x86_64}} {{tyche}} --release
-	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{TARGET}} {{bare-metal}} -- --uefi --no-run
+	{{x86-linker-script}} cargo build {{cargo_args}} {{x86_64}} {{tyche}} {{bare-metal-tyche}} --release
+	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{TARGET}} {{bare-metal-s1}} -- --uefi --no-run
 
 # Build user-space programs
 user-space:

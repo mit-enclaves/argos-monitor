@@ -35,6 +35,9 @@ pub fn arch_entry_point(log_level: log::LevelFilter) -> ! {
     if cpuid == 0 {
         logger::init(log_level);
         log::info!("CPU{}: Hello from second stage!", cpuid);
+        #[cfg(feature = "bare_metal")]
+        log::info!("Running on bare metal");
+
         // SAFETY: The BSP is responsible for retrieving the manifest
         let manifest = unsafe {
             MANIFEST = Some(get_manifest());

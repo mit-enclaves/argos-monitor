@@ -12,6 +12,7 @@ use super::{cpuid, monitor};
 use crate::calls;
 use crate::error::TycheError;
 use crate::x86_64::filtered_fields::FilteredFields;
+use crate::x86_64::platform;
 
 #[derive(PartialEq, Debug)]
 pub enum HandlerResult {
@@ -101,12 +102,16 @@ fn handle_exit(
                 calls::CONFIGURE => {
                     log::trace!("Configure on core {}", cpuid());
                     let res = if let Ok(bitmap) = Bitmaps::from_usize(arg_1) {
+                        let mut value = arg_3 as u64;
+                        if bitmap == Bitmaps::CORE {
+                            value = platform::remap_core_bitmap(value);
+                        }
                         match monitor::do_set_config(
                             vs,
                             domain,
                             LocalCapa::new(arg_2),
                             bitmap,
-                            arg_3 as u64,
+                            value,
                         ) {
                             Ok(_) => 0,
                             Err(e) => {
@@ -141,7 +146,7 @@ fn handle_exit(
                         vs,
                         domain,
                         LocalCapa::new(arg_1),
-                        arg_2,
+                        platform::remap_core(arg_2),
                     ) {
                         Ok(_) => 0,
                         Err(e) => {
@@ -155,7 +160,7 @@ fn handle_exit(
                 }
                 calls::READ_ALL_GP => {
                     log::trace!("Read all gp register values on core {}", cpuid());
-                    monitor::do_get_all_gp(vs, domain, LocalCapa::new(arg_1), arg_2)
+                    monitor::do_get_all_gp(vs, domain, LocalCapa::new(arg_1), platform::remap_core(arg_2))
                         .expect("Problem during copy");
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
@@ -203,7 +208,7 @@ fn handle_exit(
                         vs,
                         domain,
                         LocalCapa::new(arg_1),
-                        arg_2,
+                        platform::remap_core(arg_2),
                         &values,
                     ) {
                         Ok(()) => 0,
@@ -222,7 +227,7 @@ fn handle_exit(
                         vs,
                         domain,
                         LocalCapa::new(arg_1),
-                        arg_2,
+                        platform::remap_core(arg_2),
                         arg_3,
                         arg_4,
                     ) {
@@ -242,7 +247,7 @@ fn handle_exit(
                         vs,
                         domain,
                         LocalCapa::new(arg_1),
-                        arg_2,
+                        platform::remap_core(arg_2),
                         arg_3,
                     ) {
                         Ok(v) => (v, 0),

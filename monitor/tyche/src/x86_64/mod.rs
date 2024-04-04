@@ -7,6 +7,7 @@ mod filtered_fields;
 pub mod guest;
 mod init;
 mod monitor;
+mod platform;
 mod vmx_helper;
 
 use core::arch::asm;
