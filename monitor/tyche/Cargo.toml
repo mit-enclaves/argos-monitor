@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-# Print to VGA text mode
-vga = ["dep:vga"]
+default = []
+vga = ["dep:vga"] # Print to VGA text mode
 bare_metal = []
 
 [dependencies]

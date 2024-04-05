@@ -1064,12 +1064,19 @@ fn switch_domain(
         panic!("Why are the two vmcs the same?");
     }
     current_ctx.load(vcpu);
-    next_ctx.switch_flush(&RC_VMCS, vcpu);
 
+    // NOTE; it seems on hardware we need to save and restore the host context, but we don't know
+    // why yet, we need further invesdigation to be able to optimise this.
+    let mut values: [usize; 13] = [0; 13];
+    dump_host_state(vcpu, &mut values).expect("Couldn't save host context");
+
+    // Configure state of the next TD
+    next_ctx.switch_flush(&RC_VMCS, vcpu);
     vcpu.set_ept_ptr(HostPhysAddr::new(
         next_domain.ept.unwrap().as_usize() | EPT_ROOT_FLAGS,
     ))
     .expect("Failed to update EPT");
+    load_host_state(vcpu, &mut values).expect("Couldn't save host context");
     Ok(())
 }
 
