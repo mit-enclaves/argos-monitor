@@ -72,9 +72,10 @@ pub fn ecall_handler(
             unsafe {
                 asm!("csrr {}, mhartid", out(reg) hartid);
             }
+            clear_mip_stip();
+            //Todo: Urgent: Uncomment the following - commented for debugging purposes.
             aclint_mtimer_set_mtimecmp(hartid, reg_state.a0.try_into().unwrap());
             //clear mip.stip
-            clear_mip_stip();
             //setting mie.mtie is already taken care of during set_mtimecmp.
         }
         sbi::EXT_PUTCHAR_LEGACY => write_char(reg_state.a0 as u8 as char), 

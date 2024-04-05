@@ -30,7 +30,7 @@ pub const ACLINT_MSWI_WORD_SIZE: usize = 4;
 pub const ACLINT_MTIMECMP_BASE_ADDR: usize = 0x2004000;
 pub const ACLINT_MTIMECMP_SIZE: usize = 8;
 
-pub const TIMER_EVENT_TICK: usize = 10000000;
+pub const TIMER_EVENT_TICK: usize = 0x200;
 
 const FALSE: AtomicBool = AtomicBool::new(false);
 //Todo: Replace with num_cores
@@ -46,7 +46,7 @@ pub static HART_IPI_SYNC: [AtomicUsize; NUM_HARTS] = [ZERO; NUM_HARTS];
 pub static IPI_TYPE_SMODE: [AtomicBool; NUM_HARTS] = [FALSE; NUM_HARTS];
 pub static IPI_TYPE_TLB: [AtomicBool; NUM_HARTS] = [FALSE; NUM_HARTS];
 
-static LAST_TIMER_TICK: [AtomicUsize; NUM_HARTS] = [ZERO; NUM_HARTS];
+pub static LAST_TIMER_TICK: [AtomicUsize; NUM_HARTS] = [ZERO; NUM_HARTS];
 
 pub static NUM_HARTS_AVAILABLE: AtomicUsize = ZERO;
 pub static AVAILABLE_HART_MASK: AtomicUsize = ZERO;
@@ -324,8 +324,7 @@ pub fn set_mip_ssip() {
 
 pub fn aclint_mtimer_set_mtimecmp(target_hartid: usize, value: usize) {
     let target_addr: usize = ACLINT_MTIMECMP_BASE_ADDR + target_hartid * ACLINT_MTIMECMP_SIZE;
-    //let val = value + LAST_TIMER_TICK[target_hartid].load(Ordering::SeqCst);
-    //LAST_TIMER_TICK[target_hartid].store(val, Ordering::SeqCst);
+    LAST_TIMER_TICK[target_hartid].store(value, Ordering::SeqCst);
 
     /*println!(
         "[Hart {}] Setting mtimecmp at addr {:x} with value: {:x}",
@@ -379,6 +378,16 @@ pub fn clear_mip_seip() {
     unsafe {
         asm!("csrw mip, {}", in(reg) mip);
     }
+}
+
+pub fn read_mip_seip() -> usize {
+    let mut mip: usize;
+
+    unsafe {
+        asm!("csrr {}, mip", out(reg) mip);
+    } 
+
+    (mip & 0x200)
 }
 
 pub fn clear_mip_stip() {

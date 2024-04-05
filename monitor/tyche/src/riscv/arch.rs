@@ -26,10 +26,58 @@ pub fn init(hartid: usize) {
 
 #[cfg(feature = "visionfive2")]
 pub fn init() {
+    use super::cpuid;
+
     let mut medeleg: usize;
     unsafe {
         asm!("csrw mscratch, {}", in(reg) VF2_TYCHE_STACK_POINTER);
     }
+
+
+    let mip: usize; 
+    unsafe {
+        asm!("csrr {}, mip", out(reg) mip);
+    }
+
+    let toggle_seip_mip: usize;
+    toggle_seip_mip = (mip ^ 0x200);
+
+    unsafe {
+        asm!("csrw mip, {}",in(reg) toggle_seip_mip);
+    }
+
+    let new_mip: usize; 
+    unsafe {
+        asm!("csrr {}, mip", out(reg) new_mip);
+    } 
+
+    if (new_mip & 0x200) == (mip & 0x200) {
+        panic!("MIP.SEIP didn't change. MIP: {:x} TOGGLED: {:x} UPDATED: {:x}",mip, toggle_seip_mip, new_mip);
+    }
+
+    //Write back the original value.
+    unsafe {
+        asm!("csrw mip, {}",in(reg) mip);
+    } 
+
+
+    //Neelu: Enabling TW so wfi results into illegal instr - for debugging purposes.
+    /* let mut mstatus: usize;
+    unsafe {
+        asm!("csrr {}, mstatus", out(reg) mstatus);
+    }
+    mstatus |= (1 << 21);
+    unsafe {
+        asm!("csrw mstatus, {}", in(reg) mstatus);
+    } */
+
+    /* let mtimer: usize;
+    unsafe {
+        asm!("ld {}, 0({})", out(reg) mtimer, in(reg) ACLINT_MTIMER_VALUE_ADDRESS);
+    }
+    println!("Mtimer value read: {:x}",mtimer); */
+    aclint_mtimer_set_mtimecmp(cpuid(), 0x42fc3c1); //I just selected a random value sampled from
+                                                    //some interrupts.  
 
     // Configuring mtvec direct base address to point to Tyche's trap handler.
     let mtvec_ptr = machine_trap_handler as *const ();

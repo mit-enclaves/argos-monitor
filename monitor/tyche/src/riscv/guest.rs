@@ -6,10 +6,10 @@ use riscv_csrs::*;
 use riscv_pmp::clear_pmp;
 use riscv_sbi::ecall::ecall_handler;
 use riscv_sbi::ipi::process_ipi;
-use riscv_sbi::sbi::EXT_IPI;
+use riscv_sbi::sbi::{EXT_IPI, self};
 use riscv_utils::{
     aclint_mtimer_set_mtimecmp, clear_mie_mtie, clear_mip_seip, RegisterState,
-    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, NUM_HARTS, TIMER_EVENT_TICK, system_opcode_instr, TrapState, set_rd, get_rs2, set_mip_stip,
+    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, NUM_HARTS, TIMER_EVENT_TICK, system_opcode_instr, TrapState, set_rd, get_rs2, set_mip_stip, LAST_TIMER_TICK, read_mip_seip,
 };
 use spin::Mutex;
 
@@ -22,6 +22,9 @@ use crate::println;
 const EMPTY_ACTIVE_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
 static ACTIVE_DOMAIN: [Mutex<Option<Handle<Domain>>>; NUM_HARTS] = [EMPTY_ACTIVE_DOMAIN; NUM_HARTS];
 
+static mut ecalls_count: usize = 0;
+static mut timer_count: usize = 0;
+static mut set_timer_count: usize = 0;
 // M-mode trap handler
 // Saves register state - calls trap_handler - restores register state - mret to intended mode.
 
@@ -205,6 +208,14 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             }
         }
         mcause::MTI => {
+            let val;
+            unsafe {
+                timer_count = timer_count + 1;
+                val = LAST_TIMER_TICK[hartid].load(core::sync::atomic::Ordering::SeqCst);
+                if timer_count % 20000 == 0 {
+                    println!("Received timer interrupt! mepc: {:x} timer_count: {:x} setting mtimecmp to: {:x}",mepc, timer_count, TIMER_EVENT_TICK+val);
+                }
+            }
             //panic!("Servicing mcause: {:x}",mcause);   //URGENT TODO: Remove this
             //println!("[TYCHE Timer Interrupt] mepc: {:x} mtval: {:x} mcause: {:x}", mepc, mtval, mcause);
             clear_mie_mtie();
@@ -215,7 +226,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
                 reg_state.ra
             );
             set_mip_stip();
-            //aclint_mtimer_set_mtimecmp(hartid, TIMER_EVENT_TICK);
+            aclint_mtimer_set_mtimecmp(hartid, TIMER_EVENT_TICK + val);
         }
         mcause::MEI => {
             panic!("MEI");
@@ -226,11 +237,27 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         }
         mcause::ECALL_FROM_SMODE => {
             //println!("TYCHE ECall");
+            unsafe { 
+            ecalls_count = ecalls_count + 1;
+            if reg_state.a7 == sbi::EXT_TIME {
+                set_timer_count = set_timer_count + 1; 
+                if set_timer_count % 20 == 0 {
+                    //println!("Setting TIMER: {:x} mepc: {:x} set_timer_count: {}", reg_state.a0, mepc, set_timer_count);
+                }
+            }
+            //if ecalls_count > 39000 && ecalls_count < 40000 {
+            //    println!("Ecall: a7: {:x} a6: {:x}", reg_state.a7, reg_state.a6);
+            //}
+            }
             if reg_state.a7 == 0x5479636865 {
                 //Tyche call
                 if reg_state.a0 == 0x5479636865 {
-                    log::trace!("Tyche is clearing SIP.SEIE");
+                    //println!("Tyche is clearing SIP.SEIE");
+                    let val_b = read_mip_seip();
                     clear_mip_seip();
+                    let val_a = read_mip_seip();
+                    println!("Tyche cleared SIP.SEIE before: {:x} after: {:x}",val_b, val_a); 
+
                 } else {
                     tyche_call_flag = true;
                     tyche_call_id = reg_state.a0.try_into().unwrap();
@@ -301,6 +328,9 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         }
         log::info!("Returning from Tyche Call {} to MEPC: {:x} and RA: {:x}", tyche_call_id, mepc, reg_state.ra);
     }
+    if mtval == 0x10500073 {  
+        println!("Returning from WFI");
+    }
 }
 
 pub fn illegal_instruction_handler(mepc: usize, mstatus: usize, mtval: usize, reg_state: &mut RegisterState) {
@@ -330,8 +360,15 @@ pub fn illegal_instruction_handler(mepc: usize, mstatus: usize, mtval: usize, re
 
     if (mtval & 3) == 3 {
         if ((mtval & 0x7c) >> 2) == 0x1c {
-            system_opcode_instr(mtval, mstatus, reg_state); 
-        } else {
+            if mtval == 0x10500073 {    //WFI
+                println!("Trapped on WFI: MEPC: {:x} RA: {:x} ", mepc, reg_state.ra);
+                //I'm also gonna raise timer interrupts to S-mode, how does that sound? 
+                //set_mip_stip();
+            } else {
+                system_opcode_instr(mtval, mstatus, reg_state); 
+            }
+        } 
+        else {
             panic!("Non-Truly Illegal Instruction Trap!");
         }
     } else {
