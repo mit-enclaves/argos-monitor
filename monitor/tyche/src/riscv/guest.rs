@@ -254,8 +254,18 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
                 if reg_state.a0 == 0x5479636865 {
                     //println!("Tyche is clearing SIP.SEIE");
                     let val_b = read_mip_seip();
+                    //if val_b == 0 {
+                    //    panic!("MIP.SEIP is already clear! Tyche call is redundant! Need to be patient for PLIC to do its job.");
+                    //}
                     clear_mip_seip();
-                    let val_a = read_mip_seip();
+                    let mut val_a = read_mip_seip();
+                    //if val_a != 0 {
+                    //    panic!("Tyche cleared MIP.SEIP but it's still set.");
+                    //}
+                    //while val_a != 0 {
+                    //    println!("[RETRYING] Tyche couldn't clear SIP.SEIE before: {:x} after: {:x}",val_b, val_a); 
+                    //    val_a = read_mip_seip(); 
+                    //}
                     println!("Tyche cleared SIP.SEIE before: {:x} after: {:x}",val_b, val_a); 
 
                 } else {
