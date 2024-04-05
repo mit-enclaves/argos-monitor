@@ -48,6 +48,7 @@ pub fn main_loop(mut vmx_state: VmxState, mut domain: Handle<Domain>) {
             }
             Err(err) => {
                 log::error!("Guest crash: {:?}", err);
+                log::error!("Domain: {:?}", domain);
                 log::error!("Vcpu: {:x?}", vmx_state.vcpu);
                 HandlerResult::Crash
             }
