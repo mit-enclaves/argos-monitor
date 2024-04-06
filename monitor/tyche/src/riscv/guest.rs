@@ -209,14 +209,14 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             }
         }
         mcause::MTI => {
-            let val;
+            /* let val;
             unsafe {
                 timer_count[hartid].fetch_add(1, core::sync::atomic::Ordering::SeqCst);
                 val = LAST_TIMER_TICK[hartid].load(core::sync::atomic::Ordering::SeqCst);
                 if timer_count[hartid].load(core::sync::atomic::Ordering::SeqCst) % 5000 == 0 {
                     println!(" [Hart {}] Received timer interrupt! mepc: {:x} ra {:x} setting mtimecmp to: {:x}", hartid, mepc, reg_state.ra, TIMER_EVENT_TICK+val);
                 }
-            }
+            } */
             //panic!("Servicing mcause: {:x}",mcause);   //URGENT TODO: Remove this
             //println!("[TYCHE Timer Interrupt] mepc: {:x} mtval: {:x} mcause: {:x}", mepc, mtval, mcause);
             clear_mie_mtie();
@@ -227,7 +227,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             //    reg_state.ra
             //);
             set_mip_stip();
-            aclint_mtimer_set_mtimecmp(hartid, TIMER_EVENT_TICK + val);
+            //aclint_mtimer_set_mtimecmp(hartid, TIMER_EVENT_TICK + val);
         }
         mcause::MEI => {
             //panic!("MEI"); - don't do anything for now!
@@ -239,13 +239,13 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         mcause::ECALL_FROM_SMODE => {
             //println!("TYCHE ECall");
             unsafe { 
-            ecalls_count = ecalls_count + 1;
+            /* ecalls_count = ecalls_count + 1;
             if reg_state.a7 == sbi::EXT_TIME {
                 set_timer_count = set_timer_count + 1; 
                 if set_timer_count % 20 == 0 {
                     //println!("Setting TIMER: {:x} mepc: {:x} set_timer_count: {}", reg_state.a0, mepc, set_timer_count);
                 }
-            }
+            } */
             //if ecalls_count > 39000 && ecalls_count < 40000 {
             //    println!("Ecall: a7: {:x} a6: {:x}", reg_state.a7, reg_state.a6);
             //}
@@ -254,12 +254,12 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
                 //Tyche call
                 if reg_state.a0 == 0x5479636865 {
                     //println!("Tyche is clearing SIP.SEIE");
-                    let val_b = read_mip_seip();
+                    //let val_b = read_mip_seip();
                     //if val_b == 0 {
                     //    panic!("MIP.SEIP is already clear! Tyche call is redundant! Need to be patient for PLIC to do its job.");
                     //}
                     clear_mip_seip();
-                    let mut val_a = read_mip_seip();
+                    //let mut val_a = read_mip_seip();
                     //if val_a != 0 {
                     //    panic!("Tyche cleared MIP.SEIP but it's still set.");
                     //}
@@ -267,12 +267,12 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
                     //    println!("[RETRYING] Tyche couldn't clear SIP.SEIE before: {:x} after: {:x}",val_b, val_a); 
                     //    val_a = read_mip_seip(); 
                     //}
-                    unsafe {
+                    /* unsafe {
                         cleared_seip[hartid].fetch_add(1, core::sync::atomic::Ordering::SeqCst);
                         if cleared_seip[hartid].load(core::sync::atomic::Ordering::SeqCst) % 200 == 0 { 
                             println!("[Hart {}] Tyche cleared SIP.SEIE before: {:x} after: {:x}", hartid, val_b, val_a); 
                         }
-                    }
+                    } */
 
                 } else {
                     tyche_call_flag = true;
@@ -456,7 +456,7 @@ pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut Regist
         instr = (8 + ((instr >> 2) & ((1 << 3) - 1))) << 7; //Todo: Needs to be cleaned - check
                                                             //insn_match_c_lw (rvc_rs2s << sh_rd)
     } else {
-        panic!("Cannot handle this misaligned load!");
+        panic!("Cannot handle this misaligned load! mtval: {:x} mepc: {:x} instr: {:x}", mtval, mepc, instr);
     }
    
     //TODO: Is shifting needed? 
@@ -564,7 +564,7 @@ pub fn misaligned_store_handler(mtval: usize, mepc: usize, reg_state: &mut Regis
     let mut len: usize = 0;
     if (instr & 0x707f) == 0x2023 { //Matching insn_match_sw
         len = 4;
-    } else if (instr & 0xe003) == 0xc003 {
+    } else if (instr & 0xe003) == 0xc000 {  //Matching insn_match_c_sd
         len = 4;
         value = 8 + ((instr >> 2) & ((1 << 3) - 1)); //get rs2s 
         //Again a bit of repetition - need to modularise get rs1/rs2/rs2s. 
@@ -575,7 +575,7 @@ pub fn misaligned_store_handler(mtval: usize, mepc: usize, reg_state: &mut Regis
             value = *reg_ptr as usize;
         }
     } else {
-        panic!("Cannot handle this misaligned store!");
+        panic!("Cannot handle this misaligned store! mtval: {:x} mepc: {:x} instr: {:x}", mtval, mepc, instr);
     }
 
     //set value ...... 
