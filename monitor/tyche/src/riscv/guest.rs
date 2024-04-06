@@ -9,7 +9,7 @@ use riscv_sbi::ipi::process_ipi;
 use riscv_sbi::sbi::{EXT_IPI, self};
 use riscv_utils::{
     aclint_mtimer_set_mtimecmp, clear_mie_mtie, clear_mip_seip, RegisterState,
-    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, NUM_HARTS, TIMER_EVENT_TICK, system_opcode_instr, TrapState, set_rd, get_rs2, set_mip_stip, LAST_TIMER_TICK, read_mip_seip,
+    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, NUM_HARTS, TIMER_EVENT_TICK, system_opcode_instr, TrapState, set_rd, get_rs2, set_mip_stip, LAST_TIMER_TICK, read_mip_seip, ZERO,
 };
 use spin::Mutex;
 
@@ -23,7 +23,8 @@ const EMPTY_ACTIVE_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
 static ACTIVE_DOMAIN: [Mutex<Option<Handle<Domain>>>; NUM_HARTS] = [EMPTY_ACTIVE_DOMAIN; NUM_HARTS];
 
 static mut ecalls_count: usize = 0;
-static mut timer_count: usize = 0;
+static mut timer_count: [AtomicUsize; 5] = [ZERO; 5];
+static mut cleared_seip: [AtomicUsize; 5] = [ZERO; 5];
 static mut set_timer_count: usize = 0;
 // M-mode trap handler
 // Saves register state - calls trap_handler - restores register state - mret to intended mode.
@@ -199,7 +200,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     // mcause register holds the cause of the machine mode trap
     match mcause {
         mcause::MSWI => {
-            panic!("Servicing mcause: {:x}",mcause);   //URGENT TODO: Remove this
+            //println!("Servicing mcause: {:x}",mcause);   //URGENT TODO: Remove this
             process_ipi(hartid);
             let active_dom = get_active_dom(hartid);
             match active_dom {
@@ -210,26 +211,26 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         mcause::MTI => {
             let val;
             unsafe {
-                timer_count = timer_count + 1;
+                timer_count[hartid].fetch_add(1, core::sync::atomic::Ordering::SeqCst);
                 val = LAST_TIMER_TICK[hartid].load(core::sync::atomic::Ordering::SeqCst);
-                if timer_count % 20000 == 0 {
-                    println!("Received timer interrupt! mepc: {:x} timer_count: {:x} setting mtimecmp to: {:x}",mepc, timer_count, TIMER_EVENT_TICK+val);
+                if timer_count[hartid].load(core::sync::atomic::Ordering::SeqCst) % 5000 == 0 {
+                    println!(" [Hart {}] Received timer interrupt! mepc: {:x} ra {:x} setting mtimecmp to: {:x}", hartid, mepc, reg_state.ra, TIMER_EVENT_TICK+val);
                 }
             }
             //panic!("Servicing mcause: {:x}",mcause);   //URGENT TODO: Remove this
             //println!("[TYCHE Timer Interrupt] mepc: {:x} mtval: {:x} mcause: {:x}", mepc, mtval, mcause);
             clear_mie_mtie();
-            log::info!(
-                "\nHART {} MTIMER: MEPC: {:x} RA: {:x}\n",
-                hartid,
-                mepc,
-                reg_state.ra
-            );
+            //log::info!(
+            //    "\nHART {} MTIMER: MEPC: {:x} RA: {:x}\n",
+            //    hartid,
+            //    mepc,
+            //    reg_state.ra
+            //);
             set_mip_stip();
             aclint_mtimer_set_mtimecmp(hartid, TIMER_EVENT_TICK + val);
         }
         mcause::MEI => {
-            panic!("MEI");
+            //panic!("MEI"); - don't do anything for now!
         }
         mcause::ILLEGAL_INSTRUCTION => {
             //println!("[TYCHE Illegal Instruction Handler]");
@@ -266,7 +267,12 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
                     //    println!("[RETRYING] Tyche couldn't clear SIP.SEIE before: {:x} after: {:x}",val_b, val_a); 
                     //    val_a = read_mip_seip(); 
                     //}
-                    println!("Tyche cleared SIP.SEIE before: {:x} after: {:x}",val_b, val_a); 
+                    unsafe {
+                        cleared_seip[hartid].fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+                        if cleared_seip[hartid].load(core::sync::atomic::Ordering::SeqCst) % 200 == 0 { 
+                            println!("[Hart {}] Tyche cleared SIP.SEIE before: {:x} after: {:x}", hartid, val_b, val_a); 
+                        }
+                    }
 
                 } else {
                     tyche_call_flag = true;
@@ -339,10 +345,10 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         unsafe {
             asm!("csrr {}, mepc", out(reg) mepc);
         }
-        log::info!("Returning from Tyche Call {} to MEPC: {:x} and RA: {:x}", tyche_call_id, mepc, reg_state.ra);
+        println!("[Hart {}] Returning from Tyche Call {} to MEPC: {:x} and RA: {:x}", hartid, tyche_call_id, mepc, reg_state.ra);
     }
     if mtval == 0x10500073 {  
-        println!("Returning from WFI");
+        println!("[Hart {}] Returning from WFI", hartid);
     }
 }
 

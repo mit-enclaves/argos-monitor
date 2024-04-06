@@ -20,4 +20,4 @@ pub struct RVManifest {
 
 // For the VF2 board  
 pub const VF2_TYCHE_START_ADDRESS: usize = 0x22e0bb000;
-pub const VF2_TYCHE_STACK_POINTER: usize = 0x22e2bb000;
+pub const VF2_TYCHE_STACK_POINTER: [usize; 5] = [0x22e2bb000, 0x22e0b8000, 0x22e0b4000, 0x22e0b0000, 0x22e0ac000];
