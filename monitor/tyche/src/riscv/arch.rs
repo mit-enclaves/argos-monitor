@@ -34,7 +34,7 @@ pub fn init(hartid: usize) {
         asm!("csrw mscratch, {}", in(reg) VF2_TYCHE_STACK_POINTER[hartid]);
     }
 
-    let mut mideleg: usize;
+    /* let mut mideleg: usize;
     unsafe {
         asm!("csrr {}, mideleg", out(reg) mideleg);
     }
@@ -43,7 +43,7 @@ pub fn init(hartid: usize) {
 
     unsafe {
         asm!("csrw mideleg, {}", in(reg) mideleg);
-    }
+    } */
 
 
     /* let mip: usize; 
