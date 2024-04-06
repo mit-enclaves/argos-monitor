@@ -11,7 +11,6 @@ use capa_engine::{
 };
 use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator, IoPtFlag, IoPtMapper};
-use spin::barrier::Barrier;
 use spin::{Mutex, MutexGuard};
 use stage_two_abi::{GuestInfo, Manifest};
 use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
@@ -32,6 +31,8 @@ use super::{cpuid, vmx_helper};
 use crate::allocator::{allocator, PAGE_SIZE};
 use crate::attestation_domain::{attest_domain, calculate_attestation_hash};
 use crate::rcframe::{RCFrame, RCFramePool, EMPTY_RCFRAME};
+use crate::sync::Barrier;
+
 // ————————————————————————— Statics & Backend Data ————————————————————————— //
 
 static CAPA_ENGINE: Mutex<CapaEngine> = Mutex::new(CapaEngine::new());
@@ -42,9 +43,8 @@ static CORE_UPDATES: [Mutex<Buffer<CoreUpdate>>; NB_CORES] = [EMPTY_UPDATE_BUFFE
 static CONTEXTS: [[Mutex<Contextx86>; NB_CORES]; NB_DOMAINS] = [EMPTY_CONTEXT_ARRAY; NB_DOMAINS];
 static RC_VMCS: Mutex<RCFramePool> =
     Mutex::new(GenArena::new([EMPTY_RCFRAME; { NB_DOMAINS * NB_CORES }]));
-const BARRIER: Option<Barrier> = None;
 const FALSE: AtomicBool = AtomicBool::new(false);
-static mut TLB_FLUSH_BARRIERS: [Option<Barrier>; NB_DOMAINS] = [BARRIER; NB_DOMAINS];
+static TLB_FLUSH_BARRIERS: [Barrier; NB_DOMAINS] = [Barrier::NEW; NB_DOMAINS];
 static TLB_FLUSH: [AtomicBool; NB_DOMAINS] = [FALSE; NB_DOMAINS];
 
 pub struct DomainData {
@@ -778,25 +778,16 @@ enum CoreUpdate {
     },
 }
 
-fn post_ept_update(core_id: usize, cores: u64, domain: &Handle<Domain>) {
-    let core_cnt = cores.count_ones();
+fn post_ept_update(core_id: usize, cores_map: u64, domain: &Handle<Domain>) {
     log::trace!(
-        "core{}: post_ept_update with core_cnt={}",
+        "core{}: post_ept_update with cores={}",
         cpuid(),
-        core_cnt
+        cores_map
     );
 
-    // Only the initiating core have access to this routine after gaining the atomic boolean
-    // variable. All of the operations here are serialized until the point we release the atomic
-    // boolean
-    unsafe {
-        TLB_FLUSH_BARRIERS[domain.idx()] = Some(spin::barrier::Barrier::new(core_cnt as usize));
-    }
-    notify_cores(core_id, cores);
-
-    unsafe {
-        TLB_FLUSH_BARRIERS[domain.idx()].as_mut().unwrap().wait();
-    }
+    // At this point the barrier must already be initialized
+    notify_cores(core_id, cores_map);
+    TLB_FLUSH_BARRIERS[domain.idx()].wait();
 
     // If I am the initiating core, then I'm responsible for freeing the original EPT
     // root.
@@ -838,11 +829,21 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
                         cpuid(),
                         core_map
                     );
+                    let mut core_count = core_map.count_ones() as usize;
+
                     // This relies on the fact that the cache marks dirty values.
                     // We call the tlb_shootdown which will be effective upon reentry in the
                     // domain.
-                    tlb_shootdown(core_id, &domain, None);
-                    // Push TlbShootdown directly into the per-core queue
+                    if (1 << core_id) & core_map != 0 {
+                        tlb_shootdown(core_id, &domain, None);
+                    } else {
+                        // We will still wait on the barrier before freeing the EPT, so count
+                        // ourselves
+                        core_count += 1;
+                    }
+
+                    // Setup barrier and enque updates on other cores
+                    TLB_FLUSH_BARRIERS[domain.idx()].set_count(core_count);
                     for core in BitmapIterator::new(core_map) {
                         if core == core_id {
                             continue;
@@ -946,12 +947,7 @@ pub fn apply_core_updates(
                 // wait on the TLB_FLUSH_BARRIER
                 tlb_shootdown(core_id, current_domain, Some(vcpu));
                 log::trace!("core {} waits on tlb flush barrier", core_id);
-                unsafe {
-                    TLB_FLUSH_BARRIERS[current_domain.idx()]
-                        .as_mut()
-                        .unwrap()
-                        .wait();
-                }
+                TLB_FLUSH_BARRIERS[current_domain.idx()].wait();
                 log::trace!("core {} done waiting", core_id);
             }
             CoreUpdate::Switch {
