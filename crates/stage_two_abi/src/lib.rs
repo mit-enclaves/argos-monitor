@@ -29,13 +29,13 @@ macro_rules! entry_point {
     };
 }
 
-#[cfg(all(target_arch = "riscv64", not(feature = "visionfive2")))]
+#[cfg(target_arch = "riscv64")]
 /// Signature of the second stage entry point.
 pub type EntryPoint = extern "C" fn(usize, RVManifest) -> !;
 
 /// A transparent wrapper for the entry point which enables type-checking between the first and
 /// second stage.
-#[cfg(all(target_arch = "riscv64", not(feature = "visionfive2")))]
+#[cfg(target_arch = "riscv64")]
 #[macro_export]
 macro_rules! entry_point {
     ($path:path) => {
@@ -48,7 +48,7 @@ macro_rules! entry_point {
     };
 }
 
-#[cfg(all(target_arch = "riscv64", feature = "visionfive2"))]
+/* #[cfg(all(target_arch = "riscv64", feature = "visionfive2"))]
 /// Signature of the second stage entry point.
 pub type EntryPoint = extern "C" fn(u64, u64, u64, u64) -> !;
 
@@ -65,7 +65,7 @@ macro_rules! entry_point {
             f(hartid, arg1, next_addr, next_mode);
         }
     };
-}
+} */
 
 // ———————————————————————————————— Manifest ———————————————————————————————— //
 

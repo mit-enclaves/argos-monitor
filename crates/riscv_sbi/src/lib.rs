@@ -62,6 +62,9 @@ pub enum IPIRequest {
         size: usize,
         asid: usize,
     },
+    RfenceIfence {
+        src_hartid: usize,
+    },
 }
 
 impl core::fmt::Display for IPIRequest {
@@ -70,6 +73,9 @@ impl core::fmt::Display for IPIRequest {
             IPIRequest::SMode => write!(f, "SMode IPI"),
             IPIRequest::RfenceSfenceVMAASID { src_hartid, .. } => {
                 write!(f, "Sfence VMA ASID from hart {}", src_hartid)
+            }
+            IPIRequest::RfenceIfence { src_hartid } => {
+                write!(f, "Ifence from hart {}", src_hartid)
             }
         }
     }

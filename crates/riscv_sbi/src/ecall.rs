@@ -61,8 +61,8 @@ pub fn ecall_handler(
             &mut out_val,
             reg_state.a0.try_into().unwrap(),
             reg_state.a1,
-            reg_state.a2,
-            reg_state.a3,
+            0,  //Neelu: start and size are 0 for now, sfence.vma even for asid.
+            0,
             reg_state.a4,
             reg_state.a6,
         ),
@@ -156,8 +156,6 @@ pub fn sbi_ext_ipi_handler(
     //Todo: The implementation doesn't check for HART STATE at this point. Need to add metadata in
     //Tyche to track this.
 
-    panic!("IPI bhejne ko bol raha hai linux :/");
-
     let src_hartid: usize;
     unsafe {
         asm!("csrr {}, mhartid", out(reg) src_hartid);
@@ -190,7 +188,7 @@ pub fn sbi_ext_ipi_handler(
                 {
                     //TODO: WHAT ABOUT CURRENT HART? No such check in OpenSBI - let's see if it's
                     //needed.
-                    //log::info!("Hmask harts: Sending IPI to hart {} a0: {}, a1: {}", i, a0, a1);
+                    //log::info!("Hmask harts: Sending IPI from hart {} to hart {} a0: {}, a1: {}", src_hartid, i, a0, a1);
                     //let mut ipi_requests = HART_IPI_BUFFER[i as usize].lock();
                     //ipi_requests.push(IPIRequest::SMode);
                     //drop(ipi_requests);
@@ -226,19 +224,22 @@ pub fn sbi_ext_rfence_handler(
         asm!("csrr {}, mhartid", out(reg) src_hartid);
     }
     let number_of_harts = NUM_HARTS_AVAILABLE.load(Ordering::SeqCst);
-
+    //println!("[TYCHE] START Rfence service call on Src Hart {}", src_hartid);
     match a6 {
-        sbi_ext_rfence::REMOTE_SFENCE_VMA_ASID => {
-            panic!("Remote sfence vma asid");
+        sbi_ext_rfence::REMOTE_SFENCE_VMA_ASID | sbi_ext_rfence::REMOTE_SFENCE_VMA => {
+            //if a6 == sbi_ext_rfence::REMOTE_SFENCE_VMA {
+            //    start = 0;
+            //    size = 0;
+            //}
             if a1 == -1 {
                 //Send IPI to all available harts.
                 for i in 0..number_of_harts {
                     if i == src_hartid {
-                        println!("[TYCHE] Servicing local rfence.");
+                        //println!("[TYCHE] Servicing local rfence.");
                         local_sfence_vma_asid(start, size, asid);
                     } else {
                         //Push req into buffer
-                        //log::info!("All: Sending IPI to hart {} from hart {}", src_hartid, i);
+                        //println!("All: Sending IPI from hart {} to hart {}", src_hartid, i);
                         let mut ipi_requests = HART_IPI_BUFFER[i as usize].lock();
                         ipi_requests
                             .push(IPIRequest::RfenceSfenceVMAASID {
@@ -266,7 +267,7 @@ pub fn sbi_ext_rfence_handler(
                 for i in a1.try_into().unwrap()..number_of_harts {
                     if ((available_hart_mask & 0x1) & (target_hart_mask & 1)) == 1 {
                         if i == src_hartid {
-                            println!("[TYCHE] Servicing local rfence."); 
+                            //println!("[TYCHE] Servicing local rfence."); 
                             local_sfence_vma_asid(start, size, asid);
                         } else {
                             //Push req into buffer
@@ -283,7 +284,7 @@ pub fn sbi_ext_rfence_handler(
                             drop(ipi_requests);
                             //Send IPI to the hart.
                             HART_IPI_SYNC[src_hartid].fetch_add(1, Ordering::SeqCst);
-                            //log::info!("Sending IPI to hart {} from hart {}", src_hartid, i);
+                            //println!("Sending IPI from hart {} to hart {}", src_hartid, i);
                             IPI_TYPE_TLB[i].store(true, Ordering::SeqCst);
                             aclint_mswi_send_ipi(i);
                             //HART_IPI_SYNC[src_hartid].fetch_add(1, Ordering::SeqCst);
@@ -295,8 +296,65 @@ pub fn sbi_ext_rfence_handler(
             }
         }
         sbi_ext_rfence::REMOTE_FENCE_I => {
+                if a1 == -1 {
+                //Send IPI to all available harts.
+                for i in 0..number_of_harts {
+                    if i == src_hartid {
+                        //println!("[TYCHE] Servicing local rfence.");
+                        local_ifence();
+                    } else {
+                        //Push req into buffer
+                        //println!("All: Sending IPI from hart {} to hart {}", src_hartid, i);
+                        let mut ipi_requests = HART_IPI_BUFFER[i as usize].lock();
+                        ipi_requests
+                            .push(IPIRequest::RfenceIfence {
+                                src_hartid,
+                            })
+                            .unwrap();
+                        drop(ipi_requests);
+                        //Send IPI to the hart.
+                        HART_IPI_SYNC[src_hartid].fetch_add(1, Ordering::SeqCst);
+                        IPI_TYPE_TLB[i].store(true, Ordering::SeqCst);
+                        aclint_mswi_send_ipi(i);
+                    }
+                }
+            } else {
+                //Check hmask starting from hbase hartid.
+                let mut available_hart_mask: usize;
+                available_hart_mask = AVAILABLE_HART_MASK.load(Ordering::SeqCst) >> a1;
+                //Currently assuming all harts are available to send IPIs.
+                let mut target_hart_mask: usize = a0;
+                for i in a1.try_into().unwrap()..number_of_harts {
+                    if ((available_hart_mask & 0x1) & (target_hart_mask & 1)) == 1 {
+                        if i == src_hartid {
+                            //println!("[TYCHE] Servicing local rfence."); 
+                            local_ifence();
+                        } else {
+                            //Push req into buffer
+                            //println!(" Sending IPI from hart {} to hart {}", src_hartid, i);
+                            let mut ipi_requests = HART_IPI_BUFFER[i as usize].lock();
+                            ipi_requests
+                                .push(IPIRequest::RfenceIfence {
+                                    src_hartid,
+                                })
+                                .unwrap();
+                            drop(ipi_requests);
+                            //Send IPI to the hart.
+                            HART_IPI_SYNC[src_hartid].fetch_add(1, Ordering::SeqCst);
+                            //println!("Sending IPI from hart {} to hart {}", src_hartid, i);
+                            IPI_TYPE_TLB[i].store(true, Ordering::SeqCst);
+                            aclint_mswi_send_ipi(i);
+                            //HART_IPI_SYNC[src_hartid].fetch_add(1, Ordering::SeqCst);
+                        }
+                    }
+                    available_hart_mask >>= 1;
+                    target_hart_mask >>= 1;
+                }
+            }
+
             //println!("Remote sfence i"); 
-            local_ifence();   //Todo: It's not handled for multi-core yet.
+            //local_ifence();   //Todo: It's not handled for multi-core yet.
+
         }
         //sbi_ext_rfence::REMOTE_SFENCE_VMA => panic!("Cannot handle SFENCE.VMA"),
         _ => ecall_handler_failed(sbi::EXT_RFENCE, a6),
@@ -304,9 +362,9 @@ pub fn sbi_ext_rfence_handler(
 
     //SYNC:
 
-   /*  while HART_IPI_SYNC[src_hartid].load(Ordering::SeqCst) > 0 {
+   while HART_IPI_SYNC[src_hartid].load(Ordering::SeqCst) > 0 {
         //Try to process local hart ipis instead of defaulting to busy wait so as to prevent deadlocks, or else just spin loop
-        println!("Waiting in hart {}",src_hartid);
+        //println!("Waiting in hart {}",src_hartid);
         //process_ipi(src_hartid);
         //core::hint::spin_loop();
         let mut ipi_requests = HART_IPI_BUFFER[src_hartid].lock();
@@ -324,8 +382,8 @@ pub fn sbi_ext_rfence_handler(
             }
         }
         drop(ipi_requests);
-    } */
-    //println!("[TYCHE] DONE Rfence service call"); 
+    } 
+    //println!("[TYCHE] DONE Rfence service call on Src Hart {}", src_hartid); 
     //log::info!("Done waiting in hart {}",src_hartid);
 }
 

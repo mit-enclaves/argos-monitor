@@ -24,17 +24,29 @@ pub fn init(hartid: usize) {
     set_mtvec(mtvec_ptr);
 }
 
+//Todo: Keeping it separate for vf2 for now, since I add a lot of debug logs. 
+//But this can easily be code common to all RV platforms by picking the appropriate stack pointers in the background. 
 #[cfg(feature = "visionfive2")]
-pub fn init() {
-    use super::cpuid;
+pub fn init(hartid: usize) {
 
-    let mut medeleg: usize;
+    //let mut medeleg: usize;
     unsafe {
-        asm!("csrw mscratch, {}", in(reg) VF2_TYCHE_STACK_POINTER);
+        asm!("csrw mscratch, {}", in(reg) VF2_TYCHE_STACK_POINTER[hartid]);
+    }
+
+    let mut mideleg: usize;
+    unsafe {
+        asm!("csrr {}, mideleg", out(reg) mideleg);
+    }
+    
+    mideleg = mideleg & !(0x200);
+
+    unsafe {
+        asm!("csrw mideleg, {}", in(reg) mideleg);
     }
 
 
-    let mip: usize; 
+    /* let mip: usize; 
     unsafe {
         asm!("csrr {}, mip", out(reg) mip);
     }
@@ -58,7 +70,7 @@ pub fn init() {
     //Write back the original value.
     unsafe {
         asm!("csrw mip, {}",in(reg) mip);
-    } 
+    } */
 
 
     //Neelu: Enabling TW so wfi results into illegal instr - for debugging purposes.
@@ -76,7 +88,7 @@ pub fn init() {
         asm!("ld {}, 0({})", out(reg) mtimer, in(reg) ACLINT_MTIMER_VALUE_ADDRESS);
     }
     println!("Mtimer value read: {:x}",mtimer); */
-    aclint_mtimer_set_mtimecmp(cpuid(), 0x42fc3c1); //I just selected a random value sampled from
+    //aclint_mtimer_set_mtimecmp(hartid, 0x42fc3c1); //I just selected a random value sampled from
                                                     //some interrupts.  
 
     // Configuring mtvec direct base address to point to Tyche's trap handler.
