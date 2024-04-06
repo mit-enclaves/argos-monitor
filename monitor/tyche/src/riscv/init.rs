@@ -15,16 +15,15 @@ use crate::println;
 
 use crate::riscv::cpuid;
 
-#[cfg(not(feature="visionfive2"))]
 pub fn arch_entry_point(hartid: usize, manifest: RVManifest, log_level: log::LevelFilter) -> ! {
     if hartid == manifest.coldboot_hartid {
         logger::init(log_level);
 
-        log::info!(
-            "============= Hello from Second Stage on Hart ID: {} =============",
+        println!(
+            "============= Hello from Second Stage on Coldboot Hart ID: {} =============",
             hartid
         );
-        log::info!(
+        println!(
             "Manifest Content: {:x} {:x} {:x} {:x} {:x}",
             manifest.coldboot_hartid,
             manifest.next_arg1,
@@ -45,7 +44,7 @@ pub fn arch_entry_point(hartid: usize, manifest: RVManifest, log_level: log::Lev
         AVAILABLE_HART_MASK.store(available_harts_mask, Ordering::SeqCst);
         NUM_HARTS_AVAILABLE.store(manifest.num_harts, Ordering::SeqCst);
 
-        monitor::init();
+        /* monitor::init();
 
         let mut domain = monitor::start_initial_domain_on_cpu();
 
@@ -56,7 +55,8 @@ pub fn arch_entry_point(hartid: usize, manifest: RVManifest, log_level: log::Lev
         //Set the active domain.
         guest::set_active_dom(hartid, domain);
 
-        //monitor::do_debug();
+        //monitor::do_debug(); */
+        arch::init(hartid);
 
         let mip: usize;
         let mie: usize;
@@ -72,7 +72,7 @@ pub fn arch_entry_point(hartid: usize, manifest: RVManifest, log_level: log::Lev
             asm!("csrr {}, mideleg", out(reg) mideleg);
         }
 
-        log::debug!(
+        println!(
             "MIP: {:x} MIE: {:x} MSTATUS: {:x} MEDELEG: {:x} MIDELEG: {:x}",
             mip,
             mie,
@@ -90,9 +90,10 @@ pub fn arch_entry_point(hartid: usize, manifest: RVManifest, log_level: log::Lev
         );
         qemu::exit(qemu::ExitCode::Success);
     } else {
-        log::info!(
-            "============= Hello again from Second Stage on Hart ID: {} =============",
-            hartid
+        HART_START[hartid].store(false, Ordering::SeqCst);
+        println!(
+            "============= Hello again from Second Stage on Warmboot Hart ID: {} HART_START: {}=============",
+            hartid, HART_START[hartid].load(Ordering::SeqCst) 
         );
         let mhartid = cpuid();
         log::debug!("========== Warmboot MHARTID: {} ===========", mhartid);
@@ -105,16 +106,16 @@ pub fn arch_entry_point(hartid: usize, manifest: RVManifest, log_level: log::Lev
             core::hint::spin_loop();
         }
 
-        log::info!("Done spinning for hart {}", hartid);
+        println!("Done spinning for hart {}", hartid);
 
-        let mut domain = monitor::start_initial_domain_on_cpu();
+        //let mut domain = monitor::start_initial_domain_on_cpu();
 
-        guest::set_active_dom(hartid, domain);
+        //guest::set_active_dom(hartid, domain);
 
         let jump_addr = HART_START_ADDR[hartid].load(Ordering::SeqCst);
         let jump_arg = HART_START_ARG1[hartid].load(Ordering::SeqCst);
 
-        log::info!("Next_addr: {:x} Next_arg1: {:x}", jump_addr, jump_arg);
+        println!("Next_addr: {:x} Next_arg1: {:x}", jump_addr, jump_arg);
 
         //set_mip_ssip();
         let mip: usize;
@@ -132,7 +133,7 @@ pub fn arch_entry_point(hartid: usize, manifest: RVManifest, log_level: log::Lev
             //asm!("csrsi mip, 2");
         }
 
-        log::debug!(
+        println!(
             "MIP: {:x} MIE: {:x} MSTATUS: {:x} MEDELEG: {:x} MIDELEG: {:x}",
             mip,
             mie,
@@ -148,7 +149,7 @@ pub fn arch_entry_point(hartid: usize, manifest: RVManifest, log_level: log::Lev
 }
 
 
-#[cfg(feature="visionfive2")]
+/* #[cfg(feature="visionfive2")]
 pub fn arch_entry_point(
     hartid: u64,
     arg1: u64,
@@ -180,5 +181,5 @@ pub fn arch_entry_point(
     arch::init();
     launch_guest(hartid as usize, arg1 as usize, next_addr as usize, next_mode as usize);
     qemu::exit(qemu::ExitCode::Success); 
-}
+} */
 

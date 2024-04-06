@@ -32,11 +32,11 @@ pub const ACLINT_MTIMECMP_SIZE: usize = 8;
 
 pub const TIMER_EVENT_TICK: usize = 0x200;
 
-const FALSE: AtomicBool = AtomicBool::new(false);
+pub const FALSE: AtomicBool = AtomicBool::new(false);
 //Todo: Replace with num_cores
 pub static HART_START: [AtomicBool; NUM_HARTS] = [FALSE; NUM_HARTS];
 
-const ZERO: AtomicUsize = AtomicUsize::new(0);
+pub const ZERO: AtomicUsize = AtomicUsize::new(0);
 
 pub static HART_START_ADDR: [AtomicUsize; NUM_HARTS] = [ZERO; NUM_HARTS];
 pub static HART_START_ARG1: [AtomicUsize; NUM_HARTS] = [ZERO; NUM_HARTS];
