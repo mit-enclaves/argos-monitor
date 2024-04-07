@@ -2,6 +2,7 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use attestation::hashing::hash_region;
 use attestation::signature::EnclaveReport;
 use capa_engine::config::{NB_CORES, NB_DOMAINS, NB_REMAP_REGIONS};
 use capa_engine::utils::BitmapIterator;
@@ -525,6 +526,7 @@ pub fn do_send_region(
     alias: usize,
     is_repeat: bool,
     size: usize,
+    with_hash: bool,
 ) -> Result<(), CapaError> {
     let mut engine = lock_engine(vmx_state, current);
     // Get the capa first.
@@ -557,7 +559,21 @@ pub fn do_send_region(
         }
     }
 
-    let _ = engine.send(*current, capa, to)?;
+    if with_hash {
+        // NOTE: we are missing some checks here, not all memory covered by regions can be accessed
+        // in the current design.
+        let data = unsafe {
+            core::slice::from_raw_parts(
+                region_info.start as *const u8,
+                region_info.end - region_info.start,
+            )
+        };
+        let hash = hash_region(data);
+        let _ = engine.send_with_hash(*current, capa, to, Some(&hash));
+    } else {
+        let _ = engine.send(*current, capa, to)?;
+    }
+
     // We cannot hold the reference while apply_updates is called.
     {
         let target = engine.get_domain_capa(*current, to)?;
@@ -779,11 +795,7 @@ enum CoreUpdate {
 }
 
 fn post_ept_update(core_id: usize, cores_map: u64, domain: &Handle<Domain>) {
-    log::trace!(
-        "core{}: post_ept_update with cores={}",
-        cpuid(),
-        cores_map
-    );
+    log::trace!("core{}: post_ept_update with cores={}", cpuid(), cores_map);
 
     // At this point the barrier must already be initialized
     notify_cores(core_id, cores_map);

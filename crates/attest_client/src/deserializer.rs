@@ -36,10 +36,25 @@ fn deserialize_regions(ctx: &mut Context, buff: &mut Buffer) {
         let ops = buff.u8();
         let start = buff.u64();
         let end = buff.u64();
+        let has_hash = buff.u8();
+        let hash = match has_hash {
+            serde::REGION_HAS_HASH => {
+                let len = buff.u64();
+                let mut hash = Vec::new();
+                assert!(len <= 64, "Unsuported hash size");
+                for _ in 0..len {
+                    hash.push(buff.u8());
+                }
+                Some(hash)
+            }
+            serde::REGION_NO_HASH => None,
+            _ => panic!("Invalid 'has hash' token"),
+        };
         ctx.regions.push(Region {
             start,
             end,
             kind,
+            hash,
             ops: MemOps::from_bits(ops).expect("Invalid MemOps"),
         });
     }

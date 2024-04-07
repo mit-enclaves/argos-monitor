@@ -283,6 +283,7 @@ fn handle_exit(
                 }
                 calls::SEND_REGION => {
                     log::trace!("Send aliased on core {}", cpuid());
+                    let with_hash = false; // TODO: get this argument from the guest
                     // Send a region capa and adds an alias to it.
                     monitor::do_send_region(
                         vs,
@@ -292,6 +293,7 @@ fn handle_exit(
                         arg_3,
                         arg_4 != 0,
                         arg_5,
+                        with_hash,
                     )
                     .expect("Failed send aliased");
                     let mut context = monitor::get_context(*domain, cpuid());

@@ -47,3 +47,13 @@ pub fn get_hash(hasher: &mut TycheHasher) -> HashEnclave {
     };
     henc
 }
+
+pub fn hash_region(region: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::default();
+    hasher.input(region);
+    hasher
+        .result()
+        .as_slice()
+        .try_into()
+        .expect("Failed to convert hash slice into array: wrong size")
+}

@@ -29,7 +29,7 @@ pub use region::{
 use region::{PermissionIterator, TrackerPool, EMPTY_REGION};
 pub use remapper::Remapper;
 pub use segment::EffectiveRegionIterator;
-use segment::{RegionCapa, RegionPool};
+use segment::{RegionCapa, RegionHash, RegionPool};
 use update::UpdateBuffer;
 pub use update::{Buffer, Update};
 
@@ -278,6 +278,16 @@ impl CapaEngine {
         capa: LocalCapa,
         to: LocalCapa,
     ) -> Result<LocalCapa, CapaError> {
+        self.send_with_hash(domain, capa, to, None)
+    }
+
+    pub fn send_with_hash(
+        &mut self,
+        domain: Handle<Domain>,
+        capa: LocalCapa,
+        to: LocalCapa,
+        hash: Option<&RegionHash>,
+    ) -> Result<LocalCapa, CapaError> {
         // Enforce permissions
         domain::has_config(
             domain,
@@ -307,6 +317,12 @@ impl CapaEngine {
                     &mut self.updates,
                     to,
                 )?;
+
+                // Set or unset the hash when sending the region
+                match hash {
+                    Some(hash) => self.regions[region].set_hash(hash),
+                    None => self.regions[region].reset_hash(),
+                }
             }
             Capa::Management(domain) => {
                 // TODO: check that no cycles are created

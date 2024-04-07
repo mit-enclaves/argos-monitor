@@ -68,7 +68,9 @@ fn scenario_1() {
 
     // Send some of the regions
     engine.send(d0, r1, d1).unwrap();
-    engine.send(d0, r2, d1).unwrap();
+    engine
+        .send_with_hash(d0, r2, d1, Some(&[0xfe; 32]))
+        .unwrap();
     engine.send(d0, r3, d2).unwrap();
     engine.send(d0, r4, d2).unwrap();
 
@@ -76,12 +78,12 @@ fn scenario_1() {
     let n = engine.serialize_attestation(&mut buff).unwrap();
     assert!(n > 0);
     snap!(
-        r#"Context {
-  r0 = root 0x0 0x100
-  r1 = alias r0 0x10 0x20
-  r2 = carve r0 0x30 0x50
-  r3 = alias r2 0x40 0x50
-  r4 = carve r0 0x60 0x80
+        r#"Attestation {
+  r0 = root 0x0 0x100 with RWXS
+  r1 = alias r0 0x10 0x20 with RWXS
+  r2 = carve r0 0x30 0x50 with RWXS fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe
+  r3 = alias r2 0x40 0x50 with RWXS
+  r4 = carve r0 0x60 0x80 with RWXS
   d0 = domain { d1, d2, r0 } with SPAWN | SEND | ALIAS | CARVE
   d1 = domain { r1, r2 } with NONE
   d2 = domain { r3, r4 } with NONE

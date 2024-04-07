@@ -60,6 +60,7 @@ check:
 test:
 	cargo test --package vmx
 	cargo test --package capa-engine
+	cargo test --package attest_client
 
 	{{x86-linker-script}} cargo build {{cargo_args}} {{x86_64}} {{tyche}}
 	{{riscv-linker-script}} cargo build {{cargo_args}} {{riscv}} {{tyche}}
