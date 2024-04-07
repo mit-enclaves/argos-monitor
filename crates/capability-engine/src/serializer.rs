@@ -15,9 +15,11 @@ pub mod serde {
     pub const DOMAIN_HEADER: u8 = 0b00000010;
     pub const END_MARKER:    u8 = 0b11111111;
 
-    pub const REGION_ROOT:   u8 = 0b10000000;
-    pub const REGION_ALIAS:  u8 = 0b10000001;
-    pub const REGION_CARVE:  u8 = 0b10000010;
+    pub const REGION_ROOT:     u8 = 0b10000000;
+    pub const REGION_ALIAS:    u8 = 0b10000001;
+    pub const REGION_CARVE:    u8 = 0b10000010;
+    pub const REGION_HAS_HASH: u8 = 0b10000101;
+    pub const REGION_NO_HASH:  u8 = 0b10000100;
 
     pub const DOMAIN_CAPA_START: u8 = 0b01000000;
     pub const DOMAIN_CAPA_END:   u8 = 0b01000001;
@@ -119,6 +121,15 @@ fn serialize_region(
     buff.u8(region.access.ops.bits())?;
     buff.u64(region.access.start as u64)?;
     buff.u64(region.access.end as u64)?;
+    if let Some(hash) = &region.hash {
+        buff.u8(serde::REGION_HAS_HASH)?;
+        buff.u64(hash.len() as u64)?;
+        for byte in hash {
+            buff.u8(*byte)?;
+        }
+    } else {
+        buff.u8(serde::REGION_NO_HASH)?;
+    }
 
     // Serialize children
     for child in HandleIterator::child_list(handle, regions) {

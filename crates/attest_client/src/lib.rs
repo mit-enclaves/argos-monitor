@@ -20,6 +20,7 @@ pub struct Region {
     end: u64,
     ops: MemOps,
     kind: RegionKind,
+    hash: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -85,6 +86,7 @@ impl Context {
             end,
             ops,
             kind: RegionKind::Root,
+            hash: None,
         };
         self.regions.push(region)
     }
@@ -102,6 +104,7 @@ impl Context {
             end,
             ops,
             kind: RegionKind::Alias(parent),
+            hash: None,
         };
         self.regions.push(region)
     }
@@ -119,6 +122,7 @@ impl Context {
             end,
             ops,
             kind: RegionKind::Carve(parent),
+            hash: None,
         };
         self.regions.push(region)
     }
@@ -296,33 +300,40 @@ impl fmt::Debug for Context {
         writeln!(f, "Attestation {{")?;
         let mut idx = 0;
         for region in &self.regions.store {
-            match region.kind {
-                RegionKind::Root => {
-                    let cleanup = if region.ops.contains(MemOps::CLEANUP) {
-                        " | CLEANUP"
-                    } else {
-                        ""
-                    };
-                    let vital = if region.ops.contains(MemOps::VITAL) {
-                        " | VITAL"
-                    } else {
-                        ""
-                    };
-                    writeln!(
-                        f,
-                        "  r{} = root 0x{:x} 0x{:x} with {}{}{}",
-                        idx, region.start, region.end, region.ops, cleanup, vital
-                    )?
+            let cleanup = if region.ops.contains(MemOps::CLEANUP) {
+                " | CLEANUP"
+            } else {
+                ""
+            };
+            let vital = if region.ops.contains(MemOps::VITAL) {
+                " | VITAL"
+            } else {
+                ""
+            };
+            let hash = if let Some(hash) = &region.hash {
+                let mut bytes = String::from(" ");
+                for byte in hash {
+                    bytes.push_str(&format!("{:x}", byte));
                 }
+                bytes
+            } else {
+                String::new()
+            };
+            match region.kind {
+                RegionKind::Root => writeln!(
+                    f,
+                    "  r{} = root 0x{:x} 0x{:x} with {}{}{}{}",
+                    idx, region.start, region.end, region.ops, cleanup, vital, hash
+                )?,
                 RegionKind::Alias(r) => writeln!(
                     f,
-                    "  r{} = alias r{} 0x{:x} 0x{:x}",
-                    idx, r.idx, region.start, region.end
+                    "  r{} = alias r{} 0x{:x} 0x{:x} with {}{}{}{}",
+                    idx, r.idx, region.start, region.end, region.ops, cleanup, vital, hash
                 )?,
                 RegionKind::Carve(r) => writeln!(
                     f,
-                    "  r{} = carve r{} 0x{:x} 0x{:x}",
-                    idx, r.idx, region.start, region.end
+                    "  r{} = carve r{} 0x{:x} 0x{:x} with {}{}{}{}",
+                    idx, r.idx, region.start, region.end, region.ops, cleanup, vital, hash
                 )?,
             }
             idx += 1;

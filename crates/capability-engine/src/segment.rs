@@ -9,6 +9,7 @@ use crate::region::TrackerPool;
 use crate::update::{Update, UpdateBuffer};
 use crate::{domain, AccessRights, CapaError, Domain, GenArena, Handle, LocalCapa, MemOps};
 
+pub type RegionHash = [u8; 32];
 pub(crate) type RegionPool = GenArena<RegionCapa, NB_REGIONS>;
 pub const EMPTY_REGION_CAPA: RegionCapa = RegionCapa::new_invalid();
 
@@ -27,6 +28,7 @@ pub struct RegionCapa {
     pub(crate) access: AccessRights,
     /// A temporary ID used when building an attestation
     pub(crate) temporary_id: Cell<u32>,
+    pub(crate) hash: Option<RegionHash>,
 }
 
 impl RegionCapa {
@@ -39,6 +41,7 @@ impl RegionCapa {
             is_confidential: false,
             access: AccessRights::none(),
             temporary_id: Cell::new(0),
+            hash: None,
         }
     }
 
@@ -51,6 +54,7 @@ impl RegionCapa {
             is_confidential: false,
             access,
             temporary_id: Cell::new(0),
+            hash: None,
         }
     }
 
@@ -81,6 +85,14 @@ impl RegionCapa {
     /// Returns true if the region starts before the other
     pub fn is_smaller(&self, access: &AccessRights) -> bool {
         self.access.start <= access.start
+    }
+
+    pub fn set_hash(&mut self, hash: &RegionHash) {
+        self.hash = Some(hash.clone());
+    }
+
+    pub fn reset_hash(&mut self) {
+        self.hash = None;
     }
 }
 

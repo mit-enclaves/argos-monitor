@@ -1,11 +1,11 @@
-use attest_client::Context;
+use attest_client::{Context, MemOps};
 use capa_engine::permission;
 
 fn main() {
     println!("Hello, World!");
 
     let mut ctx = Context::new();
-    let ops = 0b111;
+    let ops = MemOps::all();
     let r0 = ctx.root(0, 0x100, ops);
     let r1 = ctx.alias(r0, 0x10, 0x20, ops);
     let r2 = ctx.carve(r0, 0x30, 0x50, ops);

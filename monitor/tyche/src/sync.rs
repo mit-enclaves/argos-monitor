@@ -1,5 +1,8 @@
 //! Synchronization primitives
 
+// We don't use the new barrier implementation on RISC-V yet, remove this once we do.
+#![allow(dead_code)]
+
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 pub struct Barrier {
