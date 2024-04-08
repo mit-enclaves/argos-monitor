@@ -18,6 +18,7 @@ use riscv_pmp::{
     FROZEN_PMP_ENTRIES, PMP_CFG_ENTRIES, PMP_ENTRIES,
 };
 use riscv_sbi::ipi::aclint_mswi_send_ipi;
+use riscv_tyche::{VF2_DOM0_ROOT_REGION_END, VF2_DOM0_ROOT_REGION_START, VF2_DOM0_ROOT_REGION_2_START, VF2_DOM0_ROOT_REGION_2_END};
 use riscv_utils::*;
 use spin::{Mutex, MutexGuard};
 
@@ -76,8 +77,8 @@ pub fn init() {
         .create_root_region(
             domain,
             AccessRights {
-                start: 0x80400000, //Linux Root Region Start Address
-                end: 0x800000000, //17fffffff,   //Linux Root Region End Address - it's currently based on early
+                start: VF2_DOM0_ROOT_REGION_START, //Linux Root Region Start Address
+                end: VF2_DOM0_ROOT_REGION_END, //17fffffff,   //Linux Root Region End Address - it's currently based on early
                 //memory node range detected by linux.
                 //TODO: It should be a part of the manifest.
                 //TODO: Dom0 needs 2 regions - ram region and pcie-mmio region
@@ -92,8 +93,8 @@ pub fn init() {
         .create_root_region(
             domain,
             AccessRights {
-                start: SIFIVE_TEST_SYSCON_BASE_ADDRESS,
-                end: PCI_BASE_ADDRESS + PCI_SIZE, //Optimization: Including both PLIC and PCI regions in a single PMP
+                start: VF2_DOM0_ROOT_REGION_2_START,
+                end: VF2_DOM0_ROOT_REGION_2_END, //Optimization: Including both PLIC and PCI regions in a single PMP
                 //entry
                 ops: MEMOPS_ALL,
             },

@@ -388,10 +388,10 @@ pub fn illegal_instruction_handler(mepc: usize, mstatus: usize, mtval: usize, re
             }
         } 
         else {
-            panic!("Non-Truly Illegal Instruction Trap!");
+            panic!("Non-Truly Illegal Instruction Trap! mepc: {:x} mtval: {:x}", mepc, mtval);
         }
     } else {
-        panic!("Truly Illegal Instruction Trap!");
+        panic!("Truly Illegal Instruction Trap! mepc: {:x} mtval: {:x}", mepc, mtval);
     }
 }
 
@@ -439,7 +439,7 @@ pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut Regist
     //println!("Done reading instr: {:x}", instr); 
 
     if trap_state.cause != 0 {
-        panic!("Misaligned load handler: Fetch fault {:x}", trap_state.cause);
+        panic!("Misaligned load handler: Fetch fault {:x} trap epc: {:x}", trap_state.cause, trap_state.epc);
     }
 
     if (instr & 0x3) != 0x3 {
@@ -497,7 +497,7 @@ pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut Regist
 
         value = (value) | ((tmp_value as usize) << (i*8));
         if load_trap_state.cause != 0 {
-            panic!("Misaligned load handler: Load fault {:x}", load_trap_state.cause);  
+            panic!("Misaligned load handler: Load fault {:x} epc: {:x}", load_trap_state.cause, load_trap_state.epc);  
         }
     } 
 
@@ -552,7 +552,7 @@ pub fn misaligned_store_handler(mtval: usize, mepc: usize, reg_state: &mut Regis
     //println!("Done reading instr: {:x}", instr);  
 
     if trap_state.cause != 0 {
-        panic!("Misaligned store handler: Fetch fault {:x}", trap_state.cause);
+        panic!("Misaligned store handler: Fetch fault {:x} epc: {:x}", trap_state.cause, trap_state.epc);
     }
 
     if (instr & 0x3) != 0x3 {
@@ -613,7 +613,7 @@ pub fn misaligned_store_handler(mtval: usize, mepc: usize, reg_state: &mut Regis
         }
 
         if store_trap_state.cause != 0 {
-            panic!("Misaligned store handler: Store fault {:x}", store_trap_state.cause);  
+            panic!("Misaligned store handler: Store fault {:x} epc: {:x}", store_trap_state.cause, store_trap_state.epc);  
         }
     } 
 
