@@ -44,19 +44,18 @@ pub fn arch_entry_point(hartid: usize, manifest: RVManifest, log_level: log::Lev
         AVAILABLE_HART_MASK.store(available_harts_mask, Ordering::SeqCst);
         NUM_HARTS_AVAILABLE.store(manifest.num_harts, Ordering::SeqCst);
 
-        /* monitor::init();
+        arch::init(hartid);
+
+        monitor::init();
 
         let mut domain = monitor::start_initial_domain_on_cpu();
 
         log::info!("Initial domain is ready.");
 
-        arch::init(hartid);
-
         //Set the active domain.
         guest::set_active_dom(hartid, domain);
 
-        //monitor::do_debug(); */
-        arch::init(hartid);
+        //monitor::do_debug(); 
 
         let mip: usize;
         let mie: usize;
