@@ -97,6 +97,7 @@ static void run_ssl(void) {
   ssl_context_t ssl_ctxt = {0};
   ssl_ctxt.read_chan = &(ssl->request);
   ssl_ctxt.write_chan = &(ssl->response);
+  int handshake_done = 0;
   // Safety checks.
   if (ssl->request.capacity != MSG_BUFFER_SIZE || ssl->response.capacity != MSG_BUFFER_SIZE) {
     suicide();
@@ -109,27 +110,12 @@ static void run_ssl(void) {
     suicide();
   }
 
-  // Trick: This will block until the handshake is done.
-  // It only receives the first byte of the application.
-  do {
-    unsigned char first_byte;
-    int written = 0;
-    if (br_sslio_read(&(ssl_ctxt.io), &first_byte, 1) < 0) {
-      // Something went wrong.
-      suicide();
-    }
-    // Write that byte to redis. It MAY NOT fail.
-    if (rb_char_write(&(redis->request), first_byte) != SUCCESS) {
-      // Something went wrong.
-      suicide();
-    }
-  } while(0);
-
+  // Trick: br_sslio_read blocks until handshake is done.
   // Implement a busy poll/select.
   // Start by draining shared queues then moving stuff around.
   while (1) {
     // We have some input to decrypt and enqueue to_redis.
-    if (!rb_char_is_empty(&(ssl->request))) {
+    if ((handshake_done == 0) || !rb_char_is_empty(&(ssl->request))) {
       // Check we have some room for redis requests.
       int count = redis->request.capacity - rb_char_get_count(&(redis->request));
       if (count > 0) {
@@ -138,6 +124,10 @@ static void run_ssl(void) {
         if (read <= 0) {
           // Client dropped or bug, we checked it wasn't empty.
           suicide();
+        }
+        // We read our first bytes.
+        if (handshake_done == 0) {
+          handshake_done = 1;
         }
         written = rb_char_write_n(&(redis->request), read, buffer);
         if (written != read) {
