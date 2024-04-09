@@ -30,7 +30,7 @@ failure:
 
 static int tyche_domain_attestation_size(unsigned long long* val){
 	vmcall_frame_t frame = {
-		.vmcall = 22,
+		.vmcall = 23,
 	};
 	if (tyche_call(&frame) != SUCCESS) {
 		goto failure;
