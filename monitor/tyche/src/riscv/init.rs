@@ -107,9 +107,9 @@ pub fn arch_entry_point(hartid: usize, manifest: RVManifest, log_level: log::Lev
 
         println!("Done spinning for hart {}", hartid);
 
-        //let mut domain = monitor::start_initial_domain_on_cpu();
+        let mut domain = monitor::start_initial_domain_on_cpu();
 
-        //guest::set_active_dom(hartid, domain);
+        guest::set_active_dom(hartid, domain);
 
         let jump_addr = HART_START_ADDR[hartid].load(Ordering::SeqCst);
         let jump_arg = HART_START_ARG1[hartid].load(Ordering::SeqCst);

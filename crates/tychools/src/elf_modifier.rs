@@ -359,6 +359,7 @@ impl ModifiedELF {
             Some(cr3 as u64),
             tpe as u32,
             flags,
+            //NEELU: object::elf::PF_R | object::elf::PF_W | object::elf::PF_X,
             nb_pages * PAGE_SIZE,
             &pts,
         );
