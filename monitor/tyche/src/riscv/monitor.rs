@@ -415,7 +415,7 @@ pub fn do_switch(
     current_reg_state: &mut RegisterState,
 ) -> Result<(), CapaError> {
     let mut engine = CAPA_ENGINE.lock();
-    engine.switch(current, cpuid, capa)?;
+    engine.switch(current, cpuid-1, capa)?;
     apply_updates(&mut engine);
     Ok(())
 }
@@ -708,22 +708,28 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
             continue;
         }
         //TODO: Update PMP based on specific permissions - just need to compute XWR using MemOps.
-        log::trace!(
-            "PMP Compute for Region: index: {:x} start: {:x} end: {:x}",
+        log::info!(
+            "PMP Compute for Region: index: {:x} start: {:x} end: {:x} perm: {:#?}",
             pmp_index,
             range.start,
-            range.start + range.size()
+            range.start + range.size(),
+            range.ops
         );
+
+        if pmp_index >= PMP_ENTRIES {
+            panic!("Cannot continue running this domain: PMPOverflow");
+        } 
 
         pmp_write_response = pmp_write_compute(pmp_index, range.start, range.size(), XWR_PERM);
 
         if pmp_write_response.write_failed {
-            panic!("PMP Write Not Ok");
+            log::info!("Attempted to compute pmp: {} start: {:x} size: {:x}", pmp_index, range.start, range.size());
+            panic!("PMP Write Not Ok - failure code: {:#?}",pmp_write_response.failure_code);
         } else {
-            log::debug!("PMP Write Ok");
+            log::info!("PMP Write Ok");
 
             if pmp_write_response.addressing_mode == PMPAddressingMode::NAPOT {
-                log::trace!(
+                log::info!(
                     "NAPOT addr: {:x} cfg: {:x}",
                     pmp_write_response.addr1,
                     pmp_write_response.cfg1
@@ -736,7 +742,7 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
                 );
                 pmp_index = pmp_index + 1;
             } else if pmp_write_response.addressing_mode == PMPAddressingMode::TOR {
-                log::trace!(
+                log::info!(
                     "TOR addr: {:x} cfg: {:x} addr: {:x} cfg: {:x}",
                     pmp_write_response.addr1,
                     pmp_write_response.cfg1,
@@ -758,9 +764,9 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
                 pmp_index = pmp_index + 2;
             }
 
-            if pmp_index > PMP_ENTRIES {
-                panic!("Cannot continue running this domain: PMPOverflow");
-            }
+            //if pmp_index >= PMP_ENTRIES {
+            //    panic!("Cannot continue running this domain: PMPOverflow");
+            //}
         }
     }
     let mut domain = get_domain(domain_handle);

@@ -146,7 +146,7 @@ pub fn modify_binary(src: &PathBuf, dst: &PathBuf, riscv_enabled: bool) {
     elf.append_data_segment(
         Some(cr3 as u64),
         TychePhdrTypes::PageTablesConf as u32,
-        object::elf::PF_R | object::elf::PF_W,
+        object::elf::PF_R | object::elf::PF_W | object::elf::PF_X,
         nb_pages * PAGE_SIZE,
         &pts,
     );
@@ -183,12 +183,14 @@ pub fn parse_binary(
                 }
                 BinaryOperation::AddSegment(descr) => {
                     let mut rights = object::elf::PF_R;
-                    if descr.write {
+                    //TODO: Only for RISC-V: 
+                    rights |= object::elf::PF_W | object::elf::PF_X;
+                    /* if descr.write {
                         rights |= object::elf::PF_W;
                     }
                     if descr.exec {
                         rights |= object::elf::PF_X;
-                    }
+                    } */
                     elf.append_nodata_segment(descr.start, descr.tpe as u32, rights, descr.size);
                 }
             }
