@@ -1,4 +1,4 @@
-use riscv_utils::PAGING_MODE_SV48;
+use riscv_utils::{PAGING_MODE_SV48, PAGING_MODE_SV39};
 
 use crate::riscv::monitor::ContextData;
 
@@ -19,7 +19,7 @@ impl RiscVField {
             0x0000681c => Some(Self::Sp),
             0x0000681e => Some(Self::Mepc), 
             _ => {
-                log::error!("Unknown field value, you should check that {:x}", v);
+                //log::error!("Unknown field value, you should check that {:x}", v);
                 None
             }
         }
@@ -40,11 +40,12 @@ impl RiscVField {
                 log::info!("Setting medeleg to {:x}", context.medeleg);
             }
             Self::Satp => {
-                context.satp = (value >> 12) | PAGING_MODE_SV48;
+                context.satp = (value >> 12) | PAGING_MODE_SV39;
                 log::info!("Setting satp to {:x}", context.satp);
             }
             Self::Sp => {
-                context.sp = value;
+                let mut val = (value >> 3) << 3;    //Forcing it to be 8 bytes aligned. 
+                context.sp = val;
                 log::info!("Setting sp to {:x}", context.sp);
             }
             Self::Mepc => {

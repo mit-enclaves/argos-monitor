@@ -348,8 +348,9 @@ impl ModifiedELF {
         flags: u32,
         map_page_tables: &Option<MappingPageTables>,
         riscv_enabled: bool,
+        vf2_enabled: bool,
     ) {
-        let (pts, nb_pages, cr3) = generate_page_tables(self, map_page_tables, riscv_enabled);
+        let (pts, nb_pages, cr3) = generate_page_tables(self, map_page_tables, riscv_enabled, vf2_enabled);
         let tpe = if security == Security::Confidential {
             TychePhdrTypes::PageTablesConf
         } else {

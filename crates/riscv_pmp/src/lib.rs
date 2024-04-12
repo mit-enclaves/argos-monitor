@@ -134,7 +134,7 @@ pub fn pmp_write_compute(
 
     if (region_size & (region_size - 1)) == 0 {
         log_2_region_size = compute_log2(region_size);
-        if (log_2_region_size > 0) && (region_addr & (log_2_region_size - 1) == 0) {
+        if (log_2_region_size > 0) && ((region_addr >> 2) & ((1 << (log_2_region_size - 2)) - 1) == 0) {
             pmp_write_response.addressing_mode = PMPAddressingMode::NAPOT;
         }
     }

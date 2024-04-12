@@ -23,6 +23,7 @@ pub const PCI_BASE_ADDRESS: usize = 0x30000000;
 pub const PCI_SIZE: usize = 0x10000000;
 
 pub const PAGING_MODE_SV48: usize = 0x9000000000000000;
+pub const PAGING_MODE_SV39: usize = 0x8000000000000000;
 
 pub const ACLINT_MSWI_BASE_ADDR: usize = 0x2000000;
 pub const ACLINT_MSWI_WORD_SIZE: usize = 4;

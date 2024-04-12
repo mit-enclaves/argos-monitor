@@ -290,7 +290,7 @@ pub fn do_set_entry(
     }
     let context = &mut get_context(domain, core);
 
-    context.satp = ((satp >> 12) | PAGING_MODE_SV48);
+    context.satp = ((satp >> 12) | PAGING_MODE_SV39);
     context.mepc = (mepc - 0x4); //TODO: Temporarily subtracting 4, because at the end of handle_exit,
                                  //mepc+4 is the address being returned to. Need to find an elegant way
                                  //to manage this.
@@ -415,7 +415,7 @@ pub fn do_switch(
     current_reg_state: &mut RegisterState,
 ) -> Result<(), CapaError> {
     let mut engine = CAPA_ENGINE.lock();
-    engine.switch(current, cpuid-1, capa)?;
+    engine.switch(current, cpuid, capa)?;
     apply_updates(&mut engine);
     Ok(())
 }
@@ -684,7 +684,7 @@ fn update_pmps(domain: MutexGuard<DomainData>) {
     clear_pmp();
     for i in FROZEN_PMP_ENTRIES..PMP_ENTRIES {
         pmpaddr_csr_write(i, domain.pmpaddr[i]);
-        log::trace!(
+        log::debug!(
             "updating pmpaddr index: {}, val: {:x}",
             i,
             domain.pmpaddr[i]
@@ -692,7 +692,7 @@ fn update_pmps(domain: MutexGuard<DomainData>) {
     }
     for i in 0..PMP_CFG_ENTRIES {
         pmpcfg_csr_write(i * 8, domain.pmpcfg[i]);
-        log::trace!("updating pmpcfg index: {}, val: {:x}", i, domain.pmpcfg[i]);
+        log::debug!("updating pmpcfg index: {}, val: {:x}", i, domain.pmpcfg[i]);
     }
     unsafe {
         asm!("sfence.vma");
@@ -708,7 +708,7 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
             continue;
         }
         //TODO: Update PMP based on specific permissions - just need to compute XWR using MemOps.
-        log::info!(
+        log::debug!(
             "PMP Compute for Region: index: {:x} start: {:x} end: {:x} perm: {:#?}",
             pmp_index,
             range.start,
@@ -723,10 +723,10 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
         pmp_write_response = pmp_write_compute(pmp_index, range.start, range.size(), XWR_PERM);
 
         if pmp_write_response.write_failed {
-            log::info!("Attempted to compute pmp: {} start: {:x} size: {:x}", pmp_index, range.start, range.size());
+            log::debug!("Attempted to compute pmp: {} start: {:x} size: {:x}", pmp_index, range.start, range.size());
             panic!("PMP Write Not Ok - failure code: {:#?}",pmp_write_response.failure_code);
         } else {
-            log::info!("PMP Write Ok");
+            log::debug!("PMP Write Ok");
 
             if pmp_write_response.addressing_mode == PMPAddressingMode::NAPOT {
                 log::info!(
@@ -742,7 +742,7 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
                 );
                 pmp_index = pmp_index + 1;
             } else if pmp_write_response.addressing_mode == PMPAddressingMode::TOR {
-                log::info!(
+                log::debug!(
                     "TOR addr: {:x} cfg: {:x} addr: {:x} cfg: {:x}",
                     pmp_write_response.addr1,
                     pmp_write_response.cfg1,
@@ -764,9 +764,6 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
                 pmp_index = pmp_index + 2;
             }
 
-            //if pmp_index >= PMP_ENTRIES {
-            //    panic!("Cannot continue running this domain: PMPOverflow");
-            //}
         }
     }
     let mut domain = get_domain(domain_handle);

@@ -18,6 +18,7 @@ use crate::arch::cpuid;
 use crate::calls;
 use crate::riscv::monitor::apply_core_updates;
 use crate::println;
+use crate::riscv::platform::{remap_core_bitmap, remap_core};
 
 const EMPTY_ACTIVE_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
 static ACTIVE_DOMAIN: [Mutex<Option<Handle<Domain>>>; NUM_HARTS] = [EMPTY_ACTIVE_DOMAIN; NUM_HARTS];
@@ -306,8 +307,8 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         }
         mcause::INSTRUCTION_PAGE_FAULT | mcause::LOAD_PAGE_FAULT | mcause::STORE_PAGE_FAULT => {
             panic!(
-                "Page Fault! mcause: {:x} mepc: {:x} mtval: {:x}",
-                mcause, mepc, mtval
+                "Page Fault! mcause: {:x} mepc: {:x} mtval: {:x} mstatus: {:x}",
+                mcause, mepc, mtval, mstatus
             );
         }
         _ => exit_handler_failed(mcause, mepc),
@@ -341,7 +342,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     } */
 
     }
-    if tyche_call_flag {
+    /* if tyche_call_flag {
         unsafe {
             asm!("csrr {}, mepc", out(reg) mepc);
         }
@@ -349,7 +350,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     }
     if mtval == 0x10500073 {  
         println!("[Hart {}] Returning from WFI", hartid);
-    }
+    } */
 }
 
 pub fn illegal_instruction_handler(mepc: usize, mstatus: usize, mtval: usize, reg_state: &mut RegisterState) {
@@ -662,7 +663,7 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
 
         match tyche_call {
             calls::CREATE_DOMAIN => {
-                log::info!("Create Domain");
+                log::debug!("Create Domain");
                 let capa = monitor::do_create_domain(active_dom).expect("TODO");
                 reg_state.a0 = 0x0;
                 reg_state.a1 = capa.as_usize() as isize;
@@ -671,19 +672,19 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
                 //not yet. Must be handled after addition of more exception handling in Tyche.
             }
             calls::SEAL_DOMAIN => {
-                log::info!("Seal Domain");
+                log::debug!("Seal Domain");
                 let capa = monitor::do_seal(active_dom, LocalCapa::new(arg_1)).expect("TODO");
                 reg_state.a0 = 0x0;
                 reg_state.a1 = capa.as_usize() as isize;
             }
             calls::SEND => {
-                log::info!("Send");
+                log::debug!("Send");
                 monitor::do_send(active_dom, LocalCapa::new(arg_1), LocalCapa::new(arg_2))
                     .expect("TODO");
                 reg_state.a0 = 0x0;
             }
             calls::SEGMENT_REGION => {
-                log::info!("Segment Region");
+                log::debug!("Segment Region");
                 let (to_send, to_revoke) = monitor::do_segment_region(
                     active_dom,
                     LocalCapa::new(arg_1),
@@ -699,18 +700,18 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
             }
             // There are no aliases on riscv so we just ignore the alias info.
             calls::REVOKE | calls::REVOKE_ALIASED_REGION => {
-                log::info!("Revoke");
+                log::debug!("Revoke");
                 monitor::do_revoke(active_dom, LocalCapa::new(arg_1)).expect("TODO");
                 reg_state.a0 = 0x0;
             }
             calls::DUPLICATE => {
-                log::info!("Duplicate");
+                log::debug!("Duplicate");
                 let capa = monitor::do_duplicate(active_dom, LocalCapa::new(arg_1)).expect("TODO");
                 reg_state.a0 = 0x0;
                 reg_state.a1 = capa.as_usize() as isize;
             }
             calls::ENUMERATE => {
-                log::info!("Enumerate");
+                log::debug!("Enumerate");
                 if let Some((info, next)) =
                     monitor::do_enumerate(active_dom, NextCapaToken::from_usize(arg_1))
                 {
@@ -726,18 +727,18 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
                 reg_state.a0 = 0x0;
             }
             calls::SWITCH => {
-                log::info!("Switch");
+                log::info!(" Hart {} Switch", hartid);
                 monitor::do_switch(active_dom, LocalCapa::new(arg_1), hartid, reg_state)
                     .expect("TODO");
             }
             calls::EXIT => {
-                log::info!("Tyche Call: Exit");
+                log::debug!("Tyche Call: Exit");
                 //TODO
                 //let capa = monitor::.do_().expect("TODO");
                 reg_state.a0 = 0x0;
             }
             calls::DEBUG => {
-                log::info!("Debug");
+                log::debug!("Debug");
                 //monitor::do_debug();
                 reg_state.a0 = 0x0;
             }
@@ -746,13 +747,17 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
                 reg_state.a0 = 0x0;
             }
             calls::CONFIGURE => {
-                log::info!("Configure");
+                log::debug!("Configure");
                 if let Ok(bitmap) = Bitmaps::from_usize(arg_1) {
+                    let mut core_bitmap = arg_3 as u64;
+                    if bitmap == Bitmaps::CORE {
+                        core_bitmap = remap_core_bitmap(core_bitmap); 
+                    }
                     match monitor::do_set_config(
                         active_dom,
                         LocalCapa::new(arg_2),
                         bitmap,
-                        arg_3 as u64,
+                        core_bitmap,
                     ) {
                         Ok(_) => {
                             //TODO: do_init_child_contexts is not yet implemented on RISC-V.
@@ -769,17 +774,17 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
                 }
             }
             calls::SEND_REGION => {
-                log::info!("Send");
+                log::debug!("Send");
                 monitor::do_send_region(active_dom, LocalCapa::new(arg_1), LocalCapa::new(arg_2))
                     .expect("TODO");
                 reg_state.a0 = 0x0;
             }
             calls::CONFIGURE_CORE => {
-                log::info!("Configure Core");
+                log::debug!("Configure Core");
                 let res = match monitor::do_configure_core(
                     active_dom,
                     LocalCapa::new(arg_1),
-                    arg_2,
+                    remap_core(arg_2),
                     arg_3,
                     arg_4,
                 ) {
@@ -795,7 +800,7 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
                 let (value, success) = match monitor::do_get_config_core(
                     active_dom,
                     LocalCapa::new(arg_1),
-                    arg_2,
+                    remap_core(arg_2),
                     arg_3,
                 ) {
                     Ok(v) => (v, 0),
@@ -808,11 +813,11 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
                 reg_state.a1 = value as isize;
             }
             calls::ALLOC_CORE_CONTEXT => {
-                log::info!("Alloc core context");
+                log::debug!("Alloc core context");
                 let res = match monitor::do_init_child_context(
                     active_dom,
                     LocalCapa::new(arg_1),
-                    arg_2,
+                    remap_core(arg_2),
                 ) {
                     Ok(_) => 0,
                     Err(e) => {
@@ -829,11 +834,11 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
                 todo!("Implement write all gp");
             }
             calls::WRITE_FIELDS => {
-                log::info!("Write fields");
+                log::debug!("Write fields");
                 let res = match monitor::do_set_field(
                     active_dom,
                     LocalCapa::new(arg_1),
-                    arg_2,
+                    remap_core(arg_2),
                     arg_3,
                     arg_4,
                 ) {

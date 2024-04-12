@@ -182,14 +182,14 @@ pub fn decode_map(map: &Option<MappingPageTables>) -> (bool, usize) {
     (should_we_map(map), map_page_table_virt_addr(map))
 }
 
-pub fn modify_binary(src: &PathBuf, dst: &PathBuf, riscv_enabled: bool) {
+pub fn modify_binary(src: &PathBuf, dst: &PathBuf, riscv_enabled: bool, vf2_enabled: bool) {
     let data = std::fs::read(src).expect("Unable to read source file");
     info!("We read {} bytes from the file", data.len());
     let mut elf = ModifiedELF::new(&*data);
 
     // Create page tables.
     // TODO do we need an option to choose mapping of page tables here
-    let (pts, nb_pages, cr3) = generate_page_tables(&*elf, &None, riscv_enabled);
+    let (pts, nb_pages, cr3) = generate_page_tables(&*elf, &None, riscv_enabled, vf2_enabled);
     elf.append_data_segment(
         Some(cr3 as u64),
         TychePhdrTypes::PageTablesConf as u32,
@@ -202,14 +202,14 @@ pub fn modify_binary(src: &PathBuf, dst: &PathBuf, riscv_enabled: bool) {
     elf.dump_to_file(dst, true);
 }
 
-pub fn instrument_with_manifest(src: &PathBuf, riscv_enabled: bool) {
+pub fn instrument_with_manifest(src: &PathBuf, riscv_enabled: bool, vf2_enabled: bool) {
     // Parse the manifest.
     let manifest: Manifest = {
         let data = std::fs::read(src).expect("Unable to read source file");
         let content = String::from_utf8(data).expect("Unable to convert data to string");
         serde_json::from_str(&content).expect("Failed to parse JSON")
     };
-    instrument_binary(&manifest, riscv_enabled);
+    instrument_binary(&manifest, riscv_enabled, vf2_enabled);
 }
 
 /// Parse singular binary instrumentation description and applies its operations.
@@ -312,7 +312,7 @@ pub fn parse_binary(
     elf
 }
 
-pub fn instrument_binary(manifest: &Manifest, riscv_enabled: bool) {
+pub fn instrument_binary(manifest: &Manifest, riscv_enabled: bool, vf2_enabled: bool) {
     // Parse the untrusted part of the application.
     let mut untrusted_elf = if let Some(untrusted) = &manifest.untrusted_bin {
         let bin = parse_binary(untrusted, &None);
@@ -390,6 +390,7 @@ pub fn instrument_binary(manifest: &Manifest, riscv_enabled: bool) {
                 default_pts_flags,
                 &manifest.map_page_tables,
                 riscv_enabled,
+                vf2_enabled
             );
         }
         user
@@ -400,6 +401,7 @@ pub fn instrument_binary(manifest: &Manifest, riscv_enabled: bool) {
                 default_pts_flags,
                 &manifest.map_page_tables,
                 riscv_enabled,
+                vf2_enabled
             );
         }
         user
@@ -410,6 +412,7 @@ pub fn instrument_binary(manifest: &Manifest, riscv_enabled: bool) {
                 default_pts_flags,
                 &manifest.map_page_tables,
                 riscv_enabled,
+                vf2_enabled
             );
         }
         //kern.set_attestation_hash();
