@@ -43,6 +43,6 @@ fn tyche_entry_point(hartid: usize, manifest: RVManifest) -> ! {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     println!("CPU {}: Panicked", arch::cpuid());
-    println!("{:#?}", info);
+    println!("{:?}", info);
     qemu::exit(qemu::ExitCode::Failure);
 }
