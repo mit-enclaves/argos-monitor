@@ -815,6 +815,9 @@ dependencies = [
 [[package]]
 name = "riscv_tyche"
 version = "0.1.0"
+dependencies = [
+ "riscv_utils",
+]
 
 [[package]]
 name = "riscv_utils"

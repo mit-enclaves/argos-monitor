@@ -10,14 +10,15 @@ use riscv_utils::*;
 use crate::println;
 use crate::riscv::guest::machine_trap_handler;
 
-#[cfg(not(feature = "visionfive2"))]
+//#[cfg(not(feature = "visionfive2"))]
 pub fn init(hartid: usize) {
     unsafe {
         asm!("csrw mscratch, {}", in(reg) TYCHE_STACK_POINTER[hartid]);
     }
 
-    clear_mstatus_sie();
-    set_mstatus_mie();
+    //clear_mstatus_sie();
+    //set_mstatus_mie();
+    
     // Configuring mtvec direct base address to point to Tyche's trap handler.
     let mtvec_ptr = machine_trap_handler as *const ();
     log::info!("mtvec_ptr to be set by Tyche {:p}", mtvec_ptr);
@@ -26,7 +27,7 @@ pub fn init(hartid: usize) {
 
 //Todo: Keeping it separate for vf2 for now, since I add a lot of debug logs. 
 //But this can easily be code common to all RV platforms by picking the appropriate stack pointers in the background. 
-#[cfg(feature = "visionfive2")]
+/* #[cfg(feature = "visionfive2")]
 pub fn init(hartid: usize) {
 
     //let mut medeleg: usize;
@@ -95,7 +96,7 @@ pub fn init(hartid: usize) {
     let mtvec_ptr = machine_trap_handler as *const ();
     log::info!("mtvec_ptr to be set by Tyche {:p}", mtvec_ptr);
     set_mtvec(mtvec_ptr);
-}
+} */
 
 // ------------------------------ Trap Handler Setup -------------------------- //
 
