@@ -120,6 +120,16 @@ void run_transition(char* prefix, ubench_config_t *bench) {
         : "a0", "a1", "memory");
 #else
       // A raw syscall.
+#if defined(CONFIG_RISCV) || defined(__riscv)
+    asm volatile(
+        "mv a0, %0\n\t"
+        "mv a1, %1\n\t"
+        "li a7, 0x5479636865\n\t"
+        "ecall\n\t"
+        :
+        : "rm" ((usize)TYCHE_SWITCH), "rm" (capa_switch)
+        : "a0", "a1", "memory");
+#else 
       asm volatile(
           "movq %0, %%rdi\n\t"
           "movq %1, %%rax\n\t"

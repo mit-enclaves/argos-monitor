@@ -917,9 +917,12 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
                     reg_state.a0 = 1;
                 }
             }
+            calls::SERIALIZE_ATTESTATION => {
+                todo!("Attestation not implemented");
+            }
             _ => {
                 /*TODO: Invalid Tyche Call*/
-                log::info!("Invalid Tyche Call: {:x}", reg_state.a0);
+                log::info!("Invalid Tyche Call: 0x{:x}", reg_state.a0);
                 todo!("Unknown Tyche Call.");
             }
         }
