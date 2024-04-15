@@ -124,7 +124,7 @@ impl RegisterState {
             t3: 0,
             t4: 0,
             t5: 0,
-            t6: 0, 
+            t6: 0,
         }
     }
 }
@@ -178,6 +178,23 @@ pub fn write_mepc(mepc: usize) {
         asm!("csrw mepc, {}", in(reg) mepc);
     }
 }
+
+pub fn read_mstatus() -> usize {
+    let mut mstatus: usize;
+
+    unsafe {
+        asm!("csrr {}, mstatus", out(reg) mstatus);
+    }
+
+    return mstatus;
+}
+
+pub fn write_mstatus(mstatus: usize) {
+    unsafe {
+        asm!("csrw mstatus, {}", in(reg) mstatus);
+    }
+}
+
 
 pub fn read_satp() -> usize {
     let mut satp: usize;

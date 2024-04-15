@@ -50,6 +50,7 @@ pub struct ContextData {
     pub mepc: usize,
     pub sp: usize,
     pub medeleg: usize,
+    pub mstatus: usize,
 }
 
 const EMPTY_DOMAIN: Mutex<DomainData> = Mutex::new(DomainData {
@@ -64,6 +65,7 @@ const EMPTY_CONTEXT: Mutex<ContextData> = Mutex::new(ContextData {
     mepc: 0,
     sp: 0,
     medeleg: 0,
+    mstatus: 0,
 });
 const EMPTY_CONTEXT_ARRAY: [Mutex<ContextData>; NB_CORES] = [EMPTY_CONTEXT; NB_CORES];
 
@@ -136,7 +138,7 @@ fn get_domain(domain: Handle<Domain>) -> MutexGuard<'static, DomainData> {
     DOMAINS[domain.idx()].lock()
 }
 
-fn get_context(domain: Handle<Domain>, core: usize) -> MutexGuard<'static, ContextData> {
+pub fn get_context(domain: Handle<Domain>, core: usize) -> MutexGuard<'static, ContextData> {
     CONTEXTS[domain.idx()][core].lock()
 }
 
@@ -639,13 +641,23 @@ fn switch_domain(
     current_ctx.sp = read_mscratch(); //Recall that this is where the sp is saved.
     current_ctx.satp = read_satp();
     current_ctx.medeleg = read_medeleg();
+    current_ctx.mstatus = read_mstatus(); 
 
     //Switch domain
-    log::info!("Writing satp {:x}, sp {:x}, mepc {:x}", next_ctx.satp, next_ctx.sp, next_ctx.mepc);
+    log::info!("Writing satp {:x}, sp {:x}, mepc {:x} medeleg: {:x}", next_ctx.satp, next_ctx.sp, next_ctx.mepc, next_ctx.medeleg);
     write_satp(next_ctx.satp);
     write_mscratch(next_ctx.sp);
     write_mepc(next_ctx.mepc);
     write_medeleg(next_ctx.medeleg); //TODO: This needs to be part of Trap/UpdateTrap.
+    if next_ctx.mstatus != 0 {  //So basically if it doesn'e explicitly get set by the manager, it
+                                //will not be changed. And from next time onwards, it will be
+                                //restored based on the value saved (for the current_ctx) .... 
+                                //For TD1, this means it will always run in the mode that switches
+                                //to the domain for the first time from TD0. 
+                                //If that mode is U-mode, good luck because page tables don't
+                                //expect that. 
+        write_mstatus(next_ctx.mstatus);
+    }
 
     // Propagate the state from the child, see drivers/tyche/src/domain.c exit frame.
     next_ctx.reg_state.a2 = current_ctx.mepc;

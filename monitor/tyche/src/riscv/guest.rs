@@ -9,13 +9,14 @@ use riscv_sbi::ipi::process_ipi;
 use riscv_sbi::sbi::{EXT_IPI, self};
 use riscv_utils::{
     aclint_mtimer_set_mtimecmp, clear_mie_mtie, clear_mip_seip, RegisterState,
-    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, NUM_HARTS, TIMER_EVENT_TICK, system_opcode_instr, TrapState, set_rd, get_rs2, set_mip_stip, LAST_TIMER_TICK, read_mip_seip, ZERO,
+    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, NUM_HARTS, TIMER_EVENT_TICK, system_opcode_instr, TrapState, set_rd, get_rs2, set_mip_stip, LAST_TIMER_TICK, read_mip_seip, ZERO, write_medeleg,
 };
 use spin::Mutex;
 
 use super::monitor;
 use crate::arch::cpuid;
 use crate::calls;
+use crate::riscv::filtered_fields::RiscVField;
 use crate::riscv::monitor::apply_core_updates;
 use crate::println;
 use crate::riscv::platform::{remap_core_bitmap, remap_core};
@@ -152,9 +153,10 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         asm!("csrr {}, mip", out(reg) mip);
         asm!("csrr {}, satp", out(reg)satp);
     }
-
-    log::trace!("###### TRAP FROM HART {} ######", hartid);
-
+    let tmp: usize = reg_state.a0.try_into().unwrap();
+    if tmp == 0x7 {
+        log::info!("###### TRAP FROM HART {} ###### mcause: 0x{:x} a0 {}", hartid, mcause, tmp);
+    }
     //if mepc == 0xffffffff80388bb6 {
     //println!("mepc: {:x} mtval: {:x} mcause: {:x}", mepc, mtval, mcause);
     //} 
@@ -235,7 +237,13 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         }
         mcause::ILLEGAL_INSTRUCTION => {
             //println!("[TYCHE Illegal Instruction Handler]");
-            illegal_instruction_handler(mepc, mstatus, mtval, reg_state);
+            if reg_state.a7 == 0x5479636865 {
+                log::info!("Illegal instruction: Tyche call from U-mode using Mret");
+                //TODO: Add MPP check 
+                tyche_call_handler(reg_state);
+            } else {
+                illegal_instruction_handler(mepc, mstatus, mtval, reg_state);
+            }
         }
         mcause::ECALL_FROM_SMODE => {
             //println!("TYCHE ECall");
@@ -252,6 +260,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             //}
             }
             if reg_state.a7 == 0x5479636865 {
+                log::info!("TYCHE CAll: {}", reg_state.a0);
                 //Tyche call
                 if reg_state.a0 == 0x5479636865 {
                     //println!("Tyche is clearing SIP.SEIE");
@@ -287,10 +296,21 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
                 //log::info!("Done handling Ecall");
             }
         }
+        mcause::ECALL_FROM_UMODE => {
+            if reg_state.a7 == 0x5479636865 {
+                log::info!("TYCHE Call from U-Mode: {} MEPC: {:x} MStatus: {:x}", reg_state.a0, mepc, mstatus);
+                tyche_call_handler(reg_state);
+            } else {
+                panic!("Ecall from U-mode which isn't a Tyche Call! This should not happen! mepc: {:x}", mepc);
+            }
+        }
         mcause::LOAD_ADDRESS_MISALIGNED => {
             //Note: Hypervisor extension is not supported
             //log::info!("Misaligned load");
             //println!("MIS ALIGNED LOADDDDD");
+if reg_state.a7 == 0x5479636865 {
+    panic!("Got a misaligned load Tyche call");
+}
             misaligned_load_handler(mtval, mepc, reg_state);
             //panic!("Load address misaligned mepc: {:x} mtval: {:x} mstatus: {:x}.", mepc, mtval, mstatus);
         }
@@ -342,13 +362,14 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     } */
 
     }
-    /* if tyche_call_flag {
+    // if tyche_call_flag {
+    if tmp == 0x7 {
         unsafe {
             asm!("csrr {}, mepc", out(reg) mepc);
         }
         println!("[Hart {}] Returning from Tyche Call {} to MEPC: {:x} and RA: {:x}", hartid, tyche_call_id, mepc, reg_state.ra);
-    }
-    if mtval == 0x10500073 {  
+    } 
+    /* if mtval == 0x10500073 {  
         println!("[Hart {}] Returning from WFI", hartid);
     } */
 }
@@ -661,6 +682,8 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
         let hartid = cpuid();
         active_dom = get_active_dom(hartid).unwrap();
 
+        log::info!("Tyche call: {}", tyche_call);
+
         match tyche_call {
             calls::CREATE_DOMAIN => {
                 log::debug!("Create Domain");
@@ -711,7 +734,7 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
                 reg_state.a1 = capa.as_usize() as isize;
             }
             calls::ENUMERATE => {
-                log::debug!("Enumerate");
+                log::info!("Enumerate");
                 if let Some((info, next)) =
                     monitor::do_enumerate(active_dom, NextCapaToken::from_usize(arg_1))
                 {
@@ -725,6 +748,7 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
                     reg_state.a4 = 0;
                 }
                 reg_state.a0 = 0x0;
+                log::info!("Returning from enumerate: v1: 0x{:x} v2: 0x{:x} v3: 0x{:x} next: 0x{:x}",reg_state.a1, reg_state.a2, reg_state.a3, reg_state.a4);
             }
             calls::SWITCH => {
                 log::info!(" Hart {} Switch", hartid);
@@ -780,7 +804,7 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
                 reg_state.a0 = 0x0;
             }
             calls::CONFIGURE_CORE => {
-                log::debug!("Configure Core");
+                log::info!("Configure Core");
                 let res = match monitor::do_configure_core(
                     active_dom,
                     LocalCapa::new(arg_1),
@@ -851,7 +875,27 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
                 reg_state.a0 = res;
             }
             calls::SELF_CONFIG => {
-                todo!("Implement that one only if needed.");
+                //This part will not change the context of the domain - it's essentially only being
+                //used to deleg/undeleg ecalls from u-mode at the moment. 
+                log::info!("Self config for hart {} ",hartid);
+                let context = monitor::get_context(active_dom, hartid);
+                let field = RiscVField::from_usize(arg_1).unwrap();
+                if field == RiscVField::Medeleg {
+                    let updated_medeleg;
+                    if arg_2 == !(1 << 8) {
+                        updated_medeleg = (context.medeleg & arg_2);
+                    } else if arg_2 == (1 << 8) {
+                        updated_medeleg = (context.medeleg | arg_2);
+                    } else {
+                        panic!("Unexpected changes to medeleg!");
+                    }
+                    write_medeleg(updated_medeleg); 
+                    log::info!("Done setting medeleg to 0x{:x}.", updated_medeleg);
+                    reg_state.a0 = 0;
+                } else {
+                    log::info!("Self config does not support setting this field!");
+                    reg_state.a0 = 1;
+                }
             }
             calls::ENCLAVE_ATTESTATION => {
                 log::trace!("Get attestation!");
