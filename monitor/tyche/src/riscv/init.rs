@@ -1,9 +1,9 @@
 use core::arch::asm;
 use core::sync::atomic::Ordering;
 
+use attestation::signature::{TPM_ATTESTATION, TPM_MODULUS, TPM_SIGNATURE};
 use capa_engine::{Domain, Handle};
 use riscv_tyche::RVManifest;
-use attestation::signature::{TPM_MODULUS, TPM_SIGNATURE, TPM_ATTESTATION};
 use riscv_utils::{
     set_mip_ssip, AVAILABLE_HART_MASK, HART_START, HART_START_ADDR, HART_START_ARG1,
     NUM_HARTS_AVAILABLE,
@@ -33,9 +33,9 @@ pub fn arch_entry_point(hartid: usize, manifest: RVManifest, log_level: log::Lev
             manifest.attestation
         );
         unsafe {
-        TPM_MODULUS     = manifest.modulus;
-        TPM_SIGNATURE   = manifest.signature;
-        TPM_ATTESTATION = manifest.attestation;
+            TPM_MODULUS = manifest.modulus;
+            TPM_SIGNATURE = manifest.signature;
+            TPM_ATTESTATION = manifest.attestation;
         }
 
         let mhartid = cpuid();

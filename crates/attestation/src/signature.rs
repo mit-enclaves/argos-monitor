@@ -6,8 +6,6 @@ pub type AttestationPrivateKey = SecretKey;
 
 pub type AttestationSignature = Signature;
 
-
-
 pub const MAX_ATTESTATION_DATA_SZ: usize = 8;
 pub const ATTESTATION_DATA_SZ: usize = MAX_ATTESTATION_DATA_SZ + 32;
 
@@ -15,8 +13,8 @@ pub const ATTESTATION_DATA_SZ: usize = MAX_ATTESTATION_DATA_SZ + 32;
 pub const TPM_ATTESTATION_SZ: usize = 129;
 pub const TPM_SIG_SZ: usize = 384;
 pub const TPM_MODULUS_SZ: usize = 384;
-pub const ATTESTATION_TOTAL_SZ: usize = ATTESTATION_DATA_SZ + TPM_ATTESTATION_SZ + TPM_SIG_SZ + TPM_MODULUS_SZ;
-
+pub const ATTESTATION_TOTAL_SZ: usize =
+    ATTESTATION_DATA_SZ + TPM_ATTESTATION_SZ + TPM_SIG_SZ + TPM_MODULUS_SZ;
 
 //TPM-added types
 pub type TpmSignature = [u8; TPM_SIG_SZ];
@@ -25,21 +23,20 @@ pub type TpmAttestation = [u8; TPM_ATTESTATION_SZ];
 
 //TPM hardcoded signature stuff
 
-pub static  mut TPM_ATTESTATION: TpmAttestation = [0;TPM_ATTESTATION_SZ]; 
+pub static mut TPM_ATTESTATION: TpmAttestation = [0; TPM_ATTESTATION_SZ];
 
-pub static  mut TPM_SIGNATURE: TpmSignature = [0; TPM_SIG_SZ];
+pub static mut TPM_SIGNATURE: TpmSignature = [0; TPM_SIG_SZ];
 
-pub static mut  TPM_MODULUS: TpmModulus = [0; TPM_MODULUS_SZ];
-
+pub static mut TPM_MODULUS: TpmModulus = [0; TPM_MODULUS_SZ];
 
 #[cfg(target_arch = "riscv64")]
 #[derive(Copy, Clone, Debug)]
 pub struct EnclaveReport {
-    pub public_key: PublicKey, //32 bytes
+    pub public_key: PublicKey,                     //32 bytes
     pub signed_enclave_data: AttestationSignature, //64 bytes
-    pub tpm_signature: TpmSignature, //384
-    pub tpm_modulus: TpmModulus, //384
-    pub tpm_attestation: TpmAttestation, //129
+    pub tpm_signature: TpmSignature,               //384
+    pub tpm_modulus: TpmModulus,                   //384
+    pub tpm_attestation: TpmAttestation,           //129
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -63,4 +60,3 @@ pub fn sign_by_device(data: &[u8], key: DevicePrivateKey) -> AttestationSignatur
     let sig = key.sign(data, Some(Noise::default()));
     sig
 }
-

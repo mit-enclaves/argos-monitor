@@ -1,5 +1,8 @@
 use attestation::hashing::{self, TycheHasher};
-use attestation::signature::{self, get_attestation_keys, EnclaveReport, ATTESTATION_DATA_SZ, TPM_ATTESTATION, TPM_SIGNATURE, TPM_MODULUS};
+use attestation::signature::{
+    self, get_attestation_keys, EnclaveReport, ATTESTATION_DATA_SZ, TPM_ATTESTATION, TPM_MODULUS,
+    TPM_SIGNATURE,
+};
 use capa_engine::{CapaEngine, CapaInfo, Domain, Handle, MemOps, NextCapaToken};
 use spin::MutexGuard;
 
@@ -69,7 +72,7 @@ pub fn calculate_attestation_hash(engine: &mut MutexGuard<'_, CapaEngine>, domai
     hash_capa_info(&mut hasher, engine, domain);
 
     log::info!("Finished calculating the hash!");
-    
+
     engine.set_hash(domain, hashing::get_hash(&mut hasher));
 }
 
@@ -82,7 +85,6 @@ fn copy_array(dst: &mut [u8], src: &[u8], index: usize) {
         ind_help += 1;
     }
 }
-
 
 //TODO: Alex Doukh: make it riscv-exclusive and dup for x86
 #[cfg(target_arch = "riscv64")]
@@ -100,15 +102,15 @@ pub fn attest_domain(
         let (pb_key, priv_key) = get_attestation_keys();
         let signed_enc_data = signature::sign_attestation_data(&sign_data, priv_key);
         unsafe {
-        let rep = EnclaveReport {
-            public_key: pb_key,
-            signed_enclave_data: signed_enc_data,
-            tpm_signature: TPM_SIGNATURE,
-            tpm_modulus: TPM_MODULUS,
-            tpm_attestation: TPM_ATTESTATION,
-        };
-        engine.set_report(current, rep);
-        Some(rep)
+            let rep = EnclaveReport {
+                public_key: pb_key,
+                signed_enclave_data: signed_enc_data,
+                tpm_signature: TPM_SIGNATURE,
+                tpm_modulus: TPM_MODULUS,
+                tpm_attestation: TPM_ATTESTATION,
+            };
+            engine.set_report(current, rep);
+            Some(rep)
         }
     } else {
         engine[current].get_report()

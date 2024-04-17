@@ -1,11 +1,11 @@
-use std::fs::{read_to_string};
+use std::fs::read_to_string;
 use std::path::PathBuf;
-use hex::encode;
-use ring;
 
 use ed25519_compact::{PublicKey, Signature};
+use hex::encode;
 use object::elf::{PF_R, PF_W, PF_X};
 use object::read::elf::ProgramHeader;
+use ring;
 use sha2::{Digest, Sha256, Sha384};
 
 use crate::elf_modifier::TychePF::PfH;
@@ -75,26 +75,26 @@ fn hash_segments_info(enclave: &Box<ModifiedELF>, hasher: &mut Sha256, offset: u
     }
 }
 
-fn construct_der_rsa_pkey(modulus: &[u8]) -> Vec<u8>{
-    let mut der_payload : Vec<u8>  = std::vec::Vec::new();
-    let mut add_0 :u8 = 0;
-    if modulus[0]>127 {
-        add_0 = add_0 +1;
+fn construct_der_rsa_pkey(modulus: &[u8]) -> Vec<u8> {
+    let mut der_payload: Vec<u8> = std::vec::Vec::new();
+    let mut add_0: u8 = 0;
+    if modulus[0] > 127 {
+        add_0 = add_0 + 1;
     }
     // DER shenanigans
     //// Sequence tag
-    der_payload.push(0x30); 
+    der_payload.push(0x30);
     //// Long form length encoding
     der_payload.push(0x82);
     //// Length bytes (394)
-    der_payload.extend([1, (137+add_0)]);
+    der_payload.extend([1, (137 + add_0)]);
     //// Modulus object
     //// Integer tag
     der_payload.push(0x02);
     //// Long form length encoding
     der_payload.push(0x82);
     //// Length of 384 bytes (+1 0x0 sometimes)
-    der_payload.extend([1, 128+add_0]);
+    der_payload.extend([1, 128 + add_0]);
     //// Modulus data
     //Context-specific byte : if first byte of modulus is >128, add 0x0 byte in front to make it
     //positive.
@@ -105,7 +105,6 @@ fn construct_der_rsa_pkey(modulus: &[u8]) -> Vec<u8>{
     der_payload.extend(modulus);
     //// public exponent object
     der_payload.push(0x02);
-
 
     // Short form length
     der_payload.push(0x03);
@@ -142,9 +141,7 @@ const PB_KEY_SZ_1: usize = 31;
 const ENC_DATA_SZ_1: usize = 63;
 const TPM_SIG_SZ_1: usize = 383;
 
-//const TPM_PCR_REDIGEST : &str = "58c43f5c766523ed70d49ea8affb437f3915dc97e327351647db787e473af08f13e0ab616bdd080242c592513daa43ef";
-//const TPM_PCR_REDIGEST : &str = "47cb217134b45f081685da3e234170a310f4a726577af22fa2d1136ac1472cba8e75424019b5b8d3ef801a05f3e18d14";
-const TPM_PCR_REDIGEST: &str = "310593d2673f51a110feceba6fda896c90d065d3ad412bca3873efb10dd72e3359719844d91a6ca2d3022e4ca4580f4e";
+const TPM_PCR_REDIGEST: &str = "2152d35c16e4f59d3d95e09299c2c73218aec31164d32a000f6e2bc6a0e785fb5c31271dc7fea029e5a9dbebc571129f";
 use std::fs::File;
 use std::io::Write;
 
@@ -170,8 +167,8 @@ pub fn attestation_check(
     log::trace!("Nonce {:#x}", nonce);
     let mut pub_key_arr: [u8; PB_KEY_SZ] = [0; PB_KEY_SZ];
     let mut enc_data_arr: [u8; ENC_DATA_SZ] = [0; ENC_DATA_SZ];
-    let mut tpm_sig_arr: [u8; TPM_SIG_SZ] = [0; TPM_SIG_SZ]; 
-    let mut tpm_mod_arr: [u8; TPM_SIG_SZ] = [0; TPM_SIG_SZ]; 
+    let mut tpm_sig_arr: [u8; TPM_SIG_SZ] = [0; TPM_SIG_SZ];
+    let mut tpm_mod_arr: [u8; TPM_SIG_SZ] = [0; TPM_SIG_SZ];
     let mut tpm_att_arr: [u8; TPM_ATT_SZ] = [0; TPM_ATT_SZ];
     let mut tpm_sig_verified: bool = false;
     let mut index_pub = 0;
@@ -186,65 +183,71 @@ pub fn attestation_check(
 
         //RISC-V parsing of enclave report (we have DRoT w/ OpenSBI)
         if riscv_enabled {
-        match cnt{
-            ..=PB_KEY_SZ_1 if index_enc == 0 =>{
-                pub_key_arr[index_pub] = num as u8;
-                index_pub +=1;
-            },
-            ..=ENC_DATA_SZ_1 if index_sig == 0 =>{
-                cnt = if index_enc == 0 {cnt - PB_KEY_SZ} else {cnt};
-                enc_data_arr[index_enc] = num as u8;
-                index_enc += 1;
-
-            },
-            ..=TPM_SIG_SZ_1 if index_mod == 0 =>{
-                cnt = if index_sig == 0 {cnt - ENC_DATA_SZ} else {cnt};
-                tpm_sig_arr[index_sig] = num as u8;
-                index_sig += 1;
-
-            },
-            ..=TPM_SIG_SZ if index_att == 0 => {
-                cnt = if index_mod == 0 {cnt - TPM_SIG_SZ} else {cnt};
-                if cnt != TPM_SIG_SZ {
-                tpm_mod_arr[index_mod] = num as u8;
-                index_mod += 1;
-                }else {
-                tpm_att_arr[0] = num as u8;
+            match cnt {
+                ..=PB_KEY_SZ_1 if index_enc == 0 => {
+                    pub_key_arr[index_pub] = num as u8;
+                    index_pub += 1;
                 }
-            },
-            _ if index_att< TPM_ATT_SZ-1=>{
-                tpm_att_arr[index_att+1] = num as u8;
-                index_att += 1;
+                ..=ENC_DATA_SZ_1 if index_sig == 0 => {
+                    cnt = if index_enc == 0 { cnt - PB_KEY_SZ } else { cnt };
+                    enc_data_arr[index_enc] = num as u8;
+                    index_enc += 1;
+                }
+                ..=TPM_SIG_SZ_1 if index_mod == 0 => {
+                    cnt = if index_sig == 0 {
+                        cnt - ENC_DATA_SZ
+                    } else {
+                        cnt
+                    };
+                    tpm_sig_arr[index_sig] = num as u8;
+                    index_sig += 1;
+                }
+                ..=TPM_SIG_SZ if index_att == 0 => {
+                    cnt = if index_mod == 0 {
+                        cnt - TPM_SIG_SZ
+                    } else {
+                        cnt
+                    };
+                    if cnt != TPM_SIG_SZ {
+                        tpm_mod_arr[index_mod] = num as u8;
+                        index_mod += 1;
+                    } else {
+                        tpm_att_arr[0] = num as u8;
+                    }
+                }
+                _ if index_att < TPM_ATT_SZ - 1 => {
+                    tpm_att_arr[index_att + 1] = num as u8;
+                    index_att += 1;
+                }
+                _ => {}
             }
-            _ => {}
-        }
         //x86 parsing (we don't have TPM support)
         } else {
-           if cnt<PB_KEY_SZ {
-               pub_key_arr[index_pub] = num as u8;
-               index_pub += 1;
-           }else {
-               enc_data_arr[index_enc] = num as u8;
-               index_enc += 1;
-           }
+            if cnt < PB_KEY_SZ {
+                pub_key_arr[index_pub] = num as u8;
+                index_pub += 1;
+            } else {
+                enc_data_arr[index_enc] = num as u8;
+                index_enc += 1;
+            }
         }
         cnt += 1;
     }
 
-
     if riscv_enabled {
-
         log::info!("TPM_PCR_REDIGEST IS : {}", TPM_PCR_REDIGEST);
         if encode(&(tpm_att_arr[81..])) == TPM_PCR_REDIGEST {
             log::info!("PCR is verified!");
-        }else{
+        } else {
             log::info!("PCR digest has not been verified");
         }
 
         let der_payload = construct_der_rsa_pkey(&tpm_mod_arr);
 
-        let tpm_rsa_pkey =
-            ring::signature::UnparsedPublicKey::new(&ring::signature::RSA_PKCS1_3072_8192_SHA384, der_payload);
+        let tpm_rsa_pkey = ring::signature::UnparsedPublicKey::new(
+            &ring::signature::RSA_PKCS1_3072_8192_SHA384,
+            der_payload,
+        );
 
         if let Ok(_t) = tpm_rsa_pkey.verify(&tpm_att_arr, &tpm_sig_arr) {
             tpm_sig_verified = true;
@@ -253,10 +256,13 @@ pub fn attestation_check(
         }
         let mut tpm_hasher = Sha384::new();
         tpm_hasher.input(&tpm_att_arr);
-        let rehash : [u8; 48]  = tpm_hasher.result().as_slice().try_into().expect("Ain't working that way");
+        let rehash: [u8; 48] = tpm_hasher
+            .result()
+            .as_slice()
+            .try_into()
+            .expect("Ain't working that way");
         log::info!("Computed attestation rehash is:");
         log::info!("{}", encode(&rehash));
-
     }
 
     let pkey: PublicKey = PublicKey::new(pub_key_arr);
@@ -282,17 +288,17 @@ pub fn attestation_check(
                 .expect("Write failed");
         }
         if riscv_enabled {
-        if tpm_sig_verified {
-            log::info!("TPM signature is verified!");
-            data_file.write(b"TPM signature is verified").expect("Write failed");
-        } else {
-            log::info!("TPM signature was not verified!");
-            data_file
-                .write(b"TPM signature  was not verified\n")
-                .expect("Write failed");
+            if tpm_sig_verified {
+                log::info!("TPM signature is verified!");
+                data_file
+                    .write(b"TPM signature is verified")
+                    .expect("Write failed");
+            } else {
+                log::info!("TPM signature was not verified!");
+                data_file
+                    .write(b"TPM signature  was not verified\n")
+                    .expect("Write failed");
+            }
         }
-        }
-
     }
 }
-

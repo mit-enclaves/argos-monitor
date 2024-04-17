@@ -18,5 +18,5 @@ pub struct RVManifest {
     pub num_harts: usize,
     pub modulus: [u8; 384],
     pub signature: [u8; 384],
-    pub attestation: [u8; 129]
+    pub attestation: [u8; 129],
 }
