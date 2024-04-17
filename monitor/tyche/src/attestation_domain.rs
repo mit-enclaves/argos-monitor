@@ -1,5 +1,5 @@
 use attestation::hashing::{self, TycheHasher};
-use attestation::signature::{self, get_attestation_keys, EnclaveReport, ATTESTATION_DATA_SZ, TPM_HARDCODED_ATTESTATION, TPM_HARDCODED_SIGNATURE, TPM_HARDCODED_MODULUS};
+use attestation::signature::{self, get_attestation_keys, EnclaveReport, ATTESTATION_DATA_SZ, TPM_ATTESTATION, TPM_SIGNATURE, TPM_MODULUS};
 use capa_engine::{CapaEngine, CapaInfo, Domain, Handle, MemOps, NextCapaToken};
 use spin::MutexGuard;
 
@@ -99,15 +99,17 @@ pub fn attest_domain(
         copy_array(&mut sign_data, &usize::to_le_bytes(nonce), 32);
         let (pb_key, priv_key) = get_attestation_keys();
         let signed_enc_data = signature::sign_attestation_data(&sign_data, priv_key);
+        unsafe {
         let rep = EnclaveReport {
             public_key: pb_key,
             signed_enclave_data: signed_enc_data,
-            tpm_signature: TPM_HARDCODED_SIGNATURE,
-            tpm_modulus: TPM_HARDCODED_MODULUS,
-            tpm_attestation: TPM_HARDCODED_ATTESTATION,
+            tpm_signature: TPM_SIGNATURE,
+            tpm_modulus: TPM_MODULUS,
+            tpm_attestation: TPM_ATTESTATION,
         };
         engine.set_report(current, rep);
         Some(rep)
+        }
     } else {
         engine[current].get_report()
     }

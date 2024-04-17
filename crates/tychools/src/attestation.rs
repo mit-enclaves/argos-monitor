@@ -142,7 +142,9 @@ const PB_KEY_SZ_1: usize = 31;
 const ENC_DATA_SZ_1: usize = 63;
 const TPM_SIG_SZ_1: usize = 383;
 
-const TPM_PCR_REDIGEST : &str = "58c43f5c766523ed70d49ea8affb437f3915dc97e327351647db787e473af08f13e0ab616bdd080242c592513daa43ef";
+//const TPM_PCR_REDIGEST : &str = "58c43f5c766523ed70d49ea8affb437f3915dc97e327351647db787e473af08f13e0ab616bdd080242c592513daa43ef";
+//const TPM_PCR_REDIGEST : &str = "47cb217134b45f081685da3e234170a310f4a726577af22fa2d1136ac1472cba8e75424019b5b8d3ef801a05f3e18d14";
+const TPM_PCR_REDIGEST: &str = "310593d2673f51a110feceba6fda896c90d065d3ad412bca3873efb10dd72e3359719844d91a6ca2d3022e4ca4580f4e";
 use std::fs::File;
 use std::io::Write;
 
@@ -217,15 +219,15 @@ pub fn attestation_check(
             _ => {}
         }
         //x86 parsing (we don't have TPM support)
-        } //else {
-           // if cnt<PB_KEY_SZ {
-           //     pub_key_arr[index_pub] = num as u8;
-           //     index_pub += 1;
-           // }else {
-           //     enc_data_arr[index_enc] = num as u8;
-           //     index_enc += 1;
-           // }
-        //}
+        } else {
+           if cnt<PB_KEY_SZ {
+               pub_key_arr[index_pub] = num as u8;
+               index_pub += 1;
+           }else {
+               enc_data_arr[index_enc] = num as u8;
+               index_enc += 1;
+           }
+        }
         cnt += 1;
     }
 
