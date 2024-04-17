@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use attestation::hashing::{self, TycheHasher};
 use attestation::signature::{
     self, get_attestation_keys, EnclaveReport, ATTESTATION_DATA_SZ, TPM_ATTESTATION, TPM_MODULUS,
@@ -86,7 +87,6 @@ fn copy_array(dst: &mut [u8], src: &[u8], index: usize) {
     }
 }
 
-//TODO: Alex Doukh: make it riscv-exclusive and dup for x86
 #[cfg(target_arch = "riscv64")]
 pub fn attest_domain(
     engine: &mut MutexGuard<CapaEngine>,
