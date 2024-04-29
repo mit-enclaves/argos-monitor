@@ -7,8 +7,8 @@ use attestation::signature::EnclaveReport;
 use capa_engine::config::{NB_CORES, NB_DOMAINS, NB_REMAP_REGIONS};
 use capa_engine::utils::BitmapIterator;
 use capa_engine::{
-    permission, AccessRights, Bitmaps, Buffer, CapaEngine, CapaError, CapaInfo, Domain, GenArena,
-    Handle, LocalCapa, MemOps, NextCapaToken, Remapper, MEMOPS_ALL, MEMOPS_EXTRAS,
+    permission, AccessRights, Buffer, CapaEngine, CapaError, CapaInfo, Domain, GenArena, Handle,
+    LocalCapa, MemOps, NextCapaToken, Remapper, MEMOPS_ALL, MEMOPS_EXTRAS,
 };
 use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator, IoPtFlag, IoPtMapper};
@@ -97,7 +97,9 @@ pub fn lock_engine(
 }
 pub fn init(manifest: &'static Manifest) {
     let mut engine = CAPA_ENGINE.lock();
-    let domain = engine.create_manager_domain(permission::ALL).unwrap();
+    let domain = engine
+        .create_manager_domain(permission::monitor_inter_perm::ALL)
+        .unwrap();
     apply_updates(&mut engine);
     engine
         .create_root_region(
@@ -188,11 +190,11 @@ pub fn do_set_config(
     vmx_state: &mut VmxState,
     current: &mut Handle<Domain>,
     domain: LocalCapa,
-    bitmap: Bitmaps,
+    bitmap: permission::PermissionIndex,
     value: u64,
 ) -> Result<(), CapaError> {
     let mut engine = lock_engine(vmx_state, current);
-    engine.set_child_config(*current, domain, bitmap, value)?;
+    engine.set_child_permission(*current, domain, bitmap, value)?;
     apply_updates(&mut engine);
     Ok(())
 }
@@ -218,7 +220,7 @@ pub fn do_configure_core(
     }*/
 
     // Check this is a valid core for the operation.
-    let core_map = engine.get_domain_config(domain, Bitmaps::CORE);
+    let core_map = engine.get_domain_permission(domain, permission::PermissionIndex::AllowedCores);
     if (1 << core) & core_map == 0 {
         log::error!(
             "Invalid core {} for coremap {:b} in configure core",
@@ -236,7 +238,12 @@ pub fn do_configure_core(
     let field = VmcsField::from_u32(idx as u32).unwrap();
     if field == VmcsField::ExceptionBitmap {
         engine
-            .set_child_config(*current, local_capa, Bitmaps::TRAP, !(value as u64))
+            .set_child_permission(
+                *current,
+                local_capa,
+                permission::PermissionIndex::AllowedTraps,
+                !(value as u64),
+            )
             .expect("Unable to set the bitmap");
     }
 
@@ -269,7 +276,7 @@ pub fn do_get_config_core(
     }*/
 
     // Check this is a valid core for the operation.
-    let core_map = engine.get_domain_config(domain, Bitmaps::CORE);
+    let core_map = engine.get_domain_permission(domain, permission::PermissionIndex::AllowedCores);
     if (1 << core) & core_map == 0 {
         return Err(CapaError::InvalidCore);
     }
@@ -298,7 +305,7 @@ pub fn do_get_all_gp(
 ) -> Result<(), CapaError> {
     let mut engine = lock_engine(vmx_state, current);
     let domain = engine.get_domain_capa(*current, domain)?;
-    let core_map = engine.get_domain_config(domain, Bitmaps::CORE);
+    let core_map = engine.get_domain_permission(domain, permission::PermissionIndex::AllowedCores);
     if (1 << core) & core_map == 0 {
         return Err(CapaError::InvalidCore);
     }
@@ -331,7 +338,7 @@ pub fn do_set_all_gp(
     let domain = engine.get_domain_capa(*current, domain)?;
     let core = cpuid();
 
-    let core_map = engine.get_domain_config(domain, Bitmaps::CORE);
+    let core_map = engine.get_domain_permission(domain, permission::PermissionIndex::AllowedCores);
     if (1 << core) & core_map == 0 {
         return Err(CapaError::InvalidCore);
     }
@@ -366,7 +373,7 @@ pub fn do_set_fields(
     let mut engine = lock_engine(vmx_state, current);
     // Check the core.
     let domain = engine.get_domain_capa(*current, domain)?;
-    let core_map = engine.get_domain_config(domain, Bitmaps::CORE);
+    let core_map = engine.get_domain_permission(domain, permission::PermissionIndex::AllowedCores);
     if (1 << core) & core_map == 0 {
         log::error!("Trying to set registers on the wrong core.");
         return Err(CapaError::InvalidCore);
@@ -392,7 +399,11 @@ pub fn do_set_fields(
         tgt_ctx.set(field, value, None).unwrap();
         if field == VmcsField::ExceptionBitmap {
             engine
-                .set_domain_config(domain, Bitmaps::TRAP, !(value as u64))
+                .set_domain_permission(
+                    domain,
+                    permission::PermissionIndex::AllowedTraps,
+                    !(value as u64),
+                )
                 .expect("Bitmap failure");
         }
     }
@@ -412,7 +423,7 @@ pub fn do_init_child_context(
     let allocator = allocator();
     let max_cpus = NB_BOOTED_CORES.load(core::sync::atomic::Ordering::SeqCst) + 1;
     let mut rcvmcs = RC_VMCS.lock();
-    let cores = engine.get_domain_config(domain, Bitmaps::CORE);
+    let cores = engine.get_domain_permission(domain, permission::PermissionIndex::AllowedCores);
     // Check whether the domain is allowed on that core.
     if core > max_cpus || (1 << core) & cores == 0 {
         log::error!("Attempt to set context on unallowed core.");

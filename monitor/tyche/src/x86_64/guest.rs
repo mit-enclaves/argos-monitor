@@ -2,7 +2,8 @@
 
 use core::arch::asm;
 
-use capa_engine::{Bitmaps, Domain, Handle, LocalCapa, NextCapaToken};
+use capa_engine::permission::{self};
+use capa_engine::{Domain, Handle, LocalCapa, NextCapaToken};
 use vmx::bitmaps::exit_qualification;
 use vmx::fields::VmcsField;
 use vmx::{ActiveVmcs, VmxExitReason, Vmxon};
@@ -102,9 +103,9 @@ fn handle_exit(
                 }
                 calls::CONFIGURE => {
                     log::trace!("Configure on core {}", cpuid());
-                    let res = if let Ok(bitmap) = Bitmaps::from_usize(arg_1) {
+                    let res = if let Some(bitmap) = permission::PermissionIndex::from_usize(arg_1) {
                         let mut value = arg_3 as u64;
-                        if bitmap == Bitmaps::CORE {
+                        if bitmap == permission::PermissionIndex::AllowedCores {
                             value = platform::remap_core_bitmap(value);
                         }
                         match monitor::do_set_config(

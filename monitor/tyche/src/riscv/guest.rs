@@ -1,7 +1,7 @@
 use core::arch::asm;
 use core::sync::atomic::AtomicUsize;
 
-use capa_engine::{Bitmaps, Domain, Handle, LocalCapa, NextCapaToken};
+use capa_engine::{permission, Domain, Handle, LocalCapa, NextCapaToken};
 use riscv_csrs::*;
 use riscv_pmp::clear_pmp;
 use riscv_sbi::ecall::ecall_handler;
@@ -364,7 +364,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
             }
             calls::CONFIGURE => {
                 log::debug!("Configure");
-                if let Ok(bitmap) = Bitmaps::from_usize(arg_1) {
+                if let Some(bitmap) = permission::PermissionIndex::from_usize(arg_1) {
                     match monitor::do_set_config(
                         active_dom,
                         LocalCapa::new(arg_2),

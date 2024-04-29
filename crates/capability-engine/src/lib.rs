@@ -7,6 +7,7 @@ mod debug;
 mod domain;
 mod free_list;
 mod gen_arena;
+pub mod permission;
 mod region;
 mod remapper;
 mod segment;
@@ -22,7 +23,7 @@ use capa::Capa;
 pub use capa::{capa_type, CapaInfo};
 use cores::{Core, CoreList};
 use domain::{insert_capa, remove_capa, DomainHandle, DomainPool};
-pub use domain::{permission, Bitmaps, Domain, LocalCapa, NextCapaToken};
+pub use domain::{Domain, LocalCapa, NextCapaToken};
 pub use gen_arena::{GenArena, Handle};
 pub use region::{
     AccessRights, MemOps, MemoryPermission, Region, RegionIterator, RegionTracker, MEMOPS_ALL,
@@ -35,7 +36,7 @@ use segment::{RegionCapa, RegionHash, RegionPool};
 use update::UpdateBuffer;
 pub use update::{Buffer, Update};
 
-use crate::domain::{core_bits, trap_bits};
+use crate::permission::{core_bits, trap_bits};
 use crate::segment::EMPTY_REGION_CAPA;
 
 /// Configuration for the static Capa Engine size.
@@ -105,22 +106,22 @@ impl CapaEngine {
         let id = self.domain_id();
         match self.domains.allocate(Domain::new(id, false)) {
             Some(handle) => {
-                domain::set_config(
+                domain::set_permission(
                     handle,
                     &mut self.domains,
-                    domain::Bitmaps::PERMISSION,
+                    permission::PermissionIndex::MonitorInterface,
                     permissions,
                 )?;
-                domain::set_config(
+                domain::set_permission(
                     handle,
                     &mut self.domains,
-                    domain::Bitmaps::CORE,
+                    permission::PermissionIndex::AllowedCores,
                     core_bits::ALL,
                 )?;
-                domain::set_config(
+                domain::set_permission(
                     handle,
                     &mut self.domains,
-                    domain::Bitmaps::TRAP,
+                    permission::PermissionIndex::AllowedTraps,
                     trap_bits::ALL,
                 )?;
                 log::info!("About to seal");
@@ -203,11 +204,11 @@ impl CapaEngine {
         access: AccessRights,
     ) -> Result<LocalCapa, CapaError> {
         // Enforce permissions
-        domain::has_config(
+        domain::has_permission(
             domain,
             &self.domains,
-            domain::Bitmaps::PERMISSION,
-            permission::CARVE,
+            permission::PermissionIndex::MonitorInterface,
+            permission::monitor_inter_perm::CARVE,
         )?;
 
         let region = self.domains[domain].get(region)?.as_region()?;
@@ -229,11 +230,11 @@ impl CapaEngine {
         access: AccessRights,
     ) -> Result<LocalCapa, CapaError> {
         // Enforce permissions
-        domain::has_config(
+        domain::has_permission(
             domain,
             &self.domains,
-            domain::Bitmaps::PERMISSION,
-            permission::CARVE,
+            permission::PermissionIndex::MonitorInterface,
+            permission::monitor_inter_perm::CARVE,
         )?;
 
         let region = self.domains[domain].get(region)?.as_region()?;
@@ -265,11 +266,11 @@ impl CapaEngine {
         capa: LocalCapa,
     ) -> Result<LocalCapa, CapaError> {
         // Enforce permissions
-        domain::has_config(
+        domain::has_permission(
             domain,
             &self.domains,
-            domain::Bitmaps::PERMISSION,
-            permission::DUPLICATE,
+            permission::PermissionIndex::MonitorInterface,
+            permission::monitor_inter_perm::DUPLICATE,
         )?;
         domain::duplicate_capa(domain, capa, &mut self.regions, &mut self.domains)
     }
@@ -292,11 +293,11 @@ impl CapaEngine {
         hash: Option<RegionHash>,
     ) -> Result<LocalCapa, CapaError> {
         // Enforce permissions
-        domain::has_config(
+        domain::has_permission(
             domain,
             &self.domains,
-            domain::Bitmaps::PERMISSION,
-            permission::SEND,
+            permission::PermissionIndex::MonitorInterface,
+            permission::monitor_inter_perm::SEND,
         )?;
 
         //TODO(all) as some code might fail below, we should not remove the capa
@@ -368,33 +369,36 @@ impl CapaEngine {
         }
     }
 
-    pub fn set_child_config(
+    pub fn set_child_permission(
         &mut self,
         manager: Handle<Domain>,
         capa: LocalCapa,
-        bitmap: Bitmaps,
+        bitmap: permission::PermissionIndex,
         value: u64,
     ) -> Result<(), CapaError> {
-        domain::has_config(manager, &self.domains, bitmap, value)?;
+        domain::has_permission(manager, &self.domains, bitmap, value)?;
         let domain = self.domains[manager].get(capa)?.as_management()?;
-        domain::set_config(domain, &mut self.domains, bitmap, value)?;
+        domain::set_permission(domain, &mut self.domains, bitmap, value)?;
         Ok(())
     }
 
     // Should only be used for the root domain.
-    pub fn set_domain_config(
+    pub fn set_domain_permission(
         &mut self,
         domain: Handle<Domain>,
-        bitmap: Bitmaps,
+        bitmap: permission::PermissionIndex,
         value: u64,
     ) -> Result<(), CapaError> {
-        let domain = &mut self.domains[domain];
-        domain.set_config(bitmap, value)
+        domain::set_permission(domain, &mut self.domains, bitmap, value)?;
+        Ok(())
     }
 
-    pub fn get_domain_config(&mut self, domain: Handle<Domain>, bitmap: Bitmaps) -> u64 {
-        let domain = &self.domains[domain];
-        domain.get_config(bitmap)
+    pub fn get_domain_permission(
+        &mut self,
+        domain: Handle<Domain>,
+        perm: permission::PermissionIndex,
+    ) -> u64 {
+        domain::get_permission(domain, &self.domains, perm)
     }
 
     /// Seal a domain and return a switch handle for that domain.
@@ -635,11 +639,11 @@ impl CapaEngine {
         log::trace!("Create new domain");
 
         // Enforce permissions
-        domain::has_config(
+        domain::has_permission(
             manager,
             &self.domains,
-            domain::Bitmaps::PERMISSION,
-            permission::SPAWN,
+            permission::PermissionIndex::MonitorInterface,
+            permission::monitor_inter_perm::SPAWN,
         )?;
 
         let id = self.domain_id();
