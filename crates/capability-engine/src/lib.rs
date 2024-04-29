@@ -1,6 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 
 mod capa;
+pub mod context;
 mod cores;
 mod debug;
 mod domain;
