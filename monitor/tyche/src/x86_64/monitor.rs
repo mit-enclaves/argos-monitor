@@ -31,7 +31,7 @@ use super::vmx_helper::{dump_host_state, load_host_state};
 use super::{cpuid, vmx_helper};
 use crate::allocator::{allocator, PAGE_SIZE};
 use crate::attestation_domain::{attest_domain, calculate_attestation_hash};
-use crate::rcframe::{RCFrame, RCFramePool, EMPTY_RCFRAME};
+use crate::rcframe::{drop_rc, RCFrame, RCFramePool, EMPTY_RCFRAME};
 use crate::sync::Barrier;
 
 // ————————————————————————— Statics & Backend Data ————————————————————————— //
@@ -423,6 +423,7 @@ pub fn do_init_child_context(
         .allocate_frame()
         .expect("Unable to allocate frame");
     let rc = RCFrame::new(frame);
+    drop_rc(&mut *rcvmcs, dest.vmcs);
     dest.vmcs = rcvmcs.allocate(rc).expect("Unable to allocate rc frame");
     //Init the frame, it needs the identifier.
     vmx_state.vmxon.init_frame(frame);
