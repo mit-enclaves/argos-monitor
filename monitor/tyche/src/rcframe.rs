@@ -48,10 +48,12 @@ pub fn drop_rc(pool: &mut RCFramePool, v: Handle<RCFrame>) {
     if count == 0 {
         let frame = pool[v].frame;
         pool.free(v);
-        unsafe {
-            allocator()
-                .free_frame(frame.phys_addr)
-                .expect("Error freeing frame");
+        if frame.phys_addr.as_u64() != 0 {
+            unsafe {
+                allocator()
+                    .free_frame(frame.phys_addr)
+                    .expect("Error freeing frame");
+            }
         }
     }
 }
