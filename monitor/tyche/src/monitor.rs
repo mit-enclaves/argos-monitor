@@ -4,9 +4,10 @@ use capa_engine::config::{NB_CORES, NB_DOMAINS};
 use capa_engine::context::RegisterContext;
 use capa_engine::{
     permission, AccessRights, Buffer, CapaEngine, CapaError, CapaInfo, Domain, Handle, LocalCapa,
-    MemOps, NextCapaToken, MEMOPS_EXTRAS,
+    MemOps, NextCapaToken, MEMOPS_ALL, MEMOPS_EXTRAS,
 };
 use spin::{Mutex, MutexGuard};
+use stage_two_abi::Manifest;
 
 use crate::arch::cpuid;
 use crate::attestation_domain::calculate_attestation_hash;
@@ -49,6 +50,14 @@ pub trait PlatformState {
     fn find_buff(addr: usize, end: usize) -> Option<usize>;
     fn remap_core_bitmap(bitmap: u64) -> u64;
     fn remap_core(core: usize) -> usize;
+    fn max_cpus() -> usize;
+    fn create_context(
+        &self,
+        engine: MutexGuard<CapaEngine>,
+        current: Handle<Domain>,
+        domain: Handle<Domain>,
+        core: usize,
+    ) -> Result<(), CapaError>;
 }
 
 pub trait Monitor<T: PlatformState + 'static> {
@@ -69,6 +78,40 @@ pub trait Monitor<T: PlatformState + 'static> {
 
     ///TODO: figure out
     fn get_context(domain: Handle<Domain>, core: usize) -> MutexGuard<'static, T::Context>;
+
+    fn do_init(state: &mut T, manifest: &'static Manifest) {
+        // No one else is running yet
+        let mut engine = CAPA_ENGINE.lock();
+        let domain = engine
+            .create_manager_domain(permission::monitor_inter_perm::ALL)
+            .unwrap();
+        Self::apply_updates(&mut engine);
+        engine
+            .create_root_region(
+                domain,
+                AccessRights {
+                    start: 0,
+                    end: manifest.poffset as usize,
+                    ops: MEMOPS_ALL,
+                },
+            )
+            .unwrap();
+        //TODO: call the platform?
+        Self::apply_updates(&mut engine);
+        // Save the initial domain.
+        let mut initial_domain = INITIAL_DOMAIN.lock();
+        *initial_domain = Some(domain);
+
+        // Create and save the I/O domain.
+        let io_domain = engine.create_io_domain(domain).unwrap();
+        let mut initial_io_domain = IO_DOMAIN.lock();
+        *initial_io_domain = Some(io_domain);
+        //TODO figure that out.
+        /*if manifest.iommu != 0 {
+            let mut iommu = IOMMU.lock();
+            iommu.set_addr(manifest.iommu as usize);
+        }*/
+    }
 
     fn do_create_domain(
         state: &mut T,
@@ -271,6 +314,23 @@ pub trait Monitor<T: PlatformState + 'static> {
         engine.serialize_attestation(buff)
     }
 
+    fn do_init_child_context(
+        state: &mut T,
+        current: &mut Handle<Domain>,
+        domain: LocalCapa,
+        core: usize,
+    ) -> Result<(), CapaError> {
+        let mut engine = Self::lock_engine(state, current);
+        let domain = engine.get_domain_capa(*current, domain)?;
+        let cores = engine.get_domain_permission(domain, permission::PermissionIndex::AllowedCores);
+        if core > T::max_cpus() || (1 << core) & cores == 0 {
+            log::error!("Attempt to set context on unallowed core");
+            return Err(CapaError::InvalidCore);
+        }
+        T::create_context(state, engine, *current, domain, core)?;
+        return Ok(());
+    }
+
     fn do_monitor_call(
         state: &mut T,
         domain: &mut Handle<Domain>,
@@ -417,7 +477,20 @@ pub trait Monitor<T: PlatformState + 'static> {
                 return Ok(());
             }
             calls::ALLOC_CORE_CONTEXT => {
-                todo!("Implement!!!");
+                let result = match Self::do_init_child_context(
+                    state,
+                    domain,
+                    LocalCapa::new(args[0]),
+                    args[1],
+                ) {
+                    Ok(_) => 0,
+                    Err(e) => {
+                        log::error!("Allocating core context error: {:?}", e);
+                        1
+                    }
+                };
+                res[0] = result;
+                return Ok(());
             }
             calls::READ_ALL_GP => {
                 todo!("Implement!!");

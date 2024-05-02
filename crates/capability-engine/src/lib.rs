@@ -411,6 +411,28 @@ impl CapaEngine {
         let capa = self.domains[domain].get(capa)?.as_management()?;
         self.domains[capa].seal()?;
         //TODO(aghosn)(Charly) we should create a switch capa for all cores?
+        let mut cores = domain::get_permission(
+            capa,
+            &self.domains,
+            permission::PermissionIndex::AllowedCores,
+        );
+        let mut idx = 0;
+        while cores != 0 && idx < 64 {
+            if cores & 1 != 0 && idx != core {
+                insert_capa(
+                    domain,
+                    Capa::Switch {
+                        to: capa,
+                        core: idx,
+                    },
+                    &mut self.regions,
+                    &mut self.domains,
+                )?;
+            }
+            cores = cores >> 1;
+            idx += 1;
+        }
+
         let capa = insert_capa(
             domain,
             Capa::Switch { to: capa, core },
