@@ -1,7 +1,6 @@
 use core::sync::atomic::AtomicBool;
 
 use capa_engine::config::{NB_CORES, NB_DOMAINS};
-use capa_engine::context::RegisterContext;
 use capa_engine::{
     permission, AccessRights, Buffer, CapaEngine, CapaError, CapaInfo, Domain, Handle, LocalCapa,
     MemOps, NextCapaToken, MEMOPS_ALL, MEMOPS_EXTRAS,
@@ -47,17 +46,26 @@ const EMPTY_UPDATE_BUFFER: Mutex<Buffer<CoreUpdate>> = Mutex::new(Buffer::new())
 pub trait PlatformState {
     type DomainData;
     type Context;
-    fn find_buff(addr: usize, end: usize) -> Option<usize>;
+    fn find_buff(
+        engine: &MutexGuard<CapaEngine>,
+        domain: Handle<Domain>,
+        addr: usize,
+        end: usize,
+    ) -> Option<usize>;
     fn remap_core_bitmap(bitmap: u64) -> u64;
     fn remap_core(core: usize) -> usize;
     fn max_cpus() -> usize;
     fn create_context(
-        &self,
+        &mut self,
         engine: MutexGuard<CapaEngine>,
         current: Handle<Domain>,
         domain: Handle<Domain>,
         core: usize,
     ) -> Result<(), CapaError>;
+
+    fn get_domain(domain: Handle<Domain>) -> MutexGuard<'static, Self::DomainData>;
+
+    fn get_context(domain: Handle<Domain>, core: usize) -> MutexGuard<'static, Self::Context>;
 }
 
 pub trait Monitor<T: PlatformState + 'static> {
@@ -73,13 +81,7 @@ pub trait Monitor<T: PlatformState + 'static> {
         locked.unwrap()
     }
 
-    ///TODO: figure out
-    fn get_domain(domain: Handle<Domain>) -> MutexGuard<'static, T::DomainData>;
-
-    ///TODO: figure out
-    fn get_context(domain: Handle<Domain>, core: usize) -> MutexGuard<'static, T::Context>;
-
-    fn do_init(state: &mut T, manifest: &'static Manifest) {
+    fn do_init(_state: &mut T, manifest: &'static Manifest) {
         // No one else is running yet
         let mut engine = CAPA_ENGINE.lock();
         let domain = engine
@@ -303,9 +305,8 @@ pub trait Monitor<T: PlatformState + 'static> {
         len: usize,
     ) -> Result<usize, CapaError> {
         let engine = Self::lock_engine(state, domain_handle);
-        let domain = Self::get_domain(*domain_handle);
         //TODO maybe we have some more arguments
-        let buff = T::find_buff(addr, addr + len);
+        let buff = T::find_buff(&engine, *domain_handle, addr, addr + len);
         let Some(buff) = buff else {
             log::info!("Invalid buffer in serialize attestation");
             return Err(CapaError::InsufficientPermissions);
@@ -395,7 +396,6 @@ pub trait Monitor<T: PlatformState + 'static> {
                     Self::do_enumerate(state, domain, NextCapaToken::from_usize(args[0]))
                 {
                     let (v1, v2, v3) = info.serialize();
-                    let mut context = Self::get_context(*domain, cpuid());
                     res[0] = v1;
                     res[1] = v2;
                     res[2] = v3 as usize;

@@ -70,6 +70,12 @@ pub struct RegisterState<const N: usize> {
 }
 
 impl<const N: usize> RegisterState<N> {
+    pub const fn new() -> Self {
+        RegisterState {
+            dirty: Cache { bitmap: 0 },
+            values: [0; N],
+        }
+    }
     pub fn is_valid(&self, idx: usize) -> bool {
         if idx >= N {
             return false;
