@@ -382,6 +382,16 @@ impl CapaEngine {
         Ok(())
     }
 
+    pub fn get_child_permission(
+        &mut self,
+        manager: Handle<Domain>,
+        capa: LocalCapa,
+        bitmap: permission::PermissionIndex,
+    ) -> Result<u64, CapaError> {
+        let domain = self.domains[manager].get(capa)?.as_management()?;
+        Ok(domain::get_permission(domain, &mut self.domains, bitmap))
+    }
+
     // Should only be used for the root domain.
     pub fn set_domain_permission(
         &mut self,
@@ -718,6 +728,10 @@ impl CapaEngine {
                 core_map: cores,
             })
             .unwrap();
+    }
+
+    pub fn is_domain_sealed(&self, domain: Handle<Domain>) -> bool {
+        self.domains[domain].is_sealed()
     }
 }
 

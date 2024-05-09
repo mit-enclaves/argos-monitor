@@ -1,4 +1,4 @@
-use crate::CapaError;
+use crate::{permission, CapaError};
 
 pub const CACHE_SIZE: usize = 64;
 
@@ -60,6 +60,31 @@ impl RegisterGroup {
     }
     pub const fn size() -> usize {
         return Self::RegGp as usize + 1;
+    }
+
+    pub fn to_permissions(&self) -> (permission::PermissionIndex, permission::PermissionIndex) {
+        match &self {
+            Self::Reg16 => (
+                permission::PermissionIndex::MgmtRead16,
+                permission::PermissionIndex::MgmtWrite16,
+            ),
+            Self::Reg32 => (
+                permission::PermissionIndex::MgmtRead32,
+                permission::PermissionIndex::MgmtWrite32,
+            ),
+            Self::Reg64 => (
+                permission::PermissionIndex::MgmtRead64,
+                permission::PermissionIndex::MgmtWrite64,
+            ),
+            Self::RegNat => (
+                permission::PermissionIndex::MgmtReadNat,
+                permission::PermissionIndex::MgmtWriteNat,
+            ),
+            Self::RegGp => (
+                permission::PermissionIndex::MgmtReadGp,
+                permission::PermissionIndex::MgmtWriteGp,
+            ),
+        }
     }
 }
 

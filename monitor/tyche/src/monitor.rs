@@ -1,5 +1,6 @@
 use core::sync::atomic::AtomicBool;
 
+use attestation::hashing::hash_region;
 use capa_engine::config::{NB_CORES, NB_DOMAINS};
 use capa_engine::{
     permission, AccessRights, Buffer, CapaEngine, CapaError, CapaInfo, Domain, Handle, LocalCapa,
@@ -81,6 +82,33 @@ pub trait PlatformState {
     );
 
     fn platform_shootdown(&mut self, domain: &Handle<Domain>, core: usize);
+
+    fn set_core(
+        &mut self,
+        engine: &mut MutexGuard<CapaEngine>,
+        domain: &Handle<Domain>,
+        core: usize,
+        idx: usize,
+        value: usize,
+    ) -> Result<(), CapaError>;
+
+    fn check_overlaps(
+        &mut self,
+        engine: &mut MutexGuard<CapaEngine>,
+        domain: Handle<Domain>,
+        alias: usize,
+        repeat: usize,
+        region: &AccessRights,
+    ) -> bool;
+
+    fn map_region(
+        &mut self,
+        engine: &mut MutexGuard<CapaEngine>,
+        domain: Handle<Domain>,
+        alias: usize,
+        repeat: usize,
+        region: &AccessRights,
+    ) -> Result<(), CapaError>;
 }
 
 pub trait Monitor<T: PlatformState + 'static> {
@@ -159,7 +187,8 @@ pub trait Monitor<T: PlatformState + 'static> {
         domain: LocalCapa,
         bitmap: permission::PermissionIndex,
     ) -> Result<usize, CapaError> {
-        todo!("Implement");
+        let mut engine = Self::lock_engine(state, current);
+        Ok(engine.get_child_permission(*current, domain, bitmap)? as usize)
     }
 
     fn do_set_core(
@@ -170,7 +199,18 @@ pub trait Monitor<T: PlatformState + 'static> {
         idx: usize,
         value: usize,
     ) -> Result<(), CapaError> {
-        todo!("Implement");
+        let mut engine = Self::lock_engine(state, current);
+        // Check the core is valid.
+        let cores = engine.get_child_permission(
+            *current,
+            domain,
+            permission::PermissionIndex::AllowedCores,
+        )?;
+        if cores & (1 << core) == 0 {
+            return Err(CapaError::InvalidCore);
+        }
+        let domain = engine.get_domain_capa(*current, domain)?;
+        state.set_core(&mut engine, &domain, core, idx, value)
     }
 
     fn do_get_core(
@@ -256,7 +296,63 @@ pub trait Monitor<T: PlatformState + 'static> {
         size: usize,
         extra_rights: usize,
     ) -> Result<(), CapaError> {
-        todo!("Implement");
+        let mut engine = Self::lock_engine(state, current);
+        let flags = MemOps::from_usize(extra_rights)?;
+        if !flags.is_empty() && !flags.is_only_hcv() {
+            log::error!("Invalid send region flags received: {:?}", flags);
+            return Err(CapaError::InvalidPermissions);
+        }
+        // Get the capa first.
+        let region_info = engine
+            .get_region_capa(*current, capa)?
+            .ok_or(CapaError::InvalidCapa)?
+            .get_access_rights();
+        let repeat = if is_repeat {
+            let region_size = region_info.end - region_info.start;
+            if size == 0 || (size % region_size) != 0 {
+                return Err(CapaError::InvalidValue);
+            }
+            size / region_size
+        } else {
+            // Not a repeat, spans the entire thing.
+            1
+        };
+
+        // Check for an overlap first.
+        {
+            let target = engine.get_domain_capa(*current, to)?;
+            if state.check_overlaps(&mut engine, target, alias, repeat, &region_info) {
+                return Err(CapaError::AlreadyAliased);
+            }
+        }
+
+        if !flags.is_empty() {
+            // NOTE: we are missing some checks here, not all memory covered by regions can be accessed
+            // in the current design.
+            let hash = if flags.contains(MemOps::HASH) {
+                let data = unsafe {
+                    core::slice::from_raw_parts(
+                        region_info.start as *const u8,
+                        region_info.end - region_info.start,
+                    )
+                };
+                let hash = hash_region(data);
+                Some(hash)
+            } else {
+                None
+            };
+            let opt_flags = if flags.is_empty() { None } else { Some(flags) };
+            let _ = engine.send_with_flags(*current, capa, to, opt_flags, hash);
+        } else {
+            let _ = engine.send(*current, capa, to)?;
+        }
+
+        {
+            let target = engine.get_domain_capa(*current, to)?;
+            state.map_region(&mut engine, target, alias, repeat, &region_info)?;
+        }
+
+        Ok(())
     }
 
     fn do_enumerate(

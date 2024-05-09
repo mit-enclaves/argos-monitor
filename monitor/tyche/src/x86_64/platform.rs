@@ -4,7 +4,9 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use capa_engine::config::{NB_CORES, NB_DOMAINS, NB_REMAP_REGIONS};
 use capa_engine::context::{RegisterContext, RegisterGroup, RegisterState};
-use capa_engine::{CapaEngine, CapaError, Domain, GenArena, Handle, LocalCapa, MemOps, Remapper};
+use capa_engine::{
+    AccessRights, CapaEngine, CapaError, Domain, GenArena, Handle, LocalCapa, MemOps, Remapper,
+};
 use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator, IoPtFlag, IoPtMapper};
 use spin::{Mutex, MutexGuard};
@@ -176,13 +178,13 @@ impl ContextX86 {
             }
         };
         // The 16-bits registers.
-        get_set(RegisterGroup::Reg16, &X86Fields16);
+        get_set(RegisterGroup::Reg16, &X86_FIELDS16);
         // The 32-bits registers.
-        get_set(RegisterGroup::Reg32, &X86Fields32);
+        get_set(RegisterGroup::Reg32, &X86_FIELDS32);
         // The 64-bits registers.
-        get_set(RegisterGroup::Reg64, &X86Fields64);
+        get_set(RegisterGroup::Reg64, &X86_FIELDS64);
         // The Nat-bits registers.
-        get_set(RegisterGroup::RegNat, &X86FieldsNat);
+        get_set(RegisterGroup::RegNat, &X86_FIELDSNAT);
     }
 }
 
@@ -561,11 +563,63 @@ impl PlatformState for StateX86 {
     fn platform_shootdown(&mut self, domain: &Handle<Domain>, core: usize) {
         todo!("Implement");
     }
+
+    fn set_core(
+        &mut self,
+        engine: &mut MutexGuard<CapaEngine>,
+        domain: &Handle<Domain>,
+        core: usize,
+        idx: usize,
+        value: usize,
+    ) -> Result<(), CapaError> {
+        let mut ctxt = Self::get_context(*domain, core);
+        let field = VmcsField::from_u32(idx as u32).ok_or(CapaError::InvalidValue)?;
+        let (group, idx) = translate_x86field(field).ok_or(CapaError::InvalidValue)?;
+        // Check the permissions.
+        let (_, perm_write) = group.to_permissions();
+        let bitmap = engine.get_domain_permission(*domain, perm_write);
+        // Not allowed.
+        if engine.is_domain_sealed(*domain) && ((1 << idx) & bitmap == 0) {
+            return Err(CapaError::InsufficientPermissions);
+        }
+        ctxt.set(field, value, None)
+    }
+
+    fn check_overlaps(
+        &mut self,
+        engine: &mut MutexGuard<CapaEngine>,
+        domain: Handle<Domain>,
+        alias: usize,
+        repeat: usize,
+        region: &AccessRights,
+    ) -> bool {
+        let dom_dat = Self::get_domain(domain);
+        dom_dat
+            .remapper
+            .overlaps(alias, repeat * (region.end - region.start))
+    }
+
+    fn map_region(
+        &mut self,
+        engine: &mut MutexGuard<CapaEngine>,
+        domain: Handle<Domain>,
+        alias: usize,
+        repeat: usize,
+        region: &AccessRights,
+    ) -> Result<(), CapaError> {
+        let mut dom_dat = Self::get_domain(domain);
+        let _ = dom_dat
+            .remapper
+            .map_range(region.start, alias, region.end - region.start, repeat)
+            .unwrap(); // Overlap is checked again but should not be triggered.
+        engine.conditional_permission_update(domain);
+        Ok(())
+    }
 }
 
 // ———————————————————— Translate fields into registers ————————————————————— //
 
-const X86Fields16: [VmcsField; NB_16] = [
+const X86_FIELDS16: [VmcsField; NB_16] = [
     VmcsField::VirtualProcessorId,
     VmcsField::PostedIntrNv,
     VmcsField::LastPidPointerIndex,
@@ -588,7 +642,7 @@ const X86Fields16: [VmcsField; NB_16] = [
     VmcsField::HostTrSelector,
 ];
 
-const X86Fields32: [VmcsField; NB_32] = [
+const X86_FIELDS32: [VmcsField; NB_32] = [
     VmcsField::IoBitmapA,
     VmcsField::IoBitmapB,
     VmcsField::MsrBitmap,
@@ -631,7 +685,7 @@ const X86Fields32: [VmcsField; NB_32] = [
     VmcsField::HostIa32PerfGlobalCtrl,
 ];
 
-const X86Fields64: [VmcsField; NB_64] = [
+const X86_FIELDS64: [VmcsField; NB_64] = [
     VmcsField::PinBasedVmExecControl,
     VmcsField::CpuBasedVmExecControl,
     VmcsField::ExceptionBitmap,
@@ -683,7 +737,7 @@ const X86Fields64: [VmcsField; NB_64] = [
     VmcsField::VmxPreemptionTimerValue,
 ];
 
-const X86FieldsNat: [VmcsField; NB_NAT] = [
+const X86_FIELDSNAT: [VmcsField; NB_NAT] = [
     VmcsField::Cr0GuestHostMask,
     VmcsField::Cr4GuestHostMask,
     VmcsField::Cr0ReadShadow,
@@ -716,7 +770,7 @@ const X86FieldsNat: [VmcsField; NB_NAT] = [
     VmcsField::GuestSysenterEip,
 ];
 
-const X86FieldsGP: [VmcsField; NB_GP] = [
+const X86_FIELDSGP: [VmcsField; NB_GP] = [
     VmcsField::GuestRax,
     VmcsField::GuestRbx,
     VmcsField::GuestRcx,
@@ -737,11 +791,11 @@ const X86FieldsGP: [VmcsField; NB_GP] = [
 
 fn translate_to_x86field(r: RegisterGroup, idx: usize) -> Result<VmcsField, CapaError> {
     match r {
-        RegisterGroup::Reg16 if idx < NB_16 => Ok(X86Fields16[idx]),
-        RegisterGroup::Reg32 if idx < NB_32 => Ok(X86Fields32[idx]),
-        RegisterGroup::Reg64 if idx < NB_64 => Ok(X86Fields64[idx]),
-        RegisterGroup::RegNat if idx < NB_NAT => Ok(X86FieldsNat[idx]),
-        RegisterGroup::RegGp if idx < NB_GP => Ok(X86FieldsGP[idx]),
+        RegisterGroup::Reg16 if idx < NB_16 => Ok(X86_FIELDS16[idx]),
+        RegisterGroup::Reg32 if idx < NB_32 => Ok(X86_FIELDS32[idx]),
+        RegisterGroup::Reg64 if idx < NB_64 => Ok(X86_FIELDS64[idx]),
+        RegisterGroup::RegNat if idx < NB_NAT => Ok(X86_FIELDSNAT[idx]),
+        RegisterGroup::RegGp if idx < NB_GP => Ok(X86_FIELDSGP[idx]),
         _ => Err(CapaError::InvalidValue),
     }
 }
