@@ -99,9 +99,9 @@ impl<const N: usize> RegisterState<N> {
         return Ok(self.values[idx]);
     }
 
-    pub fn flush<F>(&mut self, callback: F)
+    pub fn flush<F>(&mut self, mut callback: F)
     where
-        F: Fn(usize, usize),
+        F: FnMut(usize, usize),
     {
         for i in 0..N {
             if !self.dirty.is_on(i) {
@@ -162,9 +162,9 @@ impl<const N16: usize, const N32: usize, const N64: usize, const NNAT: usize, co
         return Ok(res);
     }
 
-    pub fn flush<F>(&mut self, callback: F)
+    pub fn flush<F>(&mut self, mut callback: F)
     where
-        F: Fn(RegisterGroup, usize, usize),
+        F: FnMut(RegisterGroup, usize, usize),
     {
         for i in 0..RegisterGroup::size() {
             if !self.dirty.is_on(i) {

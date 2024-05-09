@@ -16,7 +16,7 @@ use crate::sync::Barrier;
 // ———————————————————————————————— Updates ————————————————————————————————— //
 /// Per-core updates
 #[derive(Debug, Clone, Copy)]
-enum CoreUpdate {
+pub enum CoreUpdate {
     TlbShootdown,
     Switch {
         domain: Handle<Domain>,
@@ -66,6 +66,21 @@ pub trait PlatformState {
     fn get_domain(domain: Handle<Domain>) -> MutexGuard<'static, Self::DomainData>;
 
     fn get_context(domain: Handle<Domain>, core: usize) -> MutexGuard<'static, Self::Context>;
+
+    fn update_permission(domain: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) -> bool;
+
+    fn create_domain(domain: Handle<Domain>);
+
+    fn revoke_domain(_domain: Handle<Domain>);
+
+    fn apply_core_update(
+        &mut self,
+        domain: &mut Handle<Domain>,
+        core_id: usize,
+        update: &CoreUpdate,
+    );
+
+    fn platform_shootdown(&mut self, domain: &Handle<Domain>, core: usize);
 }
 
 pub trait Monitor<T: PlatformState + 'static> {
@@ -81,13 +96,13 @@ pub trait Monitor<T: PlatformState + 'static> {
         locked.unwrap()
     }
 
-    fn do_init(_state: &mut T, manifest: &'static Manifest) {
+    fn do_init(state: &mut T, manifest: &'static Manifest) {
         // No one else is running yet
         let mut engine = CAPA_ENGINE.lock();
         let domain = engine
             .create_manager_domain(permission::monitor_inter_perm::ALL)
             .unwrap();
-        Self::apply_updates(&mut engine);
+        Self::apply_updates(state, &mut engine);
         engine
             .create_root_region(
                 domain,
@@ -99,7 +114,7 @@ pub trait Monitor<T: PlatformState + 'static> {
             )
             .unwrap();
         //TODO: call the platform?
-        Self::apply_updates(&mut engine);
+        Self::apply_updates(state, &mut engine);
         // Save the initial domain.
         let mut initial_domain = INITIAL_DOMAIN.lock();
         *initial_domain = Some(domain);
@@ -121,7 +136,7 @@ pub trait Monitor<T: PlatformState + 'static> {
     ) -> Result<LocalCapa, CapaError> {
         let mut engine = Self::lock_engine(state, current);
         let mgmt = engine.create_domain(*current)?;
-        Self::apply_updates(&mut engine);
+        Self::apply_updates(state, &mut engine);
         Ok(mgmt)
     }
 
@@ -134,7 +149,7 @@ pub trait Monitor<T: PlatformState + 'static> {
     ) -> Result<(), CapaError> {
         let mut engine = Self::lock_engine(state, current);
         engine.set_child_permission(*current, domain, bitmap, value)?;
-        Self::apply_updates(&mut engine);
+        Self::apply_updates(state, &mut engine);
         Ok(())
     }
 
@@ -179,7 +194,7 @@ pub trait Monitor<T: PlatformState + 'static> {
             calculate_attestation_hash(&mut engine, domain_capa);
         }
 
-        Self::apply_updates(&mut engine);
+        Self::apply_updates(state, &mut engine);
         Ok(capa)
     }
 
@@ -209,7 +224,7 @@ pub trait Monitor<T: PlatformState + 'static> {
             engine.carve_region(*current, capa, access)?
         };
         let to_revoke = engine.create_revoke_capa(*current, to_send)?;
-        Self::apply_updates(&mut engine);
+        Self::apply_updates(state, &mut engine);
         Ok((to_send, to_revoke))
     }
 
@@ -227,7 +242,7 @@ pub trait Monitor<T: PlatformState + 'static> {
             _ => {}
         }
         engine.send(*current, capa, to)?;
-        Self::apply_updates(&mut engine);
+        Self::apply_updates(state, &mut engine);
         Ok(())
     }
 
@@ -260,7 +275,7 @@ pub trait Monitor<T: PlatformState + 'static> {
     ) -> Result<(), CapaError> {
         let mut engine = Self::lock_engine(state, current);
         engine.revoke(*current, capa)?;
-        Self::apply_updates(&mut engine);
+        Self::apply_updates(state, &mut engine);
         Ok(())
     }
 
@@ -282,7 +297,7 @@ pub trait Monitor<T: PlatformState + 'static> {
     ) -> Result<LocalCapa, CapaError> {
         let mut engine = Self::lock_engine(state, current);
         let new_capa = engine.duplicate(*current, capa)?;
-        Self::apply_updates(&mut engine);
+        Self::apply_updates(state, &mut engine);
         Ok(new_capa)
     }
 
@@ -294,7 +309,7 @@ pub trait Monitor<T: PlatformState + 'static> {
     ) -> Result<(), CapaError> {
         let mut engine = Self::lock_engine(state, current);
         engine.switch(*current, cpuid, capa)?;
-        Self::apply_updates(&mut engine);
+        Self::apply_updates(state, &mut engine);
         Ok(())
     }
 
@@ -530,8 +545,73 @@ pub trait Monitor<T: PlatformState + 'static> {
         }
     }
 
-    fn apply_updates(engine: &mut MutexGuard<CapaEngine>);
-    fn apply_core_updates(state: &mut T, dom: &mut Handle<Domain>, core_id: usize);
+    fn apply_updates(state: &mut T, engine: &mut MutexGuard<CapaEngine>) {
+        while let Some(update) = engine.pop_update() {
+            log::trace!("Update: {}", update);
+            match update {
+                capa_engine::Update::PermissionUpdate { domain, core_map } => {
+                    let core_id = cpuid();
+                    log::trace!(
+                        "cpu {} processes PermissionUpdate with core_map={:b}",
+                        core_id,
+                        core_map
+                    );
+                    // Do we have to process updates
+                    if T::update_permission(domain, engine) {
+                        state.platform_shootdown(&domain, core_id);
+                    }
+                }
+                capa_engine::Update::Cleanup { start, end } => {
+                    let size = end.checked_sub(start).unwrap();
+                    log::trace!("Cleaning up region [{:#x}, {:#x}]", start, end);
+                    // WARNING: for now we do not check that the region points to valid memory!
+                    // In particular, the current root region contains more than valid ram, and also
+                    // include devices.
+                    unsafe {
+                        let region = core::slice::from_raw_parts_mut(start as *mut u8, size);
+                        region.fill(0);
+                    }
+                }
+                capa_engine::Update::RevokeDomain { domain } => T::revoke_domain(domain),
+                capa_engine::Update::CreateDomain { domain } => T::create_domain(domain),
+                capa_engine::Update::Switch {
+                    domain,
+                    return_capa,
+                    core,
+                } => {
+                    let mut core_updates = CORE_UPDATES[core as usize].lock();
+                    core_updates
+                        .push(CoreUpdate::Switch {
+                            domain,
+                            return_capa,
+                        })
+                        .unwrap();
+                }
+                capa_engine::Update::Trap {
+                    manager,
+                    trap,
+                    info,
+                    core,
+                } => {
+                    let mut core_updates = CORE_UPDATES[core as usize].lock();
+                    core_updates
+                        .push(CoreUpdate::Trap {
+                            manager,
+                            trap,
+                            info,
+                        })
+                        .unwrap();
+                }
+            }
+        }
+    }
+    fn apply_core_updates(state: &mut T, current: &mut Handle<Domain>, core_id: usize) {
+        let core = cpuid();
+        let mut update_queue = CORE_UPDATES[core_id].lock();
+        while let Some(update) = update_queue.pop() {
+            state.apply_core_update(current, core, &update);
+        }
+    }
 }
 
 // ———————————————————————————————— Display ————————————————————————————————— //
