@@ -1,7 +1,6 @@
-use core::sync::atomic::AtomicBool;
-
 use attestation::hashing::hash_region;
-use capa_engine::config::{NB_CORES, NB_DOMAINS};
+use capa_engine::config::NB_CORES;
+use capa_engine::utils::BitmapIterator;
 use capa_engine::{
     permission, AccessRights, Buffer, CapaEngine, CapaError, CapaInfo, Domain, Handle, LocalCapa,
     MemOps, NextCapaToken, MEMOPS_ALL, MEMOPS_EXTRAS,
@@ -12,7 +11,6 @@ use stage_two_abi::Manifest;
 use crate::arch::cpuid;
 use crate::attestation_domain::calculate_attestation_hash;
 use crate::calls;
-use crate::sync::Barrier;
 
 // ———————————————————————————————— Updates ————————————————————————————————— //
 /// Per-core updates
@@ -35,9 +33,6 @@ static CAPA_ENGINE: Mutex<CapaEngine> = Mutex::new(CapaEngine::new());
 static IO_DOMAIN: Mutex<Option<LocalCapa>> = Mutex::new(None);
 static INITIAL_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
 static CORE_UPDATES: [Mutex<Buffer<CoreUpdate>>; NB_CORES] = [EMPTY_UPDATE_BUFFER; NB_CORES];
-const FALSE: AtomicBool = AtomicBool::new(false);
-static TLB_FLUSH_BARRIERS: [Barrier; NB_DOMAINS] = [Barrier::NEW; NB_DOMAINS];
-static TLB_FLUSH: [AtomicBool; NB_DOMAINS] = [FALSE; NB_DOMAINS];
 
 // —————————————————————— Constants for initialization —————————————————————— //
 const EMPTY_UPDATE_BUFFER: Mutex<Buffer<CoreUpdate>> = Mutex::new(Buffer::new());
@@ -81,7 +76,7 @@ pub trait PlatformState {
         update: &CoreUpdate,
     );
 
-    fn platform_shootdown(&mut self, domain: &Handle<Domain>, core: usize);
+    fn platform_shootdown(&mut self, domain: &Handle<Domain>, core: usize, trigger: bool);
 
     fn set_core(
         &mut self,
@@ -109,6 +104,22 @@ pub trait PlatformState {
         repeat: usize,
         region: &AccessRights,
     ) -> Result<(), CapaError>;
+
+    fn unmap_region(
+        &mut self,
+        engine: &mut MutexGuard<CapaEngine>,
+        domain: Handle<Domain>,
+        alias: usize,
+        size: usize,
+    ) -> Result<(), CapaError>;
+
+    fn prepare_notify(&mut self, domain: &Handle<Domain>, core_count: usize);
+
+    fn notify_cores(&mut self, domain: &Handle<Domain>, core_id: usize, core_map: usize);
+
+    fn acknowledge_notify(&mut self, domain: &Handle<Domain>);
+
+    fn finish_notify(&mut self, domain: &Handle<Domain>);
 }
 
 pub trait Monitor<T: PlatformState + 'static> {
@@ -383,7 +394,14 @@ pub trait Monitor<T: PlatformState + 'static> {
         alias: usize,
         size: usize,
     ) -> Result<(), CapaError> {
-        todo!("Implement");
+        let mut engine = Self::lock_engine(state, current);
+        {
+            let dom = engine.get_domain_capa(*current, to)?;
+            let _ = state.unmap_region(&mut engine, dom, alias, size).unwrap();
+        }
+        engine.revoke(*current, capa)?;
+        Self::apply_updates(state, &mut engine);
+        Ok(())
     }
 
     fn do_duplicate(
@@ -654,7 +672,25 @@ pub trait Monitor<T: PlatformState + 'static> {
                     );
                     // Do we have to process updates
                     if T::update_permission(domain, engine) {
-                        state.platform_shootdown(&domain, core_id);
+                        let mut core_count = core_map.count_ones() as usize;
+                        if (1 << core_id) & core_map != 0 {
+                            state.platform_shootdown(&domain, core_id, true);
+                        } else {
+                            // We will wait on the barrier.
+                            core_count += 1;
+                        }
+                        // Prepare the update.
+                        state.prepare_notify(&domain, core_count);
+                        for core in BitmapIterator::new(core_map) {
+                            if core == core_id {
+                                continue;
+                            }
+                            let mut core_updates = CORE_UPDATES[core as usize].lock();
+                            core_updates.push(CoreUpdate::TlbShootdown).unwrap();
+                        }
+                        state.notify_cores(&domain, core_id, core_map as usize);
+                        state.acknowledge_notify(&domain);
+                        state.finish_notify(&domain);
                     }
                 }
                 capa_engine::Update::Cleanup { start, end } => {

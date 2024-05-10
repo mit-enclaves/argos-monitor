@@ -4,6 +4,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use capa_engine::config::{NB_CORES, NB_DOMAINS, NB_REMAP_REGIONS};
 use capa_engine::context::{RegisterContext, RegisterGroup, RegisterState};
+use capa_engine::utils::BitmapIterator;
 use capa_engine::{
     AccessRights, CapaEngine, CapaError, Domain, GenArena, Handle, LocalCapa, MemOps, Remapper,
 };
@@ -355,9 +356,10 @@ impl StateX86 {
         }
         // Case 1: copy the interrupted state.
         if current_ctx.interrupted {
-            /*next_ctx
-            .copy_interrupt_frame(current_ctx, return_capa.as_usize(), vcpu)
-            .unwrap();*/
+            next_ctx.copy_interrupt_frame(current_ctx).unwrap();
+            // Set the return values.
+            next_ctx.set(VmcsField::GuestRax, 0, None)?;
+            next_ctx.set(VmcsField::GuestRdi, return_capa.as_usize(), None)?;
         } else if next_ctx.interrupted {
             // Case 2: do not put the return capa.
             next_ctx.interrupted = false;
@@ -520,7 +522,7 @@ impl PlatformState for StateX86 {
             CoreUpdate::TlbShootdown => {
                 // Into a separate function so that we can drop the domain lock before starting to
                 // wait on the TLB_FLUSH_BARRIER
-                self.platform_shootdown(current_domain, core);
+                self.platform_shootdown(current_domain, core, false);
                 log::trace!("core {} waits on tlb flush barrier", core);
                 TLB_FLUSH_BARRIERS[current_domain.idx()].wait();
                 log::trace!("core {} done waiting", core);
@@ -560,8 +562,18 @@ impl PlatformState for StateX86 {
         }
     }
 
-    fn platform_shootdown(&mut self, domain: &Handle<Domain>, core: usize) {
-        todo!("Implement");
+    fn platform_shootdown(&mut self, domain: &Handle<Domain>, core: usize, trigger: bool) {
+        let dom = Self::get_domain(*domain);
+        let new_epts = dom.ept.unwrap().as_usize() | EPT_ROOT_FLAGS;
+        let mut context = Self::get_context(*domain, core);
+        // We triggered the update.
+        if trigger {
+            context.set(VmcsField::EptPointer, new_epts, None).unwrap();
+        } else {
+            context
+                .set(VmcsField::EptPointer, new_epts, Some(&mut self.vcpu))
+                .unwrap();
+        }
     }
 
     fn set_core(
@@ -587,7 +599,7 @@ impl PlatformState for StateX86 {
 
     fn check_overlaps(
         &mut self,
-        engine: &mut MutexGuard<CapaEngine>,
+        _engine: &mut MutexGuard<CapaEngine>,
         domain: Handle<Domain>,
         alias: usize,
         repeat: usize,
@@ -614,6 +626,45 @@ impl PlatformState for StateX86 {
             .unwrap(); // Overlap is checked again but should not be triggered.
         engine.conditional_permission_update(domain);
         Ok(())
+    }
+
+    fn unmap_region(
+        &mut self,
+        _engine: &mut MutexGuard<CapaEngine>,
+        domain: Handle<Domain>,
+        alias: usize,
+        size: usize,
+    ) -> Result<(), CapaError> {
+        let mut data = Self::get_domain(domain);
+        let _ = data.remapper.unmap_gpa_range(alias, size).unwrap();
+        Ok(())
+    }
+
+    fn prepare_notify(&mut self, domain: &Handle<Domain>, core_count: usize) {
+        TLB_FLUSH_BARRIERS[domain.idx()].set_count(core_count);
+    }
+
+    fn notify_cores(&mut self, _domain: &Handle<Domain>, core_id: usize, core_map: usize) {
+        for core in BitmapIterator::new(core_map as u64) {
+            if core == core_id {
+                continue;
+            }
+            x2apic::send_init_assert(core as u32);
+        }
+    }
+
+    fn acknowledge_notify(&mut self, domain: &Handle<Domain>) {
+        TLB_FLUSH_BARRIERS[domain.idx()].wait();
+    }
+
+    fn finish_notify(&mut self, domain: &Handle<Domain>) {
+        let mut dom = Self::get_domain(*domain);
+        let allocator = allocator();
+        if let Some(ept) = dom.ept_old {
+            unsafe { Self::free_ept(ept, allocator) };
+        }
+        dom.ept_old = None;
+        TLB_FLUSH[domain.idx()].store(false, Ordering::SeqCst);
     }
 }
 
