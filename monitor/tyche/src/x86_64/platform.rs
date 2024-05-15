@@ -1,5 +1,6 @@
 //! Platform specific configuration
 
+use core::arch::asm;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use capa_engine::config::{NB_CORES, NB_DOMAINS, NB_REMAP_REGIONS};
@@ -11,19 +12,21 @@ use capa_engine::{
 use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::{EptMapper, FrameAllocator, IoPtFlag, IoPtMapper};
 use spin::{Mutex, MutexGuard};
-use stage_two_abi::GuestInfo;
+use stage_two_abi::{GuestInfo, Manifest};
 use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
-use vmx::bitmaps::EptEntryFlags;
+use vmx::bitmaps::{exit_qualification, EptEntryFlags};
 use vmx::fields::VmcsField;
-use vmx::ActiveVmcs;
+use vmx::{ActiveVmcs, VmxExitReason};
 use vtd::Iommu;
 
+use super::cpuid_filter::{filter_mpk, filter_tpause};
 use super::guest::VmxState;
 use super::init::NB_BOOTED_CORES;
 use super::vmx_helper::{dump_host_state, load_host_state};
-use super::{cpuid, vmx_helper};
-use crate::allocator::allocator;
-use crate::monitor::{CoreUpdate, PlatformState};
+use super::{cpuid, monitor, vmx_helper};
+use crate::allocator::{self, allocator};
+use crate::arch::guest::HandlerResult;
+use crate::monitor::{CoreUpdate, Monitor, PlatformState};
 use crate::rcframe::{drop_rc, RCFrame, RCFramePool, EMPTY_RCFRAME};
 use crate::sync::Barrier;
 
@@ -138,6 +141,9 @@ impl ContextX86 {
     ) -> Result<(), CapaError> {
         let (group, idx) = translate_x86field(field).ok_or(CapaError::InvalidValue)?;
         self.registers.set(group, idx, value)?;
+        if field.is_gp_register() {
+            return Ok(());
+        }
         if let Some(vcpu) = vcpu {
             vcpu.set(field, value).or(Err(CapaError::InvalidValue))?;
         }
@@ -146,8 +152,8 @@ impl ContextX86 {
 
     pub fn get(&mut self, field: VmcsField, vcpu: Option<&ActiveVmcs>) -> Result<usize, CapaError> {
         let (group, idx) = translate_x86field(field).ok_or(CapaError::InvalidValue)?;
-        if let Some(vcpu) = vcpu {
-            let value = vcpu.get(field).or(Err(CapaError::InvalidValue))?;
+        if vcpu.is_some() && !field.is_gp_register() {
+            let value = vcpu.unwrap().get(field).or(Err(CapaError::InvalidValue))?;
             self.registers.set(group, idx, value)?;
         }
         Ok(self.registers.get(group, idx)?)
@@ -165,6 +171,10 @@ impl ContextX86 {
     fn flush(&mut self, vcpu: &mut ActiveVmcs) {
         let update = |r: RegisterGroup, idx: usize, value: usize| {
             let field = translate_to_x86field(r, idx).unwrap();
+            // Avoid the gp registers
+            if field.is_gp_register() {
+                return;
+            }
             vcpu.set(field, value).unwrap();
         };
         self.registers.flush(update);
@@ -197,7 +207,7 @@ pub struct DataX86 {
     remapper: Remapper<NB_REMAP_REGIONS>,
 }
 
-type StateX86 = VmxState;
+pub type StateX86 = VmxState;
 
 impl StateX86 {
     unsafe fn free_ept(ept: HostPhysAddr, allocator: &impl FrameAllocator) {
@@ -425,6 +435,11 @@ impl PlatformState for StateX86 {
         return None;
     }
 
+    fn platform_init_io_mmu(&self, addr: usize) {
+        let mut iommu = IOMMU.lock();
+        iommu.set_addr(addr);
+    }
+
     fn get_domain(domain: Handle<Domain>) -> MutexGuard<'static, Self::DomainData> {
         DOMAINS[domain.idx()].lock()
     }
@@ -597,6 +612,26 @@ impl PlatformState for StateX86 {
         ctxt.set(field, value, None)
     }
 
+    fn get_core(
+        &mut self,
+        engine: &mut MutexGuard<CapaEngine>,
+        domain: &Handle<Domain>,
+        core: usize,
+        idx: usize,
+    ) -> Result<usize, CapaError> {
+        let mut ctxt = Self::get_context(*domain, core);
+        let field = VmcsField::from_u32(idx as u32).ok_or(CapaError::InvalidValue)?;
+        let (group, idx) = translate_x86field(field).ok_or(CapaError::InvalidValue)?;
+        // Check the permissions.
+        let (perm_read, _) = group.to_permissions();
+        let bitmap = engine.get_domain_permission(*domain, perm_read);
+        // Not allowed.
+        if engine.is_domain_sealed(*domain) && ((1 << idx) & bitmap == 0) {
+            return Err(CapaError::InsufficientPermissions);
+        }
+        ctxt.get(field, None)
+    }
+
     fn check_overlaps(
         &mut self,
         _engine: &mut MutexGuard<CapaEngine>,
@@ -665,6 +700,335 @@ impl PlatformState for StateX86 {
         }
         dom.ept_old = None;
         TLB_FLUSH[domain.idx()].store(false, Ordering::SeqCst);
+    }
+
+    fn context_interrupted(&mut self, domain: &Handle<Domain>, core: usize) {
+        let mut context = Self::get_context(*domain, core);
+        context.interrupted = true;
+    }
+}
+
+// ————————————————————— Monitor Implementation on X86 —————————————————————— //
+
+pub struct MonitorX86 {}
+
+impl Monitor<StateX86> for MonitorX86 {}
+
+impl MonitorX86 {
+    pub fn init(manifest: &'static Manifest, bsp: bool) -> (StateX86, Handle<Domain>) {
+        let allocator = allocator::allocator();
+        let vmxon_frame = allocator
+            .allocate_frame()
+            .expect("Failed to allocate VMXON frame")
+            .zeroed();
+        let vmxon = unsafe { vmx::vmxon(vmxon_frame).expect("Failed to execute VMXON") };
+        let vmcs_frame = allocator
+            .allocate_frame()
+            .expect("Failed to allocate VMCS frame")
+            .zeroed();
+        let vmcs = unsafe {
+            vmxon
+                .create_vm_unsafe(vmcs_frame)
+                .expect("Failed to create VMCS")
+        };
+        let vcpu = vmcs.set_as_active().expect("Failed to set VMCS as active");
+        let mut state = VmxState { vcpu, vmxon };
+        let domain = if bsp {
+            Self::do_init(&mut state, manifest)
+        } else {
+            Self::get_initial_domain()
+        };
+        let dom = StateX86::get_domain(domain);
+        let mut ctx = StateX86::get_context(domain, cpuid());
+        let rcframe = RC_VMCS
+            .lock()
+            .allocate(RCFrame::new(*state.vcpu.frame()))
+            .expect("Unable to allocate rcframe");
+        ctx.vmcs = rcframe;
+        state
+            .vcpu
+            .set_ept_ptr(HostPhysAddr::new(
+                dom.ept.unwrap().as_usize() | EPT_ROOT_FLAGS,
+            ))
+            .expect("Failed to set initial EPT ptr");
+        unsafe {
+            vmx_helper::init_vcpu2(&mut state.vcpu, &manifest.info, &mut ctx);
+        }
+        (state, domain)
+    }
+
+    pub fn launch_guest(
+        &mut self,
+        manifest: &'static Manifest,
+        state: StateX86,
+        domain: Handle<Domain>,
+    ) {
+        if !manifest.info.loaded {
+            log::warn!("No guest found, exiting");
+            return;
+        }
+        log::info!("Staring main loop");
+        self.main_loop(state, domain);
+        qemu::exit(qemu::ExitCode::Success);
+    }
+
+    pub fn main_loop(&mut self, mut state: StateX86, mut domain: Handle<Domain>) {
+        let core_id = cpuid();
+        let mut result = unsafe {
+            let mut context = StateX86::get_context(domain, core_id);
+            state.vcpu.run(&mut context.registers.state_gp.values)
+        };
+        loop {
+            let exit_reason = match result {
+                Ok(exit_reason) => {
+                    let res = self
+                        .handle_exit(&mut state, exit_reason, &mut domain)
+                        .expect("Failed to handle VM exit");
+
+                    // Apply core-local updates before returning
+                    monitor::apply_core_updates(&mut state, &mut domain, core_id);
+
+                    res
+                }
+                Err(err) => {
+                    log::error!("Guest crash: {:?}", err);
+                    log::error!("Domain: {:?}", domain);
+                    log::error!("Vcpu: {:x?}", state.vcpu);
+                    HandlerResult::Crash
+                }
+            };
+
+            match exit_reason {
+                HandlerResult::Resume => {
+                    result = unsafe {
+                        let mut context = StateX86::get_context(domain, core_id);
+                        context.flush(&mut state.vcpu);
+                        state.vcpu.run(&mut context.registers.state_gp.values)
+                    };
+                }
+                _ => {
+                    log::info!("Exiting guest: {:?}", exit_reason);
+                    break;
+                }
+            }
+        }
+    }
+
+    pub fn handle_exit(
+        &mut self,
+        vs: &mut StateX86,
+        reason: VmxExitReason,
+        domain: &mut Handle<Domain>,
+    ) -> Result<HandlerResult, CapaError> {
+        match reason {
+            VmxExitReason::Vmcall => {
+                let (vmcall, arg_1, arg_2, arg_3, arg_4, arg_5, arg_6) = {
+                    let mut context = StateX86::get_context(*domain, cpuid());
+                    let vmcall = context.get(VmcsField::GuestRax, None)?;
+                    let arg_1 = context.get(VmcsField::GuestRdi, None)?;
+                    let arg_2 = context.get(VmcsField::GuestRsi, None)?;
+                    let arg_3 = context.get(VmcsField::GuestRdx, None)?;
+                    let arg_4 = context.get(VmcsField::GuestRcx, None)?;
+                    let arg_5 = context.get(VmcsField::GuestR8, None)?;
+                    let arg_6 = context.get(VmcsField::GuestR9, None)?;
+                    (vmcall, arg_1, arg_2, arg_3, arg_4, arg_5, arg_6)
+                };
+                let args: [usize; 6] = [arg_1, arg_2, arg_3, arg_4, arg_5, arg_6];
+                let mut res: [usize; 6] = [0; 6];
+                Self::do_monitor_call(vs, domain, vmcall, &args, &mut res)?;
+                vs.vcpu.next_instruction().or(Err(CapaError::PlatformError))?;
+                Ok(HandlerResult::Resume)
+            }
+        VmxExitReason::InitSignal /*if domain.idx() == 0*/ => {
+            log::trace!("cpu {} received init signal", cpuid());
+            Ok(HandlerResult::Resume)
+        }
+        VmxExitReason::Cpuid if domain.idx() == 0 => {
+            let mut context = StateX86::get_context(*domain, cpuid());
+            let input_eax = context.get(VmcsField::GuestRax, None)?;
+            let input_ecx = context.get(VmcsField::GuestRcx, None)?;
+            let mut eax: usize;
+            let mut ebx: usize;
+            let mut ecx: usize;
+            let mut edx: usize;
+
+            unsafe {
+                // Note: LLVM reserves %rbx for its internal use, so we need to use a scratch
+                // register for %rbx here.
+                asm!(
+                    "mov {tmp}, rbx",
+                    "cpuid",
+                    "mov rsi, rbx",
+                    "mov rbx, {tmp}",
+                    tmp = out(reg) _,
+                    inout("rax") input_eax => eax,
+                    inout("rcx") input_ecx => ecx,
+                    out("rdx") edx,
+                    out("rsi") ebx
+                )
+            }
+
+            //Apply cpuid filters.
+            filter_tpause(input_eax, input_ecx, &mut eax, &mut ebx, &mut ecx, &mut edx);
+            filter_mpk(input_eax, input_ecx, &mut eax, &mut ebx, &mut ecx, &mut edx);
+
+            context.set(VmcsField::GuestRax, eax as usize, None)?;
+            context.set(VmcsField::GuestRbx, ebx as usize, None)?;
+            context.set(VmcsField::GuestRcx, ecx as usize, None)?;
+            context.set(VmcsField::GuestRdx, edx as usize, None)?;
+            vs.vcpu.next_instruction().or(Err(CapaError::PlatformError))?;
+            Ok(HandlerResult::Resume)
+        }
+        VmxExitReason::ControlRegisterAccesses if domain.idx() == 0 => {
+            // Handle some of these only for dom0, the other domain's problems
+            // are for now forwarded to the manager domain.
+            let mut context = StateX86::get_context(*domain, cpuid());
+            let qualification = vs.vcpu.exit_qualification().or(Err(CapaError::PlatformError))?.control_register_accesses();
+            match qualification {
+                exit_qualification::ControlRegisterAccesses::MovToCr(cr, reg) => {
+                    log::info!("MovToCr {:?} into {:?} on domain {:?}", reg, cr, *domain);
+                    if !cr.is_guest_cr() {
+                        log::error!("Invalid register: {:x?}", cr);
+                        panic!("VmExit reason for access to control register is not a control register.");
+                    }
+                    if cr == VmcsField::GuestCr4 {
+                        let value = context.get(reg, Some(&mut vs.vcpu))? as usize;
+                        context.set(VmcsField::Cr4ReadShadow, value, Some(&mut vs.vcpu))?;
+                        let real_value = value | (1 << 13); // VMXE
+                        context.set(cr, real_value, Some(&mut vs.vcpu))?;
+                    } else {
+                        todo!("Handle cr: {:?}", cr);
+                    }
+
+                    vs.vcpu.next_instruction().or(Err(CapaError::PlatformError))?;
+                }
+                _ => todo!("Emulation not yet implemented for {:?}", qualification),
+            };
+            Ok(HandlerResult::Resume)
+        }
+        VmxExitReason::EptViolation if domain.idx() == 0 => {
+            let addr = vs.vcpu.guest_phys_addr().or(Err(CapaError::PlatformError))?;
+            log::error!(
+                "EPT Violation on dom0! virt: 0x{:x}, phys: 0x{:x}",
+                vs.vcpu
+                    .guest_linear_addr()
+                    .expect("unable to get the virt addr")
+                    .as_u64(),
+                addr.as_u64(),
+            );
+            monitor::do_debug(vs, domain);
+            panic!("The vcpu {:x?}", vs.vcpu);
+        }
+        VmxExitReason::Exception if domain.idx() == 0 => {
+            panic!("Received an exception on dom0?");
+        }
+        VmxExitReason::Xsetbv if domain.idx() == 0 => {
+            let mut context = StateX86::get_context(*domain, cpuid());
+            let ecx = context.get(VmcsField::GuestRcx, None)?;
+            let eax = context.get(VmcsField::GuestRax, None)?;
+            let edx = context.get(VmcsField::GuestRdx, None)?;
+
+            let xrc_id = ecx & 0xFFFFFFFF; // Ignore 32 high-order bits
+            if xrc_id != 0 {
+                log::error!("Xsetbv: invalid rcx 0x{:x}", ecx);
+                return Ok(HandlerResult::Crash);
+            }
+
+            unsafe {
+                asm!(
+                    "xsetbv",
+                    in("ecx") ecx,
+                    in("eax") eax,
+                    in("edx") edx,
+                );
+            }
+
+            vs.vcpu.next_instruction().or(Err(CapaError::PlatformError))?;
+            Ok(HandlerResult::Resume)
+        }
+        VmxExitReason::Wrmsr if domain.idx() == 0 => {
+            let mut context = StateX86::get_context(*domain, cpuid());
+            let ecx = context.get(VmcsField::GuestRcx, None)?;
+            if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
+                // Custom MSR range, used by KVM
+                // See https://docs.kernel.org/virt/kvm/x86/msr.html
+                // TODO: just ignore them for now, should add support in the future
+                vs.vcpu.next_instruction().or(Err(CapaError::PlatformError))?;
+                Ok(HandlerResult::Resume)
+            } else {
+                log::error!("Unknown MSR: 0x{:x}", ecx);
+                Ok(HandlerResult::Crash)
+            }
+        }
+        VmxExitReason::Rdmsr if domain.idx() == 0 => {
+            let mut context = StateX86::get_context(*domain, cpuid());
+            let ecx = context.get(VmcsField::GuestRcx, None)?;
+            log::trace!("rdmsr 0x{:x}", ecx);
+            if ecx >= 0xc0010000 && ecx <= 0xc0020000 {
+                // Reading an AMD specific register, just ignore it
+                // The other interval seems to be related to pmu...
+                // TODO: figure this out and why it only works on certain hardware.
+                vs.vcpu.next_instruction().or(Err(CapaError::PlatformError))?;
+                log::trace!("rdmsr ignoring amd registers");
+                Ok(HandlerResult::Resume)
+            } else {
+                let msr_reg = vmx::msr::Msr::new(ecx as u32);
+                log::trace!("rdmsr: about to read");
+                let (low, high) = unsafe { msr_reg.read_raw() };
+                log::trace!("Emulated read of msr {:x} = h:{:x};l:{:x}", ecx, high, low);
+                context.set(VmcsField::GuestRax, low as usize, None)?;
+                context.set(VmcsField::GuestRdx, high as usize, None)?;
+                vs.vcpu.next_instruction().or(Err(CapaError::PlatformError))?;
+                Ok(HandlerResult::Resume)
+            }
+        }
+        // Routing exits to the manager domains.
+        VmxExitReason::EptViolation
+        | VmxExitReason::ExternalInterrupt
+        | VmxExitReason::IoInstruction
+        | VmxExitReason::ControlRegisterAccesses
+        | VmxExitReason::TripleFault
+        | VmxExitReason::Cpuid
+        | VmxExitReason::Exception
+        | VmxExitReason::Wrmsr
+        | VmxExitReason::Rdmsr
+        | VmxExitReason::ApicWrite
+        | VmxExitReason::InterruptWindow
+        | VmxExitReason::Wbinvd
+        | VmxExitReason::MovDR
+        | VmxExitReason::VirtualizedEoi
+        | VmxExitReason::ApicAccess
+        | VmxExitReason::VmxPreemptionTimerExpired
+        | VmxExitReason::Hlt => {
+            log::trace!("Handling {:?} for dom {}", reason, domain.idx());
+            if reason == VmxExitReason::ExternalInterrupt {
+                /*let address_eoi = 0xfee000b0 as *mut u32;
+                unsafe {
+                    // Clear the eoi
+                    *address_eoi = 0;
+                }*/
+                x2apic::send_eoi();
+            }
+            match monitor::do_handle_violation(vs, domain) {
+                Ok(_) => {
+                    return Ok(HandlerResult::Resume);
+                }
+                Err(e) => {
+                    log::error!("Unable to handle {:?}: {:?}", reason, e);
+                    log::info!("The vcpu: {:x?}", vs.vcpu);
+                    return Ok(HandlerResult::Crash);
+                }
+            }
+        }
+        _ => {
+            log::error!(
+                "Emulation is not yet implemented for exit reason: {:?}",
+                reason
+            );
+            log::info!("{:?}", vs.vcpu);
+            Ok(HandlerResult::Crash)
+        }
+        }
     }
 }
 

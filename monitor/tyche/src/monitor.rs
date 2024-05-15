@@ -59,6 +59,8 @@ pub trait PlatformState {
         core: usize,
     ) -> Result<(), CapaError>;
 
+    fn platform_init_io_mmu(&self, addr: usize);
+
     fn get_domain(domain: Handle<Domain>) -> MutexGuard<'static, Self::DomainData>;
 
     fn get_context(domain: Handle<Domain>, core: usize) -> MutexGuard<'static, Self::Context>;
@@ -86,6 +88,14 @@ pub trait PlatformState {
         idx: usize,
         value: usize,
     ) -> Result<(), CapaError>;
+
+    fn get_core(
+        &mut self,
+        engine: &mut MutexGuard<CapaEngine>,
+        domain: &Handle<Domain>,
+        core: usize,
+        idx: usize,
+    ) -> Result<usize, CapaError>;
 
     fn check_overlaps(
         &mut self,
@@ -120,6 +130,8 @@ pub trait PlatformState {
     fn acknowledge_notify(&mut self, domain: &Handle<Domain>);
 
     fn finish_notify(&mut self, domain: &Handle<Domain>);
+
+    fn context_interrupted(&mut self, domain: &Handle<Domain>, core: usize);
 }
 
 pub trait Monitor<T: PlatformState + 'static> {
@@ -135,7 +147,7 @@ pub trait Monitor<T: PlatformState + 'static> {
         locked.unwrap()
     }
 
-    fn do_init(state: &mut T, manifest: &'static Manifest) {
+    fn do_init(state: &mut T, manifest: &'static Manifest) -> Handle<Domain> {
         // No one else is running yet
         let mut engine = CAPA_ENGINE.lock();
         let domain = engine
@@ -163,10 +175,19 @@ pub trait Monitor<T: PlatformState + 'static> {
         let mut initial_io_domain = IO_DOMAIN.lock();
         *initial_io_domain = Some(io_domain);
         //TODO figure that out.
-        /*if manifest.iommu != 0 {
-            let mut iommu = IOMMU.lock();
-            iommu.set_addr(manifest.iommu as usize);
-        }*/
+        if manifest.iommu != 0 {
+            state.platform_init_io_mmu(manifest.iommu as usize);
+        }
+
+        // TODO: taken from part of init_vcpu.
+        engine
+            .start_domain_on_core(domain, cpuid())
+            .expect("Failed to start initial domain on core");
+        domain
+    }
+
+    fn get_initial_domain() -> Handle<Domain> {
+        INITIAL_DOMAIN.lock().unwrap()
     }
 
     fn do_create_domain(
@@ -230,7 +251,20 @@ pub trait Monitor<T: PlatformState + 'static> {
         domain: LocalCapa,
         core: usize,
         idx: usize,
-    ) -> Result<usize, CapaError>;
+    ) -> Result<usize, CapaError> {
+        let mut engine = Self::lock_engine(state, current);
+        // Check the core is valid.
+        let cores = engine.get_child_permission(
+            *current,
+            domain,
+            permission::PermissionIndex::AllowedCores,
+        )?;
+        if cores * (1 << core) == 0 {
+            return Err(CapaError::InvalidCore);
+        }
+        let domain = engine.get_domain_capa(*current, domain)?;
+        state.get_core(&mut engine, &domain, core, idx)
+    }
 
     fn do_seal(
         state: &mut T,
@@ -657,6 +691,15 @@ pub trait Monitor<T: PlatformState + 'static> {
                 return Err(CapaError::InvalidOperation);
             }
         }
+    }
+
+    fn do_handle_violation(state: &mut T, current: &mut Handle<Domain>) -> Result<(), CapaError> {
+        let mut engine = Self::lock_engine(state, current);
+        let core = cpuid();
+        state.context_interrupted(current, core);
+        engine.handle_violation(*current, core)?;
+        Self::apply_updates(state, &mut engine);
+        Ok(())
     }
 
     fn apply_updates(state: &mut T, engine: &mut MutexGuard<CapaEngine>) {

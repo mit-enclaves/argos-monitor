@@ -74,6 +74,7 @@ pub enum CapaError {
     InvalidValue,
     InvalidMemOps,
     AlreadyAliased,
+    PlatformError,
 }
 
 pub struct CapaEngine {

@@ -14,6 +14,7 @@ use super::{arch, cpuid, launch_guest, monitor, vmx_helper};
 use crate::allocator;
 use crate::debug::qemu;
 use crate::statics::get_manifest;
+use crate::x86_64::platform::MonitorX86;
 
 // ————————————————————————————— Entry Barrier —————————————————————————————— //
 
@@ -29,7 +30,7 @@ static BSP_READY: AtomicBool = FALSE;
 pub static NB_BOOTED_CORES: AtomicUsize = AtomicUsize::new(0);
 static mut MANIFEST: Option<&'static Manifest> = None;
 
-pub fn arch_entry_point(log_level: log::LevelFilter) -> ! {
+/*pub fn arch_entry_point(log_level: log::LevelFilter) -> ! {
     let cpuid = cpuid();
 
     if cpuid == 0 {
@@ -46,7 +47,9 @@ pub fn arch_entry_point(log_level: log::LevelFilter) -> ! {
 
         init_arch(manifest, 0);
         allocator::init(manifest);
+        // SAFETY: only called once on the BSP
         monitor::init(manifest);
+        let (vmx_state, domain) = unsafe { create_vcpu(&manifest.info) };
 
         log::info!("Waiting for {} cores", manifest.smp.smp);
         while NB_BOOTED_CORES.load(Ordering::SeqCst) + 1 < manifest.smp.smp {
@@ -56,9 +59,6 @@ pub fn arch_entry_point(log_level: log::LevelFilter) -> ! {
 
         // Mark the BSP as ready to launch guest on all APs.
         BSP_READY.store(true, Ordering::SeqCst);
-
-        // SAFETY: only called once on the BSP
-        let (vmx_state, domain) = unsafe { create_vcpu(&manifest.info) };
 
         // Launch guest and exit
         launch_guest(manifest, vmx_state, domain);
@@ -95,8 +95,77 @@ pub fn arch_entry_point(log_level: log::LevelFilter) -> ! {
         launch_guest(manifest, vmx_state, domain);
         qemu::exit(qemu::ExitCode::Success);
     }
-}
 
+}
+*/
+
+pub fn arch_entry_point(log_level: log::LevelFilter) -> ! {
+    let cpuid = cpuid();
+
+    if cpuid == 0 {
+        logger::init(log_level);
+        log::info!("CPU{}: Hello from second stage!", cpuid);
+        #[cfg(feature = "bare_metal")]
+        log::info!("Running on bare metal");
+
+        // SAFETY: The BSP is responsible for retrieving the manifest
+        let manifest = unsafe {
+            MANIFEST = Some(get_manifest());
+            MANIFEST.as_ref().unwrap()
+        };
+
+        init_arch(manifest, 0);
+        allocator::init(manifest);
+        // SAFETY: only called once on the BSP
+        let mut monitor = MonitorX86 {};
+        let (state, domain) = MonitorX86::init(manifest, true);
+
+        log::info!("Waiting for {} cores", manifest.smp.smp);
+        while NB_BOOTED_CORES.load(Ordering::SeqCst) + 1 < manifest.smp.smp {
+            core::hint::spin_loop();
+        }
+        log::info!("Stage 2 initialized");
+
+        // Mark the BSP as ready to launch guest on all APs.
+        BSP_READY.store(true, Ordering::SeqCst);
+
+        // Launch guest and exit
+        monitor.launch_guest(manifest, state, domain);
+        qemu::exit(qemu::ExitCode::Success);
+    }
+    // The APs spin until the manifest is fetched, and then initialize the second stage
+    else {
+        log::info!("CPU{}: Hello from second stage!", cpuid);
+
+        // SAFETY: we only perform read accesses and we ensure the BSP initialized the manifest.
+        let manifest = unsafe {
+            assert!(!MANIFEST.is_none());
+            MANIFEST.as_ref().unwrap()
+        };
+
+        init_arch(manifest, cpuid);
+
+        // Wait until the BSP mark second stage as initialized (e.g. all APs are up).
+        NB_BOOTED_CORES.fetch_add(1, Ordering::SeqCst);
+        while !BSP_READY.load(Ordering::SeqCst) {
+            core::hint::spin_loop();
+        }
+
+        log::info!("CPU{}: Waiting on mailbox", cpuid);
+
+        // SAFETY: only called once on the BSP
+        let mut monitor = MonitorX86 {};
+        let (state, domain) = unsafe {
+            let (mut state, domain) = MonitorX86::init(manifest, false);
+            wait_on_mailbox(manifest, &mut state.vcpu, cpuid);
+            (state, domain)
+        };
+
+        // Launch guest and exit
+        monitor.launch_guest(manifest, state, domain);
+        qemu::exit(qemu::ExitCode::Success);
+    }
+}
 /// Architecture specific initialization.
 pub fn init_arch(manifest: &Manifest, cpuid: usize) {
     unsafe {

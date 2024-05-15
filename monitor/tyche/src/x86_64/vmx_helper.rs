@@ -13,6 +13,7 @@ use vmx::{secondary_controls_capabilities, ActiveVmcs, VmxError};
 
 use super::arch;
 use super::context::Contextx86;
+use super::platform::ContextX86;
 use crate::allocator::{allocator, FrameAllocator};
 
 pub const MSR_IA32_CR_PAT_DEFAULT: usize = 0x0007040600070406;
@@ -21,6 +22,46 @@ pub unsafe fn init_vcpu<'vmx>(
     vcpu: &mut ActiveVmcs<'vmx>,
     info: &GuestInfo,
     context: &mut Contextx86,
+) {
+    let allocator = allocator();
+    default_vmcs_config(vcpu, info, false);
+    let bit_frame = allocator
+        .allocate_frame()
+        .expect("Failed to allocate MSR bitmaps")
+        .zeroed();
+    let msr_bitmaps = vcpu
+        .initialize_msr_bitmaps(bit_frame)
+        .expect("Failed to install MSR bitmaps");
+    msr_bitmaps.allow_all();
+    context
+        .set(VmcsField::GuestRip, info.rip, Some(vcpu))
+        .unwrap();
+    context
+        .set(VmcsField::GuestCr3, info.cr3, Some(vcpu))
+        .unwrap();
+    context
+        .set(VmcsField::GuestRsp, info.rsp, Some(vcpu))
+        .unwrap();
+    context
+        .set(VmcsField::GuestRsi, info.rsi, Some(vcpu))
+        .unwrap();
+    // VMXE flags, required during VMX operations.
+    let vmxe = 1 << 13;
+    let cr4 = 0xA0 | vmxe;
+    context.set(VmcsField::GuestCr4, cr4, Some(vcpu)).unwrap();
+    context
+        .set(VmcsField::Cr4GuestHostMask, vmxe, Some(vcpu))
+        .unwrap();
+    context
+        .set(VmcsField::Cr4ReadShadow, vmxe, Some(vcpu))
+        .unwrap();
+    vmx::check::check().expect("check error");
+}
+
+pub unsafe fn init_vcpu2<'vmx>(
+    vcpu: &mut ActiveVmcs<'vmx>,
+    info: &GuestInfo,
+    context: &mut ContextX86,
 ) {
     let allocator = allocator();
     default_vmcs_config(vcpu, info, false);
