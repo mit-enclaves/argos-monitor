@@ -14,7 +14,8 @@ use mmu::{EptMapper, FrameAllocator, IoPtFlag, IoPtMapper};
 use spin::{Mutex, MutexGuard};
 use stage_two_abi::{GuestInfo, Manifest};
 use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
-use vmx::bitmaps::{exit_qualification, EptEntryFlags};
+use vmx::bitmaps::{exit_qualification, EptEntryFlags, ExceptionBitmap};
+use vmx::errors::Trapnr;
 use vmx::fields::VmcsField;
 use vmx::{ActiveVmcs, VmxExitReason};
 use vtd::Iommu;
@@ -23,7 +24,7 @@ use super::cpuid_filter::{filter_mpk, filter_tpause};
 use super::guest::VmxState;
 use super::init::NB_BOOTED_CORES;
 use super::vmx_helper::{dump_host_state, load_host_state};
-use super::{cpuid, monitor, vmx_helper};
+use super::{cpuid, vmx_helper};
 use crate::allocator::{self, allocator};
 use crate::arch::guest::HandlerResult;
 use crate::monitor::{CoreUpdate, Monitor, PlatformState};
@@ -786,7 +787,7 @@ impl MonitorX86 {
                         .expect("Failed to handle VM exit");
 
                     // Apply core-local updates before returning
-                    monitor::apply_core_updates(&mut state, &mut domain, core_id);
+                    Self::apply_core_updates(&mut state, &mut domain, core_id);
 
                     res
                 }
@@ -916,7 +917,6 @@ impl MonitorX86 {
                     .as_u64(),
                 addr.as_u64(),
             );
-            monitor::do_debug(vs, domain);
             panic!("The vcpu {:x?}", vs.vcpu);
         }
         VmxExitReason::Exception if domain.idx() == 0 => {
@@ -1000,7 +1000,7 @@ impl MonitorX86 {
         | VmxExitReason::ApicAccess
         | VmxExitReason::VmxPreemptionTimerExpired
         | VmxExitReason::Hlt => {
-            log::trace!("Handling {:?} for dom {}", reason, domain.idx());
+            log::trace!("Handling {:?} for dom {} on core {}", reason, domain.idx(), cpuid());
             if reason == VmxExitReason::ExternalInterrupt {
                 /*let address_eoi = 0xfee000b0 as *mut u32;
                 unsafe {
@@ -1009,7 +1009,7 @@ impl MonitorX86 {
                 }*/
                 x2apic::send_eoi();
             }
-            match monitor::do_handle_violation(vs, domain) {
+            match Self::do_handle_violation(vs, domain) {
                 Ok(_) => {
                     return Ok(HandlerResult::Resume);
                 }
