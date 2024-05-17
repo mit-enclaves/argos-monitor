@@ -34,7 +34,7 @@ pub fn main_loop(mut vmx_state: VmxState, mut domain: Handle<Domain>) {
     let core_id = cpuid();
     let mut result = unsafe {
         let mut context = monitor::get_context(domain, core_id);
-        vmx_state.vcpu.run(&mut context.vmcs_gp)
+        vmx_state.vcpu.run(&mut context.regs.state_gp.values)
     };
     loop {
         let exit_reason = match result {
@@ -60,7 +60,7 @@ pub fn main_loop(mut vmx_state: VmxState, mut domain: Handle<Domain>) {
                 result = unsafe {
                     let mut context = monitor::get_context(domain, core_id);
                     context.flush(&mut vmx_state.vcpu);
-                    vmx_state.vcpu.run(&mut context.vmcs_gp)
+                    vmx_state.vcpu.run(&mut context.regs.state_gp.values)
                 };
             }
             _ => {

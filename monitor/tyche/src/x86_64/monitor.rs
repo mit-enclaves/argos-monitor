@@ -5,6 +5,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use attestation::hashing::hash_region;
 use attestation::signature::EnclaveReport;
 use capa_engine::config::{NB_CORES, NB_DOMAINS, NB_REMAP_REGIONS};
+use capa_engine::context::{Cache, RegisterState};
 use capa_engine::utils::BitmapIterator;
 use capa_engine::{
     permission, AccessRights, Buffer, CapaEngine, CapaError, CapaInfo, Domain, GenArena, Handle,
@@ -20,10 +21,7 @@ use vmx::fields::{GeneralPurposeField, VmcsField, REGFILE_SIZE};
 use vmx::{ActiveVmcs, VmExitInterrupt};
 use vtd::Iommu;
 
-use super::context::{
-    Cache, Context16x86, Context32x86, Context64x86, ContextGpx86, ContextNatx86, Contextx86,
-    DirtyRegGroups,
-};
+use super::context::Contextx86;
 use super::filtered_fields::FilteredFields;
 use super::guest::VmxState;
 use super::init::NB_BOOTED_CORES;
@@ -63,17 +61,14 @@ const EMPTY_DOMAIN: Mutex<DomainData> = Mutex::new(DomainData {
 });
 const EMPTY_UPDATE_BUFFER: Mutex<Buffer<CoreUpdate>> = Mutex::new(Buffer::new());
 const EMPTY_CONTEXT: Mutex<Contextx86> = Mutex::new(Contextx86 {
-    dirty: Cache::<{ DirtyRegGroups::size() }> { bitmap: 0 },
-    vmcs_16: [0; Context16x86::size()],
-    dirty_16: Cache::<{ Context16x86::size() }> { bitmap: 0 },
-    vmcs_32: [0; Context32x86::size()],
-    dirty_32: Cache::<{ Context32x86::size() }> { bitmap: 0 },
-    vmcs_64: [0; Context64x86::size()],
-    dirty_64: Cache::<{ Context64x86::size() }> { bitmap: 0 },
-    vmcs_nat: [0; ContextNatx86::size()],
-    dirty_nat: Cache::<{ ContextNatx86::size() }> { bitmap: 0 },
-    vmcs_gp: [0; ContextGpx86::size()],
-    dirty_gp: Cache::<{ ContextGpx86::size() }> { bitmap: 0 },
+    regs: capa_engine::context::RegisterContext {
+        dirty: Cache { bitmap: 0 },
+        state_16: RegisterState::new(),
+        state_32: RegisterState::new(),
+        state_64: RegisterState::new(),
+        state_nat: RegisterState::new(),
+        state_gp: RegisterState::new(),
+    },
     interrupted: false,
     vmcs: Handle::<RCFrame>::new_invalid(),
 });
@@ -325,7 +320,8 @@ pub fn do_get_all_gp(
         return Err(CapaError::InvalidOperation);
     }
     // Copy the general purpose registers.
-    curr_ctx.vmcs_gp[0..REGFILE_SIZE - 1].copy_from_slice(&tgt_ctx.vmcs_gp[0..REGFILE_SIZE - 1]);
+    curr_ctx.regs.state_gp.values[0..REGFILE_SIZE - 1]
+        .copy_from_slice(&tgt_ctx.regs.state_gp.values[0..REGFILE_SIZE - 1]);
     Ok(())
 }
 
@@ -355,11 +351,12 @@ pub fn do_set_all_gp(
         return Err(CapaError::InvalidOperation);
     }
     // Copy the general purpose registers.
-    let rax = tgt_ctx.vmcs_gp[GeneralPurposeField::Rax as usize];
-    let rdi = tgt_ctx.vmcs_gp[GeneralPurposeField::Rdi as usize];
-    tgt_ctx.vmcs_gp[0..REGFILE_SIZE - 1].copy_from_slice(&curr_ctx.vmcs_gp[0..REGFILE_SIZE - 1]);
-    tgt_ctx.vmcs_gp[GeneralPurposeField::Rax as usize] = rax;
-    tgt_ctx.vmcs_gp[GeneralPurposeField::Rdi as usize] = rdi;
+    let rax = tgt_ctx.regs.state_gp.values[GeneralPurposeField::Rax as usize];
+    let rdi = tgt_ctx.regs.state_gp.values[GeneralPurposeField::Rdi as usize];
+    tgt_ctx.regs.state_gp.values[0..REGFILE_SIZE - 1]
+        .copy_from_slice(&curr_ctx.regs.state_gp.values[0..REGFILE_SIZE - 1]);
+    tgt_ctx.regs.state_gp.values[GeneralPurposeField::Rax as usize] = rax;
+    tgt_ctx.regs.state_gp.values[GeneralPurposeField::Rdi as usize] = rdi;
     Ok(())
 }
 
@@ -1080,8 +1077,11 @@ fn switch_domain(
     }
     // Case 1: copy the interrupted state.
     if current_ctx.interrupted {
+        next_ctx.copy_interrupt_frame(current_ctx, vcpu).unwrap();
+        // Return state: 1 means failure, rdi holds resume capa.
+        next_ctx.set(VmcsField::GuestRax, 0, None).unwrap();
         next_ctx
-            .copy_interrupt_frame(current_ctx, return_capa.as_usize(), vcpu)
+            .set(VmcsField::GuestRdi, return_capa.as_usize(), None)
             .unwrap();
     } else if next_ctx.interrupted {
         // Case 2: do not put the return capa.

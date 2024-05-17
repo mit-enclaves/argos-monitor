@@ -30,7 +30,7 @@ static BSP_READY: AtomicBool = FALSE;
 pub static NB_BOOTED_CORES: AtomicUsize = AtomicUsize::new(0);
 static mut MANIFEST: Option<&'static Manifest> = None;
 
-/*pub fn arch_entry_point(log_level: log::LevelFilter) -> ! {
+pub fn arch_entry_point(log_level: log::LevelFilter) -> ! {
     let cpuid = cpuid();
 
     if cpuid == 0 {
@@ -95,11 +95,9 @@ static mut MANIFEST: Option<&'static Manifest> = None;
         launch_guest(manifest, vmx_state, domain);
         qemu::exit(qemu::ExitCode::Success);
     }
-
 }
-*/
 
-pub fn arch_entry_point(log_level: log::LevelFilter) -> ! {
+pub fn arch_entry_point2(log_level: log::LevelFilter) -> ! {
     let cpuid = cpuid();
 
     if cpuid == 0 {

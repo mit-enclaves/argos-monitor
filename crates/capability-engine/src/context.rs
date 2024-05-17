@@ -37,7 +37,7 @@ impl<const N: usize> Cache<N> {
 }
 
 /// The groups of registers.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(usize)]
 pub enum RegisterGroup {
     Reg16 = 0,
@@ -185,6 +185,16 @@ impl<const N16: usize, const N32: usize, const N64: usize, const NNAT: usize, co
             RegisterGroup::RegGp => self.state_gp.get(idx)?,
         };
         return Ok(res);
+    }
+
+    pub fn clear(&mut self, group: RegisterGroup, idx: usize) {
+        match group {
+            RegisterGroup::Reg16 => self.state_16.dirty.clear(idx),
+            RegisterGroup::Reg32 => self.state_32.dirty.clear(idx),
+            RegisterGroup::Reg64 => self.state_64.dirty.clear(idx),
+            RegisterGroup::RegNat => self.state_nat.dirty.clear(idx),
+            RegisterGroup::RegGp => self.state_gp.dirty.clear(idx),
+        };
     }
 
     pub fn flush<F>(&mut self, mut callback: F)
