@@ -97,6 +97,30 @@ pub trait PlatformState {
         idx: usize,
     ) -> Result<usize, CapaError>;
 
+    fn get_core_gp(
+        &mut self,
+        engine: &mut MutexGuard<CapaEngine>,
+        domain: &Handle<Domain>,
+        core: usize,
+        result: &mut [usize],
+    ) -> Result<(), CapaError>;
+
+    fn dump_in_gp(
+        &mut self,
+        engine: &mut MutexGuard<CapaEngine>,
+        domain: &mut Handle<Domain>,
+        core: usize,
+        src: &[usize],
+    ) -> Result<(), CapaError>;
+
+    fn extract_from_gp(
+        &mut self,
+        engine: &mut MutexGuard<CapaEngine>,
+        domain: &Handle<Domain>,
+        core: usize,
+        res: &mut [(usize, usize); 6],
+    ) -> Result<(), CapaError>;
+
     fn check_overlaps(
         &mut self,
         engine: &mut MutexGuard<CapaEngine>,
@@ -259,11 +283,61 @@ pub trait Monitor<T: PlatformState + 'static> {
             domain,
             permission::PermissionIndex::AllowedCores,
         )?;
-        if cores * (1 << core) == 0 {
+        if cores & (1 << core) == 0 {
             return Err(CapaError::InvalidCore);
         }
         let domain = engine.get_domain_capa(*current, domain)?;
         state.get_core(&mut engine, &domain, core, idx)
+    }
+
+    fn do_get_all_gp(
+        state: &mut T,
+        current: &mut Handle<Domain>,
+        domain: LocalCapa,
+        core: usize,
+    ) -> Result<(), CapaError> {
+        let mut engine = Self::lock_engine(state, current);
+        let core_map = engine.get_child_permission(
+            *current,
+            domain,
+            permission::PermissionIndex::AllowedCores,
+        )?;
+        if core_map & (1 << core) == 0 {
+            return Err(CapaError::InvalidCore);
+        }
+        let domain = engine.get_domain_capa(*current, domain)?;
+        let mut result: &mut [usize] = &mut [0; 15];
+        state.get_core_gp(&mut engine, &domain, core, result)?;
+        state.dump_in_gp(&mut engine, current, cpuid(), &result)?;
+        Ok(())
+    }
+
+    fn do_write_fields(
+        state: &mut T,
+        current: &mut Handle<Domain>,
+        domain: LocalCapa,
+        core: usize,
+    ) -> Result<(), CapaError> {
+        let mut engine = Self::lock_engine(state, current);
+        let core_map = engine.get_child_permission(
+            *current,
+            domain,
+            permission::PermissionIndex::AllowedCores,
+        )?;
+        if core_map & (1 << core) == 0 {
+            return Err(CapaError::InvalidCore);
+        }
+        let mut values: [(usize, usize); 6] = [(0, 0); 6];
+        state.extract_from_gp(&mut engine, current, cpuid(), &mut values)?;
+        let domain = engine.get_domain_capa(*current, domain)?;
+        for e in values {
+            // Signal to skip.
+            if e.0 == !(0 as usize) {
+                break;
+            }
+            state.set_core(&mut engine, &domain, core, e.0, e.1)?;
+        }
+        Ok(())
     }
 
     fn do_seal(
@@ -362,7 +436,6 @@ pub trait Monitor<T: PlatformState + 'static> {
             // Not a repeat, spans the entire thing.
             1
         };
-
         // Check for an overlap first.
         {
             let target = engine.get_domain_capa(*current, to)?;
@@ -391,12 +464,11 @@ pub trait Monitor<T: PlatformState + 'static> {
         } else {
             let _ = engine.send(*current, capa, to)?;
         }
-
         {
             let target = engine.get_domain_capa(*current, to)?;
             state.map_region(&mut engine, target, alias, repeat, &region_info)?;
         }
-
+        Self::apply_updates(state, &mut engine);
         Ok(())
     }
 
@@ -501,19 +573,19 @@ pub trait Monitor<T: PlatformState + 'static> {
         call: usize,
         args: &[usize; 6],
         res: &mut [usize; 6],
-    ) -> Result<(), CapaError> {
+    ) -> Result<bool, CapaError> {
         match call {
             calls::CREATE_DOMAIN => {
                 log::trace!("Create domain on core {}", cpuid());
-                let capa = Self::do_create_domain(state, domain).expect("TODO");
+                let capa = Self::do_create_domain(state, domain)?;
                 res[0] = capa.as_usize();
-                return Ok(());
+                return Ok(true);
             }
             calls::SEAL_DOMAIN => {
                 log::trace!("Seal Domain on core {}", cpuid());
-                let capa = Self::do_seal(state, domain, LocalCapa::new(args[0])).expect("TODO");
+                let capa = Self::do_seal(state, domain, LocalCapa::new(args[0]))?;
                 res[0] = capa.as_usize();
-                return Ok(());
+                return Ok(true);
             }
             calls::SEND => {
                 log::trace!("Send on core {}", cpuid());
@@ -522,9 +594,24 @@ pub trait Monitor<T: PlatformState + 'static> {
                     domain,
                     LocalCapa::new(args[0]),
                     LocalCapa::new(args[1]),
-                )
-                .expect("TODO");
-                return Ok(());
+                )?;
+                return Ok(true);
+            }
+            calls::SEND_REGION => {
+                log::trace!("Send region on core {}", cpuid());
+                Self::do_send_region(
+                    state,
+                    domain,
+                    LocalCapa::new(args[0]),
+                    LocalCapa::new(args[1]),
+                    args[2],
+                    args[3] != 0,
+                    args[4],
+                    args[5],
+                )?;
+                // The API expects the revocation handle in the first arg.
+                res[0] = args[0];
+                return Ok(true);
             }
             calls::SEGMENT_REGION => {
                 log::trace!("Segment region on core {}", cpuid());
@@ -536,22 +623,21 @@ pub trait Monitor<T: PlatformState + 'static> {
                     args[2],
                     args[3],
                     args[4],
-                )
-                .unwrap();
+                )?;
                 res[0] = to_send.as_usize();
                 res[1] = to_revoke.as_usize();
-                return Ok(());
+                return Ok(true);
             }
             calls::REVOKE => {
                 log::trace!("Revoke on core {}", cpuid());
-                Self::do_revoke(state, domain, LocalCapa::new(args[0])).unwrap();
-                return Ok(());
+                Self::do_revoke(state, domain, LocalCapa::new(args[0]))?;
+                return Ok(false);
             }
             calls::DUPLICATE => {
                 log::trace!("Duplicate");
-                let capa = Self::do_duplicate(state, domain, LocalCapa::new(args[0])).unwrap();
+                let capa = Self::do_duplicate(state, domain, LocalCapa::new(args[0]))?;
                 res[0] = capa.as_usize();
-                return Ok(());
+                return Ok(true);
             }
             calls::ENUMERATE => {
                 log::trace!("Enumerate on core {}", cpuid());
@@ -566,12 +652,12 @@ pub trait Monitor<T: PlatformState + 'static> {
                 } else {
                     res[3] = 0;
                 }
-                return Ok(());
+                return Ok(true);
             }
             calls::SWITCH => {
                 log::trace!("Switch on core {}", cpuid());
-                Self::do_switch(state, domain, LocalCapa::new(args[0]), cpuid()).unwrap();
-                return Ok(());
+                Self::do_switch(state, domain, LocalCapa::new(args[0]), cpuid())?;
+                return Ok(false);
             }
             calls::EXIT => {
                 todo!("Exit called")
@@ -599,70 +685,57 @@ pub trait Monitor<T: PlatformState + 'static> {
                     1
                 };
                 res[0] = result;
-                return Ok(());
+                return Ok(true);
             }
             calls::CONFIGURE_CORE => {
-                log::trace!("Configure Core on core {}", cpuid());
-                let result = match Self::do_set_core(
+                Self::do_set_core(
                     state,
                     domain,
                     LocalCapa::new(args[0]),
                     T::remap_core(args[1]),
                     args[2],
                     args[3],
-                ) {
-                    Ok(()) => 0,
-                    Err(e) => {
-                        log::error!("Configure core error: {:?}", e);
-                        1
-                    }
-                };
-                res[0] = result;
-                return Ok(());
+                )?;
+                return Ok(false);
             }
             calls::GET_CONFIG_CORE => {
                 log::trace!("Get config core on core {}", cpuid());
-                let (value, result) = match Self::do_get_core(
+                let value = Self::do_get_core(
                     state,
                     domain,
                     LocalCapa::new(args[0]),
                     T::remap_core(args[1]),
                     args[2],
-                ) {
-                    Ok(v) => (v, 0),
-                    Err(e) => {
-                        log::error!("Get config core error: {:?}", e);
-                        (0, 1)
-                    }
-                };
-                res[0] = result;
-                res[1] = value;
-                return Ok(());
+                )?;
+                res[0] = value;
+                return Ok(true);
             }
             calls::ALLOC_CORE_CONTEXT => {
-                let result = match Self::do_init_child_context(
+                Self::do_init_child_context(state, domain, LocalCapa::new(args[0]), args[1])?;
+                return Ok(false);
+            }
+            calls::READ_ALL_GP => {
+                log::trace!("Read all gp on core {}", cpuid());
+                Self::do_get_all_gp(
                     state,
                     domain,
                     LocalCapa::new(args[0]),
-                    args[1],
-                ) {
-                    Ok(_) => 0,
-                    Err(e) => {
-                        log::error!("Allocating core context error: {:?}", e);
-                        1
-                    }
-                };
-                res[0] = result;
-                return Ok(());
-            }
-            calls::READ_ALL_GP => {
-                todo!("Implement!!");
+                    T::remap_core(args[1]),
+                )?;
+                return Ok(false);
             }
             calls::WRITE_ALL_GP => {
                 todo!("Implement!!!");
             }
             calls::WRITE_FIELDS => {
-                todo!("Implement as well!");
+                log::trace!("Write fields on core {}", cpuid());
+                Self::do_write_fields(
+                    state,
+                    domain,
+                    LocalCapa::new(args[0]),
+                    T::remap_core(args[1]),
+                )?;
+                return Ok(false);
             }
             calls::SELF_CONFIG => {
                 todo!("Implement")
@@ -678,16 +751,15 @@ pub trait Monitor<T: PlatformState + 'static> {
                     args[3],
                 )
                 .unwrap();
-                return Ok(());
+                return Ok(true);
             }
             calls::SERIALIZE_ATTESTATION => {
-                let written =
-                    Self::do_serialize_attestation(state, domain, args[0], args[1]).unwrap();
-                res[1] = written;
-                res[0] = 0;
-                return Ok(());
+                let written = Self::do_serialize_attestation(state, domain, args[0], args[1])?;
+                res[0] = written;
+                return Ok(true);
             }
             _ => {
+                log::info!("The invalid operation: {}", call);
                 return Err(CapaError::InvalidOperation);
             }
         }

@@ -14,12 +14,12 @@ use mmu::{EptMapper, FrameAllocator, IoPtFlag, IoPtMapper};
 use spin::{Mutex, MutexGuard};
 use stage_two_abi::{GuestInfo, Manifest};
 use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
-use vmx::bitmaps::{exit_qualification, EptEntryFlags, ExceptionBitmap};
-use vmx::errors::Trapnr;
+use vmx::bitmaps::{exit_qualification, EptEntryFlags};
 use vmx::fields::VmcsField;
 use vmx::{ActiveVmcs, VmxExitReason};
 use vtd::Iommu;
 
+use super::context::{ContextGpx86, Contextx86};
 use super::cpuid_filter::{filter_mpk, filter_tpause};
 use super::guest::VmxState;
 use super::init::NB_BOOTED_CORES;
@@ -63,18 +63,11 @@ pub fn remap_core_bitmap(bitmap: u64) -> u64 {
     new_bitmap
 }
 
-/// The constants for the register context.
-const NB_16: usize = 20;
-const NB_32: usize = 40;
-const NB_64: usize = 49;
-const NB_NAT: usize = 30;
-const NB_GP: usize = 16;
-
 /// Static values
 static DOMAINS: [Mutex<DataX86>; NB_DOMAINS] = [EMPTY_DOMAIN; NB_DOMAINS];
 static RC_VMCS: Mutex<RCFramePool> =
     Mutex::new(GenArena::new([EMPTY_RCFRAME; { NB_DOMAINS * NB_CORES }]));
-static CONTEXTS: [[Mutex<ContextX86>; NB_CORES]; NB_DOMAINS] = [EMPTY_CONTEXT_ARRAY; NB_DOMAINS];
+static CONTEXTS: [[Mutex<Contextx86>; NB_CORES]; NB_DOMAINS] = [EMPTY_CONTEXT_ARRAY; NB_DOMAINS];
 static IOMMU: Mutex<Iommu> =
     Mutex::new(unsafe { Iommu::new(HostVirtAddr::new(usize::max_value())) });
 const FALSE: AtomicBool = AtomicBool::new(false);
@@ -82,9 +75,9 @@ static TLB_FLUSH_BARRIERS: [Barrier; NB_DOMAINS] = [Barrier::NEW; NB_DOMAINS];
 static TLB_FLUSH: [AtomicBool; NB_DOMAINS] = [FALSE; NB_DOMAINS];
 
 // —————————————————————————————— Empty values —————————————————————————————— //
-const EMPTY_CONTEXT_ARRAY: [Mutex<ContextX86>; NB_CORES] = [EMPTY_CONTEXT; NB_CORES];
-const EMPTY_CONTEXT: Mutex<ContextX86> = Mutex::new(ContextX86 {
-    registers: RegistersX86 {
+const EMPTY_CONTEXT_ARRAY: [Mutex<Contextx86>; NB_CORES] = [EMPTY_CONTEXT; NB_CORES];
+const EMPTY_CONTEXT: Mutex<Contextx86> = Mutex::new(Contextx86 {
+    regs: RegisterContext {
         dirty: capa_engine::context::Cache { bitmap: 0 },
         state_16: RegisterState::new(),
         state_32: RegisterState::new(),
@@ -101,104 +94,6 @@ const EMPTY_DOMAIN: Mutex<DataX86> = Mutex::new(DataX86 {
     iopt: None,
     remapper: Remapper::new(),
 });
-
-type RegistersX86 = RegisterContext<NB_16, NB_32, NB_64, NB_NAT, NB_GP>;
-
-pub struct ContextX86 {
-    pub registers: RegistersX86,
-    pub interrupted: bool,
-    pub vmcs: Handle<RCFrame>,
-}
-
-impl ContextX86 {
-    pub const DUMP_FRAME: [(VmcsField, VmcsField); 9] = [
-        (VmcsField::GuestRbx, VmcsField::GuestRip),
-        (VmcsField::GuestRcx, VmcsField::GuestRsp),
-        (VmcsField::GuestRdx, VmcsField::GuestRflags),
-        (VmcsField::GuestRsi, VmcsField::VmInstructionError),
-        (VmcsField::GuestR8, VmcsField::VmExitReason),
-        (VmcsField::GuestR9, VmcsField::VmExitIntrInfo),
-        (VmcsField::GuestR10, VmcsField::VmExitIntrErrorCode),
-        (VmcsField::GuestR11, VmcsField::VmExitInstructionLen),
-        (VmcsField::GuestR12, VmcsField::VmInstructionError),
-    ];
-    fn copy_interrupt_frame(&mut self, src: &Self) -> Result<(), CapaError> {
-        for i in Self::DUMP_FRAME {
-            if let (Some((dest_group, dest_idx)), Some((src_group, src_idx))) =
-                (translate_x86field(i.0), translate_x86field(i.1))
-            {
-                let value = src.registers.get(src_group, src_idx)?;
-                self.registers.set(dest_group, dest_idx, value)?;
-            }
-        }
-        Ok(())
-    }
-
-    pub fn set(
-        &mut self,
-        field: VmcsField,
-        value: usize,
-        vcpu: Option<&mut ActiveVmcs>,
-    ) -> Result<(), CapaError> {
-        let (group, idx) = translate_x86field(field).ok_or(CapaError::InvalidValue)?;
-        self.registers.set(group, idx, value)?;
-        if field.is_gp_register() {
-            return Ok(());
-        }
-        if let Some(vcpu) = vcpu {
-            vcpu.set(field, value).or(Err(CapaError::InvalidValue))?;
-        }
-        Ok(())
-    }
-
-    pub fn get(&mut self, field: VmcsField, vcpu: Option<&ActiveVmcs>) -> Result<usize, CapaError> {
-        let (group, idx) = translate_x86field(field).ok_or(CapaError::InvalidValue)?;
-        if vcpu.is_some() && !field.is_gp_register() {
-            let value = vcpu.unwrap().get(field).or(Err(CapaError::InvalidValue))?;
-            self.registers.set(group, idx, value)?;
-        }
-        Ok(self.registers.get(group, idx)?)
-    }
-
-    pub fn switch_flush(&mut self, rc_vmcs: &Mutex<RCFramePool>, vcpu: &mut ActiveVmcs) {
-        let locked = rc_vmcs.lock();
-        let rc_frame = locked.get(self.vmcs).unwrap();
-        // Switch the frame.
-        vcpu.switch_frame(rc_frame.frame).unwrap();
-        // Load values that changed.
-        self.flush(vcpu);
-    }
-
-    fn flush(&mut self, vcpu: &mut ActiveVmcs) {
-        let update = |r: RegisterGroup, idx: usize, value: usize| {
-            let field = translate_to_x86field(r, idx).unwrap();
-            // Avoid the gp registers
-            if field.is_gp_register() {
-                return;
-            }
-            vcpu.set(field, value).unwrap();
-        };
-        self.registers.flush(update);
-    }
-
-    /// Read the vcpu, write context.
-    fn load(&mut self, vcpu: &mut ActiveVmcs) {
-        let mut get_set = |g: RegisterGroup, d: &[VmcsField]| {
-            for i in 0..d.len() {
-                let value = vcpu.get(d[i]).unwrap();
-                self.registers.set(g, i, value).unwrap();
-            }
-        };
-        // The 16-bits registers.
-        get_set(RegisterGroup::Reg16, &X86_FIELDS16);
-        // The 32-bits registers.
-        get_set(RegisterGroup::Reg32, &X86_FIELDS32);
-        // The 64-bits registers.
-        get_set(RegisterGroup::Reg64, &X86_FIELDS64);
-        // The Nat-bits registers.
-        get_set(RegisterGroup::RegNat, &X86_FIELDSNAT);
-    }
-}
 
 /// Domain data on x86
 pub struct DataX86 {
@@ -343,8 +238,8 @@ impl StateX86 {
 
     fn switch_domain(
         vcpu: &mut ActiveVmcs<'static>,
-        current_ctx: &mut MutexGuard<ContextX86>,
-        next_ctx: &mut MutexGuard<ContextX86>,
+        current_ctx: &mut MutexGuard<Contextx86>,
+        next_ctx: &mut MutexGuard<Contextx86>,
         next_domain: MutexGuard<DataX86>,
         return_capa: LocalCapa,
     ) -> Result<(), CapaError> {
@@ -367,19 +262,25 @@ impl StateX86 {
         }
         // Case 1: copy the interrupted state.
         if current_ctx.interrupted {
-            next_ctx.copy_interrupt_frame(current_ctx).unwrap();
+            next_ctx.copy_interrupt_frame(current_ctx, vcpu).unwrap();
             // Set the return values.
-            next_ctx.set(VmcsField::GuestRax, 0, None)?;
-            next_ctx.set(VmcsField::GuestRdi, return_capa.as_usize(), None)?;
+            next_ctx
+                .set(VmcsField::GuestRax, 0, None)
+                .or(Err(CapaError::PlatformError))?;
+            next_ctx
+                .set(VmcsField::GuestRdi, return_capa.as_usize(), None)
+                .or(Err(CapaError::PlatformError))?;
         } else if next_ctx.interrupted {
             // Case 2: do not put the return capa.
             next_ctx.interrupted = false;
         } else {
             // Case 3: synchronous call.
-            next_ctx.set(VmcsField::GuestRax, 0, None).unwrap();
+            next_ctx
+                .set(VmcsField::GuestRax, 0, None)
+                .or(Err(CapaError::PlatformError))?;
             next_ctx
                 .set(VmcsField::GuestRdi, return_capa.as_usize(), None)
-                .unwrap();
+                .or(Err(CapaError::PlatformError))?;
         }
 
         // Now the logic for shared vs. private vmcs.
@@ -406,7 +307,7 @@ impl StateX86 {
 
 impl PlatformState for StateX86 {
     type DomainData = DataX86;
-    type Context = ContextX86;
+    type Context = Contextx86;
 
     fn find_buff(
         engine: &MutexGuard<CapaEngine>,
@@ -602,7 +503,7 @@ impl PlatformState for StateX86 {
     ) -> Result<(), CapaError> {
         let mut ctxt = Self::get_context(*domain, core);
         let field = VmcsField::from_u32(idx as u32).ok_or(CapaError::InvalidValue)?;
-        let (group, idx) = translate_x86field(field).ok_or(CapaError::InvalidValue)?;
+        let (group, idx) = Contextx86::translate_field(field);
         // Check the permissions.
         let (_, perm_write) = group.to_permissions();
         let bitmap = engine.get_domain_permission(*domain, perm_write);
@@ -611,6 +512,7 @@ impl PlatformState for StateX86 {
             return Err(CapaError::InsufficientPermissions);
         }
         ctxt.set(field, value, None)
+            .or(Err(CapaError::PlatformError))
     }
 
     fn get_core(
@@ -622,7 +524,7 @@ impl PlatformState for StateX86 {
     ) -> Result<usize, CapaError> {
         let mut ctxt = Self::get_context(*domain, core);
         let field = VmcsField::from_u32(idx as u32).ok_or(CapaError::InvalidValue)?;
-        let (group, idx) = translate_x86field(field).ok_or(CapaError::InvalidValue)?;
+        let (group, idx) = Contextx86::translate_field(field);
         // Check the permissions.
         let (perm_read, _) = group.to_permissions();
         let bitmap = engine.get_domain_permission(*domain, perm_read);
@@ -630,7 +532,74 @@ impl PlatformState for StateX86 {
         if engine.is_domain_sealed(*domain) && ((1 << idx) & bitmap == 0) {
             return Err(CapaError::InsufficientPermissions);
         }
-        ctxt.get(field, None)
+        ctxt.get(field, None).or(Err(CapaError::PlatformError))
+    }
+
+    fn get_core_gp(
+        &mut self,
+        engine: &mut MutexGuard<CapaEngine>,
+        domain: &Handle<Domain>,
+        core: usize,
+        result: &mut [usize],
+    ) -> Result<(), CapaError> {
+        let mut ctxt = Self::get_context(*domain, core);
+        let (perm_read, _) = RegisterGroup::RegGp.to_permissions();
+        let bitmap = engine.get_domain_permission(*domain, perm_read);
+        let is_sealed = engine.is_domain_sealed(*domain);
+        for idx in 0..(ContextGpx86::size() - 1) {
+            if is_sealed && ((1 << idx) & bitmap == 0) {
+                return Err(CapaError::InsufficientPermissions);
+            }
+            result[idx] = ctxt.regs.get(RegisterGroup::RegGp, idx)?;
+        }
+        Ok(())
+    }
+
+    fn dump_in_gp(
+        &mut self,
+        engine: &mut MutexGuard<CapaEngine>,
+        domain: &mut Handle<Domain>,
+        core: usize,
+        src: &[usize],
+    ) -> Result<(), CapaError> {
+        let mut ctxt = Self::get_context(*domain, core);
+        ctxt.regs.state_gp.values[0..ContextGpx86::size() - 1].copy_from_slice(src);
+        Ok(())
+    }
+
+    fn extract_from_gp(
+        &mut self,
+        engine: &mut MutexGuard<CapaEngine>,
+        domain: &Handle<Domain>,
+        core: usize,
+        res: &mut [(usize, usize); 6],
+    ) -> Result<(), CapaError> {
+        let mut ctxt = Self::get_context(*domain, core);
+        res[0] = (
+            ctxt.get(VmcsField::GuestRbp, None).unwrap(),
+            ctxt.get(VmcsField::GuestRbx, None).unwrap(),
+        );
+        res[1] = (
+            ctxt.get(VmcsField::GuestRcx, None).unwrap(),
+            ctxt.get(VmcsField::GuestRdx, None).unwrap(),
+        );
+        res[2] = (
+            ctxt.get(VmcsField::GuestR8, None).unwrap(),
+            ctxt.get(VmcsField::GuestR9, None).unwrap(),
+        );
+        res[3] = (
+            ctxt.get(VmcsField::GuestR10, None).unwrap(),
+            ctxt.get(VmcsField::GuestR11, None).unwrap(),
+        );
+        res[4] = (
+            ctxt.get(VmcsField::GuestR12, None).unwrap(),
+            ctxt.get(VmcsField::GuestR13, None).unwrap(),
+        );
+        res[5] = (
+            ctxt.get(VmcsField::GuestR14, None).unwrap(),
+            ctxt.get(VmcsField::GuestR15, None).unwrap(),
+        );
+        Ok(())
     }
 
     fn check_overlaps(
@@ -753,7 +722,7 @@ impl MonitorX86 {
             ))
             .expect("Failed to set initial EPT ptr");
         unsafe {
-            vmx_helper::init_vcpu2(&mut state.vcpu, &manifest.info, &mut ctx);
+            vmx_helper::init_vcpu(&mut state.vcpu, &manifest.info, &mut ctx);
         }
         (state, domain)
     }
@@ -777,7 +746,7 @@ impl MonitorX86 {
         let core_id = cpuid();
         let mut result = unsafe {
             let mut context = StateX86::get_context(domain, core_id);
-            state.vcpu.run(&mut context.registers.state_gp.values)
+            state.vcpu.run(&mut context.regs.state_gp.values)
         };
         loop {
             let exit_reason = match result {
@@ -804,7 +773,7 @@ impl MonitorX86 {
                     result = unsafe {
                         let mut context = StateX86::get_context(domain, core_id);
                         context.flush(&mut state.vcpu);
-                        state.vcpu.run(&mut context.registers.state_gp.values)
+                        state.vcpu.run(&mut context.regs.state_gp.values)
                     };
                 }
                 _ => {
@@ -825,18 +794,37 @@ impl MonitorX86 {
             VmxExitReason::Vmcall => {
                 let (vmcall, arg_1, arg_2, arg_3, arg_4, arg_5, arg_6) = {
                     let mut context = StateX86::get_context(*domain, cpuid());
-                    let vmcall = context.get(VmcsField::GuestRax, None)?;
-                    let arg_1 = context.get(VmcsField::GuestRdi, None)?;
-                    let arg_2 = context.get(VmcsField::GuestRsi, None)?;
-                    let arg_3 = context.get(VmcsField::GuestRdx, None)?;
-                    let arg_4 = context.get(VmcsField::GuestRcx, None)?;
-                    let arg_5 = context.get(VmcsField::GuestR8, None)?;
-                    let arg_6 = context.get(VmcsField::GuestR9, None)?;
+                    let vmcall = context.get(VmcsField::GuestRax, None).unwrap();
+                    let arg_1 = context.get(VmcsField::GuestRdi, None).unwrap();
+                    let arg_2 = context.get(VmcsField::GuestRsi, None).unwrap();
+                    let arg_3 = context.get(VmcsField::GuestRdx, None).unwrap();
+                    let arg_4 = context.get(VmcsField::GuestRcx, None).unwrap();
+                    let arg_5 = context.get(VmcsField::GuestR8, None).unwrap();
+                    let arg_6 = context.get(VmcsField::GuestR9, None).unwrap();
                     (vmcall, arg_1, arg_2, arg_3, arg_4, arg_5, arg_6)
                 };
                 let args: [usize; 6] = [arg_1, arg_2, arg_3, arg_4, arg_5, arg_6];
                 let mut res: [usize; 6] = [0; 6];
-                Self::do_monitor_call(vs, domain, vmcall, &args, &mut res)?;
+                let success = Self::do_monitor_call(vs, domain, vmcall, &args, &mut res);
+                // Put the results back.
+                let mut context = StateX86::get_context(*domain, cpuid());
+                match success {
+                    Ok(copy) => {
+                        context.set(VmcsField::GuestRax, 0, None).unwrap();
+                        if copy {
+                            context.set(VmcsField::GuestRdi, res[0], None).unwrap();
+                            context.set(VmcsField::GuestRsi, res[1], None).unwrap();
+                            context.set(VmcsField::GuestRdx, res[2], None).unwrap();
+                            context.set(VmcsField::GuestRcx, res[3], None).unwrap();
+                            context.set(VmcsField::GuestR8, res[4], None).unwrap();
+                            context.set(VmcsField::GuestR9, res[5], None).unwrap();
+                        }
+                    },
+                    Err(e) => {
+                        log::error!("Failure monitor call: {:?}, call: {}", e, vmcall);
+                        context.set(VmcsField::GuestRax, 1, None).unwrap();
+                    }
+                }
                 vs.vcpu.next_instruction().or(Err(CapaError::PlatformError))?;
                 Ok(HandlerResult::Resume)
             }
@@ -846,8 +834,8 @@ impl MonitorX86 {
         }
         VmxExitReason::Cpuid if domain.idx() == 0 => {
             let mut context = StateX86::get_context(*domain, cpuid());
-            let input_eax = context.get(VmcsField::GuestRax, None)?;
-            let input_ecx = context.get(VmcsField::GuestRcx, None)?;
+            let input_eax = context.get(VmcsField::GuestRax, None).unwrap();
+            let input_ecx = context.get(VmcsField::GuestRcx, None).unwrap();
             let mut eax: usize;
             let mut ebx: usize;
             let mut ecx: usize;
@@ -873,10 +861,10 @@ impl MonitorX86 {
             filter_tpause(input_eax, input_ecx, &mut eax, &mut ebx, &mut ecx, &mut edx);
             filter_mpk(input_eax, input_ecx, &mut eax, &mut ebx, &mut ecx, &mut edx);
 
-            context.set(VmcsField::GuestRax, eax as usize, None)?;
-            context.set(VmcsField::GuestRbx, ebx as usize, None)?;
-            context.set(VmcsField::GuestRcx, ecx as usize, None)?;
-            context.set(VmcsField::GuestRdx, edx as usize, None)?;
+            context.set(VmcsField::GuestRax, eax as usize, None).unwrap();
+            context.set(VmcsField::GuestRbx, ebx as usize, None).unwrap();
+            context.set(VmcsField::GuestRcx, ecx as usize, None).unwrap();
+            context.set(VmcsField::GuestRdx, edx as usize, None).unwrap();
             vs.vcpu.next_instruction().or(Err(CapaError::PlatformError))?;
             Ok(HandlerResult::Resume)
         }
@@ -893,10 +881,10 @@ impl MonitorX86 {
                         panic!("VmExit reason for access to control register is not a control register.");
                     }
                     if cr == VmcsField::GuestCr4 {
-                        let value = context.get(reg, Some(&mut vs.vcpu))? as usize;
-                        context.set(VmcsField::Cr4ReadShadow, value, Some(&mut vs.vcpu))?;
+                        let value = context.get(reg, Some(&mut vs.vcpu)).or(Err(CapaError::PlatformError))? as usize;
+                        context.set(VmcsField::Cr4ReadShadow, value, Some(&mut vs.vcpu)).or(Err(CapaError::PlatformError))?;
                         let real_value = value | (1 << 13); // VMXE
-                        context.set(cr, real_value, Some(&mut vs.vcpu))?;
+                        context.set(cr, real_value, Some(&mut vs.vcpu)).or(Err(CapaError::PlatformError))?;
                     } else {
                         todo!("Handle cr: {:?}", cr);
                     }
@@ -924,9 +912,9 @@ impl MonitorX86 {
         }
         VmxExitReason::Xsetbv if domain.idx() == 0 => {
             let mut context = StateX86::get_context(*domain, cpuid());
-            let ecx = context.get(VmcsField::GuestRcx, None)?;
-            let eax = context.get(VmcsField::GuestRax, None)?;
-            let edx = context.get(VmcsField::GuestRdx, None)?;
+            let ecx = context.get(VmcsField::GuestRcx, None).or(Err(CapaError::PlatformError))?;
+            let eax = context.get(VmcsField::GuestRax, None).or(Err(CapaError::PlatformError))?;
+            let edx = context.get(VmcsField::GuestRdx, None).or(Err(CapaError::PlatformError))?;
 
             let xrc_id = ecx & 0xFFFFFFFF; // Ignore 32 high-order bits
             if xrc_id != 0 {
@@ -948,7 +936,7 @@ impl MonitorX86 {
         }
         VmxExitReason::Wrmsr if domain.idx() == 0 => {
             let mut context = StateX86::get_context(*domain, cpuid());
-            let ecx = context.get(VmcsField::GuestRcx, None)?;
+            let ecx = context.get(VmcsField::GuestRcx, None).or(Err(CapaError::PlatformError))?;
             if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
                 // Custom MSR range, used by KVM
                 // See https://docs.kernel.org/virt/kvm/x86/msr.html
@@ -962,7 +950,7 @@ impl MonitorX86 {
         }
         VmxExitReason::Rdmsr if domain.idx() == 0 => {
             let mut context = StateX86::get_context(*domain, cpuid());
-            let ecx = context.get(VmcsField::GuestRcx, None)?;
+            let ecx = context.get(VmcsField::GuestRcx, None).or(Err(CapaError::PlatformError))?;
             log::trace!("rdmsr 0x{:x}", ecx);
             if ecx >= 0xc0010000 && ecx <= 0xc0020000 {
                 // Reading an AMD specific register, just ignore it
@@ -976,8 +964,8 @@ impl MonitorX86 {
                 log::trace!("rdmsr: about to read");
                 let (low, high) = unsafe { msr_reg.read_raw() };
                 log::trace!("Emulated read of msr {:x} = h:{:x};l:{:x}", ecx, high, low);
-                context.set(VmcsField::GuestRax, low as usize, None)?;
-                context.set(VmcsField::GuestRdx, high as usize, None)?;
+                context.set(VmcsField::GuestRax, low as usize, None).or(Err(CapaError::PlatformError))?;
+                context.set(VmcsField::GuestRdx, high as usize, None).or(Err(CapaError::PlatformError))?;
                 vs.vcpu.next_instruction().or(Err(CapaError::PlatformError))?;
                 Ok(HandlerResult::Resume)
             }
@@ -1029,355 +1017,5 @@ impl MonitorX86 {
             Ok(HandlerResult::Crash)
         }
         }
-    }
-}
-
-// ———————————————————— Translate fields into registers ————————————————————— //
-
-const X86_FIELDS16: [VmcsField; NB_16] = [
-    VmcsField::VirtualProcessorId,
-    VmcsField::PostedIntrNv,
-    VmcsField::LastPidPointerIndex,
-    VmcsField::GuestEsSelector,
-    VmcsField::GuestCsSelector,
-    VmcsField::GuestSsSelector,
-    VmcsField::GuestDsSelector,
-    VmcsField::GuestFsSelector,
-    VmcsField::GuestGsSelector,
-    VmcsField::GuestLdtrSelector,
-    VmcsField::GuestTrSelector,
-    VmcsField::GuestIntrStatus,
-    VmcsField::GuestPmlIndex,
-    VmcsField::HostEsSelector,
-    VmcsField::HostCsSelector,
-    VmcsField::HostSsSelector,
-    VmcsField::HostDsSelector,
-    VmcsField::HostFsSelector,
-    VmcsField::HostGsSelector,
-    VmcsField::HostTrSelector,
-];
-
-const X86_FIELDS32: [VmcsField; NB_32] = [
-    VmcsField::IoBitmapA,
-    VmcsField::IoBitmapB,
-    VmcsField::MsrBitmap,
-    VmcsField::VmExitMsrStoreAddr,
-    VmcsField::VmExitMsrLoadAddr,
-    VmcsField::VmEntryMsrLoadAddr,
-    VmcsField::PmlAddress,
-    VmcsField::TscOffset,
-    VmcsField::VirtualApicPageAddr,
-    VmcsField::ApicAccessAddr,
-    VmcsField::PostedIntrDescAddr,
-    VmcsField::VmFunctionControl,
-    VmcsField::EptPointer,
-    VmcsField::EoiExitBitmap0,
-    VmcsField::EoiExitBitmap1,
-    VmcsField::EoiExitBitmap2,
-    VmcsField::EoiExitBitmap3,
-    VmcsField::EptpListAddress,
-    VmcsField::VmreadBitmap,
-    VmcsField::VmwriteBitmap,
-    VmcsField::XssExitBitmap,
-    VmcsField::EnclsExitingBitmap,
-    VmcsField::TscMultiplier,
-    VmcsField::TertiaryVmExecControl,
-    VmcsField::PidPointerTable,
-    VmcsField::GuestPhysicalAddress,
-    VmcsField::VmcsLinkPointer,
-    VmcsField::GuestIa32Debugctl,
-    VmcsField::GuestIa32Pat,
-    VmcsField::GuestIa32Efer,
-    VmcsField::GuestIa32PerfGlobalCtrl,
-    VmcsField::GuestPdptr0,
-    VmcsField::GuestPdptr1,
-    VmcsField::GuestPdptr2,
-    VmcsField::GuestPdptr3,
-    VmcsField::GuestBndcfgs,
-    VmcsField::GuestIa32RtitCtl,
-    VmcsField::HostIa32Pat,
-    VmcsField::HostIa32Efer,
-    VmcsField::HostIa32PerfGlobalCtrl,
-];
-
-const X86_FIELDS64: [VmcsField; NB_64] = [
-    VmcsField::PinBasedVmExecControl,
-    VmcsField::CpuBasedVmExecControl,
-    VmcsField::ExceptionBitmap,
-    VmcsField::PageFaultErrorCodeMask,
-    VmcsField::PageFaultErrorCodeMatch,
-    VmcsField::Cr3TargetCount,
-    VmcsField::VmExitControls,
-    VmcsField::VmExitMsrStoreCount,
-    VmcsField::VmExitMsrLoadCount,
-    VmcsField::VmEntryControls,
-    VmcsField::VmEntryMsrLoadCount,
-    VmcsField::VmEntryIntrInfoField,
-    VmcsField::VmEntryExceptionErrorCode,
-    VmcsField::VmEntryInstructionLen,
-    VmcsField::TprThreshold,
-    VmcsField::SecondaryVmExecControl,
-    VmcsField::PleGap,
-    VmcsField::PleWindow,
-    VmcsField::NotifyWindow,
-    VmcsField::VmInstructionError,
-    VmcsField::VmExitReason,
-    VmcsField::VmExitIntrInfo,
-    VmcsField::VmExitIntrErrorCode,
-    VmcsField::IdtVectoringInfoField,
-    VmcsField::IdtVectoringErrorCode,
-    VmcsField::VmExitInstructionLen,
-    VmcsField::VmxInstructionInfo,
-    VmcsField::GuestEsLimit,
-    VmcsField::GuestCsLimit,
-    VmcsField::GuestSsLimit,
-    VmcsField::GuestDsLimit,
-    VmcsField::GuestFsLimit,
-    VmcsField::GuestGsLimit,
-    VmcsField::GuestLdtrLimit,
-    VmcsField::GuestTrLimit,
-    VmcsField::GuestGdtrLimit,
-    VmcsField::GuestIdtrLimit,
-    VmcsField::GuestEsArBytes,
-    VmcsField::GuestCsArBytes,
-    VmcsField::GuestSsArBytes,
-    VmcsField::GuestDsArBytes,
-    VmcsField::GuestFsArBytes,
-    VmcsField::GuestGsArBytes,
-    VmcsField::GuestLdtrArBytes,
-    VmcsField::GuestTrArBytes,
-    VmcsField::GuestInterruptibilityInfo,
-    VmcsField::GuestActivityState,
-    VmcsField::GuestSysenterCs,
-    VmcsField::VmxPreemptionTimerValue,
-];
-
-const X86_FIELDSNAT: [VmcsField; NB_NAT] = [
-    VmcsField::Cr0GuestHostMask,
-    VmcsField::Cr4GuestHostMask,
-    VmcsField::Cr0ReadShadow,
-    VmcsField::Cr4ReadShadow,
-    VmcsField::Cr3TargetValue0,
-    VmcsField::Cr3TargetValue1,
-    VmcsField::Cr3TargetValue2,
-    VmcsField::Cr3TargetValue3,
-    VmcsField::ExitQualification,
-    VmcsField::GuestLinearAddress,
-    VmcsField::GuestCr0,
-    VmcsField::GuestCr3,
-    VmcsField::GuestCr4,
-    VmcsField::GuestEsBase,
-    VmcsField::GuestCsBase,
-    VmcsField::GuestSsBase,
-    VmcsField::GuestDsBase,
-    VmcsField::GuestFsBase,
-    VmcsField::GuestGsBase,
-    VmcsField::GuestLdtrBase,
-    VmcsField::GuestTrBase,
-    VmcsField::GuestGdtrBase,
-    VmcsField::GuestIdtrBase,
-    VmcsField::GuestDr7,
-    VmcsField::GuestRsp,
-    VmcsField::GuestRip,
-    VmcsField::GuestRflags,
-    VmcsField::GuestPendingDbgExceptions,
-    VmcsField::GuestSysenterEsp,
-    VmcsField::GuestSysenterEip,
-];
-
-const X86_FIELDSGP: [VmcsField; NB_GP] = [
-    VmcsField::GuestRax,
-    VmcsField::GuestRbx,
-    VmcsField::GuestRcx,
-    VmcsField::GuestRdx,
-    VmcsField::GuestRbp,
-    VmcsField::GuestRsi,
-    VmcsField::GuestRdi,
-    VmcsField::GuestR8,
-    VmcsField::GuestR9,
-    VmcsField::GuestR10,
-    VmcsField::GuestR11,
-    VmcsField::GuestR12,
-    VmcsField::GuestR13,
-    VmcsField::GuestR14,
-    VmcsField::GuestR15,
-    VmcsField::GuestLstar,
-];
-
-fn translate_to_x86field(r: RegisterGroup, idx: usize) -> Result<VmcsField, CapaError> {
-    match r {
-        RegisterGroup::Reg16 if idx < NB_16 => Ok(X86_FIELDS16[idx]),
-        RegisterGroup::Reg32 if idx < NB_32 => Ok(X86_FIELDS32[idx]),
-        RegisterGroup::Reg64 if idx < NB_64 => Ok(X86_FIELDS64[idx]),
-        RegisterGroup::RegNat if idx < NB_NAT => Ok(X86_FIELDSNAT[idx]),
-        RegisterGroup::RegGp if idx < NB_GP => Ok(X86_FIELDSGP[idx]),
-        _ => Err(CapaError::InvalidValue),
-    }
-}
-
-/// All the fields for x86.
-fn translate_x86field(field: VmcsField) -> Option<(RegisterGroup, usize)> {
-    match field {
-        // The 16-bits registers.
-        VmcsField::VirtualProcessorId => Some((RegisterGroup::Reg16, 0)),
-        VmcsField::PostedIntrNv => Some((RegisterGroup::Reg16, 1)),
-        VmcsField::LastPidPointerIndex => Some((RegisterGroup::Reg16, 2)),
-        VmcsField::GuestEsSelector => Some((RegisterGroup::Reg16, 3)),
-        VmcsField::GuestCsSelector => Some((RegisterGroup::Reg16, 4)),
-        VmcsField::GuestSsSelector => Some((RegisterGroup::Reg16, 5)),
-        VmcsField::GuestDsSelector => Some((RegisterGroup::Reg16, 6)),
-        VmcsField::GuestFsSelector => Some((RegisterGroup::Reg16, 7)),
-        VmcsField::GuestGsSelector => Some((RegisterGroup::Reg16, 8)),
-        VmcsField::GuestLdtrSelector => Some((RegisterGroup::Reg16, 9)),
-        VmcsField::GuestTrSelector => Some((RegisterGroup::Reg16, 10)),
-        VmcsField::GuestIntrStatus => Some((RegisterGroup::Reg16, 11)),
-        VmcsField::GuestPmlIndex => Some((RegisterGroup::Reg16, 12)),
-        VmcsField::HostEsSelector => Some((RegisterGroup::Reg16, 13)),
-        VmcsField::HostCsSelector => Some((RegisterGroup::Reg16, 14)),
-        VmcsField::HostSsSelector => Some((RegisterGroup::Reg16, 15)),
-        VmcsField::HostDsSelector => Some((RegisterGroup::Reg16, 16)),
-        VmcsField::HostFsSelector => Some((RegisterGroup::Reg16, 17)),
-        VmcsField::HostGsSelector => Some((RegisterGroup::Reg16, 18)),
-        VmcsField::HostTrSelector => Some((RegisterGroup::Reg16, 19)),
-        // The 32-bits registers.
-        VmcsField::IoBitmapA => Some((RegisterGroup::Reg32, 0)),
-        VmcsField::IoBitmapB => Some((RegisterGroup::Reg32, 1)),
-        VmcsField::MsrBitmap => Some((RegisterGroup::Reg32, 2)),
-        VmcsField::VmExitMsrStoreAddr => Some((RegisterGroup::Reg32, 3)),
-        VmcsField::VmExitMsrLoadAddr => Some((RegisterGroup::Reg32, 4)),
-        VmcsField::VmEntryMsrLoadAddr => Some((RegisterGroup::Reg32, 5)),
-        VmcsField::PmlAddress => Some((RegisterGroup::Reg32, 6)),
-        VmcsField::TscOffset => Some((RegisterGroup::Reg32, 7)),
-        VmcsField::VirtualApicPageAddr => Some((RegisterGroup::Reg32, 8)),
-        VmcsField::ApicAccessAddr => Some((RegisterGroup::Reg32, 9)),
-        VmcsField::PostedIntrDescAddr => Some((RegisterGroup::Reg32, 10)),
-        VmcsField::VmFunctionControl => Some((RegisterGroup::Reg32, 11)),
-        VmcsField::EptPointer => Some((RegisterGroup::Reg32, 12)),
-        VmcsField::EoiExitBitmap0 => Some((RegisterGroup::Reg32, 13)),
-        VmcsField::EoiExitBitmap1 => Some((RegisterGroup::Reg32, 14)),
-        VmcsField::EoiExitBitmap2 => Some((RegisterGroup::Reg32, 15)),
-        VmcsField::EoiExitBitmap3 => Some((RegisterGroup::Reg32, 16)),
-        VmcsField::EptpListAddress => Some((RegisterGroup::Reg32, 17)),
-        VmcsField::VmreadBitmap => Some((RegisterGroup::Reg32, 18)),
-        VmcsField::VmwriteBitmap => Some((RegisterGroup::Reg32, 19)),
-        VmcsField::XssExitBitmap => Some((RegisterGroup::Reg32, 20)),
-        VmcsField::EnclsExitingBitmap => Some((RegisterGroup::Reg32, 21)),
-        VmcsField::TscMultiplier => Some((RegisterGroup::Reg32, 22)),
-        VmcsField::TertiaryVmExecControl => Some((RegisterGroup::Reg32, 23)),
-        VmcsField::PidPointerTable => Some((RegisterGroup::Reg32, 24)),
-        VmcsField::GuestPhysicalAddress => Some((RegisterGroup::Reg32, 25)),
-        VmcsField::VmcsLinkPointer => Some((RegisterGroup::Reg32, 26)),
-        VmcsField::GuestIa32Debugctl => Some((RegisterGroup::Reg32, 27)),
-        VmcsField::GuestIa32Pat => Some((RegisterGroup::Reg32, 28)),
-        VmcsField::GuestIa32Efer => Some((RegisterGroup::Reg32, 29)),
-        VmcsField::GuestIa32PerfGlobalCtrl => Some((RegisterGroup::Reg32, 30)),
-        VmcsField::GuestPdptr0 => Some((RegisterGroup::Reg32, 31)),
-        VmcsField::GuestPdptr1 => Some((RegisterGroup::Reg32, 32)),
-        VmcsField::GuestPdptr2 => Some((RegisterGroup::Reg32, 33)),
-        VmcsField::GuestPdptr3 => Some((RegisterGroup::Reg32, 34)),
-        VmcsField::GuestBndcfgs => Some((RegisterGroup::Reg32, 35)),
-        VmcsField::GuestIa32RtitCtl => Some((RegisterGroup::Reg32, 36)),
-        VmcsField::HostIa32Pat => Some((RegisterGroup::Reg32, 37)),
-        VmcsField::HostIa32Efer => Some((RegisterGroup::Reg32, 38)),
-        VmcsField::HostIa32PerfGlobalCtrl => Some((RegisterGroup::Reg32, 39)),
-        // The 64-bits registers.
-        VmcsField::PinBasedVmExecControl => Some((RegisterGroup::Reg64, 0)),
-        VmcsField::CpuBasedVmExecControl => Some((RegisterGroup::Reg64, 1)),
-        VmcsField::ExceptionBitmap => Some((RegisterGroup::Reg64, 2)),
-        VmcsField::PageFaultErrorCodeMask => Some((RegisterGroup::Reg64, 3)),
-        VmcsField::PageFaultErrorCodeMatch => Some((RegisterGroup::Reg64, 4)),
-        VmcsField::Cr3TargetCount => Some((RegisterGroup::Reg64, 5)),
-        VmcsField::VmExitControls => Some((RegisterGroup::Reg64, 6)),
-        VmcsField::VmExitMsrStoreCount => Some((RegisterGroup::Reg64, 7)),
-        VmcsField::VmExitMsrLoadCount => Some((RegisterGroup::Reg64, 8)),
-        VmcsField::VmEntryControls => Some((RegisterGroup::Reg64, 9)),
-        VmcsField::VmEntryMsrLoadCount => Some((RegisterGroup::Reg64, 10)),
-        VmcsField::VmEntryIntrInfoField => Some((RegisterGroup::Reg64, 11)),
-        VmcsField::VmEntryExceptionErrorCode => Some((RegisterGroup::Reg64, 12)),
-        VmcsField::VmEntryInstructionLen => Some((RegisterGroup::Reg64, 13)),
-        VmcsField::TprThreshold => Some((RegisterGroup::Reg64, 14)),
-        VmcsField::SecondaryVmExecControl => Some((RegisterGroup::Reg64, 15)),
-        VmcsField::PleGap => Some((RegisterGroup::Reg64, 16)),
-        VmcsField::PleWindow => Some((RegisterGroup::Reg64, 17)),
-        VmcsField::NotifyWindow => Some((RegisterGroup::Reg64, 18)),
-        VmcsField::VmInstructionError => Some((RegisterGroup::Reg64, 19)),
-        VmcsField::VmExitReason => Some((RegisterGroup::Reg64, 20)),
-        VmcsField::VmExitIntrInfo => Some((RegisterGroup::Reg64, 21)),
-        VmcsField::VmExitIntrErrorCode => Some((RegisterGroup::Reg64, 22)),
-        VmcsField::IdtVectoringInfoField => Some((RegisterGroup::Reg64, 23)),
-        VmcsField::IdtVectoringErrorCode => Some((RegisterGroup::Reg64, 24)),
-        VmcsField::VmExitInstructionLen => Some((RegisterGroup::Reg64, 25)),
-        VmcsField::VmxInstructionInfo => Some((RegisterGroup::Reg64, 26)),
-        VmcsField::GuestEsLimit => Some((RegisterGroup::Reg64, 27)),
-        VmcsField::GuestCsLimit => Some((RegisterGroup::Reg64, 28)),
-        VmcsField::GuestSsLimit => Some((RegisterGroup::Reg64, 29)),
-        VmcsField::GuestDsLimit => Some((RegisterGroup::Reg64, 30)),
-        VmcsField::GuestFsLimit => Some((RegisterGroup::Reg64, 31)),
-        VmcsField::GuestGsLimit => Some((RegisterGroup::Reg64, 32)),
-        VmcsField::GuestLdtrLimit => Some((RegisterGroup::Reg64, 33)),
-        VmcsField::GuestTrLimit => Some((RegisterGroup::Reg64, 34)),
-        VmcsField::GuestGdtrLimit => Some((RegisterGroup::Reg64, 35)),
-        VmcsField::GuestIdtrLimit => Some((RegisterGroup::Reg64, 36)),
-        VmcsField::GuestEsArBytes => Some((RegisterGroup::Reg64, 37)),
-        VmcsField::GuestCsArBytes => Some((RegisterGroup::Reg64, 38)),
-        VmcsField::GuestSsArBytes => Some((RegisterGroup::Reg64, 39)),
-        VmcsField::GuestDsArBytes => Some((RegisterGroup::Reg64, 40)),
-        VmcsField::GuestFsArBytes => Some((RegisterGroup::Reg64, 41)),
-        VmcsField::GuestGsArBytes => Some((RegisterGroup::Reg64, 42)),
-        VmcsField::GuestLdtrArBytes => Some((RegisterGroup::Reg64, 43)),
-        VmcsField::GuestTrArBytes => Some((RegisterGroup::Reg64, 44)),
-        VmcsField::GuestInterruptibilityInfo => Some((RegisterGroup::Reg64, 45)),
-        VmcsField::GuestActivityState => Some((RegisterGroup::Reg64, 46)),
-        VmcsField::GuestSysenterCs => Some((RegisterGroup::Reg64, 47)),
-        VmcsField::VmxPreemptionTimerValue => Some((RegisterGroup::Reg64, 48)),
-        // The NAT-bits registers.
-        VmcsField::Cr0GuestHostMask => Some((RegisterGroup::RegNat, 0)),
-        VmcsField::Cr4GuestHostMask => Some((RegisterGroup::RegNat, 1)),
-        VmcsField::Cr0ReadShadow => Some((RegisterGroup::RegNat, 2)),
-        VmcsField::Cr4ReadShadow => Some((RegisterGroup::RegNat, 3)),
-        VmcsField::Cr3TargetValue0 => Some((RegisterGroup::RegNat, 4)),
-        VmcsField::Cr3TargetValue1 => Some((RegisterGroup::RegNat, 5)),
-        VmcsField::Cr3TargetValue2 => Some((RegisterGroup::RegNat, 6)),
-        VmcsField::Cr3TargetValue3 => Some((RegisterGroup::RegNat, 7)),
-        VmcsField::ExitQualification => Some((RegisterGroup::RegNat, 8)),
-        VmcsField::GuestLinearAddress => Some((RegisterGroup::RegNat, 9)),
-        VmcsField::GuestCr0 => Some((RegisterGroup::RegNat, 10)),
-        VmcsField::GuestCr3 => Some((RegisterGroup::RegNat, 11)),
-        VmcsField::GuestCr4 => Some((RegisterGroup::RegNat, 12)),
-        VmcsField::GuestEsBase => Some((RegisterGroup::RegNat, 13)),
-        VmcsField::GuestCsBase => Some((RegisterGroup::RegNat, 14)),
-        VmcsField::GuestSsBase => Some((RegisterGroup::RegNat, 15)),
-        VmcsField::GuestDsBase => Some((RegisterGroup::RegNat, 16)),
-        VmcsField::GuestFsBase => Some((RegisterGroup::RegNat, 17)),
-        VmcsField::GuestGsBase => Some((RegisterGroup::RegNat, 18)),
-        VmcsField::GuestLdtrBase => Some((RegisterGroup::RegNat, 19)),
-        VmcsField::GuestTrBase => Some((RegisterGroup::RegNat, 20)),
-        VmcsField::GuestGdtrBase => Some((RegisterGroup::RegNat, 21)),
-        VmcsField::GuestIdtrBase => Some((RegisterGroup::RegNat, 22)),
-        VmcsField::GuestDr7 => Some((RegisterGroup::RegNat, 23)),
-        VmcsField::GuestRsp => Some((RegisterGroup::RegNat, 24)),
-        VmcsField::GuestRip => Some((RegisterGroup::RegNat, 25)),
-        VmcsField::GuestRflags => Some((RegisterGroup::RegNat, 26)),
-        VmcsField::GuestPendingDbgExceptions => Some((RegisterGroup::RegNat, 27)),
-        VmcsField::GuestSysenterEsp => Some((RegisterGroup::RegNat, 28)),
-        VmcsField::GuestSysenterEip => Some((RegisterGroup::RegNat, 29)),
-        // The GP-bits registers.
-        VmcsField::GuestRax => Some((RegisterGroup::RegGp, 0)),
-        VmcsField::GuestRbx => Some((RegisterGroup::RegGp, 1)),
-        VmcsField::GuestRcx => Some((RegisterGroup::RegGp, 2)),
-        VmcsField::GuestRdx => Some((RegisterGroup::RegGp, 3)),
-        VmcsField::GuestRbp => Some((RegisterGroup::RegGp, 4)),
-        VmcsField::GuestRsi => Some((RegisterGroup::RegGp, 5)),
-        VmcsField::GuestRdi => Some((RegisterGroup::RegGp, 6)),
-        VmcsField::GuestR8 => Some((RegisterGroup::RegGp, 7)),
-        VmcsField::GuestR9 => Some((RegisterGroup::RegGp, 8)),
-        VmcsField::GuestR10 => Some((RegisterGroup::RegGp, 9)),
-        VmcsField::GuestR11 => Some((RegisterGroup::RegGp, 10)),
-        VmcsField::GuestR12 => Some((RegisterGroup::RegGp, 11)),
-        VmcsField::GuestR13 => Some((RegisterGroup::RegGp, 12)),
-        VmcsField::GuestR14 => Some((RegisterGroup::RegGp, 13)),
-        VmcsField::GuestR15 => Some((RegisterGroup::RegGp, 14)),
-        VmcsField::GuestLstar => Some((RegisterGroup::RegGp, 15)),
-        _ => None,
     }
 }

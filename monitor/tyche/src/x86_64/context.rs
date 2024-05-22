@@ -833,7 +833,7 @@ pub struct Contextx86 {
 
 #[allow(dead_code)]
 impl Contextx86 {
-    fn translate_field(field: VmcsField) -> (RegisterGroup, usize) {
+    pub fn translate_field(field: VmcsField) -> (RegisterGroup, usize) {
         match (field.width(), field.is_gp_register()) {
             (_, true) => (
                 RegisterGroup::RegGp,

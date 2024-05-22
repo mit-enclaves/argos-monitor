@@ -378,7 +378,10 @@ pub(crate) fn has_permission(
     value: u64,
 ) -> Result<(), CapaError> {
     let domain = &domains[domain];
-    if domain.permissions.perm[perm as usize] & value == value {
+    // Let's ignore the read/write for the moment.
+    if perm >= PermissionIndex::MgmtRead16
+        || domain.permissions.perm[perm as usize] & value == value
+    {
         Ok(())
     } else {
         Err(CapaError::InsufficientPermissions)

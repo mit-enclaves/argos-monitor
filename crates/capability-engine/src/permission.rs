@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
 #[repr(usize)]
 pub enum PermissionIndex {
     MonitorInterface = 0,
