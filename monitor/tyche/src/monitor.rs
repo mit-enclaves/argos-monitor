@@ -210,8 +210,11 @@ pub trait Monitor<T: PlatformState + 'static> {
         domain
     }
 
-    fn get_initial_domain() -> Handle<Domain> {
-        INITIAL_DOMAIN.lock().unwrap()
+    fn start_initial_domain(state: &mut T) -> Handle<Domain> {
+        let mut dom = INITIAL_DOMAIN.lock().unwrap();
+        let mut engine = Self::lock_engine(state, &mut dom);
+        engine.start_domain_on_core(dom, cpuid()).unwrap();
+        dom
     }
 
     fn do_create_domain(
@@ -655,7 +658,7 @@ pub trait Monitor<T: PlatformState + 'static> {
                 return Ok(true);
             }
             calls::SWITCH => {
-                log::trace!("Switch on core {}", cpuid());
+                log::trace!("Switch on core {} from {}", cpuid(), domain.idx());
                 Self::do_switch(state, domain, LocalCapa::new(args[0]), cpuid())?;
                 return Ok(false);
             }

@@ -706,7 +706,7 @@ impl MonitorX86 {
         let domain = if bsp {
             Self::do_init(&mut state, manifest)
         } else {
-            Self::get_initial_domain()
+            Self::start_initial_domain(&mut state)
         };
         let dom = StateX86::get_domain(domain);
         let mut ctx = StateX86::get_context(domain, cpuid());
@@ -898,7 +898,8 @@ impl MonitorX86 {
         VmxExitReason::EptViolation if domain.idx() == 0 => {
             let addr = vs.vcpu.guest_phys_addr().or(Err(CapaError::PlatformError))?;
             log::error!(
-                "EPT Violation on dom0! virt: 0x{:x}, phys: 0x{:x}",
+                "EPT Violation on dom0 core {}! virt: 0x{:x}, phys: 0x{:x}",
+                cpuid(),
                 vs.vcpu
                     .guest_linear_addr()
                     .expect("unable to get the virt addr")
@@ -1013,7 +1014,7 @@ impl MonitorX86 {
                 "Emulation is not yet implemented for exit reason: {:?}",
                 reason
             );
-            log::info!("{:?}", vs.vcpu);
+            log::info!("Dom: {} on core {}\n{:?}", domain.idx(), cpuid(), vs.vcpu);
             Ok(HandlerResult::Crash)
         }
         }
