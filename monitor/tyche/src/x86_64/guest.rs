@@ -3,15 +3,18 @@
 use core::arch::asm;
 
 use capa_engine::permission::{self};
-use capa_engine::{Domain, Handle, LocalCapa, NextCapaToken};
+use capa_engine::{CapaEngine, Domain, Handle, LocalCapa, NextCapaToken};
 use vmx::bitmaps::exit_qualification;
 use vmx::fields::VmcsField;
-use vmx::{ActiveVmcs, VmxExitReason, Vmxon};
+use vmx::VmxExitReason;
 
 use super::cpuid_filter::{filter_mpk, filter_tpause};
+use super::platform::MonitorX86;
+use super::state::{StateX86, VmxState};
 use super::{cpuid, monitor};
 use crate::calls;
 use crate::error::TycheError;
+use crate::monitor::{Monitor, PlatformState};
 use crate::x86_64::filtered_fields::FilteredFields;
 use crate::x86_64::platform;
 
@@ -22,18 +25,10 @@ pub enum HandlerResult {
     Crash,
 }
 
-/// VMXState encapsulates the vmxon and current vcpu.
-/// The vcpu is subject to changes, but the vmxon remains the same
-/// for the entire execution.
-pub struct VmxState {
-    pub vcpu: ActiveVmcs<'static>,
-    pub vmxon: Vmxon,
-}
-
 pub fn main_loop(mut vmx_state: VmxState, mut domain: Handle<Domain>) {
     let core_id = cpuid();
     let mut result = unsafe {
-        let mut context = monitor::get_context(domain, core_id);
+        let mut context = StateX86::get_context(domain, core_id);
         vmx_state.vcpu.run(&mut context.regs.state_gp.values)
     };
     loop {
@@ -43,7 +38,7 @@ pub fn main_loop(mut vmx_state: VmxState, mut domain: Handle<Domain>) {
                     .expect("Failed to handle VM exit");
 
                 // Apply core-local updates before returning
-                monitor::apply_core_updates(&mut vmx_state, &mut domain, core_id);
+                MonitorX86::apply_core_updates(&mut vmx_state, &mut domain, core_id);
 
                 res
             }
@@ -58,7 +53,7 @@ pub fn main_loop(mut vmx_state: VmxState, mut domain: Handle<Domain>) {
         match exit_reason {
             HandlerResult::Resume => {
                 result = unsafe {
-                    let mut context = monitor::get_context(domain, core_id);
+                    let mut context = StateX86::get_context(domain, core_id);
                     context.flush(&mut vmx_state.vcpu);
                     vmx_state.vcpu.run(&mut context.regs.state_gp.values)
                 };
@@ -79,7 +74,7 @@ fn handle_exit(
     match reason {
         VmxExitReason::Vmcall => {
             let (vmcall, arg_1, arg_2, arg_3, arg_4, arg_5, arg_6) = {
-                let mut context = monitor::get_context(*domain, cpuid());
+                let mut context = StateX86::get_context(*domain, cpuid());
                 let vmcall = context.get(VmcsField::GuestRax, None)?;
                 let arg_1 = context.get(VmcsField::GuestRdi, None)?;
                 let arg_2 = context.get(VmcsField::GuestRsi, None)?;
@@ -90,12 +85,68 @@ fn handle_exit(
                 (vmcall, arg_1, arg_2, arg_3, arg_4, arg_5, arg_6)
             };
             match vmcall {
-                calls::CREATE_DOMAIN => {
+                calls::CREATE_DOMAIN | calls::CONFIGURE | calls::SELF_CONFIG
+                    | calls::ALLOC_CORE_CONTEXT | calls::CONFIGURE_CORE
+                    | calls::GET_CONFIG_CORE | calls::SEAL_DOMAIN
+                    | calls::SEND | calls::SEND_REGION
+                    | calls::SEGMENT_REGION | calls::REVOKE | calls::REVOKE_ALIASED_REGION
+                    | calls::DUPLICATE | calls::ENUMERATE | calls::SWITCH
+                    | calls::READ_ALL_GP
+                    | calls::WRITE_ALL_GP | calls::WRITE_FIELDS
+                    | calls::DEBUG | calls::TEST_CALL | calls::EXIT
+                    | calls::SERIALIZE_ATTESTATION | calls::ENCLAVE_ATTESTATION => {
+                let args: [usize; 6] = [arg_1, arg_2, arg_3, arg_4, arg_5, arg_6];
+                let mut res: [usize; 6] = [0; 6];
+                if vmcall == calls::SWITCH {
+                    {
+                        //TODO: figure out a way to fix this.
+                        let mut msr = vmx::msr::Msr::new(0xC000_0080);
+                        unsafe {
+                            msr.write(0xd01);
+                        }
+                    }
+                    vs.vcpu.next_instruction()?;
+                }
+                let success = MonitorX86::do_monitor_call(vs, domain, vmcall, &args, &mut res);
+                // Put the results back.
+                let mut context = StateX86::get_context(*domain, cpuid());
+                match success {
+                    Ok(copy) => {
+                        if copy {
+                            context.set(VmcsField::GuestRax, 0, None).unwrap();
+                            context.set(VmcsField::GuestRdi, res[0], None).unwrap();
+                            context.set(VmcsField::GuestRsi, res[1], None).unwrap();
+                            context.set(VmcsField::GuestRdx, res[2], None).unwrap();
+                            context.set(VmcsField::GuestRcx, res[3], None).unwrap();
+                            context.set(VmcsField::GuestR8, res[4], None).unwrap();
+                            context.set(VmcsField::GuestR9, res[5], None).unwrap();
+                        }
+                    },
+                    Err(e) => {
+                        log::error!("Failure monitor call: {:?}, call: {}", e, vmcall);
+                        context.set(VmcsField::GuestRax, 1, None).unwrap();
+                        log::error!("The vcpu: {:#x?}", vs.vcpu);
+                        drop(context);
+                        let callback = |dom: Handle<Domain>, engine: &mut CapaEngine| {
+                            let dom_dat = StateX86::get_domain(dom);
+                            log::info!("remaps {}", dom_dat.remapper.iter_segments());
+                            let remap = dom_dat.remapper.remap(engine.get_domain_permissions(dom).unwrap());
+                            log::info!("remapped: {}", remap);
+                        };
+                        MonitorX86::do_debug(vs, domain, callback);
+                    }
+                }
+                if vmcall != calls::SWITCH {
+                    vs.vcpu.next_instruction()?;
+                }
+                Ok(HandlerResult::Resume)
+                }
+            /*calls::CREATE_DOMAIN => {
                     log::trace!("Create domain on core {}", cpuid());
                     let capa =
                         monitor::do_create_domain(vs, domain)
                             .expect("TODO");
-                    let mut context = monitor::get_context(*domain, cpuid());
+                    let mut context = StateX86::get_context(*domain, cpuid());
                     context.set(VmcsField::GuestRdi, capa.as_usize(), None)?;
                     context.set(VmcsField::GuestRax, 0, None)?;
                     vs.vcpu.next_instruction()?;
@@ -125,13 +176,13 @@ fn handle_exit(
                         log::error!("Invalid configuration target");
                         1
                     };
-                    monitor::get_context(*domain, cpuid()).set(VmcsField::GuestRax, res, None)?;
+                    StateX86::get_context(*domain, cpuid()).set(VmcsField::GuestRax, res, None)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
                 calls::SELF_CONFIG => {
                     log::trace!("Self config on core {}", cpuid());
-                    let mut context = monitor::get_context(*domain, cpuid());
+                    let mut context = StateX86::get_context(*domain, cpuid());
                     let field = VmcsField::from_u32(arg_1 as u32).unwrap();
                     if FilteredFields::is_valid_self(field) {
                         context.set(field, arg_2, Some(&mut vs.vcpu)).unwrap();
@@ -156,18 +207,19 @@ fn handle_exit(
                             1
                         }
                     };
-                    monitor::get_context(*domain, cpuid()).set(VmcsField::GuestRax, res, None)?;
+                    StateX86::get_context(*domain, cpuid()).set(VmcsField::GuestRax, res, None)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
-                }
+                }*/
                 calls::READ_ALL_GP => {
+                    //TODO: bug in this one.
                     log::trace!("Read all gp register values on core {}", cpuid());
-                    monitor::do_get_all_gp(vs, domain, LocalCapa::new(arg_1), platform::remap_core(arg_2))
+                    MonitorX86::do_get_all_gp(vs, domain, LocalCapa::new(arg_1), StateX86::remap_core(arg_2))
                         .expect("Problem during copy");
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
-                calls::WRITE_ALL_GP => {
+                /*calls::WRITE_ALL_GP => {
                     log::trace!("Write all gp register values on core {}", cpuid());
                     monitor::do_set_all_gp(vs, domain, LocalCapa::new(arg_1))
                         .expect("Problem during copy");
@@ -178,7 +230,7 @@ fn handle_exit(
                     log::trace!("Write several registers on core {}", cpuid());
                     // Collect the arguments.
                     let values: [(usize, usize); 6] = {
-                        let mut context = monitor::get_context(*domain, cpuid());
+                        let mut context = StateX86::get_context(*domain, cpuid());
                         [
                             (
                                 context.get(VmcsField::GuestRbp, None).unwrap(),
@@ -219,7 +271,7 @@ fn handle_exit(
                             1
                         }
                     };
-                    monitor::get_context(*domain, cpuid()).set(VmcsField::GuestRax, res, None)?;
+                    StateX86::get_context(*domain, cpuid()).set(VmcsField::GuestRax, res, None)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
@@ -239,7 +291,7 @@ fn handle_exit(
                             1
                         }
                     };
-                    monitor::get_context(*domain, cpuid()).set(VmcsField::GuestRax, res, None)?;
+                    StateX86::get_context(*domain, cpuid()).set(VmcsField::GuestRax, res, None)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
@@ -258,7 +310,7 @@ fn handle_exit(
                             (0, 1)
                         }
                     };
-                    let mut context = monitor::get_context(*domain, cpuid());
+                    let mut context = StateX86::get_context(*domain, cpuid());
                     context.set(VmcsField::GuestRax, rax, None)?;
                     context.set(VmcsField::GuestRdi, rdi, None)?;
                     vs.vcpu.next_instruction()?;
@@ -267,7 +319,7 @@ fn handle_exit(
                 calls::SEAL_DOMAIN => {
                     log::trace!("Seal Domain on core {}", cpuid());
                     let capa = monitor::do_seal(vs, domain, LocalCapa::new(arg_1)).expect("TODO");
-                    let mut context = monitor::get_context(*domain, cpuid());
+                    let mut context = StateX86::get_context(*domain, cpuid());
                     context.set(VmcsField::GuestRdi, capa.as_usize(), None)?;
                     context.set(VmcsField::GuestRax, 0, None)?;
                     vs.vcpu.next_instruction()?;
@@ -277,7 +329,7 @@ fn handle_exit(
                     log::trace!("Send on core {}", cpuid());
                     monitor::do_send(vs, domain, LocalCapa::new(arg_1), LocalCapa::new(arg_2))
                         .expect("TODO");
-                    let mut context = monitor::get_context(*domain, cpuid());
+                    let mut context = StateX86::get_context(*domain, cpuid());
                     context.set(VmcsField::GuestRax, 0, None)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
@@ -296,7 +348,7 @@ fn handle_exit(
                         arg_6,
                     )
                     .expect("Failed send aliased");
-                    let mut context = monitor::get_context(*domain, cpuid());
+                    let mut context = StateX86::get_context(*domain, cpuid());
                     context.set(VmcsField::GuestRax, 0, None)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
@@ -318,7 +370,7 @@ fn handle_exit(
                             panic!("Error {:?}", e);
                         }
                     };
-                    let mut context = monitor::get_context(*domain, cpuid());
+                    let mut context = StateX86::get_context(*domain, cpuid());
                     context.set(VmcsField::GuestRdi, to_send.as_usize(), None)?;
                     context.set(VmcsField::GuestRsi, to_revoke.as_usize(), None)?;
                     context.set(VmcsField::GuestRax, 0, None)?;
@@ -328,7 +380,7 @@ fn handle_exit(
                 calls::REVOKE => {
                     log::trace!("Revoke on core {}", cpuid());
                     monitor::do_revoke(vs, domain, LocalCapa::new(arg_1)).expect("TODO");
-                    let mut context = monitor::get_context(*domain, cpuid());
+                    let mut context = StateX86::get_context(*domain, cpuid());
                     context.set(VmcsField::GuestRax, 0, None)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
@@ -336,7 +388,7 @@ fn handle_exit(
                 calls::REVOKE_ALIASED_REGION => {
                     log::trace!("Revoke aliased region on core {}", cpuid());
                     monitor::do_revoke_region(vs, domain, LocalCapa::new(arg_1), LocalCapa::new(arg_2), arg_3, arg_4).unwrap();
-                    let mut context = monitor::get_context(*domain, cpuid());
+                    let mut context = StateX86::get_context(*domain, cpuid());
                     context.set(VmcsField::GuestRax, 0, None)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
@@ -344,7 +396,7 @@ fn handle_exit(
                 calls::DUPLICATE => {
                     log::trace!("Duplicate");
                     let capa = monitor::do_duplicate(vs, domain, LocalCapa::new(arg_1)).expect("TODO");
-                    let mut context = monitor::get_context(*domain, cpuid());
+                    let mut context = StateX86::get_context(*domain, cpuid());
                     context.set(VmcsField::GuestRdi, capa.as_usize(), None)?;
                     context.set(VmcsField::GuestRax, 0, None)?;
                     vs.vcpu.next_instruction()?;
@@ -356,7 +408,7 @@ fn handle_exit(
                         monitor::do_enumerate(vs, domain, NextCapaToken::from_usize(arg_1))
                     {
                         let (v1, v2, v3) = info.serialize();
-                        let mut context = monitor::get_context(*domain, cpuid());
+                        let mut context = StateX86::get_context(*domain, cpuid());
                         context.set(VmcsField::GuestRdi, v1, None)?;
                         context.set(VmcsField::GuestRsi, v2, None)?;
                         context.set(VmcsField::GuestRdx, v3 as usize, None)?;
@@ -364,14 +416,15 @@ fn handle_exit(
                         context.set(VmcsField::GuestRax, 0, None)?;
                     } else {
                         // For now, this marks the end
-                        let mut context = monitor::get_context(*domain, cpuid());
+                        let mut context = StateX86::get_context(*domain, cpuid());
                         context.set(VmcsField::GuestRcx, 0, None)?;
                         context.set(VmcsField::GuestRax, 0, None)?;
                     }
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
-                }
+                }*/
                 calls::SWITCH => {
+                    //TODO: bug in this one.
                     log::trace!("Switch on core {}", cpuid());
                     {
                         //TODO: figure out a way to fix this.
@@ -384,11 +437,12 @@ fn handle_exit(
                     monitor::do_switch(vs, domain, LocalCapa::new(arg_1), cpuid()).expect("TODO");
                     Ok(HandlerResult::Resume)
                 }
+                /*
                 calls::DEBUG => {
                     log::trace!("Debug on core {}", cpuid());
                     log::info!("Debug called on {} vcpu: {:x?}", domain.idx(), vs.vcpu);
                     monitor::do_debug(vs, domain);
-                    let mut context = monitor::get_context(*domain, cpuid());
+                    let mut context = StateX86::get_context(*domain, cpuid());
                     context.set(VmcsField::GuestRax, 0, None)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
@@ -406,7 +460,7 @@ fn handle_exit(
                 calls::SERIALIZE_ATTESTATION => {
                     let written = monitor::do_serialize_attestation(vs, domain, arg_1, arg_2).expect("TODO");
                     log::trace!("Wrote {} bytes of attestation", written);
-                    let mut context = monitor::get_context(*domain, cpuid());
+                    let mut context = StateX86::get_context(*domain, cpuid());
                     context.set(VmcsField::GuestRdi, written, None)?;
                     context.set(VmcsField::GuestRax, 0, None)?;
                     vs.vcpu.next_instruction()?;
@@ -417,7 +471,7 @@ fn handle_exit(
                     log::trace!("arg1 {:#x}", arg_1);
                     log::trace!("arg2 {:#x}", arg_2);
                     if let Some(report) = monitor::do_domain_attestation(vs, domain, arg_1, arg_2) {
-                        let mut context = monitor::get_context(*domain, cpuid());
+                        let mut context = StateX86::get_context(*domain, cpuid());
                         context.set(VmcsField::GuestRax, 0, None)?;
                         if arg_2 == 0 {
                             context.set(
@@ -523,13 +577,13 @@ fn handle_exit(
                             )?;
                         }
                     } else {
-                        let mut context = monitor::get_context(*domain, cpuid());
+                        let mut context = StateX86::get_context(*domain, cpuid());
                         log::trace!("Attestation error");
                         context.set(VmcsField::GuestRax, 1, None)?;
                     }
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
-                }
+                }*/
                 _ => {
                     log::info!("Unknown MonCall: 0x{:x}", vmcall);
                     log::error!("Exisint on unknown MonCall: {:x?}", vs.vcpu);
@@ -542,7 +596,7 @@ fn handle_exit(
             Ok(HandlerResult::Resume)
         }
         VmxExitReason::Cpuid if domain.idx() == 0 => {
-            let mut context = monitor::get_context(*domain, cpuid());
+            let mut context = StateX86::get_context(*domain, cpuid());
             let input_eax = context.get(VmcsField::GuestRax, None)?;
             let input_ecx = context.get(VmcsField::GuestRcx, None)?;
             let mut eax: usize;
@@ -580,7 +634,7 @@ fn handle_exit(
         VmxExitReason::ControlRegisterAccesses if domain.idx() == 0 => {
             // Handle some of these only for dom0, the other domain's problems
             // are for now forwarded to the manager domain.
-            let mut context = monitor::get_context(*domain, cpuid());
+            let mut context = StateX86::get_context(*domain, cpuid());
             let qualification = vs.vcpu.exit_qualification()?.control_register_accesses();
             match qualification {
                 exit_qualification::ControlRegisterAccesses::MovToCr(cr, reg) => {
@@ -621,7 +675,7 @@ fn handle_exit(
             panic!("Received an exception on dom0?");
         }
         VmxExitReason::Xsetbv if domain.idx() == 0 => {
-            let mut context = monitor::get_context(*domain, cpuid());
+            let mut context = StateX86::get_context(*domain, cpuid());
             let ecx = context.get(VmcsField::GuestRcx, None)?;
             let eax = context.get(VmcsField::GuestRax, None)?;
             let edx = context.get(VmcsField::GuestRdx, None)?;
@@ -645,7 +699,7 @@ fn handle_exit(
             Ok(HandlerResult::Resume)
         }
         VmxExitReason::Wrmsr if domain.idx() == 0 => {
-            let mut context = monitor::get_context(*domain, cpuid());
+            let mut context = StateX86::get_context(*domain, cpuid());
             let ecx = context.get(VmcsField::GuestRcx, None)?;
             if ecx >= 0x4B564D00 && ecx <= 0x4B564DFF {
                 // Custom MSR range, used by KVM
@@ -659,7 +713,7 @@ fn handle_exit(
             }
         }
         VmxExitReason::Rdmsr if domain.idx() == 0 => {
-            let mut context = monitor::get_context(*domain, cpuid());
+            let mut context = StateX86::get_context(*domain, cpuid());
             let ecx = context.get(VmcsField::GuestRcx, None)?;
             log::trace!("rdmsr 0x{:x}", ecx);
             if ecx >= 0xc0010000 && ecx <= 0xc0020000 {

@@ -29,10 +29,10 @@ pub enum CoreUpdate {
 }
 
 // ————————————————————————— Statics & Backend Data ————————————————————————— //
-static CAPA_ENGINE: Mutex<CapaEngine> = Mutex::new(CapaEngine::new());
-static IO_DOMAIN: Mutex<Option<LocalCapa>> = Mutex::new(None);
-static INITIAL_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
-static CORE_UPDATES: [Mutex<Buffer<CoreUpdate>>; NB_CORES] = [EMPTY_UPDATE_BUFFER; NB_CORES];
+pub static CAPA_ENGINE: Mutex<CapaEngine> = Mutex::new(CapaEngine::new());
+pub static IO_DOMAIN: Mutex<Option<LocalCapa>> = Mutex::new(None);
+pub static INITIAL_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
+pub static CORE_UPDATES: [Mutex<Buffer<CoreUpdate>>; NB_CORES] = [EMPTY_UPDATE_BUFFER; NB_CORES];
 
 // —————————————————————— Constants for initialization —————————————————————— //
 const EMPTY_UPDATE_BUFFER: Mutex<Buffer<CoreUpdate>> = Mutex::new(Buffer::new());
@@ -147,13 +147,13 @@ pub trait PlatformState {
         size: usize,
     ) -> Result<(), CapaError>;
 
-    fn prepare_notify(&mut self, domain: &Handle<Domain>, core_count: usize);
+    fn prepare_notify(domain: &Handle<Domain>, core_count: usize);
 
-    fn notify_cores(&mut self, domain: &Handle<Domain>, core_id: usize, core_map: usize);
+    fn notify_cores(domain: &Handle<Domain>, core_id: usize, core_map: usize);
 
-    fn acknowledge_notify(&mut self, domain: &Handle<Domain>);
+    fn acknowledge_notify(domain: &Handle<Domain>);
 
-    fn finish_notify(&mut self, domain: &Handle<Domain>);
+    fn finish_notify(domain: &Handle<Domain>);
 
     fn context_interrupted(&mut self, domain: &Handle<Domain>, core: usize);
 }
@@ -215,6 +215,29 @@ pub trait Monitor<T: PlatformState + 'static> {
         let mut engine = Self::lock_engine(state, &mut dom);
         engine.start_domain_on_core(dom, cpuid()).unwrap();
         dom
+    }
+
+    fn do_debug<F>(state: &mut T, current: &mut Handle<Domain>, callback: F)
+    where
+        F: Fn(Handle<Domain>, &mut CapaEngine),
+    {
+        let mut engine = Self::lock_engine(state, current);
+        let mut next = NextCapaToken::new();
+        while let Some((domain, next_next)) = engine.enumerate_domains(next) {
+            next = next_next;
+
+            log::info!("Domain {}", domain.idx());
+            let mut next_capa = NextCapaToken::new();
+            while let Some((info, next_next_capa)) = engine.enumerate(domain, next_capa) {
+                next_capa = next_next_capa;
+                log::info!(" - {}", info);
+            }
+            log::info!(
+                "tracker: {}",
+                engine.get_domain_regions(domain).expect("Invalid domain")
+            );
+            callback(domain, &mut engine);
+        }
     }
 
     fn do_create_domain(
@@ -634,7 +657,7 @@ pub trait Monitor<T: PlatformState + 'static> {
             calls::REVOKE => {
                 log::trace!("Revoke on core {}", cpuid());
                 Self::do_revoke(state, domain, LocalCapa::new(args[0]))?;
-                return Ok(false);
+                return Ok(true);
             }
             calls::DUPLICATE => {
                 log::trace!("Duplicate");
@@ -699,7 +722,7 @@ pub trait Monitor<T: PlatformState + 'static> {
                     args[2],
                     args[3],
                 )?;
-                return Ok(false);
+                return Ok(true);
             }
             calls::GET_CONFIG_CORE => {
                 log::trace!("Get config core on core {}", cpuid());
@@ -715,7 +738,7 @@ pub trait Monitor<T: PlatformState + 'static> {
             }
             calls::ALLOC_CORE_CONTEXT => {
                 Self::do_init_child_context(state, domain, LocalCapa::new(args[0]), args[1])?;
-                return Ok(false);
+                return Ok(true);
             }
             calls::READ_ALL_GP => {
                 log::trace!("Read all gp on core {}", cpuid());
@@ -738,7 +761,7 @@ pub trait Monitor<T: PlatformState + 'static> {
                     LocalCapa::new(args[0]),
                     T::remap_core(args[1]),
                 )?;
-                return Ok(false);
+                return Ok(true);
             }
             calls::SELF_CONFIG => {
                 todo!("Implement")
@@ -798,7 +821,7 @@ pub trait Monitor<T: PlatformState + 'static> {
                             core_count += 1;
                         }
                         // Prepare the update.
-                        state.prepare_notify(&domain, core_count);
+                        T::prepare_notify(&domain, core_count);
                         for core in BitmapIterator::new(core_map) {
                             if core == core_id {
                                 continue;
@@ -806,9 +829,9 @@ pub trait Monitor<T: PlatformState + 'static> {
                             let mut core_updates = CORE_UPDATES[core as usize].lock();
                             core_updates.push(CoreUpdate::TlbShootdown).unwrap();
                         }
-                        state.notify_cores(&domain, core_id, core_map as usize);
-                        state.acknowledge_notify(&domain);
-                        state.finish_notify(&domain);
+                        T::notify_cores(&domain, core_id, core_map as usize);
+                        T::acknowledge_notify(&domain);
+                        T::finish_notify(&domain);
                     }
                 }
                 capa_engine::Update::Cleanup { start, end } => {

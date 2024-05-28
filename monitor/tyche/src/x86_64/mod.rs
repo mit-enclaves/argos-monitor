@@ -8,6 +8,7 @@ pub mod guest;
 mod init;
 mod monitor;
 mod platform;
+mod state;
 mod vmx_helper;
 
 use core::arch::asm;
@@ -17,7 +18,7 @@ pub use init::arch_entry_point;
 use stage_two_abi::Manifest;
 pub use vmx::{ActiveVmcs, VmxError as BackendError};
 
-use self::guest::VmxState;
+use self::state::VmxState;
 use crate::debug::qemu;
 use crate::debug::qemu::ExitCode;
 

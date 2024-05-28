@@ -9,10 +9,11 @@ use stage_two_abi::{GuestInfo, Manifest};
 use vmx::fields::VmcsField;
 pub use vmx::ActiveVmcs;
 
-use super::guest::VmxState;
+use super::state::{StateX86, VmxState};
 use super::{arch, cpuid, launch_guest, monitor, vmx_helper};
 use crate::allocator;
 use crate::debug::qemu;
+use crate::monitor::{Monitor, PlatformState};
 use crate::statics::get_manifest;
 use crate::x86_64::platform::MonitorX86;
 
@@ -48,8 +49,10 @@ pub fn arch_entry_point1(log_level: log::LevelFilter) -> ! {
         init_arch(manifest, 0);
         allocator::init(manifest);
         // SAFETY: only called once on the BSP
-        monitor::init(manifest);
-        let (vmx_state, domain) = unsafe { create_vcpu(&manifest.info) };
+        //monitor::init(manifest);
+        let mut monitor = MonitorX86 {};
+        //let (vmx_state, domain) = unsafe { create_vcpu(&manifest.info) };
+        let (vmx_state, domain) = MonitorX86::init(manifest, true);
 
         log::info!("Waiting for {} cores", manifest.smp.smp);
         while NB_BOOTED_CORES.load(Ordering::SeqCst) + 1 < manifest.smp.smp {
@@ -85,11 +88,17 @@ pub fn arch_entry_point1(log_level: log::LevelFilter) -> ! {
         log::info!("CPU{}: Waiting on mailbox", cpuid);
 
         // SAFETY: only called once on the BSP
+        let mut monitor = MonitorX86 {};
         let (vmx_state, domain) = unsafe {
+            let (mut state, domain) = MonitorX86::init(manifest, false);
+            wait_on_mailbox(manifest, &mut state.vcpu, cpuid);
+            (state, domain)
+        };
+        /*let (vmx_state, domain) = unsafe {
             let (mut vmx_state, domain) = create_vcpu(&manifest.info);
             wait_on_mailbox(manifest, &mut vmx_state.vcpu, cpuid);
             (vmx_state, domain)
-        };
+        };*/
 
         // Launch guest and exit
         launch_guest(manifest, vmx_state, domain);
@@ -250,6 +259,6 @@ unsafe fn create_vcpu(info: &GuestInfo) -> (VmxState, Handle<Domain>) {
         .expect("Failed to create VMCS");
     let mut vcpu = vmcs.set_as_active().expect("Failed to set VMCS as active");
     let domain = monitor::init_vcpu(&mut vcpu);
-    vmx_helper::init_vcpu(&mut vcpu, info, &mut monitor::get_context(domain, cpuid()));
+    vmx_helper::init_vcpu(&mut vcpu, info, &mut StateX86::get_context(domain, cpuid()));
     (VmxState { vcpu, vmxon }, domain)
 }

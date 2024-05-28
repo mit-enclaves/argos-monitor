@@ -1,80 +1,43 @@
 //! Architecture specific monitor state, independant of the CapaEngine.
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::Ordering;
 
 use attestation::hashing::hash_region;
 use attestation::signature::EnclaveReport;
-use capa_engine::config::{NB_CORES, NB_DOMAINS, NB_REMAP_REGIONS};
-use capa_engine::context::{Cache, RegisterState};
 use capa_engine::utils::BitmapIterator;
 use capa_engine::{
-    permission, AccessRights, Buffer, CapaEngine, CapaError, CapaInfo, Domain, GenArena, Handle,
-    LocalCapa, MemOps, NextCapaToken, Remapper, MEMOPS_ALL, MEMOPS_EXTRAS,
+    permission, AccessRights, CapaEngine, CapaError, CapaInfo, Domain, Handle, LocalCapa, MemOps,
+    NextCapaToken, MEMOPS_ALL, MEMOPS_EXTRAS,
 };
 use mmu::eptmapper::EPT_ROOT_FLAGS;
-use mmu::{EptMapper, FrameAllocator, IoPtFlag, IoPtMapper};
-use spin::{Mutex, MutexGuard};
+use mmu::{EptMapper, FrameAllocator};
+use spin::MutexGuard;
 use stage_two_abi::{GuestInfo, Manifest};
-use utils::{GuestPhysAddr, HostPhysAddr, HostVirtAddr};
-use vmx::bitmaps::EptEntryFlags;
+use utils::{GuestPhysAddr, HostPhysAddr};
 use vmx::fields::{GeneralPurposeField, VmcsField, REGFILE_SIZE};
 use vmx::{ActiveVmcs, VmExitInterrupt};
-use vtd::Iommu;
 
-use super::context::Contextx86;
 use super::filtered_fields::FilteredFields;
-use super::guest::VmxState;
 use super::init::NB_BOOTED_CORES;
+use super::platform::MonitorX86;
+use super::state::{StateX86, VmxState, IOMMU, RC_VMCS};
 use super::vmx_helper::{dump_host_state, load_host_state};
 use super::{cpuid, vmx_helper};
 use crate::allocator::{allocator, PAGE_SIZE};
 use crate::attestation_domain::{attest_domain, calculate_attestation_hash};
-use crate::rcframe::{drop_rc, RCFrame, RCFramePool, EMPTY_RCFRAME};
-use crate::sync::Barrier;
+use crate::monitor::{
+    CoreUpdate, Monitor, PlatformState, CAPA_ENGINE, CORE_UPDATES, INITIAL_DOMAIN, IO_DOMAIN,
+};
+use crate::rcframe::{drop_rc, RCFrame};
+use crate::x86_64::state::{TLB_FLUSH, TLB_FLUSH_BARRIERS};
 
 // ————————————————————————— Statics & Backend Data ————————————————————————— //
 
-static CAPA_ENGINE: Mutex<CapaEngine> = Mutex::new(CapaEngine::new());
-static IO_DOMAIN: Mutex<Option<LocalCapa>> = Mutex::new(None);
-static INITIAL_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
-static DOMAINS: [Mutex<DomainData>; NB_DOMAINS] = [EMPTY_DOMAIN; NB_DOMAINS];
-static CORE_UPDATES: [Mutex<Buffer<CoreUpdate>>; NB_CORES] = [EMPTY_UPDATE_BUFFER; NB_CORES];
-static CONTEXTS: [[Mutex<Contextx86>; NB_CORES]; NB_DOMAINS] = [EMPTY_CONTEXT_ARRAY; NB_DOMAINS];
-static RC_VMCS: Mutex<RCFramePool> =
-    Mutex::new(GenArena::new([EMPTY_RCFRAME; { NB_DOMAINS * NB_CORES }]));
-const FALSE: AtomicBool = AtomicBool::new(false);
-static TLB_FLUSH_BARRIERS: [Barrier; NB_DOMAINS] = [Barrier::NEW; NB_DOMAINS];
-static TLB_FLUSH: [AtomicBool; NB_DOMAINS] = [FALSE; NB_DOMAINS];
-
-pub struct DomainData {
-    ept: Option<HostPhysAddr>,
-    ept_old: Option<HostPhysAddr>,
-    iopt: Option<HostPhysAddr>,
-    remapper: Remapper<NB_REMAP_REGIONS>,
-}
-
-const EMPTY_DOMAIN: Mutex<DomainData> = Mutex::new(DomainData {
-    ept: None,
-    ept_old: None,
-    iopt: None,
-    remapper: Remapper::new(),
-});
-const EMPTY_UPDATE_BUFFER: Mutex<Buffer<CoreUpdate>> = Mutex::new(Buffer::new());
-const EMPTY_CONTEXT: Mutex<Contextx86> = Mutex::new(Contextx86 {
-    regs: capa_engine::context::RegisterContext {
-        dirty: Cache { bitmap: 0 },
-        state_16: RegisterState::new(),
-        state_32: RegisterState::new(),
-        state_64: RegisterState::new(),
-        state_nat: RegisterState::new(),
-        state_gp: RegisterState::new(),
-    },
-    interrupted: false,
-    vmcs: Handle::<RCFrame>::new_invalid(),
-});
-const EMPTY_CONTEXT_ARRAY: [Mutex<Contextx86>; NB_CORES] = [EMPTY_CONTEXT; NB_CORES];
-static IOMMU: Mutex<Iommu> =
-    Mutex::new(unsafe { Iommu::new(HostVirtAddr::new(usize::max_value())) });
+//static CAPA_ENGINE: Mutex<CapaEngine> = Mutex::new(CapaEngine::new());
+//static IO_DOMAIN: Mutex<Option<LocalCapa>> = Mutex::new(None);
+//static INITIAL_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
+//static CORE_UPDATES: [Mutex<Buffer<CoreUpdate>>; NB_CORES] = [EMPTY_UPDATE_BUFFER; NB_CORES];
+//const EMPTY_UPDATE_BUFFER: Mutex<Buffer<CoreUpdate>> = Mutex::new(Buffer::new());
 
 // ————————————————————————————— Initialization ————————————————————————————— //
 
@@ -85,12 +48,12 @@ pub fn lock_engine(
 ) -> MutexGuard<'static, CapaEngine> {
     let mut locked = CAPA_ENGINE.try_lock();
     while locked.is_none() {
-        apply_core_updates(vmx_state, dom, cpuid());
+        MonitorX86::apply_core_updates(vmx_state, dom, cpuid());
         locked = CAPA_ENGINE.try_lock();
     }
     locked.unwrap()
 }
-pub fn init(manifest: &'static Manifest) {
+/*pub fn init(manifest: &'static Manifest) {
     let mut engine = CAPA_ENGINE.lock();
     let domain = engine
         .create_manager_domain(permission::monitor_inter_perm::ALL)
@@ -108,7 +71,7 @@ pub fn init(manifest: &'static Manifest) {
         .unwrap();
     // Call the remapper information.
     {
-        let mut dom_dat = get_domain(domain);
+        let mut dom_dat = StateX86::get_domain(domain);
         let _ = dom_dat
             .remapper
             .map_range(0, 0, manifest.iommu as usize, 1)
@@ -134,7 +97,7 @@ pub fn init(manifest: &'static Manifest) {
         let mut iommu = IOMMU.lock();
         iommu.set_addr(manifest.iommu as usize);
     }
-}
+}*/
 
 pub fn init_vcpu(vcpu: &mut ActiveVmcs<'static>) -> Handle<Domain> {
     let cpuid = cpuid();
@@ -145,8 +108,8 @@ pub fn init_vcpu(vcpu: &mut ActiveVmcs<'static>) -> Handle<Domain> {
     engine
         .start_domain_on_core(initial_domain, cpuid)
         .expect("Failed to allocate initial domain");
-    let domain = get_domain(initial_domain);
-    let mut ctxt = get_context(initial_domain, cpuid);
+    let domain = StateX86::get_domain(initial_domain);
+    let mut ctxt = StateX86::get_context(initial_domain, cpuid);
     let rcframe = RC_VMCS
         .lock()
         .allocate(RCFrame::new(*vcpu.frame()))
@@ -157,16 +120,6 @@ pub fn init_vcpu(vcpu: &mut ActiveVmcs<'static>) -> Handle<Domain> {
     ))
     .expect("Failed to set initial EPT PTR");
     initial_domain
-}
-
-// ———————————————————————————————— Helpers ————————————————————————————————— //
-
-fn get_domain(domain: Handle<Domain>) -> MutexGuard<'static, DomainData> {
-    DOMAINS[domain.idx()].lock()
-}
-
-pub fn get_context(domain: Handle<Domain>, core: usize) -> MutexGuard<'static, Contextx86> {
-    CONTEXTS[domain.idx()][core].lock()
 }
 
 // ————————————————————————————— Monitor Calls —————————————————————————————— //
@@ -242,7 +195,7 @@ pub fn do_configure_core(
             .expect("Unable to set the bitmap");
     }
 
-    let mut target_ctxt = get_context(domain, core);
+    let mut target_ctxt = StateX86::get_context(domain, core);
     if target_ctxt.vmcs.is_invalid() {
         log::error!("Target VMCS is none.");
         return Err(CapaError::InvalidOperation);
@@ -282,7 +235,7 @@ pub fn do_get_config_core(
         return Err(CapaError::InvalidOperation);
     }
     let field = VmcsField::from_u32(idx as u32).unwrap();
-    let mut target_ctx = get_context(domain, core);
+    let mut target_ctx = StateX86::get_context(domain, core);
     if target_ctx.vmcs.is_invalid() {
         log::error!("Target VMCS is invalid.");
         return Err(CapaError::InvalidOperation);
@@ -308,8 +261,8 @@ pub fn do_get_all_gp(
         log::error!("Attempting to read gp from different core");
         return Err(CapaError::InvalidCore);
     }
-    let mut curr_ctx = get_context(*current, cpuid());
-    let tgt_ctx = get_context(domain, core);
+    let mut curr_ctx = StateX86::get_context(*current, cpuid());
+    let tgt_ctx = StateX86::get_context(domain, core);
     if curr_ctx.vmcs.is_invalid() || tgt_ctx.vmcs.is_invalid() {
         log::error!(
             "VMCs are none during a configure core {}: curr:{:?}, tgt:{:?}",
@@ -339,8 +292,8 @@ pub fn do_set_all_gp(
         return Err(CapaError::InvalidCore);
     }
 
-    let curr_ctx = get_context(*current, core);
-    let mut tgt_ctx = get_context(domain, core);
+    let curr_ctx = StateX86::get_context(*current, core);
+    let mut tgt_ctx = StateX86::get_context(domain, core);
     if curr_ctx.vmcs.is_invalid() || tgt_ctx.vmcs.is_invalid() {
         log::error!(
             "VMCs are none during a configure core {}: curr:{:?}, tgt:{:?}",
@@ -376,7 +329,7 @@ pub fn do_set_fields(
         return Err(CapaError::InvalidCore);
     }
     // Get and set the context.
-    let mut tgt_ctx = get_context(domain, core);
+    let mut tgt_ctx = StateX86::get_context(domain, core);
     if tgt_ctx.vmcs.is_invalid() {
         log::error!("The VMCS is none on core {}", core);
         return Err(CapaError::InvalidOperation);
@@ -426,7 +379,7 @@ pub fn do_init_child_context(
         log::error!("Attempt to set context on unallowed core.");
         return Err(CapaError::InvalidCore);
     }
-    let dest = &mut get_context(domain, core);
+    let dest = &mut StateX86::get_context(domain, core);
     let frame = allocator
         .allocate_frame()
         .expect("Unable to allocate frame");
@@ -437,7 +390,7 @@ pub fn do_init_child_context(
     vmx_state.vmxon.init_frame(frame);
     // Init the host state:
     {
-        let current_ctxt = get_context(*current, cpuid());
+        let current_ctxt = StateX86::get_context(*current, cpuid());
         let mut values: [usize; 13] = [0; 13];
         dump_host_state(&mut vmx_state.vcpu, &mut values).or(Err(CapaError::InvalidSwitch))?;
 
@@ -564,11 +517,16 @@ pub fn do_send_region(
             1
         }
     };
-
+    /*log::info!(
+        "In do send region!\nregion{:#x?}, alias: {:#x}, repeat: {}",
+        region_info,
+        alias,
+        repeat
+    );*/
     // Check for an overlap first.
     {
         let target = engine.get_domain_capa(*current, to)?;
-        let dom_dat = get_domain(target);
+        let dom_dat = StateX86::get_domain(target);
         if dom_dat
             .remapper
             .overlaps(alias, repeat * (region_info.end - region_info.start))
@@ -601,7 +559,7 @@ pub fn do_send_region(
     // We cannot hold the reference while apply_updates is called.
     {
         let target = engine.get_domain_capa(*current, to)?;
-        let mut dom_dat = get_domain(target);
+        let mut dom_dat = StateX86::get_domain(target);
         let _ = dom_dat
             .remapper
             .map_range(
@@ -651,7 +609,7 @@ pub fn do_revoke_region(
     {
         //Unmap the gpa range.
         let dom = engine.get_domain_capa(*current, to).unwrap();
-        let mut dom_dat = get_domain(dom);
+        let mut dom_dat = StateX86::get_domain(dom);
         let _ = dom_dat.remapper.unmap_gpa_range(alias, size).unwrap();
     }
     engine.revoke(*current, capa)?;
@@ -698,7 +656,7 @@ pub fn do_debug(vmx_state: &mut VmxState, current: &mut Handle<Domain>) {
             "tracker: {}",
             engine.get_domain_regions(domain).expect("Invalid domain")
         );
-        let dom_dat = get_domain(domain);
+        let dom_dat = StateX86::get_domain(domain);
         log::info!("remaps {}", dom_dat.remapper.iter_segments());
         let remap = dom_dat
             .remapper
@@ -710,7 +668,7 @@ pub fn do_debug(vmx_state: &mut VmxState, current: &mut Handle<Domain>) {
 #[allow(dead_code)]
 pub fn do_debug_addr(dom: Handle<Domain>, addr: usize) {
     log::info!("do_debug_addr:");
-    let domain = get_domain(dom);
+    let domain = StateX86::get_domain(dom);
     let allocator = allocator();
     let mut mapper = EptMapper::new(
         allocator.get_physical_offset().as_usize(),
@@ -726,7 +684,7 @@ pub fn do_serialize_attestation(
     len: usize,
 ) -> Result<usize, CapaError> {
     let engine = lock_engine(vmx_state, domain_handle);
-    let domain = get_domain(*domain_handle);
+    let domain = StateX86::get_domain(*domain_handle);
     log::trace!("Serializing attestation");
 
     // First, check if the buffer is valid and can be accessed by the current domain
@@ -793,7 +751,7 @@ pub fn do_handle_violation(
     let mut engine = lock_engine(vmx_state, current);
     let core = cpuid();
     {
-        let mut current_ctx = get_context(*current, core);
+        let mut current_ctx = StateX86::get_context(*current, core);
         current_ctx.interrupted = true;
     }
     engine.handle_violation(*current, core)?;
@@ -803,26 +761,11 @@ pub fn do_handle_violation(
 
 // ———————————————————————————————— Updates ————————————————————————————————— //
 
-/// Per-core updates
-#[derive(Debug, Clone, Copy)]
-enum CoreUpdate {
-    TlbShootdown,
-    Switch {
-        domain: Handle<Domain>,
-        return_capa: LocalCapa,
-    },
-    Trap {
-        manager: Handle<Domain>,
-        trap: u64,
-        info: u64,
-    },
-}
-
 fn post_ept_update(core_id: usize, cores_map: u64, domain: &Handle<Domain>) {
     log::trace!("core{}: post_ept_update with cores={}", cpuid(), cores_map);
 
     // At this point the barrier must already be initialized
-    notify_cores(core_id, cores_map);
+    StateX86::notify_cores(domain, core_id, cores_map as usize);
     TLB_FLUSH_BARRIERS[domain.idx()].wait();
 
     // If I am the initiating core, then I'm responsible for freeing the original EPT
@@ -858,7 +801,7 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
                     core_id,
                     core_map
                 );
-                let ept_update = update_permission(domain, engine);
+                let ept_update = StateX86::update_permission(domain, engine);
                 if ept_update {
                     log::trace!(
                         "cpu {} pushes core update with core_map={:b}",
@@ -879,7 +822,8 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
                     }
 
                     // Setup barrier and enque updates on other cores
-                    TLB_FLUSH_BARRIERS[domain.idx()].set_count(core_count);
+                    //TLB_FLUSH_BARRIERS[domain.idx()].set_count(core_count);
+                    StateX86::prepare_notify(&domain, core_count);
                     for core in BitmapIterator::new(core_map) {
                         if core == core_id {
                             continue;
@@ -889,7 +833,10 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
 
                     // After we have pushed all TlbShootdown updates to its per cpu CORE_UPDATES, we
                     // can issue the IPI now.
-                    post_ept_update(core_id, core_map, &domain);
+                    //post_ept_update(core_id, core_map, &domain);
+                    StateX86::notify_cores(&domain, core_id, core_map as usize);
+                    StateX86::acknowledge_notify(&domain);
+                    StateX86::finish_notify(&domain);
                 }
             }
             capa_engine::Update::Cleanup { start, end } => {
@@ -943,7 +890,7 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
 fn tlb_shootdown(core_id: usize, current_domain: &Handle<Domain>, vcpu: Option<&mut ActiveVmcs>) {
     log::trace!("cpu{} processing TLB shootdown", core_id);
     // Reload the EPTs
-    let domain = get_domain(*current_domain);
+    let domain = StateX86::get_domain(*current_domain);
     log::trace!(
         "core {}: domain.ept={:#x}",
         core_id,
@@ -951,23 +898,23 @@ fn tlb_shootdown(core_id: usize, current_domain: &Handle<Domain>, vcpu: Option<&
     );
     let new_epts = domain.ept.unwrap().as_usize();
     // Update the context.
-    let mut context = get_context(*current_domain, core_id);
+    let mut context = StateX86::get_context(*current_domain, core_id);
     context
         .set(VmcsField::EptPointer, new_epts | EPT_ROOT_FLAGS, vcpu)
         .expect("VMX error, failed to set EPT pointer");
 }
 
 fn free_original_ept_root(current_domain: &Handle<Domain>) {
-    let mut domain = get_domain(*current_domain);
+    let mut domain = StateX86::get_domain(*current_domain);
     let allocator = allocator();
     if let Some(ept) = domain.ept_old {
-        unsafe { free_ept(ept, allocator) };
+        unsafe { StateX86::free_ept(ept, allocator) };
     }
     domain.ept_old = None;
 }
 
 /// Updates that must be applied to a given core.
-pub fn apply_core_updates(
+/*pub fn apply_core_updates(
     vmx_state: &mut VmxState,
     current_domain: &mut Handle<Domain>,
     core_id: usize,
@@ -992,10 +939,10 @@ pub fn apply_core_updates(
             } => {
                 log::trace!("Domain Switch on core {}", core_id);
 
-                let mut current_ctx = get_context(*current_domain, core);
-                let mut next_ctx = get_context(domain, core);
-                let next_domain = get_domain(domain);
-                switch_domain(
+                let mut current_ctx = StateX86::get_context(*current_domain, core);
+                let mut next_ctx = StateX86::get_context(domain, core);
+                let next_domain = StateX86::get_domain(domain);
+                StateX86::switch_domain(
                     vcpu,
                     &mut current_ctx,
                     &mut next_ctx,
@@ -1049,77 +996,13 @@ pub fn apply_core_updates(
             }
         }
     }
-}
-
-fn switch_domain(
-    vcpu: &mut ActiveVmcs<'static>,
-    current_ctx: &mut MutexGuard<Contextx86>,
-    next_ctx: &mut MutexGuard<Contextx86>,
-    next_domain: MutexGuard<DomainData>,
-    return_capa: LocalCapa,
-) -> Result<(), CapaError> {
-    // Safety check that both contexts have a valid vmcs.
-    if current_ctx.vmcs.is_invalid() || next_ctx.vmcs.is_invalid() {
-        log::error!(
-            "VMCS are none during switch: curr:{:?}, next:{:?}",
-            current_ctx.vmcs.is_invalid(),
-            next_ctx.vmcs.is_invalid()
-        );
-        return Err(CapaError::InvalidSwitch);
-    }
-
-    // We have different cases:
-    // 1. current(interrupted) -- interrupt --> next.
-    // 2. current -- resume interrupted --> next(interrupted)
-    // 3. current -- synchronous --> next
-    if current_ctx.interrupted && next_ctx.interrupted {
-        panic!("Two domains should never be both interrupted in a switch.");
-    }
-    // Case 1: copy the interrupted state.
-    if current_ctx.interrupted {
-        next_ctx.copy_interrupt_frame(current_ctx, vcpu).unwrap();
-        // Return state: 1 means failure, rdi holds resume capa.
-        next_ctx.set(VmcsField::GuestRax, 0, None).unwrap();
-        next_ctx
-            .set(VmcsField::GuestRdi, return_capa.as_usize(), None)
-            .unwrap();
-    } else if next_ctx.interrupted {
-        // Case 2: do not put the return capa.
-        next_ctx.interrupted = false;
-    } else {
-        // Case 3: synchronous call.
-        next_ctx.set(VmcsField::GuestRax, 0, None).unwrap();
-        next_ctx
-            .set(VmcsField::GuestRdi, return_capa.as_usize(), None)
-            .unwrap();
-    }
-
-    // Now the logic for shared vs. private vmcs.
-    if current_ctx.vmcs == next_ctx.vmcs {
-        panic!("Why are the two vmcs the same?");
-    }
-    current_ctx.load(vcpu);
-
-    // NOTE; it seems on hardware we need to save and restore the host context, but we don't know
-    // why yet, we need further invesdigation to be able to optimise this.
-    let mut values: [usize; 13] = [0; 13];
-    dump_host_state(vcpu, &mut values).expect("Couldn't save host context");
-
-    // Configure state of the next TD
-    next_ctx.switch_flush(&RC_VMCS, vcpu);
-    vcpu.set_ept_ptr(HostPhysAddr::new(
-        next_domain.ept.unwrap().as_usize() | EPT_ROOT_FLAGS,
-    ))
-    .expect("Failed to update EPT");
-    load_host_state(vcpu, &mut values).expect("Couldn't save host context");
-    Ok(())
-}
+}*/
 
 fn create_domain(domain: Handle<Domain>) {
-    let mut domain = get_domain(domain);
+    let mut domain = StateX86::get_domain(domain);
     let allocator = allocator();
     if let Some(ept) = domain.ept {
-        unsafe { free_ept(ept, allocator) };
+        unsafe { StateX86::free_ept(ept, allocator) };
     }
     let ept_root = allocator
         .allocate_frame()
@@ -1132,68 +1015,7 @@ fn revoke_domain(_domain: Handle<Domain>) {
     // Noop for now, might need to send IPIs once we land multi-core
 }
 
-fn update_domain_ept(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) -> bool {
-    let mut domain = get_domain(domain_handle);
-    let allocator = allocator();
-    if domain.ept_old.is_some() {
-        panic!("We will replace an ept old that's not empty");
-    }
-    let ept_root = allocator
-        .allocate_frame()
-        .expect("Failled to allocate EPT root")
-        .zeroed();
-    let mut mapper = EptMapper::new(
-        allocator.get_physical_offset().as_usize(),
-        ept_root.phys_addr,
-    );
-    let permission_iter = engine.get_domain_permissions(domain_handle).unwrap();
-    for range in domain.remapper.remap(permission_iter) {
-        if !range.ops.contains(MemOps::READ) {
-            log::error!("there is a region without read permission: {}", range);
-            continue;
-        }
-        let mut flags = EptEntryFlags::READ;
-        if range.ops.contains(MemOps::WRITE) {
-            flags |= EptEntryFlags::WRITE;
-        }
-        if range.ops.contains(MemOps::EXEC) {
-            if range.ops.contains(MemOps::SUPER) {
-                flags |= EptEntryFlags::SUPERVISOR_EXECUTE;
-            } else {
-                flags |= EptEntryFlags::USER_EXECUTE;
-            }
-        }
-        mapper.map_range(
-            allocator,
-            GuestPhysAddr::new(range.gpa),
-            HostPhysAddr::new(range.hpa),
-            range.size,
-            flags,
-        );
-    }
-
-    loop {
-        match TLB_FLUSH[domain_handle.idx()].compare_exchange(
-            false,
-            true,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-        ) {
-            Ok(false) => break,
-            _ => continue,
-        }
-    }
-
-    // The core needs exclusive access before updating the domain's EPT. Otherwise, we might have
-    // miss freeing some EPT roots.
-    // The contexts per core will be updated in the permission change update.
-    domain.ept_old = domain.ept;
-    domain.ept = Some(ept_root.phys_addr);
-
-    true
-}
-
-fn notify_cores(core_id: usize, domain_core_bitmap: u64) {
+/*fn notify_cores(core_id: usize, domain_core_bitmap: u64) {
     // initialize lapic
     log::trace!(
         "The bitmap {:b} for notify cores on core {}",
@@ -1208,92 +1030,4 @@ fn notify_cores(core_id: usize, domain_core_bitmap: u64) {
         // send ipi
         x2apic::send_init_assert(core as u32);
     }
-}
-
-fn update_domain_iopt(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) -> bool {
-    let mut domain = get_domain(domain_handle);
-    let allocator = allocator();
-    if let Some(iopt) = domain.iopt {
-        unsafe { free_iopt(iopt, allocator) };
-        // TODO: global invalidate context cache, PASID cache, and flush the IOTLB
-    }
-
-    let iopt_root = allocator
-        .allocate_frame()
-        .expect("Failed to allocate I/O PT root")
-        .zeroed();
-    let mut iopt_mapper = IoPtMapper::new(
-        allocator.get_physical_offset().as_usize(),
-        iopt_root.phys_addr,
-    );
-
-    // Traverse all regions of the I/O domain and maps them into the new iopt
-    for range in engine.get_domain_permissions(domain_handle).unwrap() {
-        if !range.ops.contains(MemOps::READ) {
-            log::error!("there is a region without read permission: {}", range);
-            continue;
-        }
-        let gpa = range.start;
-        iopt_mapper.map_range(
-            allocator,
-            GuestPhysAddr::new(gpa),
-            HostPhysAddr::new(range.start),
-            range.size(),
-            IoPtFlag::READ | IoPtFlag::WRITE | IoPtFlag::EXECUTE,
-        )
-    }
-
-    domain.iopt = Some(iopt_root.phys_addr);
-
-    // Update the IOMMU
-    // TODO: @yuchen ideally we only need to change the 2nd stage page translation pointer on the
-    //               context table, instead of reallocating the whole root table
-    // Remap the DMA region on IOMMU
-    let mut iommu = IOMMU.lock();
-    if iommu.get_addr() as usize != 0 {
-        let root_addr: HostPhysAddr = vtd::setup_iommu_context(iopt_mapper.get_root(), allocator);
-        iommu.set_root_table_addr(root_addr.as_u64() | (0b00 << 10)); // Set legacy mode
-        iommu.update_root_table_addr();
-        iommu.enable_translation();
-        log::info!("I/O MMU: {:?}", iommu.get_global_status());
-        log::warn!("I/O MMU Fault: {:?}", iommu.get_fault_status());
-    }
-
-    false
-}
-
-fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) -> bool {
-    if engine[domain_handle].is_io() {
-        update_domain_iopt(domain_handle, engine)
-    } else {
-        update_domain_ept(domain_handle, engine)
-    }
-}
-
-unsafe fn free_ept(ept: HostPhysAddr, allocator: &impl FrameAllocator) {
-    let mapper = EptMapper::new(allocator.get_physical_offset().as_usize(), ept);
-    mapper.free_all(allocator);
-}
-
-unsafe fn free_iopt(iopt: HostPhysAddr, allocator: &impl FrameAllocator) {
-    let mapper = IoPtMapper::new(allocator.get_physical_offset().as_usize(), iopt);
-    mapper.free_all(allocator);
-}
-
-// ———————————————————————————————— Display ————————————————————————————————— //
-
-impl core::fmt::Display for CoreUpdate {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            CoreUpdate::TlbShootdown => write!(f, "TLB Shootdown"),
-            CoreUpdate::Switch { domain, .. } => write!(f, "Switch({})", domain),
-            CoreUpdate::Trap {
-                manager,
-                trap: interrupt,
-                info: inf,
-            } => {
-                write!(f, "Trap({}, {} | {:b})", manager, interrupt, inf)
-            }
-        }
-    }
-}
+}*/
