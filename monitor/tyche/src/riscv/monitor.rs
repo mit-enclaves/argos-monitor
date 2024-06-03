@@ -5,6 +5,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 use attestation::hashing::TycheHasher;
 use attestation::signature::EnclaveReport;
+use attestation::hashing::hash_region;
 use capa_engine::config::{NB_CORES, NB_DOMAINS};
 use capa_engine::utils::BitmapIterator;
 use capa_engine::{
@@ -308,10 +309,10 @@ pub fn do_seal(current: Handle<Domain>, domain: LocalCapa) -> Result<LocalCapa, 
     let mut engine = CAPA_ENGINE.lock();
     let capa = engine.seal(current, cpuid, domain)?;
 
-    if let Ok(domain_capa) = engine.get_domain_capa(current, domain) {
+    /* if let Ok(domain_capa) = engine.get_domain_capa(current, domain) {
         log::trace!("Calculating attestation hash");
         calculate_attestation_hash(&mut engine, domain_capa);
-    }
+    } */
 
     apply_updates(&mut engine);
     Ok(capa)
@@ -359,14 +360,44 @@ pub fn do_send_region(
     current: Handle<Domain>,
     capa: LocalCapa,
     to: LocalCapa,
+    size: usize, 
+    extra_rights: usize,
 ) -> Result<(), CapaError> {
     let mut engine = CAPA_ENGINE.lock();
     // send_region is only allowed for region capa.
-    match engine.get_region_capa(current, capa)? {
-        Some(_) => {}
-        _ => return Err(CapaError::InvalidCapa),
+
+    let flags = MemOps::from_usize(extra_rights)?;
+    if !flags.is_empty() && !flags.is_only_hcv() {
+        log::error!("Invalid send region flags received: {:?}", flags);
+        return Err(CapaError::InvalidPermissions);
     }
-    engine.send(current, capa, to)?;
+    // Get the capa first.
+    let region_info = engine
+        .get_region_capa(current, capa)?
+        .ok_or(CapaError::InvalidCapa)?
+        .get_access_rights();
+
+    if !flags.is_empty() {
+        // NOTE: we are missing some checks here, not all memory covered by regions can be accessed
+        // in the current design.
+        let hash = if flags.contains(MemOps::HASH) {
+            let data = unsafe {
+                core::slice::from_raw_parts(
+                    region_info.start as *const u8,
+                    region_info.end - region_info.start,
+                )
+            };
+            let hash = hash_region(data);
+            Some(hash)
+        } else {
+            None
+        };
+        let opt_flags = if flags.is_empty() { None } else { Some(flags) };
+        let _ = engine.send_with_flags(current, capa, to, opt_flags, hash);
+    } else {
+        let _ = engine.send(current, capa, to)?;
+    }
+
     apply_updates(&mut engine);
     Ok(())
 }
@@ -515,7 +546,7 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
             }
             capa_engine::Update::Cleanup { start, end } => {
                 let size = end.checked_sub(start).unwrap();
-                log::info!("Cleaning up region [0x{:x}, 0x{:x}]", start, end);
+                log::debug!("Cleaning up region [0x{:x}, 0x{:x}]", start, end);
 
                 // WARNING: for now we do not check that the region points to valid memory!
                 // In particular, the current root region contains more than valid ram, and also
@@ -644,7 +675,7 @@ fn switch_domain(
     current_ctx.mstatus = read_mstatus(); 
 
     //Switch domain
-    log::info!("Writing satp {:x}, sp {:x}, mepc {:x} medeleg: {:x}", next_ctx.satp, next_ctx.sp, next_ctx.mepc, next_ctx.medeleg);
+    log::debug!("Writing satp {:x}, sp {:x}, mepc {:x} medeleg: {:x}", next_ctx.satp, next_ctx.sp, next_ctx.mepc, next_ctx.medeleg);
     write_satp(next_ctx.satp);
     write_mscratch(next_ctx.sp);
     write_mepc(next_ctx.mepc);
@@ -692,7 +723,7 @@ fn revoke_domain(_domain: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) {
 }
 
 fn update_pmps(domain: MutexGuard<DomainData>) {
-    log::info!("Updating PMPs FOR REAL!");
+    log::debug!("Updating PMPs FOR REAL!");
     clear_pmp();
     for i in FROZEN_PMP_ENTRIES..PMP_ENTRIES {
         pmpaddr_csr_write(i, domain.pmpaddr[i]);
@@ -741,7 +772,7 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
             log::debug!("PMP Write Ok");
 
             if pmp_write_response.addressing_mode == PMPAddressingMode::NAPOT {
-                log::info!(
+                log::debug!(
                     "NAPOT addr: {:x} cfg: {:x}",
                     pmp_write_response.addr1,
                     pmp_write_response.cfg1

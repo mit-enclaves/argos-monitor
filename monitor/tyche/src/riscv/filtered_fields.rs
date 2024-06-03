@@ -37,21 +37,21 @@ impl RiscVField {
         match *self {
             Self::Medeleg => {
                 context.medeleg = value;
-                log::info!("Setting medeleg to {:x}", context.medeleg);
+                log::debug!("Setting medeleg to {:x}", context.medeleg);
             }
             Self::Satp => {
                 context.satp = (value >> 12) | PAGING_MODE_SV39;
-                log::info!("Setting satp to {:x}", context.satp);
+                log::debug!("Setting satp to {:x}", context.satp);
             }
             Self::Sp => {
                 let mut val = (value >> 3) << 3;    //Forcing it to be 8 bytes aligned. 
                 context.sp = val;
-                log::info!("Setting sp to {:x}", context.sp);
+                log::debug!("Setting sp to {:x}", context.sp);
             }
             Self::Mepc => {
                 context.mepc = value - 0x4; //Todo: This is a temporary hack - because before returning
                                             //there's an mepc+4.
-                log::info!("Setting mepc to {:x}", context.mepc);
+                log::debug!("Setting mepc to {:x}", context.mepc);
             }
         }
     }

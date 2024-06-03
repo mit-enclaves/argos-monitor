@@ -153,10 +153,10 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         asm!("csrr {}, mip", out(reg) mip);
         asm!("csrr {}, satp", out(reg)satp);
     }
-    let tmp: usize = reg_state.a0.try_into().unwrap();
-    if tmp == 0x7 {
-        log::info!("###### TRAP FROM HART {} ###### mcause: 0x{:x} a0 {}", hartid, mcause, tmp);
-    }
+    //let tmp: usize = reg_state.a0.try_into().unwrap();
+    /* if tmp == 0x7 {
+        log::debug!("###### TRAP FROM HART {} ###### mcause: 0x{:x} a0 {}", hartid, mcause, tmp);
+    } */
     //if mepc == 0xffffffff80388bb6 {
     //println!("mepc: {:x} mtval: {:x} mcause: {:x}", mepc, mtval, mcause);
     //} 
@@ -223,7 +223,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             //panic!("Servicing mcause: {:x}",mcause);   //URGENT TODO: Remove this
             //println!("[TYCHE Timer Interrupt] mepc: {:x} mtval: {:x} mcause: {:x}", mepc, mtval, mcause);
             clear_mie_mtie();
-            //log::info!(
+            //log::debug!(
             //    "\nHART {} MTIMER: MEPC: {:x} RA: {:x}\n",
             //    hartid,
             //    mepc,
@@ -238,9 +238,10 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         mcause::ILLEGAL_INSTRUCTION => {
             //println!("[TYCHE Illegal Instruction Handler]");
             if reg_state.a7 == 0x5479636865 {
-                log::info!("Illegal instruction: Tyche call from U-mode using Mret");
+                log::debug!("Illegal instruction: Tyche call from U-mode using Mret");
                 //TODO: Add MPP check 
                 tyche_call_handler(reg_state);
+                reg_state.a7 = 0;
             } else {
                 illegal_instruction_handler(mepc, mstatus, mtval, reg_state);
             }
@@ -260,7 +261,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             //}
             }
             if reg_state.a7 == 0x5479636865 {
-                log::info!("TYCHE CAll: {}", reg_state.a0);
+                log::debug!("TYCHE CAll: {}", reg_state.a0);
                 //Tyche call
                 if reg_state.a0 == 0x5479636865 {
                     //println!("Tyche is clearing SIP.SEIE");
@@ -288,25 +289,26 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
                     tyche_call_flag = true;
                     tyche_call_id = reg_state.a0.try_into().unwrap();
                     tyche_call_handler(reg_state);
+                    reg_state.a7 = 0;
                 }
             } else {
                 ecall_handler(&mut ret, &mut err, &mut out_val, *reg_state);
                 reg_state.a0 = ret;
                 reg_state.a1 = out_val as isize;
-                //log::info!("Done handling Ecall");
+                //log::debug!("Done handling Ecall");
             }
         }
-        mcause::ECALL_FROM_UMODE => {
+        /* mcause::ECALL_FROM_UMODE => {
             if reg_state.a7 == 0x5479636865 {
-                log::info!("TYCHE Call from U-Mode: {} MEPC: {:x} MStatus: {:x}", reg_state.a0, mepc, mstatus);
+                log::debug!("TYCHE Call from U-Mode: {} MEPC: {:x} MStatus: {:x}", reg_state.a0, mepc, mstatus);
                 tyche_call_handler(reg_state);
             } else {
                 panic!("Ecall from U-mode which isn't a Tyche Call! This should not happen! mepc: {:x}", mepc);
             }
-        }
+        } */
         mcause::LOAD_ADDRESS_MISALIGNED => {
             //Note: Hypervisor extension is not supported
-            //log::info!("Misaligned load");
+            //log::debug!("Misaligned load");
             //println!("MIS ALIGNED LOADDDDD");
 if reg_state.a7 == 0x5479636865 {
     panic!("Got a misaligned load Tyche call");
@@ -363,12 +365,12 @@ if reg_state.a7 == 0x5479636865 {
 
     }
     // if tyche_call_flag {
-    if tmp == 0x7 {
+    /* if tmp == 0x7 {
         unsafe {
             asm!("csrr {}, mepc", out(reg) mepc);
         }
         println!("[Hart {}] Returning from Tyche Call {} to MEPC: {:x} and RA: {:x}", hartid, tyche_call_id, mepc, reg_state.ra);
-    } 
+    } */
     /* if mtval == 0x10500073 {  
         println!("[Hart {}] Returning from WFI", hartid);
     } */
@@ -682,7 +684,7 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
         let hartid = cpuid();
         active_dom = get_active_dom(hartid).unwrap();
 
-        log::info!("Tyche call: {}", tyche_call);
+        log::debug!("Tyche call: {}", tyche_call);
 
         match tyche_call {
             calls::CREATE_DOMAIN => {
@@ -734,7 +736,7 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
                 reg_state.a1 = capa.as_usize() as isize;
             }
             calls::ENUMERATE => {
-                log::info!("Enumerate");
+                log::debug!("Enumerate");
                 if let Some((info, next)) =
                     monitor::do_enumerate(active_dom, NextCapaToken::from_usize(arg_1))
                 {
@@ -748,10 +750,10 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
                     reg_state.a4 = 0;
                 }
                 reg_state.a0 = 0x0;
-                log::info!("Returning from enumerate: v1: 0x{:x} v2: 0x{:x} v3: 0x{:x} next: 0x{:x}",reg_state.a1, reg_state.a2, reg_state.a3, reg_state.a4);
+                log::debug!("Returning from enumerate: v1: 0x{:x} v2: 0x{:x} v3: 0x{:x} next: 0x{:x}",reg_state.a1, reg_state.a2, reg_state.a3, reg_state.a4);
             }
             calls::SWITCH => {
-                log::info!(" Hart {} Switch", hartid);
+                log::debug!(" Hart {} Switch", hartid);
                 monitor::do_switch(active_dom, LocalCapa::new(arg_1), hartid, reg_state)
                     .expect("TODO");
             }
@@ -799,12 +801,12 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
             }
             calls::SEND_REGION => {
                 log::debug!("Send");
-                monitor::do_send_region(active_dom, LocalCapa::new(arg_1), LocalCapa::new(arg_2))
+                monitor::do_send_region(active_dom, LocalCapa::new(arg_1), LocalCapa::new(arg_2), arg_5, arg_6)
                     .expect("TODO");
                 reg_state.a0 = 0x0;
             }
             calls::CONFIGURE_CORE => {
-                log::info!("Configure Core");
+                log::debug!("Configure Core");
                 let res = match monitor::do_configure_core(
                     active_dom,
                     LocalCapa::new(arg_1),
@@ -877,7 +879,7 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
             calls::SELF_CONFIG => {
                 //This part will not change the context of the domain - it's essentially only being
                 //used to deleg/undeleg ecalls from u-mode at the moment. 
-                log::info!("Self config for hart {} ",hartid);
+                log::debug!("Self config for hart {} ",hartid);
                 let context = monitor::get_context(active_dom, hartid);
                 let field = RiscVField::from_usize(arg_1).unwrap();
                 if field == RiscVField::Medeleg {
@@ -890,10 +892,10 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
                         panic!("Unexpected changes to medeleg!");
                     }
                     write_medeleg(updated_medeleg); 
-                    log::info!("Done setting medeleg to 0x{:x}.", updated_medeleg);
+                    log::debug!("Done setting medeleg to 0x{:x}.", updated_medeleg);
                     reg_state.a0 = 0;
                 } else {
-                    log::info!("Self config does not support setting this field!");
+                    log::debug!("Self config does not support setting this field!");
                     reg_state.a0 = 1;
                 }
             }
@@ -966,7 +968,7 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
             }
             _ => {
                 /*TODO: Invalid Tyche Call*/
-                log::info!("Invalid Tyche Call: 0x{:x}", reg_state.a0);
+                log::debug!("Invalid Tyche Call: 0x{:x}", reg_state.a0);
                 todo!("Unknown Tyche Call.");
             }
         }

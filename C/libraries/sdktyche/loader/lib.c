@@ -445,7 +445,7 @@ failure:
 
 int load_domain(tyche_domain_t* domain)
 {
-    ERROR("Loading domain");
+    //ERROR("Loading domain");
   usize size = 0;
   usize phys_size = 0;
   domain_mslot_t *slot = NULL;
@@ -525,7 +525,7 @@ int load_domain(tyche_domain_t* domain)
     // memory slot by construction for the moment (provided we don't have 2^11
     // pages in the page tables).
     if (seg.p_type == PAGE_TABLES_CONF || seg.p_type == PAGE_TABLES_SB) {
-        ERROR("Loading domain - fixing segment PTs");
+        //ERROR("Loading domain - fixing segment PTs");
       // We hope the page tables are aligned, let's do a quick check.
       if (seg_offset != 0) {
         ERROR("Page tables are not page aligned");

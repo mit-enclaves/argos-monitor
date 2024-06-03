@@ -89,17 +89,17 @@ void run_transition(char* prefix, ubench_config_t *bench) {
 
   // Create the domain.
   sprintf(name, "%s/transition", prefix);
-  printf("\nCreating domain...\n"); 
+  //printf("\nCreating domain...\n"); 
   assert(sdk_create_domain(&domain, name, core_mask, ALL_TRAPS, DEFAULT_PERM) == SUCCESS);
 
   // Warmup transition.
-  printf("\nCalling domain...\n");
+  //printf("\nCalling domain...\n");
   assert(sdk_call_domain(&domain) == SUCCESS);
 
-  printf("\nAttempt to find switch capa domain...\n");
+  //printf("\nAttempt to find switch capa domain...\n");
   assert(bench_find_switch(&capa_switch));
 
-  printf("\nFound the switch capa...\n");
+  //printf("\nFound the switch capa...\n");
 
   // Let's go for the sdk benchmark.
   for (int i = 0; i < bench->outer; i++) {
