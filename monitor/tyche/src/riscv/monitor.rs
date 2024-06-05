@@ -704,9 +704,7 @@ fn switch_domain(
     if (next_domain.data_init_done) {
         update_pmps(next_domain);
     } else {
-        panic!("THIS SHOULD NEVER HAPPEN!");
-        let mut engine = CAPA_ENGINE.lock();
-        update_permission(domain, &mut engine);
+        panic!("SOMETHING WENT WRONG! There's been an attempt to execute a domain which hasn't been completely initialized yet.");
     }
 }
 

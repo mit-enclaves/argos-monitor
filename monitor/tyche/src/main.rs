@@ -11,7 +11,7 @@ use tyche;
 use tyche::debug::qemu;
 use tyche::{arch, println};
 
-use core::arch::asm; 
+//use core::arch::asm; 
 
 entry_point!(tyche_entry_point);
 
@@ -24,7 +24,8 @@ fn tyche_entry_point() -> ! {
 
 #[cfg(target_arch = "riscv64")]
 fn tyche_entry_point(hartid: usize, manifest: RVManifest) -> ! {
-    //If logging on VF2 board doesn't work ^ ^ try the following as a debugging starter pack. Loaded in t0 is the serial port base address.    
+    // If logging on VF2 board doesn't work ^ ^ try the following as a debugging starter pack. 
+    // Loaded in t0 is the serial port base address.  
     /* unsafe {
         asm!(
             "li t0, 0x10000000",

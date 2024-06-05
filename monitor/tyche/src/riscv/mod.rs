@@ -1,6 +1,5 @@
 //! Risc-V backend
 
-// TODO: remove this once the backend is implemented.
 // The line just removes the unused warnings.
 #![allow(unused)]
 
@@ -19,7 +18,6 @@ use riscv_csrs::mstatus;
 use crate::debug::qemu::ExitCode;
 use crate::println;
 
-// TODO: some empty types to be filled.
 #[derive(Debug)]
 pub enum BackendError {}
 

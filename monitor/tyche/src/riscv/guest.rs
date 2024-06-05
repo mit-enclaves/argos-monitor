@@ -24,13 +24,10 @@ use crate::riscv::platform::{remap_core_bitmap, remap_core};
 const EMPTY_ACTIVE_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
 static ACTIVE_DOMAIN: [Mutex<Option<Handle<Domain>>>; NUM_HARTS] = [EMPTY_ACTIVE_DOMAIN; NUM_HARTS];
 
-static mut ecalls_count: usize = 0;
-static mut timer_count: [AtomicUsize; 5] = [ZERO; 5];
-static mut cleared_seip: [AtomicUsize; 5] = [ZERO; 5];
-static mut set_timer_count: usize = 0;
+//static mut timer_count: [AtomicUsize; 5] = [ZERO; 5];
+
 // M-mode trap handler
 // Saves register state - calls trap_handler - restores register state - mret to intended mode.
-
 #[repr(align(4))]
 #[naked]
 pub extern "C" fn machine_trap_handler() {
@@ -115,15 +112,13 @@ pub extern "C" fn machine_trap_handler() {
 }
 
 pub extern "C" fn exit_handler_failed(mcause: usize, mepc: usize) {
-    // TODO: Currently, interrupts must be getting redirected here too. Confirm this and then fix
-    // it.
     panic!(
-        "*******WARNING: Cannot handle this trap with mcause: {:x} mepc: {:x} !*******",
+        "******* WARNING: Cannot handle this trap with mcause: {:x} mepc: {:x} ! *******",
         mcause, mepc
     );
 }
 
-// Exit handler - equivalent to x86 handle_exit for its guest.
+// Exit handler - equivalent to x86_64's handle_exit for its guest.
 // In RISC-V, any trap to machine mode will lead to this function being called (via the machine_trap_handler)
 
 pub fn handle_exit(reg_state: &mut RegisterState) {
@@ -153,65 +148,23 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         asm!("csrr {}, mip", out(reg) mip);
         asm!("csrr {}, satp", out(reg)satp);
     }
-    //let tmp: usize = reg_state.a0.try_into().unwrap();
-    /* if tmp == 0x7 {
-        log::debug!("###### TRAP FROM HART {} ###### mcause: 0x{:x} a0 {}", hartid, mcause, tmp);
-    } */
-    //if mepc == 0xffffffff80388bb6 {
-    //println!("mepc: {:x} mtval: {:x} mcause: {:x}", mepc, mtval, mcause);
-    //} 
-    /* if(mepc == 0x4022e050) {
-        println!(
-            "Handling trap: a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x}  mepc {:x} mstatus {:x}",
-            reg_state.a0,
-            reg_state.a1,
-            reg_state.a2,
-            reg_state.a3,
-            reg_state.a4,
-            reg_state.a5,
-            reg_state.a6,
-            reg_state.a7,
-            mepc,
-            mstatus,
-        ); 
-    } */
-
-
-    /*println!(
-        "Trap arguments: mcause {:x}, mepc {:x} mstatus {:x} mtval {:x} mie {:x} mip {:x} mideleg {:x} ra {:x} a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x} satp: {:x}",
->>>>>>> 679fd01d (WIP: Added CSR read emulation - required for u-boot. The emulation works, but something is going wrong since u-boot never stops causing the trap (it causes the same trap quite a few times in opensbi too but moves on at some point).)
-        mcause,
-        mepc,
-        mstatus,
-        mtval,
-        mie,
-        mip,
-        mideleg,
-        reg_state.ra,
-        reg_state.a0,
-        reg_state.a1,
-        reg_state.a2,
-        reg_state.a3,
-        reg_state.a4,
-        reg_state.a5,
-        reg_state.a6,
-        reg_state.a7,
-        satp
-    ); */
 
     // Check which trap it is
     // mcause register holds the cause of the machine mode trap
     match mcause {
         mcause::MSWI => {
-            //println!("Servicing mcause: {:x}",mcause);   //URGENT TODO: Remove this
             process_ipi(hartid);
             let active_dom = get_active_dom(hartid);
             match active_dom {
-                Some(mut domain) => apply_core_updates(&mut domain, hartid, reg_state),
+                Some(mut domain) => { 
+                    apply_core_updates(&mut domain, hartid, reg_state);
+                }
                 None => {}
             }
         }
         mcause::MTI => {
+            // NEELU: Leaving this code here (commented for now) to enable debug via timers.
+            
             /* let val;
             unsafe {
                 timer_count[hartid].fetch_add(1, core::sync::atomic::Ordering::SeqCst);
@@ -233,13 +186,13 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             //aclint_mtimer_set_mtimecmp(hartid, TIMER_EVENT_TICK + val);
         }
         mcause::MEI => {
-            //panic!("MEI"); - don't do anything for now!
+            //panic!("MEI"); - don't do anything for now! 
         }
         mcause::ILLEGAL_INSTRUCTION => {
-            //println!("[TYCHE Illegal Instruction Handler]");
             if reg_state.a7 == 0x5479636865 {
                 log::debug!("Illegal instruction: Tyche call from U-mode using Mret");
-                //TODO: Add MPP check 
+                //MPP check for U-mode.
+                assert!((mstatus & (3 << 11)) == 0);
                 tyche_call_handler(reg_state);
                 reg_state.a7 = 0;
             } else {
@@ -247,44 +200,11 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             }
         }
         mcause::ECALL_FROM_SMODE => {
-            //println!("TYCHE ECall");
-            unsafe { 
-            /* ecalls_count = ecalls_count + 1;
-            if reg_state.a7 == sbi::EXT_TIME {
-                set_timer_count = set_timer_count + 1; 
-                if set_timer_count % 20 == 0 {
-                    //println!("Setting TIMER: {:x} mepc: {:x} set_timer_count: {}", reg_state.a0, mepc, set_timer_count);
-                }
-            } */
-            //if ecalls_count > 39000 && ecalls_count < 40000 {
-            //    println!("Ecall: a7: {:x} a6: {:x}", reg_state.a7, reg_state.a6);
-            //}
-            }
             if reg_state.a7 == 0x5479636865 {
                 log::debug!("TYCHE CAll: {}", reg_state.a0);
                 //Tyche call
                 if reg_state.a0 == 0x5479636865 {
-                    //println!("Tyche is clearing SIP.SEIE");
-                    //let val_b = read_mip_seip();
-                    //if val_b == 0 {
-                    //    panic!("MIP.SEIP is already clear! Tyche call is redundant! Need to be patient for PLIC to do its job.");
-                    //}
                     clear_mip_seip();
-                    //let mut val_a = read_mip_seip();
-                    //if val_a != 0 {
-                    //    panic!("Tyche cleared MIP.SEIP but it's still set.");
-                    //}
-                    //while val_a != 0 {
-                    //    println!("[RETRYING] Tyche couldn't clear SIP.SEIE before: {:x} after: {:x}",val_b, val_a); 
-                    //    val_a = read_mip_seip(); 
-                    //}
-                    /* unsafe {
-                        cleared_seip[hartid].fetch_add(1, core::sync::atomic::Ordering::SeqCst);
-                        if cleared_seip[hartid].load(core::sync::atomic::Ordering::SeqCst) % 200 == 0 { 
-                            println!("[Hart {}] Tyche cleared SIP.SEIE before: {:x} after: {:x}", hartid, val_b, val_a); 
-                        }
-                    } */
-
                 } else {
                     tyche_call_flag = true;
                     tyche_call_id = reg_state.a0.try_into().unwrap();
@@ -295,26 +215,15 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
                 ecall_handler(&mut ret, &mut err, &mut out_val, *reg_state);
                 reg_state.a0 = ret;
                 reg_state.a1 = out_val as isize;
-                //log::debug!("Done handling Ecall");
             }
         }
-        /* mcause::ECALL_FROM_UMODE => {
-            if reg_state.a7 == 0x5479636865 {
-                log::debug!("TYCHE Call from U-Mode: {} MEPC: {:x} MStatus: {:x}", reg_state.a0, mepc, mstatus);
-                tyche_call_handler(reg_state);
-            } else {
-                panic!("Ecall from U-mode which isn't a Tyche Call! This should not happen! mepc: {:x}", mepc);
-            }
-        } */
         mcause::LOAD_ADDRESS_MISALIGNED => {
             //Note: Hypervisor extension is not supported
             //log::debug!("Misaligned load");
-            //println!("MIS ALIGNED LOADDDDD");
-if reg_state.a7 == 0x5479636865 {
-    panic!("Got a misaligned load Tyche call");
-}
+            if reg_state.a7 == 0x5479636865 {
+                panic!("Got a misaligned load Tyche call");
+            }
             misaligned_load_handler(mtval, mepc, reg_state);
-            //panic!("Load address misaligned mepc: {:x} mtval: {:x} mstatus: {:x}.", mepc, mtval, mstatus);
         }
         mcause::STORE_ADDRESS_MISALIGNED => {
             misaligned_store_handler(mtval, mepc, reg_state); 
@@ -347,60 +256,10 @@ if reg_state.a7 == 0x5479636865 {
             asm!("addi t0, t0, 0x4");
             asm!("csrw mepc, t0");
         }
-    /* if(mepc == 0x4022e050) {
-        println!(
-            "Returning from trap: a0 {:x} a1 {:x} a2 {:x} a3 {:x} a4 {:x} a5 {:x} a6 {:x} a7 {:x}  mepc {:x} mstatus {:x}",
-            reg_state.a0,
-            reg_state.a1,
-            reg_state.a2,
-            reg_state.a3,
-            reg_state.a4,
-            reg_state.a5,
-            reg_state.a6,
-            reg_state.a7,
-            mepc,
-            mstatus,
-        ); 
-    } */
-
     }
-    // if tyche_call_flag {
-    /* if tmp == 0x7 {
-        unsafe {
-            asm!("csrr {}, mepc", out(reg) mepc);
-        }
-        println!("[Hart {}] Returning from Tyche Call {} to MEPC: {:x} and RA: {:x}", hartid, tyche_call_id, mepc, reg_state.ra);
-    } */
-    /* if mtval == 0x10500073 {  
-        println!("[Hart {}] Returning from WFI", hartid);
-    } */
 }
 
 pub fn illegal_instruction_handler(mepc: usize, mstatus: usize, mtval: usize, reg_state: &mut RegisterState) {
-    /* let mut mepc_instr_opcode: usize = 0;
-
-    // Read the instruction which caused the trap. (mepc points to the VA of this instruction).
-    // Need to set mprv before reading the instruction pointed to by mepc (to enable VA to PA
-    // translation in M-mode. Reset mprv once done.
-
-    let mut mprv_index: usize = 1 << mstatus::MPRV;
-
-    //clear_pmp();
-
-    unsafe {
-        asm!("csrs mstatus, {}", in(reg) mprv_index);
-        asm!("csrr a0, mepc");
-        asm!("lw a1, (a0)");
-        asm!("csrc mstatus, {}", in(reg) mprv_index);
-        asm!("mv {}, a1", out(reg) mepc_instr_opcode);
-    }
-
-    println!(
-        "Illegal instruction trap from {} mode, caused by instruction with opcode {:x}",
-        ((mstatus >> mstatus::MPP_LOW) & mstatus::MPP_MASK),
-        mepc_instr_opcode
-    ); */
-
     if (mtval & 3) == 3 {
         if ((mtval & 0x7c) >> 2) == 0x1c {
             if mtval == 0x10500073 {    //WFI
@@ -786,7 +645,6 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
                         core_bitmap,
                     ) {
                         Ok(_) => {
-                            //TODO: do_init_child_contexts is not yet implemented on RISC-V.
                             reg_state.a0 = 0x0;
                         }
                         Err(e) => {
@@ -976,8 +834,7 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
         //Updating the state
         set_active_dom(hartid, active_dom);
     }
-    //TODO: ELSE NOT TYCHE CALL
-    //Handle Illegal Instruction Trap
+    //TODO: ELSE - NOT TYCHE CALL
 }
 
 pub fn get_active_dom(hartid: usize) -> (Option<Handle<Domain>>) {

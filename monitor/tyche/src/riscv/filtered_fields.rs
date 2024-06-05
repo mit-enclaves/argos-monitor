@@ -19,7 +19,6 @@ impl RiscVField {
             0x0000681c => Some(Self::Sp),
             0x0000681e => Some(Self::Mepc), 
             _ => {
-                //log::error!("Unknown field value, you should check that {:x}", v);
                 None
             }
         }
@@ -49,8 +48,10 @@ impl RiscVField {
                 log::debug!("Setting sp to {:x}", context.sp);
             }
             Self::Mepc => {
-                context.mepc = value - 0x4; //Todo: This is a temporary hack - because before returning
-                                            //there's an mepc+4.
+                context.mepc = value - 0x4; //This is because before returning
+                                            //there's an mepc+4. A flag can be added to
+                                            //determine before returning whether to inc by 4 or
+                                            //not. This works for now. 
                 log::debug!("Setting mepc to {:x}", context.mepc);
             }
         }
