@@ -390,7 +390,7 @@ pub fn instrument_binary(manifest: &Manifest, riscv_enabled: bool, vf2_enabled: 
                 default_pts_flags,
                 &manifest.map_page_tables,
                 riscv_enabled,
-                vf2_enabled
+                vf2_enabled,
             );
         }
         user
@@ -401,7 +401,7 @@ pub fn instrument_binary(manifest: &Manifest, riscv_enabled: bool, vf2_enabled: 
                 default_pts_flags,
                 &manifest.map_page_tables,
                 riscv_enabled,
-                vf2_enabled
+                vf2_enabled,
             );
         }
         user
@@ -412,7 +412,7 @@ pub fn instrument_binary(manifest: &Manifest, riscv_enabled: bool, vf2_enabled: 
                 default_pts_flags,
                 &manifest.map_page_tables,
                 riscv_enabled,
-                vf2_enabled
+                vf2_enabled,
             );
         }
         //kern.set_attestation_hash();

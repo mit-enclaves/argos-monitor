@@ -6,20 +6,21 @@ use riscv_csrs::*;
 use riscv_pmp::clear_pmp;
 use riscv_sbi::ecall::ecall_handler;
 use riscv_sbi::ipi::process_ipi;
-use riscv_sbi::sbi::{EXT_IPI, self};
+use riscv_sbi::sbi::{self, EXT_IPI};
 use riscv_utils::{
-    aclint_mtimer_set_mtimecmp, clear_mie_mtie, clear_mip_seip, RegisterState,
-    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, NUM_HARTS, TIMER_EVENT_TICK, system_opcode_instr, TrapState, set_rd, get_rs2, set_mip_stip, LAST_TIMER_TICK, read_mip_seip, ZERO, write_medeleg,
+    aclint_mtimer_set_mtimecmp, clear_mie_mtie, clear_mip_seip, get_rs2, read_mip_seip,
+    set_mip_stip, set_rd, system_opcode_instr, write_medeleg, RegisterState, TrapState,
+    ACLINT_MTIMECMP_BASE_ADDR, ACLINT_MTIMECMP_SIZE, LAST_TIMER_TICK, NUM_HARTS, TIMER_EVENT_TICK,
+    ZERO,
 };
 use spin::Mutex;
 
 use super::monitor;
 use crate::arch::cpuid;
-use crate::calls;
 use crate::riscv::filtered_fields::RiscVField;
 use crate::riscv::monitor::apply_core_updates;
-use crate::println;
-use crate::riscv::platform::{remap_core_bitmap, remap_core};
+use crate::riscv::platform::{remap_core, remap_core_bitmap};
+use crate::{calls, println};
 
 const EMPTY_ACTIVE_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
 static ACTIVE_DOMAIN: [Mutex<Option<Handle<Domain>>>; NUM_HARTS] = [EMPTY_ACTIVE_DOMAIN; NUM_HARTS];
@@ -156,7 +157,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             process_ipi(hartid);
             let active_dom = get_active_dom(hartid);
             match active_dom {
-                Some(mut domain) => { 
+                Some(mut domain) => {
                     apply_core_updates(&mut domain, hartid, reg_state);
                 }
                 None => {}
@@ -164,7 +165,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         }
         mcause::MTI => {
             // NEELU: Leaving this code here (commented for now) to enable debug via timers.
-            
+
             /* let val;
             unsafe {
                 timer_count[hartid].fetch_add(1, core::sync::atomic::Ordering::SeqCst);
@@ -186,7 +187,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             //aclint_mtimer_set_mtimecmp(hartid, TIMER_EVENT_TICK + val);
         }
         mcause::MEI => {
-            //panic!("MEI"); - don't do anything for now! 
+            //panic!("MEI"); - don't do anything for now!
         }
         mcause::ILLEGAL_INSTRUCTION => {
             if reg_state.a7 == 0x5479636865 {
@@ -226,7 +227,7 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             misaligned_load_handler(mtval, mepc, reg_state);
         }
         mcause::STORE_ADDRESS_MISALIGNED => {
-            misaligned_store_handler(mtval, mepc, reg_state); 
+            misaligned_store_handler(mtval, mepc, reg_state);
         }
         mcause::STORE_ACCESS_FAULT
         | mcause::LOAD_ACCESS_FAULT
@@ -250,7 +251,10 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     // Return to the next instruction after the trap.
     // i.e. mepc += 4
     // TODO: This shouldn't happen in case of switch.
-    if ((mcause & (1 << 63)) != (1 << 63)) && mcause != mcause::LOAD_ADDRESS_MISALIGNED && mcause != mcause::STORE_ADDRESS_MISALIGNED {
+    if ((mcause & (1 << 63)) != (1 << 63))
+        && mcause != mcause::LOAD_ADDRESS_MISALIGNED
+        && mcause != mcause::STORE_ADDRESS_MISALIGNED
+    {
         unsafe {
             asm!("csrr t0, mepc");
             asm!("addi t0, t0, 0x4");
@@ -259,35 +263,50 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
     }
 }
 
-pub fn illegal_instruction_handler(mepc: usize, mstatus: usize, mtval: usize, reg_state: &mut RegisterState) {
+pub fn illegal_instruction_handler(
+    mepc: usize,
+    mstatus: usize,
+    mtval: usize,
+    reg_state: &mut RegisterState,
+) {
     if (mtval & 3) == 3 {
         if ((mtval & 0x7c) >> 2) == 0x1c {
-            if mtval == 0x10500073 {    //WFI
+            if mtval == 0x10500073 {
+                //WFI
                 println!("Trapped on WFI: MEPC: {:x} RA: {:x} ", mepc, reg_state.ra);
-                //I'm also gonna raise timer interrupts to S-mode, how does that sound? 
+                //I'm also gonna raise timer interrupts to S-mode, how does that sound?
                 //set_mip_stip();
             } else {
-                system_opcode_instr(mtval, mstatus, reg_state); 
+                system_opcode_instr(mtval, mstatus, reg_state);
             }
-        } 
-        else {
-            panic!("Non-Truly Illegal Instruction Trap! mepc: {:x} mtval: {:x}", mepc, mtval);
+        } else {
+            panic!(
+                "Non-Truly Illegal Instruction Trap! mepc: {:x} mtval: {:x}",
+                mepc, mtval
+            );
         }
     } else {
-        panic!("Truly Illegal Instruction Trap! mepc: {:x} mtval: {:x}", mepc, mtval);
+        panic!(
+            "Truly Illegal Instruction Trap! mepc: {:x} mtval: {:x}",
+            mepc, mtval
+        );
     }
 }
 
 //Todo: Move this to riscv-utils crate -- this is a quite low-level impl. so it's better to
-//modularise it appropriately. 
+//modularise it appropriately.
 pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut RegisterState) {
-    //Assumption: No H-mode extension. MTVAL2 and MTINST are zero. 
-    //Implies: trapped instr value is zero or special value. 
+    //Assumption: No H-mode extension. MTVAL2 and MTINST are zero.
+    //Implies: trapped instr value is zero or special value.
 
     //println!("Misaligned load handler: mtval {:x} mepc: {:x}", mtval, mepc);
 
     //get insn....
-    let mut trap_state: TrapState = TrapState { epc: 0, cause: 0, tval: 0 };
+    let mut trap_state: TrapState = TrapState {
+        epc: 0,
+        cause: 0,
+        tval: 0,
+    };
     let mut mtvec = sbi_expected_trap as *const ();
     let mut mstatus: usize = 0;
     let mut instr: usize = 0;
@@ -318,11 +337,14 @@ pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut Regist
         out("a4") _,
         );
     }
-    
-    //println!("Done reading instr: {:x}", instr); 
+
+    //println!("Done reading instr: {:x}", instr);
 
     if trap_state.cause != 0 {
-        panic!("Misaligned load handler: Fetch fault {:x} trap epc: {:x}", trap_state.cause, trap_state.epc);
+        panic!(
+            "Misaligned load handler: Fetch fault {:x} trap epc: {:x}",
+            trap_state.cause, trap_state.epc
+        );
     }
 
     if (instr & 0x3) != 0x3 {
@@ -333,19 +355,24 @@ pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut Regist
 
     let mut len: usize = 0;
     let mut shift: usize = 0;
-    if (instr & 0x707f) == 0x2003 {  //Matching insn_match_lw
+    if (instr & 0x707f) == 0x2003 {
+        //Matching insn_match_lw
         len = 4;
-        shift = 8*4;    
-    } else if (instr & 0xe003) == 0x4000 { //Matching insn_match_c_lw
+        shift = 8 * 4;
+    } else if (instr & 0xe003) == 0x4000 {
+        //Matching insn_match_c_lw
         len = 4;
-        shift = 8*4;
+        shift = 8 * 4;
         instr = (8 + ((instr >> 2) & ((1 << 3) - 1))) << 7; //Todo: Needs to be cleaned - check
                                                             //insn_match_c_lw (rvc_rs2s << sh_rd)
     } else {
-        panic!("Cannot handle this misaligned load! mtval: {:x} mepc: {:x} instr: {:x}", mtval, mepc, instr);
+        panic!(
+            "Cannot handle this misaligned load! mtval: {:x} mepc: {:x} instr: {:x}",
+            mtval, mepc, instr
+        );
     }
-   
-    //TODO: Is shifting needed? 
+
+    //TODO: Is shifting needed?
 
     //get value....
     let mut value: usize = 0;
@@ -354,9 +381,13 @@ pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut Regist
     mtvec = sbi_expected_trap as *const ();
     for i in 0..len {
         let load_address = mtval + i;
-        let mut load_trap_state: TrapState = TrapState { epc: 0, cause: 0, tval: 0 }; 
+        let mut load_trap_state: TrapState = TrapState {
+            epc: 0,
+            cause: 0,
+            tval: 0,
+        };
         unsafe {
-           asm!(
+            asm!(
             "mv a3, {trap_st}
             csrrw {tvec}, mtvec, {tvec} 
             csrrs {status}, mstatus, {mprv} 
@@ -378,21 +409,24 @@ pub fn misaligned_load_handler(mtval: usize, mepc: usize, reg_state: &mut Regist
             );
         }
 
-        value = (value) | ((tmp_value as usize) << (i*8));
+        value = (value) | ((tmp_value as usize) << (i * 8));
         if load_trap_state.cause != 0 {
-            panic!("Misaligned load handler: Load fault {:x} epc: {:x}", load_trap_state.cause, load_trap_state.epc);  
+            panic!(
+                "Misaligned load handler: Load fault {:x} epc: {:x}",
+                load_trap_state.cause, load_trap_state.epc
+            );
         }
-    } 
+    }
 
     //println!("Misaligned load value{:x}", value);
-    
+
     set_rd(instr, reg_state, (value << shift) as usize >> shift);
-    
+
     unsafe {
         asm!("csrr t0, mepc");
         asm!("add t0, t0, {}", in(reg) instr_len);
         asm!("csrw mepc, t0");
-    } 
+    }
 }
 
 //Todo: There is a lot of repeated code between misaligned load/store handlers. Make it common.
@@ -400,7 +434,11 @@ pub fn misaligned_store_handler(mtval: usize, mepc: usize, reg_state: &mut Regis
     //println!("Misaligned store handler: mtval {:x} mepc: {:x}", mtval, mepc);
 
     //get insn....
-    let mut trap_state: TrapState = TrapState { epc: 0, cause: 0, tval: 0 };
+    let mut trap_state: TrapState = TrapState {
+        epc: 0,
+        cause: 0,
+        tval: 0,
+    };
     let mut mtvec = sbi_expected_trap as *const ();
     let mut mstatus: usize = 0;
     let mut instr: usize = 0;
@@ -431,11 +469,14 @@ pub fn misaligned_store_handler(mtval: usize, mepc: usize, reg_state: &mut Regis
         out("a4") _,
         );
     }
-    
-    //println!("Done reading instr: {:x}", instr);  
+
+    //println!("Done reading instr: {:x}", instr);
 
     if trap_state.cause != 0 {
-        panic!("Misaligned store handler: Fetch fault {:x} epc: {:x}", trap_state.cause, trap_state.epc);
+        panic!(
+            "Misaligned store handler: Fetch fault {:x} epc: {:x}",
+            trap_state.cause, trap_state.epc
+        );
     }
 
     if (instr & 0x3) != 0x3 {
@@ -448,12 +489,14 @@ pub fn misaligned_store_handler(mtval: usize, mepc: usize, reg_state: &mut Regis
     //println!("Misaligned store val: {:x}", value);
 
     let mut len: usize = 0;
-    if (instr & 0x707f) == 0x2023 { //Matching insn_match_sw
+    if (instr & 0x707f) == 0x2023 {
+        //Matching insn_match_sw
         len = 4;
-    } else if (instr & 0xe003) == 0xc000 {  //Matching insn_match_c_sd
+    } else if (instr & 0xe003) == 0xc000 {
+        //Matching insn_match_c_sd
         len = 4;
-        value = 8 + ((instr >> 2) & ((1 << 3) - 1)); //get rs2s 
-        //Again a bit of repetition - need to modularise get rs1/rs2/rs2s. 
+        value = 8 + ((instr >> 2) & ((1 << 3) - 1)); //get rs2s
+                                                     //Again a bit of repetition - need to modularise get rs1/rs2/rs2s.
         let reg_offset = value & 0x1f;
         let reg_state_ptr = reg_state as *mut RegisterState as *const u64;
         unsafe {
@@ -461,19 +504,26 @@ pub fn misaligned_store_handler(mtval: usize, mepc: usize, reg_state: &mut Regis
             value = *reg_ptr as usize;
         }
     } else {
-        panic!("Cannot handle this misaligned store! mtval: {:x} mepc: {:x} instr: {:x}", mtval, mepc, instr);
+        panic!(
+            "Cannot handle this misaligned store! mtval: {:x} mepc: {:x} instr: {:x}",
+            mtval, mepc, instr
+        );
     }
 
-    //set value ...... 
+    //set value ......
     mstatus = 0;
     mtvec = sbi_expected_trap as *const ();
     for i in 0..len {
         let store_address = mtval + i;
         let tmp_value: u8 = (value & 0xff) as u8;
         value = value >> 8;
-        let mut store_trap_state: TrapState = TrapState { epc: 0, cause: 0, tval: 0 }; 
+        let mut store_trap_state: TrapState = TrapState {
+            epc: 0,
+            cause: 0,
+            tval: 0,
+        };
         unsafe {
-           asm!(
+            asm!(
             "mv a3, {trap_st}
             csrrw {tvec}, mtvec, {tvec} 
             csrrs {status}, mstatus, {mprv} 
@@ -496,9 +546,12 @@ pub fn misaligned_store_handler(mtval: usize, mepc: usize, reg_state: &mut Regis
         }
 
         if store_trap_state.cause != 0 {
-            panic!("Misaligned store handler: Store fault {:x} epc: {:x}", store_trap_state.cause, store_trap_state.epc);  
+            panic!(
+                "Misaligned store handler: Store fault {:x} epc: {:x}",
+                store_trap_state.cause, store_trap_state.epc
+            );
         }
-    } 
+    }
 
     //println!("Done storing value: {:x} and instr_len : {}", value, instr_len);
 
@@ -512,9 +565,9 @@ pub fn misaligned_store_handler(mtval: usize, mepc: usize, reg_state: &mut Regis
 #[repr(align(4))]
 #[naked]
 pub extern "C" fn sbi_expected_trap() {
-    unsafe { 
+    unsafe {
         asm!(
-        "csrr a4, mepc
+            "csrr a4, mepc
         sd a4, 0*8(a3)
         csrr a4, mcause 
         sd a4, 1*8(a3)
@@ -524,7 +577,8 @@ pub extern "C" fn sbi_expected_trap() {
         addi a4, a4, 4
         csrw mepc, a4
         mret",
-        options(noreturn));
+            options(noreturn)
+        );
     }
 }
 
@@ -609,7 +663,13 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
                     reg_state.a4 = 0;
                 }
                 reg_state.a0 = 0x0;
-                log::debug!("Returning from enumerate: v1: 0x{:x} v2: 0x{:x} v3: 0x{:x} next: 0x{:x}",reg_state.a1, reg_state.a2, reg_state.a3, reg_state.a4);
+                log::debug!(
+                    "Returning from enumerate: v1: 0x{:x} v2: 0x{:x} v3: 0x{:x} next: 0x{:x}",
+                    reg_state.a1,
+                    reg_state.a2,
+                    reg_state.a3,
+                    reg_state.a4
+                );
             }
             calls::SWITCH => {
                 log::debug!(" Hart {} Switch", hartid);
@@ -636,7 +696,7 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
                 if let Ok(bitmap) = Bitmaps::from_usize(arg_1) {
                     let mut core_bitmap = arg_3 as u64;
                     if bitmap == Bitmaps::CORE {
-                        core_bitmap = remap_core_bitmap(core_bitmap); 
+                        core_bitmap = remap_core_bitmap(core_bitmap);
                     }
                     match monitor::do_set_config(
                         active_dom,
@@ -659,8 +719,14 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
             }
             calls::SEND_REGION => {
                 log::debug!("Send");
-                monitor::do_send_region(active_dom, LocalCapa::new(arg_1), LocalCapa::new(arg_2), arg_5, arg_6)
-                    .expect("TODO");
+                monitor::do_send_region(
+                    active_dom,
+                    LocalCapa::new(arg_1),
+                    LocalCapa::new(arg_2),
+                    arg_5,
+                    arg_6,
+                )
+                .expect("TODO");
                 reg_state.a0 = 0x0;
             }
             calls::CONFIGURE_CORE => {
@@ -736,8 +802,8 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
             }
             calls::SELF_CONFIG => {
                 //This part will not change the context of the domain - it's essentially only being
-                //used to deleg/undeleg ecalls from u-mode at the moment. 
-                log::debug!("Self config for hart {} ",hartid);
+                //used to deleg/undeleg ecalls from u-mode at the moment.
+                log::debug!("Self config for hart {} ", hartid);
                 let context = monitor::get_context(active_dom, hartid);
                 let field = RiscVField::from_usize(arg_1).unwrap();
                 if field == RiscVField::Medeleg {
@@ -749,7 +815,7 @@ pub fn tyche_call_handler(reg_state: &mut RegisterState) {
                     } else {
                         panic!("Unexpected changes to medeleg!");
                     }
-                    write_medeleg(updated_medeleg); 
+                    write_medeleg(updated_medeleg);
                     log::debug!("Done setting medeleg to 0x{:x}.", updated_medeleg);
                     reg_state.a0 = 0;
                 } else {

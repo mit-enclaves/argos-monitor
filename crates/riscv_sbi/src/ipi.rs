@@ -7,7 +7,7 @@ use riscv_utils::{
 };
 
 use crate::ecall::HART_IPI_BUFFER;
-use crate::rfence::{local_sfence_vma_asid, local_ifence};
+use crate::rfence::{local_ifence, local_sfence_vma_asid};
 use crate::IPIRequest;
 
 pub fn aclint_mswi_send_ipi(target_hartid: usize) {
@@ -51,7 +51,9 @@ pub fn process_tlb_ipis(current_hartid: usize) {
             } => {
                 process_tlb_ipi(src_hartid, start, size, asid);
             }
-            IPIRequest::RfenceIfence { src_hartid } => { process_ifence_ipi(src_hartid); }
+            IPIRequest::RfenceIfence { src_hartid } => {
+                process_ifence_ipi(src_hartid);
+            }
             _ => ipi_handling_failed(),
         }
     }

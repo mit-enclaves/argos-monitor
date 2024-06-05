@@ -63,16 +63,16 @@ where
         HostVirtAddr::new(phys_addr.as_usize() + self.offset + self.host_offset)
     }
 
-//#[cfg(not(feature = "visionfive2"))]
+    //#[cfg(not(feature = "visionfive2"))]
     fn root(&mut self) -> (Self::PhysAddr, Level) {
         (self.root, self.level)
     }
 
-/*#[cfg(feature = "visionfive2")]
-    fn root(&mut self) -> (Self::PhysAddr, Level) {
-        (self.root, Level::L3)
-    }
-*/
+    /*#[cfg(feature = "visionfive2")]
+        fn root(&mut self) -> (Self::PhysAddr, Level) {
+            (self.root, Level::L3)
+        }
+    */
 
     fn get_phys_addr(entry: u64) -> Self::PhysAddr {
         Self::PhysAddr::from_u64((entry >> RVPtFlag::flags_count()) << PAGE_OFFSET_WIDTH)
@@ -186,7 +186,7 @@ where
                     }
                     // Opportunity to map a 2MB region.
                     if level == Level::L2 {
-                       // log::info!("Mapping a 2 MB region");
+                        // log::info!("Mapping a 2 MB region");
                         if (addr.as_usize() + PageSize::HUGE.bits() <= end)
                             && (phys % (PageSize::HUGE.bits() as u64) == 0)
                         {
@@ -203,8 +203,10 @@ where
                     if level == Level::L1 {
                         log::info!("Mapping a normal region");
                         assert!(phys % (PageSize::NORMAL.bits() as u64) == 0);
-                        *entry =
-                            ((phys >> PAGE_OFFSET_WIDTH) << RVPtFlag::flags_count()) | prot.bits() | RVPtFlag::ACCESSED.bits() | RVPtFlag::DIRTY.bits();
+                        *entry = ((phys >> PAGE_OFFSET_WIDTH) << RVPtFlag::flags_count())
+                            | prot.bits()
+                            | RVPtFlag::ACCESSED.bits()
+                            | RVPtFlag::DIRTY.bits();
                         assert!(
                             *entry & RVPtFlag::READ.bits() != 0
                                 || *entry & RVPtFlag::EXECUTE.bits() != 0
@@ -231,7 +233,7 @@ where
         }
     }
 
-//#[cfg(not(feature = "visionfive2"))]
+    //#[cfg(not(feature = "visionfive2"))]
     /// Prints the permissions of page tables for the given range.
     pub fn debug_range(&mut self, virt_addr: VirtAddr, size: usize, dept: Level) {
         unsafe {
@@ -277,48 +279,48 @@ where
             .expect("Failed to print PTs");
         }
     }
-/* 
-#[cfg(feature = "visionfive2")]
-    /// Prints the permissions of page tables for the given range.
-    pub fn debug_range(&mut self, virt_addr: VirtAddr, size: usize, dept: Level) {
-        unsafe {
-            self.walk_range(
-                virt_addr,
-                VirtAddr::from_usize(virt_addr.as_usize() + size),
-                &mut |addr, entry, level| {
-                    let flags = RVPtFlag::from_bits_truncate(*entry);
-                    let phys = (*entry >> RVPtFlag::flags_count()) << PAGE_OFFSET_WIDTH;
+    /*
+    #[cfg(feature = "visionfive2")]
+        /// Prints the permissions of page tables for the given range.
+        pub fn debug_range(&mut self, virt_addr: VirtAddr, size: usize, dept: Level) {
+            unsafe {
+                self.walk_range(
+                    virt_addr,
+                    VirtAddr::from_usize(virt_addr.as_usize() + size),
+                    &mut |addr, entry, level| {
+                        let flags = RVPtFlag::from_bits_truncate(*entry);
+                        let phys = (*entry >> RVPtFlag::flags_count()) << PAGE_OFFSET_WIDTH;
 
-                    // Do not go too deep
-                    match (dept, level) {
-                        (Level::L3, Level::L2) | (Level::L3, Level::L1) => return WalkNext::Leaf,
-                        (Level::L2, Level::L1) => return WalkNext::Leaf,
-                        _ => (),
-                    };
-
-                    // Print if present
-                    if flags.contains(RVPtFlag::VALID) {
-                        let padding = match level {
-                            Level::L3 => "  ",
-                            Level::L2 => "    ",
-                            Level::L1 => "      ",
+                        // Do not go too deep
+                        match (dept, level) {
+                            (Level::L3, Level::L2) | (Level::L3, Level::L1) => return WalkNext::Leaf,
+                            (Level::L2, Level::L1) => return WalkNext::Leaf,
+                            _ => (),
                         };
-                        log::info!(
-                            "{}{:?} Virt: 0x{:x} - Phys: 0x{:x} - {:?}\n",
-                            padding,
-                            level,
-                            addr.as_usize(),
-                            phys,
-                            flags
-                        );
-                        WalkNext::Continue
-                    } else {
-                        WalkNext::Leaf
-                    }
-                },
-            )
-            .expect("Failed to print PTs");
+
+                        // Print if present
+                        if flags.contains(RVPtFlag::VALID) {
+                            let padding = match level {
+                                Level::L3 => "  ",
+                                Level::L2 => "    ",
+                                Level::L1 => "      ",
+                            };
+                            log::info!(
+                                "{}{:?} Virt: 0x{:x} - Phys: 0x{:x} - {:?}\n",
+                                padding,
+                                level,
+                                addr.as_usize(),
+                                phys,
+                                flags
+                            );
+                            WalkNext::Continue
+                        } else {
+                            WalkNext::Leaf
+                        }
+                    },
+                )
+                .expect("Failed to print PTs");
+            }
         }
-    }
- */ 
-} 
+     */
+}

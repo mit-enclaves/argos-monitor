@@ -56,16 +56,16 @@ pub const ACLINT_MTIMER_VALUE_ADDRESS: usize = 0x200bff8;
 
 #[derive(Copy, Clone, Debug)]
 pub struct RegisterState {
-    pub zero: usize, 
+    pub zero: usize,
     pub ra: usize,
-    pub sp: usize,  //Never to be used as far as Tyche is concerned.  
+    pub sp: usize, //Never to be used as far as Tyche is concerned.
     pub gp: usize,
     pub tp: usize,
     pub t0: usize,
     pub t1: usize,
     pub t2: usize,
     pub s0: usize,
-    pub s1: usize, 
+    pub s1: usize,
     pub a0: isize,
     pub a1: isize,
     pub a2: usize,
@@ -83,7 +83,7 @@ pub struct RegisterState {
     pub s8: usize,
     pub s9: usize,
     pub s10: usize,
-    pub s11: usize, 
+    pub s11: usize,
     pub t3: usize,
     pub t4: usize,
     pub t5: usize,
@@ -93,16 +93,16 @@ pub struct RegisterState {
 impl RegisterState {
     pub const fn const_default() -> RegisterState {
         RegisterState {
-            zero: 0, 
+            zero: 0,
             ra: 0,
-            sp: 0,  //Never to be used as far as Tyche is concerned.  
+            sp: 0, //Never to be used as far as Tyche is concerned.
             gp: 0,
             tp: 0,
             t0: 0,
             t1: 0,
             t2: 0,
             s0: 0,
-            s1: 0, 
+            s1: 0,
             a0: 0,
             a1: 0,
             a2: 0,
@@ -120,7 +120,7 @@ impl RegisterState {
             s8: 0,
             s9: 0,
             s10: 0,
-            s11: 0, 
+            s11: 0,
             t3: 0,
             t4: 0,
             t5: 0,
@@ -145,7 +145,6 @@ impl TrapState {
         }
     }
 }
-
 
 pub fn read_mscratch() -> usize {
     let mut mscratch: usize;
@@ -194,7 +193,6 @@ pub fn write_mstatus(mstatus: usize) {
         asm!("csrw mstatus, {}", in(reg) mstatus);
     }
 }
-
 
 pub fn read_satp() -> usize {
     let mut satp: usize;
@@ -397,9 +395,9 @@ pub fn read_mip_seip() -> usize {
 
     unsafe {
         asm!("csrr {}, mip", out(reg) mip);
-    } 
+    }
 
-    (mip & 0x200)
+    mip & 0x200
 }
 
 pub fn clear_mip_stip() {
@@ -423,28 +421,28 @@ pub fn set_mip_stip() {
         asm!("csrr {}, mip", out(reg) mip);
     }
 
-    mip = mip | 0x20; 
+    mip = mip | 0x20;
 
     unsafe {
         asm!("csrw mip, {}", in(reg) mip);
     }
 }
 
-
 pub fn system_opcode_instr(mtval: usize, mstatus: usize, reg_state: &mut RegisterState) {
-    let rs1_num: usize = (mtval >> 15) & 0x1f;
-    let do_write: usize;
-    let rs1_val: u64 = get_rs1(mtval, reg_state);
-    
+    let _rs1_num: usize = (mtval >> 15) & 0x1f;
+    let _do_write: usize;
+    let _rs1_val: u64 = get_rs1(mtval, reg_state);
+
     let csr_num: usize = mtval >> 20;
 
-    let prev_mode = (mstatus >> mstatus::MPP_LOW) & mstatus::MPP_MASK; 
+    let prev_mode = (mstatus >> mstatus::MPP_LOW) & mstatus::MPP_MASK;
 
-    if prev_mode == 0x3 { 
-            panic!("CSR emulate attempt from M-mode!");
+    if prev_mode == 0x3 {
+        panic!("CSR emulate attempt from M-mode!");
     }
 
-    if csr_num == 0xc01 {   //CSR_TIME
+    if csr_num == 0xc01 {
+        //CSR_TIME
         let csr_val: usize;
         unsafe {
             asm!("ld {}, 0({})",out(reg) csr_val, in(reg) ACLINT_MTIMER_VALUE_ADDRESS);
@@ -452,41 +450,40 @@ pub fn system_opcode_instr(mtval: usize, mstatus: usize, reg_state: &mut Registe
         set_rd(mtval, reg_state, csr_val);
     } else {
         //Truly Illegal.
-        println!("Truly illegal instr or Unsupported CSR emulation request"); 
+        println!("Truly illegal instr or Unsupported CSR emulation request");
         reg_state.a0 = -2;
     }
-
 }
 
 pub fn get_rs1(mtval: usize, reg_state: &mut RegisterState) -> u64 {
-    let reg_offset = (mtval >> 15) & 0x1f;     //15 = SH_RS1, 3 - log_Regbytes for xlen 64,
-                                                    //0xf8 = reg_mask. Todo: recalc reg_mask to
-                                                    //exclude mepc, mstatus, etc. It's
-                                                    //ok for now though, not a problem. 
+    let reg_offset = (mtval >> 15) & 0x1f; //15 = SH_RS1, 3 - log_Regbytes for xlen 64,
+                                           //0xf8 = reg_mask. Todo: recalc reg_mask to
+                                           //exclude mepc, mstatus, etc. It's
+                                           //ok for now though, not a problem.
 
     let reg_state_ptr = reg_state as *mut RegisterState as *const u64;
-    unsafe { 
+    unsafe {
         let reg_ptr = reg_state_ptr.offset(reg_offset as isize);
         *reg_ptr
     }
 }
 
 pub fn get_rs2(instr: usize, reg_state: &mut RegisterState) -> usize {
-    let reg_offset = (instr >> 20) & 0x1f; 
+    let reg_offset = (instr >> 20) & 0x1f;
     let reg_state_ptr = reg_state as *mut RegisterState as *const usize;
-    unsafe { 
+    unsafe {
         let reg_ptr = reg_state_ptr.offset(reg_offset as isize);
         *reg_ptr
-    } 
+    }
 }
 
 pub fn set_rd(mtval: usize, reg_state: &mut RegisterState, val: usize) {
     let reg_offset = (mtval >> 7) & 0x1f;
 
-    let mut reg_state_ptr = reg_state as *mut RegisterState as *mut usize;
+    let reg_state_ptr = reg_state as *mut RegisterState as *mut usize;
 
-    unsafe { 
+    unsafe {
         let reg_ptr = reg_state_ptr.offset(reg_offset as isize);
-        *reg_ptr = val; 
+        *reg_ptr = val;
     }
 }

@@ -1,17 +1,22 @@
 //! RISC-V 64 implementation
 
 use core::arch::asm;
+#[cfg(not(feature = "visionfive2"))]
 use core::fmt;
+#[cfg(not(feature = "visionfive2"))]
 use core::fmt::Write;
 
+#[cfg(not(feature = "visionfive2"))]
 use spin::Mutex;
+#[cfg(not(feature = "visionfive2"))]
 pub const SERIAL_PORT_BASE_ADDRESS: usize = 0x1000_0000;
+#[cfg(not(feature = "visionfive2"))]
 use uart_16550::MmioSerialPort;
 
 use crate::ExitCode;
 
 /// Internal function used to print to stdout when running in Qemu.
-
+#[cfg(not(feature = "visionfive2"))]
 pub fn _print(_args: fmt::Arguments) {
     static mut SERIAL_PORT: Option<Mutex<MmioSerialPort>> = None;
     unsafe {

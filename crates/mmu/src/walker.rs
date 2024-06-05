@@ -99,7 +99,6 @@ impl Level {
     }
 } */
 
-
 // ——————————————————————————————— Addresses ———————————————————————————————— //
 
 pub trait Address: Sized + Copy + Ord {
@@ -150,7 +149,7 @@ pub trait Address: Sized + Copy + Ord {
         ((self.as_u64() >> L1_INDEX_START) & PAGE_TABLE_INDEX_MASK) as usize
     }
 
-#[cfg(not(feature = "visionfive2"))]
+    #[cfg(not(feature = "visionfive2"))]
     /// Returns this address index for a given level.
     fn index(self, level: Level) -> usize {
         match level {
@@ -161,7 +160,7 @@ pub trait Address: Sized + Copy + Ord {
         }
     }
 
-#[cfg(feature = "visionfive2")]
+    #[cfg(feature = "visionfive2")]
     /// Returns this address index for a given level.
     fn index(self, level: Level) -> usize {
         match level {
@@ -169,7 +168,7 @@ pub trait Address: Sized + Copy + Ord {
             Level::L2 => self.l2_index(),
             Level::L1 => self.l1_index(),
         }
-    } 
+    }
 }
 
 macro_rules! addr_impl {

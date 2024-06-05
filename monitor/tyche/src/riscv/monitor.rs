@@ -3,9 +3,8 @@
 use core::arch::asm;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use attestation::hashing::TycheHasher;
+use attestation::hashing::{hash_region, TycheHasher};
 use attestation::signature::EnclaveReport;
-use attestation::hashing::hash_region;
 use capa_engine::config::{NB_CORES, NB_DOMAINS};
 use capa_engine::utils::BitmapIterator;
 use capa_engine::{
@@ -19,7 +18,9 @@ use riscv_pmp::{
     FROZEN_PMP_ENTRIES, PMP_CFG_ENTRIES, PMP_ENTRIES,
 };
 use riscv_sbi::ipi::aclint_mswi_send_ipi;
-use riscv_tyche::{DOM0_ROOT_REGION_END, DOM0_ROOT_REGION_START, DOM0_ROOT_REGION_2_START, DOM0_ROOT_REGION_2_END};
+use riscv_tyche::{
+    DOM0_ROOT_REGION_2_END, DOM0_ROOT_REGION_2_START, DOM0_ROOT_REGION_END, DOM0_ROOT_REGION_START,
+};
 use riscv_utils::*;
 use spin::{Mutex, MutexGuard};
 
@@ -360,7 +361,7 @@ pub fn do_send_region(
     current: Handle<Domain>,
     capa: LocalCapa,
     to: LocalCapa,
-    size: usize, 
+    size: usize,
     extra_rights: usize,
 ) -> Result<(), CapaError> {
     let mut engine = CAPA_ENGINE.lock();
@@ -672,21 +673,28 @@ fn switch_domain(
     current_ctx.sp = read_mscratch(); //Recall that this is where the sp is saved.
     current_ctx.satp = read_satp();
     current_ctx.medeleg = read_medeleg();
-    current_ctx.mstatus = read_mstatus(); 
+    current_ctx.mstatus = read_mstatus();
 
     //Switch domain
-    log::debug!("Writing satp {:x}, sp {:x}, mepc {:x} medeleg: {:x}", next_ctx.satp, next_ctx.sp, next_ctx.mepc, next_ctx.medeleg);
+    log::debug!(
+        "Writing satp {:x}, sp {:x}, mepc {:x} medeleg: {:x}",
+        next_ctx.satp,
+        next_ctx.sp,
+        next_ctx.mepc,
+        next_ctx.medeleg
+    );
     write_satp(next_ctx.satp);
     write_mscratch(next_ctx.sp);
     write_mepc(next_ctx.mepc);
     write_medeleg(next_ctx.medeleg); //TODO: This needs to be part of Trap/UpdateTrap.
-    if next_ctx.mstatus != 0 {  //So basically if it doesn'e explicitly get set by the manager, it
-                                //will not be changed. And from next time onwards, it will be
-                                //restored based on the value saved (for the current_ctx) .... 
-                                //For TD1, this means it will always run in the mode that switches
-                                //to the domain for the first time from TD0. 
-                                //If that mode is U-mode, good luck because page tables don't
-                                //expect that. 
+    if next_ctx.mstatus != 0 {
+        //So basically if it doesn'e explicitly get set by the manager, it
+        //will not be changed. And from next time onwards, it will be
+        //restored based on the value saved (for the current_ctx) ....
+        //For TD1, this means it will always run in the mode that switches
+        //to the domain for the first time from TD0.
+        //If that mode is U-mode, good luck because page tables don't
+        //expect that.
         write_mstatus(next_ctx.mstatus);
     }
 
@@ -759,13 +767,21 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
 
         if pmp_index >= PMP_ENTRIES {
             panic!("Cannot continue running this domain: PMPOverflow");
-        } 
+        }
 
         pmp_write_response = pmp_write_compute(pmp_index, range.start, range.size(), XWR_PERM);
 
         if pmp_write_response.write_failed {
-            log::debug!("Attempted to compute pmp: {} start: {:x} size: {:x}", pmp_index, range.start, range.size());
-            panic!("PMP Write Not Ok - failure code: {:#?}",pmp_write_response.failure_code);
+            log::debug!(
+                "Attempted to compute pmp: {} start: {:x} size: {:x}",
+                pmp_index,
+                range.start,
+                range.size()
+            );
+            panic!(
+                "PMP Write Not Ok - failure code: {:#?}",
+                pmp_write_response.failure_code
+            );
         } else {
             log::debug!("PMP Write Ok");
 
@@ -804,7 +820,6 @@ fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<Capa
                 );
                 pmp_index = pmp_index + 2;
             }
-
         }
     }
     let mut domain = get_domain(domain_handle);

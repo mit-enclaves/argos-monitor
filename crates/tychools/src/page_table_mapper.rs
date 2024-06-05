@@ -121,7 +121,7 @@ pub fn generate_page_tables(
             offset,
             0,
             root.phys_addr,
-        )) */ 
+        )) */
         Mapper::RVMapper(RVPtMapper::<HostPhysAddr, HostVirtAddr>::new_at(
             offset,
             0,

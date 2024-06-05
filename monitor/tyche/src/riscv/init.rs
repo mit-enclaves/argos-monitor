@@ -9,9 +9,7 @@ use riscv_utils::{
 };
 
 use super::{arch, guest, launch_guest, monitor};
-
 use crate::debug::qemu;
-
 use crate::riscv::cpuid;
 
 pub fn arch_entry_point(hartid: usize, manifest: RVManifest, log_level: log::LevelFilter) -> ! {
@@ -54,7 +52,7 @@ pub fn arch_entry_point(hartid: usize, manifest: RVManifest, log_level: log::Lev
         //Set the active domain.
         guest::set_active_dom(hartid, domain);
 
-        //monitor::do_debug(); 
+        //monitor::do_debug();
 
         let mip: usize;
         let mie: usize;
@@ -86,14 +84,13 @@ pub fn arch_entry_point(hartid: usize, manifest: RVManifest, log_level: log::Lev
             manifest.next_addr,
             manifest.next_mode,
         );
-        
+
         qemu::exit(qemu::ExitCode::Success);
-    
     } else {
         HART_START[hartid].store(false, Ordering::SeqCst);
         log::info!(
             "============= Hello again from Second Stage on Warmboot Hart ID: {} HART_START: {}=============",
-            hartid, HART_START[hartid].load(Ordering::SeqCst) 
+            hartid, HART_START[hartid].load(Ordering::SeqCst)
         );
         let mhartid = cpuid();
         log::debug!("========== Warmboot MHARTID: {} ===========", mhartid);
@@ -145,4 +142,3 @@ pub fn arch_entry_point(hartid: usize, manifest: RVManifest, log_level: log::Lev
         qemu::exit(qemu::ExitCode::Success);
     }
 }
-
