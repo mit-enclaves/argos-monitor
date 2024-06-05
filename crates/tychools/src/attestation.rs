@@ -171,6 +171,7 @@ pub fn attestation_check(
     let mut tpm_mod_arr: [u8; TPM_SIG_SZ] = [0; TPM_SIG_SZ];
     let mut tpm_att_arr: [u8; TPM_ATT_SZ] = [0; TPM_ATT_SZ];
     let mut tpm_sig_verified: bool = false;
+    let mut tpm_pcr_verified: bool = false;
     let mut index_pub = 0;
     let mut index_enc = 0;
     let mut index_sig = 0;
@@ -236,10 +237,11 @@ pub fn attestation_check(
 
     if riscv_enabled {
         log::info!("TPM_PCR_REDIGEST IS : {}", TPM_PCR_REDIGEST);
+        log::info!("TPM_PCR_REDIGEST IS : {:?}", encode(&tpm_att_arr[81..]));
         if encode(&(tpm_att_arr[81..])) == TPM_PCR_REDIGEST {
-            log::info!("PCR is verified!");
+            tpm_pcr_verified = true;
         } else {
-            log::info!("PCR digest has not been verified");
+            tpm_pcr_verified = false;
         }
 
         let der_payload = construct_der_rsa_pkey(&tpm_mod_arr);
@@ -288,13 +290,25 @@ pub fn attestation_check(
                 .expect("Write failed");
         }
         if riscv_enabled {
+            if tpm_pcr_verified {
+                log::info!("TPM PCR redigest is verified!");
+                data_file
+                    .write(b"TPM PCR redigest is verified\n")
+                    .expect("Write failed");
+            } else {
+                log::info!("TPM PCR redigest was not verified!");
+                data_file
+                    .write(b"TPM PCR redigest was not verified\n")
+                    .expect("Write failed");
+            }
+
             if tpm_sig_verified {
                 log::info!("TPM signature is verified!");
                 data_file
                     .write(b"TPM signature is verified")
                     .expect("Write failed");
             } else {
-                log::info!("TPM signature was not verified!");
+                log::info!("TPM signature was not verified!\n");
                 data_file
                     .write(b"TPM signature  was not verified\n")
                     .expect("Write failed");
