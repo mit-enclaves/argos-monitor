@@ -1,4 +1,4 @@
-use capa_engine::context::{Cache, RegisterContext, RegisterGroup, RegisterState};
+use capa_engine::context::{RegisterContext, RegisterGroup};
 use capa_engine::Handle;
 use spin::Mutex;
 use vmx::fields::{VmcsField, VmcsFieldWidth};
@@ -14,7 +14,6 @@ trait ContextRegisterx86 {
     fn from_usize(v: usize) -> Self;
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(usize)]
 pub enum ContextGpx86 {
@@ -36,7 +35,6 @@ pub enum ContextGpx86 {
     Lstar = 15,
 }
 
-#[allow(dead_code)]
 impl ContextGpx86 {
     pub fn as_vmcs_field(&self) -> VmcsField {
         match self {
@@ -106,7 +104,6 @@ impl ContextGpx86 {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(usize)]
 pub enum Context64x86 {
@@ -161,7 +158,6 @@ pub enum Context64x86 {
     VmxPreemptionTimerValue = 48,
 }
 
-#[allow(dead_code)]
 impl Context64x86 {
     pub fn as_vmcs_field(&self) -> VmcsField {
         match self {
@@ -332,7 +328,6 @@ impl Context64x86 {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(usize)]
 pub enum Context32x86 {
@@ -378,7 +373,6 @@ pub enum Context32x86 {
     HostIa32PerfGlobalCtrl = 39,
 }
 
-#[allow(dead_code)]
 impl Context32x86 {
     pub fn as_vmcs_field(&self) -> VmcsField {
         match self {
@@ -522,7 +516,6 @@ impl Context32x86 {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(usize)]
 pub enum Context16x86 {
@@ -548,7 +541,6 @@ pub enum Context16x86 {
     HostTrSelector = 19,
 }
 
-#[allow(dead_code)]
 impl Context16x86 {
     pub fn as_vmcs_field(&self) -> VmcsField {
         match self {
@@ -632,7 +624,6 @@ impl Context16x86 {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(usize)]
 pub enum ContextNatx86 {
@@ -668,7 +659,6 @@ pub enum ContextNatx86 {
     GuestSysenterEip = 29,
 }
 
-#[allow(dead_code)]
 impl ContextNatx86 {
     pub fn as_vmcs_field(&self) -> VmcsField {
         match self {
@@ -782,29 +772,6 @@ impl ContextNatx86 {
     }
 }
 
-#[repr(usize)]
-pub enum DirtyRegGroups {
-    Reg16 = 0,
-    Reg32,
-    Reg64,
-    RegNat,
-}
-
-impl DirtyRegGroups {
-    pub fn from_usize(v: usize) -> Self {
-        match v {
-            0 => Self::Reg16,
-            1 => Self::Reg32,
-            2 => Self::Reg64,
-            3 => Self::RegNat,
-            _ => panic!("Invalid"),
-        }
-    }
-    pub const fn size() -> usize {
-        return Self::RegNat as usize + 1;
-    }
-}
-
 pub const DUMP_FRAME: [(VmcsField, VmcsField); 9] = [
     (VmcsField::GuestRbx, VmcsField::GuestRip),
     (VmcsField::GuestRcx, VmcsField::GuestRsp),
@@ -817,7 +784,6 @@ pub const DUMP_FRAME: [(VmcsField, VmcsField); 9] = [
     (VmcsField::GuestR12, VmcsField::VmInstructionError),
 ];
 
-#[allow(dead_code)]
 pub struct Contextx86 {
     pub regs: RegisterContext<
         { Context16x86::size() },
@@ -831,7 +797,6 @@ pub struct Contextx86 {
     pub vmcs: Handle<RCFrame>,
 }
 
-#[allow(dead_code)]
 impl Contextx86 {
     pub fn translate_field(field: VmcsField) -> (RegisterGroup, usize) {
         match (field.width(), field.is_gp_register()) {
@@ -937,57 +902,6 @@ impl Contextx86 {
         }
     }
 
-    pub fn compare_to(&self, other: &Contextx86) {
-        // General purpose registers are handled by vmlaunch/vmresume.
-        // 16-bits.
-        for i in 0..Context16x86::size() {
-            if self.regs.state_16.values[i] != other.regs.state_16.values[i] {
-                log::info!(
-                    "{:?}: {:x} - {:x}",
-                    Context16x86::from_usize(i),
-                    self.regs.state_16.values[i],
-                    other.regs.state_16.values[i]
-                );
-            }
-        }
-
-        // 32-bits.
-        for i in 0..Context32x86::size() {
-            if self.regs.state_32.values[i] != other.regs.state_32.values[i] {
-                log::info!(
-                    "{:?}: {:x} - {:x}",
-                    Context32x86::from_usize(i),
-                    self.regs.state_32.values[i],
-                    other.regs.state_32.values[i]
-                );
-            }
-        }
-
-        // 64-bits.
-        for i in 0..Context64x86::size() {
-            if self.regs.state_64.values[i] != other.regs.state_64.values[i] {
-                log::info!(
-                    "{:?}: {:x} - {:x}",
-                    Context64x86::from_usize(i),
-                    self.regs.state_64.values[i],
-                    other.regs.state_64.values[i]
-                );
-            }
-        }
-
-        // Nat-bits.
-        for i in 0..ContextNatx86::size() {
-            if self.regs.state_nat.values[i] != other.regs.state_nat.values[i] {
-                log::info!(
-                    "{:?}: {:x} - {:x}",
-                    ContextNatx86::from_usize(i),
-                    self.regs.state_nat.values[i],
-                    other.regs.state_nat.values[i]
-                );
-            }
-        }
-    }
-
     /// Switch frames and flush.
     pub fn switch_flush(&mut self, rc_vmcs: &Mutex<RCFramePool>, vcpu: &mut ActiveVmcs) {
         let locked = rc_vmcs.lock();
@@ -996,14 +910,6 @@ impl Contextx86 {
         vcpu.switch_frame(rc_frame.frame).unwrap();
         // Load values that changed.
         self.flush(vcpu);
-    }
-
-    /// Save only Cr3, Rip, Rsp for shared vmcs.
-    pub fn save_shared(&mut self, vcpu: &ActiveVmcs) -> Result<(), VmxError> {
-        self.set(VmcsField::GuestCr3, vcpu.get(VmcsField::GuestCr3)?, None)?;
-        self.set(VmcsField::GuestRip, vcpu.get(VmcsField::GuestRip)?, None)?;
-        self.set(VmcsField::GuestRsp, vcpu.get(VmcsField::GuestRsp)?, None)?;
-        Ok(())
     }
 
     // TODO: maybe more efficient if we dump the frame first?

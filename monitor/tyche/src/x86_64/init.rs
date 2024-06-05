@@ -3,17 +3,13 @@
 use core::arch::asm;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use allocator::FrameAllocator;
-use capa_engine::{Domain, Handle};
-use stage_two_abi::{GuestInfo, Manifest};
+use stage_two_abi::Manifest;
 use vmx::fields::VmcsField;
 pub use vmx::ActiveVmcs;
 
-use super::state::{StateX86, VmxState};
-use super::{arch, cpuid, launch_guest, monitor, vmx_helper};
+use super::{arch, cpuid};
 use crate::allocator;
 use crate::debug::qemu;
-use crate::monitor::{Monitor, PlatformState};
 use crate::statics::get_manifest;
 use crate::x86_64::platform::MonitorX86;
 
@@ -30,81 +26,6 @@ const FALSE: AtomicBool = AtomicBool::new(false);
 static BSP_READY: AtomicBool = FALSE;
 pub static NB_BOOTED_CORES: AtomicUsize = AtomicUsize::new(0);
 static mut MANIFEST: Option<&'static Manifest> = None;
-
-pub fn arch_entry_point1(log_level: log::LevelFilter) -> ! {
-    let cpuid = cpuid();
-
-    if cpuid == 0 {
-        logger::init(log_level);
-        log::info!("CPU{}: Hello from second stage!", cpuid);
-        #[cfg(feature = "bare_metal")]
-        log::info!("Running on bare metal");
-
-        // SAFETY: The BSP is responsible for retrieving the manifest
-        let manifest = unsafe {
-            MANIFEST = Some(get_manifest());
-            MANIFEST.as_ref().unwrap()
-        };
-
-        init_arch(manifest, 0);
-        allocator::init(manifest);
-        // SAFETY: only called once on the BSP
-        //monitor::init(manifest);
-        let mut monitor = MonitorX86 {};
-        //let (vmx_state, domain) = unsafe { create_vcpu(&manifest.info) };
-        let (vmx_state, domain) = MonitorX86::init(manifest, true);
-
-        log::info!("Waiting for {} cores", manifest.smp.smp);
-        while NB_BOOTED_CORES.load(Ordering::SeqCst) + 1 < manifest.smp.smp {
-            core::hint::spin_loop();
-        }
-        log::info!("Stage 2 initialized");
-
-        // Mark the BSP as ready to launch guest on all APs.
-        BSP_READY.store(true, Ordering::SeqCst);
-
-        // Launch guest and exit
-        launch_guest(manifest, vmx_state, domain);
-        qemu::exit(qemu::ExitCode::Success);
-    }
-    // The APs spin until the manifest is fetched, and then initialize the second stage
-    else {
-        log::info!("CPU{}: Hello from second stage!", cpuid);
-
-        // SAFETY: we only perform read accesses and we ensure the BSP initialized the manifest.
-        let manifest = unsafe {
-            assert!(!MANIFEST.is_none());
-            MANIFEST.as_ref().unwrap()
-        };
-
-        init_arch(manifest, cpuid);
-
-        // Wait until the BSP mark second stage as initialized (e.g. all APs are up).
-        NB_BOOTED_CORES.fetch_add(1, Ordering::SeqCst);
-        while !BSP_READY.load(Ordering::SeqCst) {
-            core::hint::spin_loop();
-        }
-
-        log::info!("CPU{}: Waiting on mailbox", cpuid);
-
-        // SAFETY: only called once on the BSP
-        let mut monitor = MonitorX86 {};
-        let (vmx_state, domain) = unsafe {
-            let (mut state, domain) = MonitorX86::init(manifest, false);
-            wait_on_mailbox(manifest, &mut state.vcpu, cpuid);
-            (state, domain)
-        };
-        /*let (vmx_state, domain) = unsafe {
-            let (mut vmx_state, domain) = create_vcpu(&manifest.info);
-            wait_on_mailbox(manifest, &mut vmx_state.vcpu, cpuid);
-            (vmx_state, domain)
-        };*/
-
-        // Launch guest and exit
-        launch_guest(manifest, vmx_state, domain);
-        qemu::exit(qemu::ExitCode::Success);
-    }
-}
 
 pub fn arch_entry_point(log_level: log::LevelFilter) -> ! {
     let cpuid = cpuid();
@@ -238,27 +159,4 @@ unsafe fn wait_on_mailbox(manifest: &Manifest, vcpu: &mut ActiveVmcs<'static>, c
         .unwrap();
 
     (mp_mailbox as *mut u16).write_volatile(0);
-}
-
-// —————————————————————————————————— VCPU —————————————————————————————————— //
-
-/// SAFETY: should only be called once per physical core
-unsafe fn create_vcpu(info: &GuestInfo) -> (VmxState, Handle<Domain>) {
-    let allocator = allocator::allocator();
-    let vmxon_frame = allocator
-        .allocate_frame()
-        .expect("Failed to allocate VMXON frame")
-        .zeroed();
-    let vmxon = vmx::vmxon(vmxon_frame).expect("Failed to execute VMXON");
-    let vmcs_frame = allocator
-        .allocate_frame()
-        .expect("Failed to allocate VMCS frame")
-        .zeroed();
-    let vmcs = vmxon
-        .create_vm_unsafe(vmcs_frame)
-        .expect("Failed to create VMCS");
-    let mut vcpu = vmcs.set_as_active().expect("Failed to set VMCS as active");
-    let domain = monitor::init_vcpu(&mut vcpu);
-    vmx_helper::init_vcpu(&mut vcpu, info, &mut StateX86::get_context(domain, cpuid()));
-    (VmxState { vcpu, vmxon }, domain)
 }

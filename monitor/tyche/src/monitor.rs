@@ -332,7 +332,7 @@ pub trait Monitor<T: PlatformState + 'static> {
             return Err(CapaError::InvalidCore);
         }
         let domain = engine.get_domain_capa(*current, domain)?;
-        let mut result: &mut [usize] = &mut [0; 15];
+        let result: &mut [usize] = &mut [0; 15];
         state.get_core_gp(&mut engine, &domain, core, result)?;
         state.dump_in_gp(&mut engine, current, cpuid(), &result)?;
         Ok(())

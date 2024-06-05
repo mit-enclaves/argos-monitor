@@ -12,7 +12,7 @@ use spin::MutexGuard;
 use stage_two_abi::{GuestInfo, Manifest};
 use utils::HostPhysAddr;
 use vmx::bitmaps::exit_qualification;
-use vmx::fields::{VmcsField, REGFILE_SIZE};
+use vmx::fields::VmcsField;
 use vmx::VmxExitReason;
 
 use super::context::{ContextGpx86, Contextx86};
@@ -22,11 +22,17 @@ use super::state::{DataX86, StateX86, VmxState, CONTEXTS, DOMAINS, IOMMU, RC_VMC
 use super::vmx_helper::{dump_host_state, load_host_state};
 use super::{cpuid, vmx_helper};
 use crate::allocator::{self, allocator};
-use crate::arch::guest::HandlerResult;
 use crate::calls;
 use crate::monitor::{CoreUpdate, Monitor, PlatformState};
 use crate::rcframe::{drop_rc, RCFrame};
 use crate::x86_64::state::TLB_FLUSH_BARRIERS;
+
+#[derive(PartialEq, Debug)]
+pub enum HandlerResult {
+    Resume,
+    Exit,
+    Crash,
+}
 
 #[cfg(not(feature = "bare_metal"))]
 pub fn remap_core(core: usize) -> usize {
@@ -297,7 +303,7 @@ impl PlatformState for StateX86 {
         core: usize,
         result: &mut [usize],
     ) -> Result<(), CapaError> {
-        let mut ctxt = Self::get_context(*domain, core);
+        let ctxt = Self::get_context(*domain, core);
         let (perm_read, _) = RegisterGroup::RegGp.to_permissions();
         let bitmap = engine.get_domain_permission(*domain, perm_read);
         let is_sealed = engine.is_domain_sealed(*domain);
@@ -312,7 +318,7 @@ impl PlatformState for StateX86 {
 
     fn dump_in_gp(
         &mut self,
-        engine: &mut MutexGuard<CapaEngine>,
+        _engine: &mut MutexGuard<CapaEngine>,
         domain: &mut Handle<Domain>,
         core: usize,
         src: &[usize],
@@ -324,7 +330,7 @@ impl PlatformState for StateX86 {
 
     fn extract_from_gp(
         &mut self,
-        engine: &mut MutexGuard<CapaEngine>,
+        _engine: &mut MutexGuard<CapaEngine>,
         domain: &Handle<Domain>,
         core: usize,
         res: &mut [(usize, usize); 6],
@@ -571,6 +577,8 @@ impl MonitorX86 {
                         }
                     }
                     vs.vcpu.next_instruction().or(Err(CapaError::PlatformError))?;
+                } else if vmcall == calls::EXIT {
+                    return Ok(HandlerResult::Exit);
                 }
                 let success = Self::do_monitor_call(vs, domain, vmcall, &args, &mut res);
                 // Put the results back.

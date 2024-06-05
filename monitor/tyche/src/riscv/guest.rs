@@ -358,7 +358,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
                 //monitor::do_debug();
                 reg_state.a0 = 0x0;
             }
-            calls::TEST_CALL => {
+            calls::_TEST_CALL => {
                 // Do nothing.
                 reg_state.a0 = 0x0;
             }
@@ -465,7 +465,7 @@ pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
             calls::SELF_CONFIG => {
                 todo!("Implement that one only if needed.");
             }
-            calls::ENCLAVE_ATTESTATION => {
+            calls::_ENCLAVE_ATTESTATION => {
                 log::trace!("Get attestation!");
                 if let Some(report) = monitor::do_domain_attestation(active_dom, arg_1, arg_2) {
                     reg_state.a0 = 0;
