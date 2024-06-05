@@ -4,12 +4,9 @@ use riscv_utils::{SIFIVE_TEST_SYSCON_BASE_ADDRESS, PCI_BASE_ADDRESS, PCI_SIZE};
 
 // --------------------------------- TYCHE - QEMU Config --------------------------------------- //
 
-//tyche monitor base address and size
-// Neelu: The following two don't matter anymore? Same for VF2 tyche start addr?
-//#[cfg(not(feature = "visionfive2"))]
-//pub const TYCHE_START_ADDRESS: usize = 0x80250000;  
+// TYCHE_START_ADDRESS: 0x80250000
 
-//tyche stack pointer
+// tyche stack pointer
 #[cfg(not(feature = "visionfive2"))]
 pub static TYCHE_STACK_POINTER: [usize; 4] = [0x80390000, 0x8038b000, 0x80386000, 0x80381000];
 
@@ -25,8 +22,7 @@ pub const DOM0_ROOT_REGION_2_END: usize = PCI_BASE_ADDRESS + PCI_SIZE;
 
 // --------------------------------- TYCHE - VF2 Config --------------------------------------- //
 
-//#[cfg(feature = "visionfive2")]
-//pub const TYCHE_START_ADDRESS: usize = 0x23fa00000;
+// TYCHE_START_ADDRESS: 0x23fa00000;
 
 #[cfg(feature = "visionfive2")]
 pub const TYCHE_STACK_POINTER: [usize; 5] = [0x23ffff000, 0x23fffb000, 0x23fff8000, 0x23fff4000, 0x23fff0000];

@@ -81,26 +81,3 @@ impl core::fmt::Display for IPIRequest {
     }
 }
 
-/*
-#[derive(Clone, Copy, Debug)]
-pub struct sbi_scratch {
-    pub fw_start: u64,
-    pub fw_size: u64,
-    pub next_arg1: u64,
-    pub next_addr: u64,
-    pub next_mode: u64,
-    pub warmboot_addr: u64,
-    pub platform_addr: u64,
-    pub hartid_to_scratch: u64,
-    pub trap_exit: u64,
-    pub tmp0: u64,
-    pub options: u64,
-    pub tyche_sm_addr: u64,
-    pub tyche_sm_mode: u64,
-    pub tyche_stack_ptr: u64,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct sbi_hsm_data {
-    pub
-} */

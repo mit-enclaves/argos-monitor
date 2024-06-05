@@ -344,12 +344,6 @@ pub fn aclint_mtimer_set_mtimecmp(target_hartid: usize, value: usize) {
     let target_addr: usize = ACLINT_MTIMECMP_BASE_ADDR + target_hartid * ACLINT_MTIMECMP_SIZE;
     LAST_TIMER_TICK[target_hartid].store(value, Ordering::SeqCst);
 
-    /*println!(
-        "[Hart {}] Setting mtimecmp at addr {:x} with value: {:x}",
-        target_hartid,
-        target_addr,
-        value
-    );*/
     unsafe {
         asm!("sd {}, 0({})", in(reg) value, in(reg) target_addr);
     }
@@ -455,7 +449,6 @@ pub fn system_opcode_instr(mtval: usize, mstatus: usize, reg_state: &mut Registe
         unsafe {
             asm!("ld {}, 0({})",out(reg) csr_val, in(reg) ACLINT_MTIMER_VALUE_ADDRESS);
         }
-        //println!("csr_val: {:x}", csr_val);
         set_rd(mtval, reg_state, csr_val);
     } else {
         //Truly Illegal.
@@ -463,11 +456,6 @@ pub fn system_opcode_instr(mtval: usize, mstatus: usize, reg_state: &mut Registe
         reg_state.a0 = -2;
     }
 
-    //let case_to_match = (mtval >> 12) & 7;
-
-    //match case_to_match {
-        
-    //}
 }
 
 pub fn get_rs1(mtval: usize, reg_state: &mut RegisterState) -> u64 {
@@ -475,14 +463,10 @@ pub fn get_rs1(mtval: usize, reg_state: &mut RegisterState) -> u64 {
                                                     //0xf8 = reg_mask. Todo: recalc reg_mask to
                                                     //exclude mepc, mstatus, etc. It's
                                                     //ok for now though, not a problem. 
-    //println!("RS1 Reg offset: {:x}",reg_offset);
-    
-    //let reg_val = *((reg_state as * const usize) + (reg_offset * const usize)); 
 
     let reg_state_ptr = reg_state as *mut RegisterState as *const u64;
     unsafe { 
         let reg_ptr = reg_state_ptr.offset(reg_offset as isize);
-        //println!("RS1 Reg val: {:x}",*reg_ptr);
         *reg_ptr
     }
 }
@@ -499,13 +483,10 @@ pub fn get_rs2(instr: usize, reg_state: &mut RegisterState) -> usize {
 pub fn set_rd(mtval: usize, reg_state: &mut RegisterState, val: usize) {
     let reg_offset = (mtval >> 7) & 0x1f;
 
-    //println!("RD Reg offset: {:x}",reg_offset);
-
     let mut reg_state_ptr = reg_state as *mut RegisterState as *mut usize;
 
     unsafe { 
         let reg_ptr = reg_state_ptr.offset(reg_offset as isize);
         *reg_ptr = val; 
-        //println!("RD reg ptr at offset: {:x}, reg_ptr itself {:p}, and since I know it's a0: {:x}",reg_offset, reg_ptr, reg_state.a0);
     }
 }
