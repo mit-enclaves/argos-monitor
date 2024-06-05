@@ -125,6 +125,10 @@ void hello_world(void)
   gate_call();
   nonce_t nonce = msg->nonce;
 
+  //The current implementation passes data from/to the application through registers.
+  //Ideally, the report is passed through shared memory and would require only one call to Tyche.
+  
+
   //Sample call to retrieve the size of the attestation in case it's unknown.
   tyche_attestation_size(msg);
   //For our use case, 22 calls to Tyche to retrieve the entire enclave report
