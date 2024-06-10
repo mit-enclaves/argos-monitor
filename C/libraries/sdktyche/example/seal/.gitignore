@@ -1,0 +1,7 @@
+stdin_app
+tcp_app
+enclave
+seal_stdin_enclave
+seal_tcp_enclave
+app
+seal_enclave

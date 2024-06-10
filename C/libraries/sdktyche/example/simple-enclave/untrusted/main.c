@@ -45,6 +45,53 @@ failure:
 
 // ————————————————————————— Application functions —————————————————————————— //
 
+void call_tychools(nonce_t nonce, unsigned long long offset) {
+  char cmd[256];
+  // TODO: detect architecture to run the proper command (e.g. remove
+  // --riscv-enabled on non-riscv platforms)
+  sprintf(cmd,
+          "sudo chmod ugo+rx tychools;./tychools attestation "
+          "--att-src=file_tychools.txt --src-bin=enclave_iso --offset=0x%llx "
+          "--nonce=0x%llx",
+          offset, nonce);
+  LOG("cmd %s", cmd);
+  LOG("WARNING: for now this assume we run on RISC-V! Update code for x86");
+  system(cmd);
+}
+
+void write_to_tychools(hello_world_t *msg) {
+  file_tychools = fopen("file_tychools.txt", "w");
+  if (file_tychools == NULL) {
+    LOG("File failed to open tychools file\n");
+  } else {
+    LOG("Writing public key and data to tychools file\n");
+    for (int i = 0; i < 32; i++) {
+      uint32_t x = (uint32_t)msg->pub_key[i] & 0x0FF;
+      fprintf(file_tychools, "%u\n", x);
+    }
+    for (int i = 0; i < 64; i++) {
+      uint32_t x = (uint32_t)msg->signed_enclave_data[i] & 0x0FF;
+      fprintf(file_tychools, "%u\n", x);
+    }
+    fclose(file_tychools);
+  }
+}
+
+void read_tychools_response() {
+  tychools_response = fopen("tychools_response.txt", "r");
+  if (tychools_response == NULL) {
+    LOG("Failed to open a reponse file");
+  } else {
+    LOG("Answer from tychools\n");
+    char *line = NULL;
+    size_t len = 0;
+    while ((getline(&line, &len, tychools_response)) != -1) {
+      LOG("%s", line);
+    }
+    fclose(tychools_response);
+  }
+}
+
 /// Calls the enclave twice to print a message.
 int hello_world() {
   TEST(enclave != NULL);
