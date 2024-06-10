@@ -23,48 +23,10 @@ use spin::{Mutex, MutexGuard};
 
 use crate::arch::cpuid;
 use crate::attestation_domain::{attest_domain, calculate_attestation_hash};
+use crate::monitor::{CoreUpdate, PlatformState, CAPA_ENGINE, CORE_UPDATES, INITIAL_DOMAIN};
+use crate::riscv::context::ContextRiscv;
 use crate::riscv::filtered_fields::RiscVField;
-
-static CAPA_ENGINE: Mutex<CapaEngine> = Mutex::new(CapaEngine::new());
-static INITIAL_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
-static DOMAINS: [Mutex<DomainData>; NB_DOMAINS] = [EMPTY_DOMAIN; NB_DOMAINS];
-static CONTEXTS: [[Mutex<ContextData>; NB_CORES]; NB_DOMAINS] = [EMPTY_CONTEXT_ARRAY; NB_DOMAINS];
-static CORE_UPDATES: [Mutex<Buffer<CoreUpdate>>; NB_CORES] = [EMPTY_UPDATE_BUFFER; NB_CORES];
-
-const ZERO: AtomicUsize = AtomicUsize::new(0);
-
-static MONITOR_IPI_SYNC: [AtomicUsize; NUM_HARTS] = [ZERO; NUM_HARTS];
-
-const XWR_PERM: usize = 7;
-
-pub struct DomainData {
-    data_init_done: bool,
-    pmpaddr: [usize; PMP_ENTRIES],
-    pmpcfg: [usize; PMP_CFG_ENTRIES],
-}
-
-pub struct ContextData {
-    pub reg_state: RegisterState,
-    pub satp: usize,
-    pub mepc: usize,
-    pub sp: usize,
-    pub medeleg: usize,
-}
-
-const EMPTY_DOMAIN: Mutex<DomainData> = Mutex::new(DomainData {
-    data_init_done: false,
-    pmpaddr: [0; PMP_ENTRIES],
-    pmpcfg: [0; PMP_CFG_ENTRIES],
-});
-const EMPTY_UPDATE_BUFFER: Mutex<Buffer<CoreUpdate>> = Mutex::new(Buffer::new()); //once done.
-const EMPTY_CONTEXT: Mutex<ContextData> = Mutex::new(ContextData {
-    reg_state: RegisterState::const_default(),
-    satp: 0,
-    mepc: 0,
-    sp: 0,
-    medeleg: 0,
-});
-const EMPTY_CONTEXT_ARRAY: [Mutex<ContextData>; NB_CORES] = [EMPTY_CONTEXT; NB_CORES];
+use crate::riscv::state::{DataRiscv, StateRiscv, MONITOR_IPI_SYNC};
 
 // ————————————————————————————— Initialization ————————————————————————————— //
 
@@ -120,25 +82,15 @@ pub fn start_initial_domain_on_cpu() -> (Handle<Domain>) {
         .start_domain_on_core(initial_domain, hartid)
         .expect("Failed to allocate initial domain");
 
-    let domain = get_domain(initial_domain);
+    let domain = StateRiscv::get_domain(initial_domain);
     if !domain.data_init_done {
         //update PMP permissions.
         log::debug!("Updating permissions for initial domain.");
-        update_permission(initial_domain, &mut engine);
+        StateRiscv::update_permission(initial_domain, &mut engine);
     }
-    update_pmps(domain);
+    StateRiscv::update_pmps(domain);
 
     (initial_domain)
-}
-
-// ———————————————————————————————— Helpers ————————————————————————————————— //
-
-fn get_domain(domain: Handle<Domain>) -> MutexGuard<'static, DomainData> {
-    DOMAINS[domain.idx()].lock()
-}
-
-fn get_context(domain: Handle<Domain>, core: usize) -> MutexGuard<'static, ContextData> {
-    CONTEXTS[domain.idx()][core].lock()
 }
 
 // ————————————————————————————— Monitor Calls —————————————————————————————— //
@@ -205,7 +157,7 @@ pub fn do_configure_core(
             .expect("Unable to set the bitmap");
     }*/
 
-    let mut target_ctxt = get_context(domain, core);
+    let mut target_ctxt = StateRiscv::get_context(domain, core);
 
     field.set(&mut target_ctxt, value);
     Ok(())
@@ -239,7 +191,7 @@ pub fn do_get_config_core(
         return Ok(0);
     }
     let field = RiscVField::from_usize(idx).unwrap();
-    let target_ctx = get_context(domain, core);
+    let target_ctx = StateRiscv::get_context(domain, core);
     Ok(field.get(&target_ctx))
 }
 
@@ -263,7 +215,7 @@ pub fn do_set_field(
         return Ok(());
     }
     let field = RiscVField::from_usize(field).unwrap();
-    let mut target_ctx = get_context(domain, core);
+    let mut target_ctx = StateRiscv::get_context(domain, core);
     field.set(&mut target_ctx, value);
     Ok(())
 }
@@ -289,7 +241,7 @@ pub fn do_set_entry(
     if (1 << core) & cores == 0 {
         return Err(CapaError::InvalidCore);
     }
-    let context = &mut get_context(domain, core);
+    let context = &mut StateRiscv::get_context(domain, core);
 
     context.satp = ((satp >> 12) | PAGING_MODE_SV48);
     context.mepc = (mepc - 0x4); //TODO: Temporarily subtracting 4, because at the end of handle_exit,
@@ -457,43 +409,25 @@ pub fn do_domain_attestation(
 
 // ———————————————————————————————— Updates ————————————————————————————————— //
 
-/// Per-core updates
-#[derive(Debug, Clone, Copy)]
-enum CoreUpdate {
-    TlbShootdown {
-        src_hartid: usize,
-    },
-    Switch {
-        domain: Handle<Domain>,
-        return_capa: LocalCapa,
-    },
-    Trap {
-        manager: Handle<Domain>,
-        trap: u64,
-        info: u64,
-    },
-    UpdateTrap {
-        bitmap: u64,
-    },
-}
-
 fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
     while let Some(update) = engine.pop_update() {
         match update {
             capa_engine::Update::PermissionUpdate { domain, core_map } => {
                 let src_hartid = cpuid();
 
-                update_permission(domain, engine);
+                StateRiscv::update_permission(domain, engine);
 
                 if (1 << src_hartid) & core_map == 1 {
-                    let mut domain_data = get_domain(domain);
-                    update_pmps(domain_data);
+                    let mut domain_data = StateRiscv::get_domain(domain);
+                    StateRiscv::update_pmps(domain_data);
                 }
 
                 for hart in BitmapIterator::new(core_map) {
                     if (hart != src_hartid) {
                         let mut per_hart_update_buffer = CORE_UPDATES[hart].lock();
-                        per_hart_update_buffer.push(CoreUpdate::TlbShootdown { src_hartid });
+                        per_hart_update_buffer.push(CoreUpdate::TlbShootdown {
+                            src_core: src_hartid,
+                        });
                         drop(per_hart_update_buffer);
                         log::debug!(
                             "TLB Shootdown IPI from src_hartid: {} to dest_hartid: {}",
@@ -524,8 +458,8 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
                     region.fill(0);
                 }
             }
-            capa_engine::Update::RevokeDomain { domain } => revoke_domain(domain, engine),
-            capa_engine::Update::CreateDomain { domain } => create_domain(domain),
+            capa_engine::Update::RevokeDomain { domain } => StateRiscv::revoke_domain(domain),
+            capa_engine::Update::CreateDomain { domain } => StateRiscv::create_domain(domain),
 
             // Updates that needs to be routed to some specific cores
             capa_engine::Update::Switch {
@@ -560,6 +494,7 @@ fn apply_updates(engine: &mut MutexGuard<CapaEngine>) {
     }
 }
 
+/*
 /// Updates that must be applied to a given core.
 pub fn apply_core_updates(
     current_domain: &mut Handle<Domain>,
@@ -569,242 +504,7 @@ pub fn apply_core_updates(
     let core = cpuid();
     let mut update_queue = CORE_UPDATES[core_id].lock();
     while let Some(update) = update_queue.pop() {
-        log::debug!("Core Update: {}", update);
-        match update {
-            CoreUpdate::TlbShootdown { src_hartid } => {
-                log::debug!("TLB Shootdown on core {} from src {}", core_id, src_hartid);
-                // Rewrite the PMPs
-                let domain = get_domain(*current_domain);
-                update_pmps(domain);
-                MONITOR_IPI_SYNC[src_hartid].fetch_sub(1, Ordering::SeqCst);
-            }
-            CoreUpdate::Switch {
-                domain,
-                return_capa,
-                //current_reg_state,
-            } => {
-                log::debug!(
-                    "Domain Switch on core {} for domain {}, return_capa: {:x}",
-                    core_id,
-                    domain,
-                    return_capa.as_usize()
-                );
-
-                let current_ctx = get_context(*current_domain, core);
-                let mut next_ctx = get_context(domain, core);
-                let next_domain = get_domain(domain);
-                switch_domain(
-                    current_domain,
-                    current_ctx,
-                    current_reg_state,
-                    &mut next_ctx,
-                    next_domain,
-                    domain,
-                );
-
-                current_reg_state.a0 = 0x0;
-                current_reg_state.a1 = return_capa.as_usize() as isize;
-                *current_domain = domain;
-            }
-            CoreUpdate::Trap {
-                manager,
-                trap,
-                info,
-            } => {
-                log::debug!("Trap {} on core {}", trap, core_id);
-            }
-            CoreUpdate::UpdateTrap { bitmap } => {
-                log::debug!("Updating trap bitmap on core {} to {:b}", core_id, bitmap);
-            }
-        }
+        let mut state = StateRiscv {};
+        state.apply_core_update(current_domain, core_id, &update);
     }
-}
-
-fn switch_domain(
-    current_domain: &mut Handle<Domain>,
-    mut current_ctx: MutexGuard<ContextData>,
-    current_reg_state: &mut RegisterState,
-    next_ctx: &mut MutexGuard<ContextData>,
-    next_domain: MutexGuard<DomainData>,
-    domain: Handle<Domain>,
-) {
-    log::debug!(
-        "writing satp: {:x} mepc {:x} mscratch: {:x}",
-        next_ctx.satp,
-        next_ctx.mepc,
-        next_ctx.sp
-    );
-    //Save current context
-    current_ctx.reg_state = *current_reg_state;
-    current_ctx.mepc = read_mepc();
-    current_ctx.sp = read_mscratch(); //Recall that this is where the sp is saved.
-    current_ctx.satp = read_satp();
-    current_ctx.medeleg = read_medeleg();
-
-    //Switch domain
-    write_satp(next_ctx.satp);
-    write_mscratch(next_ctx.sp);
-    write_mepc(next_ctx.mepc);
-    write_medeleg(next_ctx.medeleg); //TODO: This needs to be part of Trap/UpdateTrap.
-
-    // Propagate the state from the child, see drivers/tyche/src/domain.c exit frame.
-    next_ctx.reg_state.a2 = current_ctx.mepc;
-    next_ctx.reg_state.a3 = current_ctx.sp;
-    next_ctx.reg_state.a4 = current_ctx.satp;
-    next_ctx.reg_state.a5 = current_ctx.medeleg;
-    *current_reg_state = next_ctx.reg_state;
-
-    //IMP TODO: Toggling interrupts based on the assumption that we are running initial domain and
-    //one more domain - This needs to be implemented for more generic cases via per core updates.
-    toggle_supervisor_interrupts();
-
-    if (next_domain.data_init_done) {
-        update_pmps(next_domain);
-    } else {
-        panic!("THIS SHOULD NEVER HAPPEN!");
-        let mut engine = CAPA_ENGINE.lock();
-        update_permission(domain, &mut engine);
-    }
-}
-
-fn create_domain(domain: Handle<Domain>) {
-    //let mut domain = get_domain(domain);
-    //Todo: Is there anything that needs to be done here?
-    //
-    //Also, in the x86 equivalent, what happens when EPT root fails to be allocated - Domain
-    //creation fails? How is this reflected in the capa engine?
-}
-
-fn revoke_domain(_domain: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) {
-    //Todo
-}
-
-fn update_pmps(domain: MutexGuard<DomainData>) {
-    log::info!("Updating PMPs FOR REAL!");
-    clear_pmp();
-    for i in FROZEN_PMP_ENTRIES..PMP_ENTRIES {
-        pmpaddr_csr_write(i, domain.pmpaddr[i]);
-        log::trace!(
-            "updating pmpaddr index: {}, val: {:x}",
-            i,
-            domain.pmpaddr[i]
-        );
-    }
-    for i in 0..PMP_CFG_ENTRIES {
-        pmpcfg_csr_write(i * 8, domain.pmpcfg[i]);
-        log::trace!("updating pmpcfg index: {}, val: {:x}", i, domain.pmpcfg[i]);
-    }
-    unsafe {
-        asm!("sfence.vma");
-    }
-}
-
-fn update_permission(domain_handle: Handle<Domain>, engine: &mut MutexGuard<CapaEngine>) {
-    let mut pmp_write_response: PMPWriteResponse;
-    let mut pmp_index = FROZEN_PMP_ENTRIES;
-    for range in engine.get_domain_permissions(domain_handle).unwrap() {
-        if !range.ops.contains(MemOps::READ) {
-            log::error!("there is a region without read permission: {}", range);
-            continue;
-        }
-        //TODO: Update PMP based on specific permissions - just need to compute XWR using MemOps.
-        log::trace!(
-            "PMP Compute for Region: index: {:x} start: {:x} end: {:x}",
-            pmp_index,
-            range.start,
-            range.start + range.size()
-        );
-
-        pmp_write_response = pmp_write_compute(pmp_index, range.start, range.size(), XWR_PERM);
-
-        if pmp_write_response.write_failed {
-            panic!("PMP Write Not Ok");
-        } else {
-            log::debug!("PMP Write Ok");
-
-            if pmp_write_response.addressing_mode == PMPAddressingMode::NAPOT {
-                log::trace!(
-                    "NAPOT addr: {:x} cfg: {:x}",
-                    pmp_write_response.addr1,
-                    pmp_write_response.cfg1
-                );
-                update_domain_pmp(
-                    domain_handle,
-                    pmp_index,
-                    pmp_write_response.addr1,
-                    pmp_write_response.cfg1,
-                );
-                pmp_index = pmp_index + 1;
-            } else if pmp_write_response.addressing_mode == PMPAddressingMode::TOR {
-                log::trace!(
-                    "TOR addr: {:x} cfg: {:x} addr: {:x} cfg: {:x}",
-                    pmp_write_response.addr1,
-                    pmp_write_response.cfg1,
-                    pmp_write_response.addr2,
-                    pmp_write_response.cfg2
-                );
-                update_domain_pmp(
-                    domain_handle,
-                    pmp_index,
-                    pmp_write_response.addr1,
-                    pmp_write_response.cfg1,
-                );
-                update_domain_pmp(
-                    domain_handle,
-                    pmp_index + 1,
-                    pmp_write_response.addr2,
-                    pmp_write_response.cfg2,
-                );
-                pmp_index = pmp_index + 2;
-            }
-
-            if pmp_index > PMP_ENTRIES {
-                panic!("Cannot continue running this domain: PMPOverflow");
-            }
-        }
-    }
-    let mut domain = get_domain(domain_handle);
-    domain.data_init_done = true;
-}
-
-fn update_domain_pmp(
-    domain_handle: Handle<Domain>,
-    pmp_index: usize,
-    pmp_addr: usize,
-    pmp_cfg: usize,
-) {
-    let mut domain = get_domain(domain_handle);
-    let index_pos: usize = pmp_index % 8;
-    domain.pmpcfg[pmp_index / 8] = domain.pmpcfg[pmp_index / 8] & !(0xff << (index_pos * 8));
-    domain.pmpcfg[pmp_index / 8] = domain.pmpcfg[pmp_index / 8] | pmp_cfg;
-
-    domain.pmpaddr[pmp_index] = pmp_addr;
-
-    log::trace!(
-        "Updated for DOMAIN: PMPCFG: {:x} PMPADDR: {:x} at index: {:x}",
-        domain.pmpcfg[pmp_index / 8],
-        domain.pmpaddr[pmp_index],
-        pmp_index
-    );
-}
-
-// ———————————————————————————————— Display ————————————————————————————————— //
-
-impl core::fmt::Display for CoreUpdate {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            CoreUpdate::TlbShootdown { src_hartid } => write!(f, "TLB Shootdown({})", src_hartid),
-            CoreUpdate::Switch { domain, .. } => write!(f, "Switch({})", domain),
-            CoreUpdate::Trap {
-                manager,
-                trap: interrupt,
-                info: inf,
-            } => {
-                write!(f, "Trap({}, {} | {:b})", manager, interrupt, inf)
-            }
-            CoreUpdate::UpdateTrap { bitmap } => {
-                write!(f, "UpdateTrap({:b})", bitmap)
-            }
-        }
-    }
-}
+}*/

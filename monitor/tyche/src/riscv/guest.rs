@@ -16,7 +16,9 @@ use spin::Mutex;
 use super::monitor;
 use crate::arch::cpuid;
 use crate::calls;
-use crate::riscv::monitor::apply_core_updates;
+use crate::monitor::{Monitor, PlatformState};
+use crate::riscv::platform::MonitorRiscv;
+use crate::riscv::state::StateRiscv;
 
 const EMPTY_ACTIVE_DOMAIN: Mutex<Option<Handle<Domain>>> = Mutex::new(None);
 static ACTIVE_DOMAIN: [Mutex<Option<Handle<Domain>>>; NUM_HARTS] = [EMPTY_ACTIVE_DOMAIN; NUM_HARTS];
@@ -173,6 +175,11 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
         satp
     );
 
+    //TODO(aghosn): dump the reg_state inside the current domain?
+    if let Some(active_dom) = get_active_dom(hartid) {
+        StateRiscv::save_current_regs(&active_dom, hartid, reg_state);
+    }
+
     // Check which trap it is
     // mcause register holds the cause of the machine mode trap
     match mcause {
@@ -180,7 +187,10 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             process_ipi(hartid);
             let active_dom = get_active_dom(hartid);
             match active_dom {
-                Some(mut domain) => apply_core_updates(&mut domain, hartid, reg_state),
+                Some(mut domain) => {
+                    let mut state = StateRiscv {};
+                    MonitorRiscv::apply_core_updates(&mut state, &mut domain, hartid);
+                }
                 None => {}
             }
         }
@@ -206,8 +216,8 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
                 if reg_state.a0 == 0x5479636865 {
                     log::trace!("Tyche is clearing SIP.SEIE");
                     clear_mip_seip();
-                } else {
-                    misaligned_load_handler(reg_state);
+                } else if reg_state.a7 == 0x5479636865 {
+                    misaligned_load_handler(/*reg_state*/);
                 }
             } else {
                 ecall_handler(&mut ret, &mut err, &mut out_val, *reg_state);
@@ -247,6 +257,10 @@ pub fn handle_exit(reg_state: &mut RegisterState) {
             asm!("csrw mepc, t0");
         }
     }
+    // Load the state from the current domain.
+    if let Some(active_domain) = get_active_dom(hartid) {
+        StateRiscv::load_current_regs(&active_domain, hartid, reg_state);
+    }
 }
 
 pub fn illegal_instruction_handler(
@@ -262,285 +276,288 @@ pub fn illegal_instruction_handler(
     );
 }
 
-pub fn misaligned_load_handler(reg_state: &mut RegisterState) {
-    if reg_state.a7 == 0x5479636865 {
-        //It's a Tyche Call
-        let tyche_call: usize = reg_state.a0.try_into().unwrap();
-        let arg_1: usize = reg_state.a1.try_into().unwrap();
-        let arg_2: usize = reg_state.a2;
-        let arg_3: usize = reg_state.a3;
-        let arg_4: usize = reg_state.a4;
-        let arg_5: usize = reg_state.a5;
-        let arg_6: usize = reg_state.a6;
+pub fn misaligned_load_handler(/*reg_state: &mut RegisterState*/) {
+    /*if reg_state.a7 != 0x5479636865 {
+        //TODO: NOT A TYCHE CALL
+        //Handle Illegal Instruction Trap
+        return;
+    }*/
 
-        let mut active_dom: Handle<Domain>;
-        let hartid = cpuid();
-        active_dom = get_active_dom(hartid).unwrap();
+    //It's a Tyche Call
+    let mut active_dom: Handle<Domain>;
+    let hartid = cpuid();
+    active_dom = get_active_dom(hartid).unwrap();
+    let (tyche_call, arg_1, arg_2, arg_3, arg_4, arg_5, arg_6) = {
+        let ctx = &mut StateRiscv::get_context(active_dom, hartid);
+        let tyche_call: usize = ctx.reg_state.a0.try_into().unwrap();
+        let arg_1: usize = ctx.reg_state.a1.try_into().unwrap();
+        let arg_2: usize = ctx.reg_state.a2;
+        let arg_3: usize = ctx.reg_state.a3;
+        let arg_4: usize = ctx.reg_state.a4;
+        let arg_5: usize = ctx.reg_state.a5;
+        let arg_6: usize = ctx.reg_state.a6;
+        (tyche_call, arg_1, arg_2, arg_3, arg_4, arg_5, arg_6)
+    };
 
-        match tyche_call {
-            calls::CREATE_DOMAIN => {
-                log::debug!("Create Domain");
-                let capa = monitor::do_create_domain(active_dom).expect("TODO");
-                reg_state.a0 = 0x0;
-                reg_state.a1 = capa.as_usize() as isize;
-                //TODO: Ok(HandlerResult::Resume) There is no main loop to check what happened
-                //here, do we need a wrapper to determine when we crash? For all cases except Exit,
-                //not yet. Must be handled after addition of more exception handling in Tyche.
-            }
-            calls::SEAL_DOMAIN => {
-                log::debug!("Seal Domain");
-                let capa = monitor::do_seal(active_dom, LocalCapa::new(arg_1)).expect("TODO");
-                reg_state.a0 = 0x0;
-                reg_state.a1 = capa.as_usize() as isize;
-            }
-            calls::SEND => {
-                log::debug!("Send");
-                monitor::do_send(active_dom, LocalCapa::new(arg_1), LocalCapa::new(arg_2))
-                    .expect("TODO");
-                reg_state.a0 = 0x0;
-            }
-            calls::SEGMENT_REGION => {
-                log::debug!("Segment Region");
-                let (to_send, to_revoke) = monitor::do_segment_region(
-                    active_dom,
-                    LocalCapa::new(arg_1),
-                    arg_2 != 0, // is_shared
-                    arg_3,      // start
-                    arg_4,      // end
-                    arg_5,      // prot
-                )
+    let reg_state: &mut RegisterState = &mut StateRiscv::get_context(active_dom, hartid).reg_state;
+
+    match tyche_call {
+        calls::CREATE_DOMAIN => {
+            log::debug!("Create Domain");
+            let capa = monitor::do_create_domain(active_dom).expect("TODO");
+            reg_state.a0 = 0x0;
+            reg_state.a1 = capa.as_usize() as isize;
+            log::info!("Created a domain, returning 0 technically");
+            //TODO: Ok(HandlerResult::Resume) There is no main loop to check what happened
+            //here, do we need a wrapper to determine when we crash? For all cases except Exit,
+            //not yet. Must be handled after addition of more exception handling in Tyche.
+        }
+        calls::SEAL_DOMAIN => {
+            log::debug!("Seal Domain");
+            let capa = monitor::do_seal(active_dom, LocalCapa::new(arg_1)).expect("TODO");
+            reg_state.a0 = 0x0;
+            reg_state.a1 = capa.as_usize() as isize;
+        }
+        calls::SEND => {
+            log::debug!("Send");
+            monitor::do_send(active_dom, LocalCapa::new(arg_1), LocalCapa::new(arg_2))
                 .expect("TODO");
-                reg_state.a0 = 0x0;
-                reg_state.a1 = to_send.as_usize() as isize;
-                reg_state.a2 = to_revoke.as_usize();
+            reg_state.a0 = 0x0;
+        }
+        calls::SEGMENT_REGION => {
+            log::debug!("Segment Region");
+            let (to_send, to_revoke) = monitor::do_segment_region(
+                active_dom,
+                LocalCapa::new(arg_1),
+                arg_2 != 0, // is_shared
+                arg_3,      // start
+                arg_4,      // end
+                arg_5,      // prot
+            )
+            .expect("TODO");
+            reg_state.a0 = 0x0;
+            reg_state.a1 = to_send.as_usize() as isize;
+            reg_state.a2 = to_revoke.as_usize();
+        }
+        // There are no aliases on riscv so we just ignore the alias info.
+        calls::REVOKE | calls::REVOKE_ALIASED_REGION => {
+            log::debug!("Revoke");
+            monitor::do_revoke(active_dom, LocalCapa::new(arg_1)).expect("TODO");
+            reg_state.a0 = 0x0;
+        }
+        calls::DUPLICATE => {
+            log::debug!("Duplicate");
+            let capa = monitor::do_duplicate(active_dom, LocalCapa::new(arg_1)).expect("TODO");
+            reg_state.a0 = 0x0;
+            reg_state.a1 = capa.as_usize() as isize;
+        }
+        calls::ENUMERATE => {
+            log::debug!("Enumerate");
+            if let Some((info, next)) =
+                monitor::do_enumerate(active_dom, NextCapaToken::from_usize(arg_1))
+            {
+                let (v1, v2, v3) = info.serialize();
+                reg_state.a1 = v1 as isize;
+                reg_state.a2 = v2 as usize;
+                reg_state.a3 = v3 as usize;
+                reg_state.a4 = next.as_usize();
+            } else {
+                // For now, this marks the end
+                reg_state.a4 = 0;
             }
-            // There are no aliases on riscv so we just ignore the alias info.
-            calls::REVOKE | calls::REVOKE_ALIASED_REGION => {
-                log::debug!("Revoke");
-                monitor::do_revoke(active_dom, LocalCapa::new(arg_1)).expect("TODO");
-                reg_state.a0 = 0x0;
+            reg_state.a0 = 0x0;
+        }
+        calls::SWITCH => {
+            log::debug!("Switch");
+            monitor::do_switch(active_dom, LocalCapa::new(arg_1), hartid, reg_state).expect("TODO");
+        }
+        calls::EXIT => {
+            log::debug!("Tyche Call: Exit");
+            //TODO
+            //let capa = monitor::.do_().expect("TODO");
+            reg_state.a0 = 0x0;
+        }
+        calls::DEBUG => {
+            log::debug!("Debug");
+            //monitor::do_debug();
+            reg_state.a0 = 0x0;
+        }
+        calls::_TEST_CALL => {
+            // Do nothing.
+            reg_state.a0 = 0x0;
+        }
+        calls::CONFIGURE => {
+            log::debug!("Configure");
+            if let Some(bitmap) = permission::PermissionIndex::from_usize(arg_1) {
+                match monitor::do_set_config(
+                    active_dom,
+                    LocalCapa::new(arg_2),
+                    bitmap,
+                    arg_3 as u64,
+                ) {
+                    Ok(_) => {
+                        //TODO: do_init_child_contexts is not yet implemented on RISC-V.
+                        reg_state.a0 = 0x0;
+                    }
+                    Err(e) => {
+                        log::error!("Configuration error: {:?}", e);
+                        reg_state.a0 = 0x1;
+                    }
+                }
+            } else {
+                log::error!("Invalid configuration target");
+                reg_state.a0 = 0x1;
             }
-            calls::DUPLICATE => {
-                log::debug!("Duplicate");
-                let capa = monitor::do_duplicate(active_dom, LocalCapa::new(arg_1)).expect("TODO");
-                reg_state.a0 = 0x0;
-                reg_state.a1 = capa.as_usize() as isize;
-            }
-            calls::ENUMERATE => {
-                log::debug!("Enumerate");
-                if let Some((info, next)) =
-                    monitor::do_enumerate(active_dom, NextCapaToken::from_usize(arg_1))
+        }
+        calls::SEND_REGION => {
+            log::debug!("Send");
+            monitor::do_send_region(active_dom, LocalCapa::new(arg_1), LocalCapa::new(arg_2))
+                .expect("TODO");
+            reg_state.a0 = 0x0;
+        }
+        calls::CONFIGURE_CORE => {
+            log::debug!("Configure Core");
+            let res = match monitor::do_configure_core(
+                active_dom,
+                LocalCapa::new(arg_1),
+                arg_2,
+                arg_3,
+                arg_4,
+            ) {
+                Ok(()) => 0,
+                Err(e) => {
+                    log::error!("Configure core error: {:?}", e);
+                    1
+                }
+            };
+            reg_state.a0 = res;
+        }
+        calls::GET_CONFIG_CORE => {
+            let (value, success) = match monitor::do_get_config_core(
+                active_dom,
+                LocalCapa::new(arg_1),
+                arg_2,
+                arg_3,
+            ) {
+                Ok(v) => (v, 0),
+                Err(e) => {
+                    log::error!("Get config core error: {:?}", e);
+                    (0, 1)
+                }
+            };
+            reg_state.a0 = success;
+            reg_state.a1 = value as isize;
+        }
+        calls::ALLOC_CORE_CONTEXT => {
+            log::debug!("Alloc core context");
+            let res = match monitor::do_init_child_context(active_dom, LocalCapa::new(arg_1), arg_2)
+            {
+                Ok(_) => 0,
+                Err(e) => {
+                    log::error!("Allocating core context error: {:?}", e);
+                    1
+                }
+            };
+            reg_state.a0 = res;
+        }
+        calls::READ_ALL_GP => {
+            todo!("Implement read all gp");
+        }
+        calls::WRITE_ALL_GP => {
+            todo!("Implement write all gp");
+        }
+        calls::WRITE_FIELDS => {
+            log::debug!("Write fields");
+            let res =
+                match monitor::do_set_field(active_dom, LocalCapa::new(arg_1), arg_2, arg_3, arg_4)
                 {
-                    let (v1, v2, v3) = info.serialize();
-                    reg_state.a1 = v1 as isize;
-                    reg_state.a2 = v2 as usize;
-                    reg_state.a3 = v3 as usize;
-                    reg_state.a4 = next.as_usize();
-                } else {
-                    // For now, this marks the end
-                    reg_state.a4 = 0;
-                }
-                reg_state.a0 = 0x0;
-            }
-            calls::SWITCH => {
-                log::debug!("Switch");
-                monitor::do_switch(active_dom, LocalCapa::new(arg_1), hartid, reg_state)
-                    .expect("TODO");
-            }
-            calls::EXIT => {
-                log::debug!("Tyche Call: Exit");
-                //TODO
-                //let capa = monitor::.do_().expect("TODO");
-                reg_state.a0 = 0x0;
-            }
-            calls::DEBUG => {
-                log::debug!("Debug");
-                //monitor::do_debug();
-                reg_state.a0 = 0x0;
-            }
-            calls::_TEST_CALL => {
-                // Do nothing.
-                reg_state.a0 = 0x0;
-            }
-            calls::CONFIGURE => {
-                log::debug!("Configure");
-                if let Some(bitmap) = permission::PermissionIndex::from_usize(arg_1) {
-                    match monitor::do_set_config(
-                        active_dom,
-                        LocalCapa::new(arg_2),
-                        bitmap,
-                        arg_3 as u64,
-                    ) {
-                        Ok(_) => {
-                            //TODO: do_init_child_contexts is not yet implemented on RISC-V.
-                            reg_state.a0 = 0x0;
-                        }
-                        Err(e) => {
-                            log::error!("Configuration error: {:?}", e);
-                            reg_state.a0 = 0x1;
-                        }
-                    }
-                } else {
-                    log::error!("Invalid configuration target");
-                    reg_state.a0 = 0x1;
-                }
-            }
-            calls::SEND_REGION => {
-                log::debug!("Send");
-                monitor::do_send_region(active_dom, LocalCapa::new(arg_1), LocalCapa::new(arg_2))
-                    .expect("TODO");
-                reg_state.a0 = 0x0;
-            }
-            calls::CONFIGURE_CORE => {
-                log::debug!("Configure Core");
-                let res = match monitor::do_configure_core(
-                    active_dom,
-                    LocalCapa::new(arg_1),
-                    arg_2,
-                    arg_3,
-                    arg_4,
-                ) {
-                    Ok(()) => 0,
-                    Err(e) => {
-                        log::error!("Configure core error: {:?}", e);
-                        1
-                    }
-                };
-                reg_state.a0 = res;
-            }
-            calls::GET_CONFIG_CORE => {
-                let (value, success) = match monitor::do_get_config_core(
-                    active_dom,
-                    LocalCapa::new(arg_1),
-                    arg_2,
-                    arg_3,
-                ) {
-                    Ok(v) => (v, 0),
-                    Err(e) => {
-                        log::error!("Get config core error: {:?}", e);
-                        (0, 1)
-                    }
-                };
-                reg_state.a0 = success;
-                reg_state.a1 = value as isize;
-            }
-            calls::ALLOC_CORE_CONTEXT => {
-                log::debug!("Alloc core context");
-                let res = match monitor::do_init_child_context(
-                    active_dom,
-                    LocalCapa::new(arg_1),
-                    arg_2,
-                ) {
-                    Ok(_) => 0,
-                    Err(e) => {
-                        log::error!("Allocating core context error: {:?}", e);
-                        1
-                    }
-                };
-                reg_state.a0 = res;
-            }
-            calls::READ_ALL_GP => {
-                todo!("Implement read all gp");
-            }
-            calls::WRITE_ALL_GP => {
-                todo!("Implement write all gp");
-            }
-            calls::WRITE_FIELDS => {
-                log::debug!("Write fields");
-                let res = match monitor::do_set_field(
-                    active_dom,
-                    LocalCapa::new(arg_1),
-                    arg_2,
-                    arg_3,
-                    arg_4,
-                ) {
                     Ok(_) => 0,
                     Err(e) => {
                         log::error!("Error writing field {:?}: {:x}", e, arg_3);
                         1
                     }
                 };
-                reg_state.a0 = res;
-            }
-            calls::SELF_CONFIG => {
-                todo!("Implement that one only if needed.");
-            }
-            calls::_ENCLAVE_ATTESTATION => {
-                log::trace!("Get attestation!");
-                if let Some(report) = monitor::do_domain_attestation(active_dom, arg_1, arg_2) {
-                    reg_state.a0 = 0;
-                    if arg_2 == 0 {
-                        reg_state.a1 = usize::from_le_bytes(
-                            report.public_key.as_slice()[0..8].try_into().unwrap(),
-                        ) as isize;
-                        reg_state.a2 = usize::from_le_bytes(
-                            report.public_key.as_slice()[8..16].try_into().unwrap(),
-                        );
-                        reg_state.a3 = usize::from_le_bytes(
-                            report.public_key.as_slice()[16..24].try_into().unwrap(),
-                        ) as usize;
-                        reg_state.a4 = usize::from_le_bytes(
-                            report.public_key.as_slice()[24..32].try_into().unwrap(),
-                        ) as usize;
-                        reg_state.a5 = usize::from_le_bytes(
-                            report.signed_enclave_data.as_slice()[0..8]
-                                .try_into()
-                                .unwrap(),
-                        ) as usize;
-                        reg_state.a6 = usize::from_le_bytes(
-                            report.signed_enclave_data.as_slice()[8..16]
-                                .try_into()
-                                .unwrap(),
-                        ) as usize;
-                    } else if arg_2 == 1 {
-                        reg_state.a1 = usize::from_le_bytes(
-                            report.signed_enclave_data.as_slice()[16..24]
-                                .try_into()
-                                .unwrap(),
-                        ) as isize;
-                        reg_state.a2 = usize::from_le_bytes(
-                            report.signed_enclave_data.as_slice()[24..32]
-                                .try_into()
-                                .unwrap(),
-                        );
-                        reg_state.a3 = usize::from_le_bytes(
-                            report.signed_enclave_data.as_slice()[32..40]
-                                .try_into()
-                                .unwrap(),
-                        );
-                        reg_state.a4 = usize::from_le_bytes(
-                            report.signed_enclave_data.as_slice()[40..48]
-                                .try_into()
-                                .unwrap(),
-                        );
-                        reg_state.a5 = usize::from_le_bytes(
-                            report.signed_enclave_data.as_slice()[48..56]
-                                .try_into()
-                                .unwrap(),
-                        );
-                        reg_state.a6 = usize::from_le_bytes(
-                            report.signed_enclave_data.as_slice()[56..64]
-                                .try_into()
-                                .unwrap(),
-                        );
-                    }
-                } else {
-                    log::trace!("Attestation error");
-                    reg_state.a0 = 1;
+            reg_state.a0 = res;
+        }
+        calls::SELF_CONFIG => {
+            todo!("Implement that one only if needed.");
+        }
+        calls::_ENCLAVE_ATTESTATION => {
+            log::trace!("Get attestation!");
+            if let Some(report) = monitor::do_domain_attestation(active_dom, arg_1, arg_2) {
+                reg_state.a0 = 0;
+                if arg_2 == 0 {
+                    reg_state.a1 = usize::from_le_bytes(
+                        report.public_key.as_slice()[0..8].try_into().unwrap(),
+                    ) as isize;
+                    reg_state.a2 = usize::from_le_bytes(
+                        report.public_key.as_slice()[8..16].try_into().unwrap(),
+                    );
+                    reg_state.a3 = usize::from_le_bytes(
+                        report.public_key.as_slice()[16..24].try_into().unwrap(),
+                    ) as usize;
+                    reg_state.a4 = usize::from_le_bytes(
+                        report.public_key.as_slice()[24..32].try_into().unwrap(),
+                    ) as usize;
+                    reg_state.a5 = usize::from_le_bytes(
+                        report.signed_enclave_data.as_slice()[0..8]
+                            .try_into()
+                            .unwrap(),
+                    ) as usize;
+                    reg_state.a6 = usize::from_le_bytes(
+                        report.signed_enclave_data.as_slice()[8..16]
+                            .try_into()
+                            .unwrap(),
+                    ) as usize;
+                } else if arg_2 == 1 {
+                    reg_state.a1 = usize::from_le_bytes(
+                        report.signed_enclave_data.as_slice()[16..24]
+                            .try_into()
+                            .unwrap(),
+                    ) as isize;
+                    reg_state.a2 = usize::from_le_bytes(
+                        report.signed_enclave_data.as_slice()[24..32]
+                            .try_into()
+                            .unwrap(),
+                    );
+                    reg_state.a3 = usize::from_le_bytes(
+                        report.signed_enclave_data.as_slice()[32..40]
+                            .try_into()
+                            .unwrap(),
+                    );
+                    reg_state.a4 = usize::from_le_bytes(
+                        report.signed_enclave_data.as_slice()[40..48]
+                            .try_into()
+                            .unwrap(),
+                    );
+                    reg_state.a5 = usize::from_le_bytes(
+                        report.signed_enclave_data.as_slice()[48..56]
+                            .try_into()
+                            .unwrap(),
+                    );
+                    reg_state.a6 = usize::from_le_bytes(
+                        report.signed_enclave_data.as_slice()[56..64]
+                            .try_into()
+                            .unwrap(),
+                    );
                 }
-            }
-            _ => {
-                /*TODO: Invalid Tyche Call*/
-                log::debug!("Invalid Tyche Call: {:x}", reg_state.a0);
-                todo!("Unknown Tyche Call.");
+            } else {
+                log::trace!("Attestation error");
+                reg_state.a0 = 1;
             }
         }
-        monitor::apply_core_updates(&mut active_dom, hartid, reg_state);
-        //Updating the state
-        set_active_dom(hartid, active_dom);
+        _ => {
+            /*TODO: Invalid Tyche Call*/
+            log::debug!("Invalid Tyche Call: {:x}", reg_state.a0);
+            todo!("Unknown Tyche Call.");
+        }
     }
-    //TODO: ELSE NOT TYCHE CALL
-    //Handle Illegal Instruction Trap
+    {
+        let mut state = StateRiscv {};
+        MonitorRiscv::apply_core_updates(&mut state, &mut active_dom, hartid);
+    }
+    //Updating the state
+    set_active_dom(hartid, active_dom);
 }
 
 pub fn get_active_dom(hartid: usize) -> (Option<Handle<Domain>>) {

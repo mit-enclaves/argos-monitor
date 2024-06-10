@@ -197,7 +197,7 @@ impl PlatformState for StateX86 {
         let vcpu = &mut self.vcpu;
         log::trace!("Core Update: {} on core {}", update, core);
         match update {
-            CoreUpdate::TlbShootdown => {
+            CoreUpdate::TlbShootdown { src_core: _ } => {
                 // Into a separate function so that we can drop the domain lock before starting to
                 // wait on the TLB_FLUSH_BARRIER
                 self.platform_shootdown(current_domain, core, false);
