@@ -52,7 +52,7 @@ void call_tychools(nonce_t nonce, unsigned long long offset) {
   sprintf(cmd,
           "sudo chmod ugo+rx tychools;./tychools attestation "
           "--att-src=file_tychools.txt --src-bin=enclave_iso --offset=0x%llx "
-          "--nonce=0x%llx --riscv-enabled",
+          "--nonce=0x%llx",
           offset, nonce);
   LOG("cmd %s", cmd);
   LOG("WARNING: for now this assume we run on RISC-V! Update code for x86");

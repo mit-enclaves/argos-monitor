@@ -190,10 +190,6 @@ static int domain_add_mslot(tyche_domain_t *domain, int is_pipe, usize size)
     ERROR("Null domain.");
     goto failure;
   }
-  if (size >= MAX_SLOT_SIZE) {
-    ERROR("Slot size too big");
-    goto failure;
-  }
   if (size == 0) {
     ERROR("Attempt to add a null size slot");
     goto failure;
@@ -203,15 +199,32 @@ static int domain_add_mslot(tyche_domain_t *domain, int is_pipe, usize size)
     ERROR("Failed to allocate a slot.");
     goto failure;
   }
-  memset(slot, 0, sizeof(domain_mslot_t));
-  dll_init_elem(slot, list);
-  slot->id = (is_pipe)? domain->pipe_id++ : domain->mslot_id++;
-  slot->size = size;
-  // Add the slot to the domain.
-  if (is_pipe) {
-    dll_add(&(domain->pipes), slot, list);
-  } else {
-    dll_add(&(domain->mmaps), slot, list);
+  LOG("Size is %llx", size);
+  while (size >= MAX_SLOT_SIZE) {
+    LOG("Create extra slot for a large region");
+    memset(slot, 0, sizeof(domain_mslot_t));
+    dll_init_elem(slot, list);
+    slot->id = (is_pipe)? domain->pipe_id++ : domain->mslot_id++;
+    slot->size = MAX_SLOT_SIZE;
+    // Add the slot to the domain.
+    if (is_pipe) {
+      dll_add(&(domain->pipes), slot, list);
+    } else {
+      dll_add(&(domain->mmaps), slot, list);
+    }
+    size -= MAX_SLOT_SIZE;
+  }
+  if(size > 0) {
+    memset(slot, 0, sizeof(domain_mslot_t));
+    dll_init_elem(slot, list);
+    slot->id = (is_pipe)? domain->pipe_id++ : domain->mslot_id++;
+    slot->size = size;
+    // Add the slot to the domain.
+    if (is_pipe) {
+      dll_add(&(domain->pipes), slot, list);
+    } else {
+      dll_add(&(domain->mmaps), slot, list);
+    }
   }
   return SUCCESS;
 failure:
@@ -401,11 +414,24 @@ int parse_domain(tyche_domain_t* domain)
     is_pipe = tpe == KERNEL_PIPE;
 
     // Check if we fit in the current slot for mmaps.
+    LOG("Segment size is %lx, Pipe size is %lx, Size of segment is %llx, MAX_SLOT_SIZE is %x", segments_size, pipes_size, seg_size, MAX_SLOT_SIZE);
+    //LOG("Segment type %x, p_vaddr %lx,  memsz %lx", domain->parser.segments[i].p_type, domain->parser.segments[i].p_vaddr, domain->parser.segments[i].p_memsz)
     total = (is_pipe)? pipes_size + seg_size : segments_size + seg_size;
     if (total >= MAX_SLOT_SIZE) {
-      if (domain_add_mslot(domain, is_pipe, segments_size) != SUCCESS) {
+      LOG("Total is bigger that MAX_SLOT_SIZE");
+      size_t old_size = is_pipe ? pipes_size: segments_size;
+      if (domain_add_mslot(domain, is_pipe, old_size) != SUCCESS) {
         ERROR("Slot failure");
         goto close_failure;
+      }
+      LOG("seg_size %llx and MAX_SLOT_SIZE %x", seg_size, MAX_SLOT_SIZE); 
+      if(seg_size >= MAX_SLOT_SIZE) {
+        LOG("seg_size is bigger that MAX_SLOT_SIZE");
+        if (domain_add_mslot(domain, is_pipe, seg_size) != SUCCESS) {
+         ERROR("Slot failure");
+         goto close_failure;
+        }
+        seg_size = 0; 
       }
       if (is_pipe) {
         pipes_size = seg_size;
@@ -632,6 +658,8 @@ int sdk_create_domain(
     usize traps,
     usize perms)
 {
+  LOG("Called SDK create domain");
+
   char* dump =  NULL;
   if (dom == NULL) {
     ERROR("Provided domain structure is null.");
