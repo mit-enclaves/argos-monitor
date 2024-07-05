@@ -4,7 +4,7 @@
 # Load the linux kernel symbols along side tyche
 # @warn removed so that we support rawc as well
 # This is now done in the tyche-gdb script.
-#add-symbol-file linux-image/images/vmlinux
+#add-symbol-file builds/linux-x86/vmlinux
 
 # Workaround to set hardware breakpoints by default
 define b
@@ -32,6 +32,25 @@ define symbol_linux
   #lx-symbols
 end
 
+define symbol_redis
+  delete breakpoints
+  set solib-search-path ~/tyche-experiment-redis/musl-build/lib/
+  set solib-absolute-prefix ~/tyche-experiment-redis/musl-build/lib/
+  symbol-file ~/tyche-experiment-redis/tyche-redis/src/redis-server
+end
+
+define symbol_seal
+  delete breakpoints
+  set solib-search-path ~/tyche-experiment-seal/toolchain-root/lib/
+  set solib-absolute-prefix ~/tyche-experiment-seal/toolchain-root/lib/
+  symbol-file ~/tyche-experiment-seal/SEAL/build/bin/sealexamples
+end
+
+define symbol_tyche
+  delete breakpoints
+  add-symbol-file target/x86_64-unknown-kernel/release/tyche 0x80000000000
+end
+
 define plog
   lx-dmesg
 end
@@ -43,5 +62,8 @@ commands
 tyche_set_convenience_vars
 tyche_load_stage2
 end
+
+symbol_seal
+b tyche_suicide
 
 set print asm-demangle on

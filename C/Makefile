@@ -24,13 +24,18 @@ ifeq ($(ARCH), x86)
 PROGRAMGS_PATH ?= /tmp/mount/tyche/programs
 TYCHOOLS_LOCAL_BIN_PATH ?= ../target/release
 
+update_seal:
+	make ARCH=x86 KVM=0 DISK_PATH=/tmp/mount/tyche/programs/sdk_tyche -B -C libraries/sdktyche/example/seal all
+
+
 # Make sure you mount the disk first
 update_disk:
 	sudo mkdir -p $(MOUNT_DIR)/tyche
 	sudo chown --recursive $(shell whoami) /tmp/mount/tyche
-	make ARCH=x86 KVM=0 DISK_PATH=/tmp/mount/tyche/programs/sdk_tyche -B -C libraries/sdktyche/example/app-selector install_disk
-	make ARCH=x86 KVM=0 DISK_PATH=/tmp/mount/tyche/programs/sdk_tyche -B -C libraries/sdktyche/example/simple-enclave install_disk
-	make ARCH=x86 KVM=0 DISK_PATH=/tmp/mount/tyche/programs/sdk_tyche -B -C libraries/sdktyche/example/simple-sandbox install_disk
+	make ARCH=x86 KVM=0 DISK_PATH=/tmp/mount/tyche/programs/sdk_tyche -B -C libraries/sdktyche/example/seal install_disk
+#	make ARCH=x86 KVM=0 DISK_PATH=/tmp/mount/tyche/programs/sdk_tyche -B -C libraries/sdktyche/example/app-selector install_disk
+#	make ARCH=x86 KVM=0 DISK_PATH=/tmp/mount/tyche/programs/sdk_tyche -B -C libraries/sdktyche/example/simple-enclave install_disk
+#	make ARCH=x86 KVM=0 DISK_PATH=/tmp/mount/tyche/programs/sdk_tyche -B -C libraries/sdktyche/example/simple-sandbox install_disk
 	make ARCH=x86 KVM=0 DISK_PATH=/tmp/mount/tyche/programs/sdk_tyche -B -C libraries/sdktyche/example/redis install_disk
 	make ARCH=x86 KVM=0 DISK_PATH=/tmp/mount/tyche/programs/sdk_tyche -B -C libraries/sdktyche/example/ping-pong install_disk
 	make ARCH=x86 KVM=0 DISK_PATH=/tmp/mount/tyche/programs/sdk_tyche -B -C libraries/sdktyche/example/encr-redis install_disk

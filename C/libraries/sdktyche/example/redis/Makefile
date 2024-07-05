@@ -105,6 +105,18 @@ install_disk: all
 	mkdir -p $(DISK_PATH)
 	cp -t $(DISK_PATH) redis_stdin_enclave redis_tcp_enclave
 
+objdump_app_headers: $(REDIS_SERVER_PATH) 
+	objdump -x $^ > header_redis.out
+
+objdump_app_dissa: $(REDIS_SERVER_PATH) 
+	objdump -S $^ > dissa_redis.out
+
+objdump_encl_headers: redis_stdin_enclave 
+	objdump -x $^ > header_redis_enclave.out
+
+objdump_encl_diss: redis_stdin_enclave 
+	objdump -S $^ > dissa_redis_enclave.out
+
 .PHONY: clean
 
 clean:

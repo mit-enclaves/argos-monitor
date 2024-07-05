@@ -22,7 +22,7 @@ bare-metal-tyche    := "--features=tyche/bare_metal"
 build_path          := justfile_directory() + "/builds"
 tpm_path            := "/tmp/tpm-dev-" + env_var('USER')
 default_dbg         := "/tmp/dbg-" + env_var('USER')
-default_smp         := "1"
+default_smp         := "2"
 extra_arg           := ""
 
 qemu-riscv			:= "../qemu/build/riscv64-softmmu/qemu-system-riscv64"
@@ -120,7 +120,7 @@ rawc-dbg SMP=default_smp:
 
 # Run linux guest with UEFI
 linux SMP=default_smp:
-	@just _common {{linux}} {{SMP}}
+	@just _common {{linux}} {{SMP}} --dbg_path={{default_dbg}}
 
 # Run linux guest, stop to wait for GDB session.
 linux-dbg SMP=default_smp:

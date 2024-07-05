@@ -15,6 +15,7 @@ use tyche::{arch, println};
 
 entry_point!(tyche_entry_point);
 
+// Chnage here for log level
 const LOG_LEVEL: LevelFilter = LevelFilter::Info;
 
 #[cfg(target_arch = "x86_64")]

@@ -82,3 +82,4 @@ panic = "abort"
 [profile.release]
 opt-level = "s"
 panic = "abort"
+debug = true

@@ -2,6 +2,8 @@ use std::path::PathBuf;
 use std::process::abort;
 use std::sync::atomic::Ordering;
 
+use log::debug;
+
 use mmu::ptmapper::MAP_PAGE_TABLE;
 use mmu::walker::{Level, WalkNext, Walker};
 use mmu::{FrameAllocator, PtFlag, PtMapper, RVPtFlag, RVPtMapper};
@@ -27,6 +29,7 @@ pub fn align_address_down(addr: usize) -> usize {
     return (addr / PAGE_SIZE) * PAGE_SIZE;
 }
 
+#[derive(Debug)]
 enum FlagFormat {
     RV(RVPtFlag),
     X86(PtFlag),
@@ -85,7 +88,9 @@ pub fn generate_page_tables(
     // Compute the overall memory required for the binary.
     let mut memsz: usize = 0;
     for ph in &melf.segments {
+        let (start, end) = ph.get_vaddr_bounds(); 
         let segtype = ph.program_header.p_type(Endianness::Little);
+        log::debug!("Program Header: vaddr bound ({:x},{:x}), is loadable {:?}", start, end, ModifiedSegment::is_loadable(segtype));
         if !ModifiedSegment::is_loadable(segtype) || segtype == TychePhdrTypes::KernelPipe as u32 {
             continue;
         }
@@ -97,6 +102,7 @@ pub fn generate_page_tables(
 
     // Pages for the page table start at phys_addr == memsz;
     let mut bump = BumpAllocator::<DEFAULT_BUMP_SIZE>::new(memsz);
+    log::debug!("Virtual offset for the page table {:x}", bump.get_virt_offset());
     if bump.get_virt_offset() < memsz {
         log::error!(
             "The virtual offset is smaller than the memsz {:x} -- {:x}",
@@ -108,6 +114,7 @@ pub fn generate_page_tables(
     let offset = bump.get_virt_offset() - memsz;
     let allocator = Allocator::new(&mut bump);
     let root = allocator.allocate_frame().unwrap();
+    log::debug!("Page table root: phys {:x}, virt {:x}", root.phys_addr.as_u64(), root.virt_addr);
     let mut mapper: Mapper = if !riscv_enabled {
         // TODO(aghosn): for now we disable big entries because this would require
         // the corresponding physical memory allocation in the loader to be correctly aligned.
@@ -163,6 +170,8 @@ pub fn generate_page_tables(
         } else {
             HostPhysAddr::new(curr_phys)
         };
+        log::debug!("Loading a segment: virt {:x}, virt_end {:x}, size {:x}, segtype {:?}, mem_size {:x}, vaddr {:x}, flags {:?}, phys_addr {:x}", 
+            virt.as_u64(), virt.as_usize() + size, size, segtype, mem_size, vaddr, flags, phys_addr.as_u64());
         match flags {
             FlagFormat::RV(rv_flags) => {
                 //We could remove the flags match by making map_range do the flag translation - but

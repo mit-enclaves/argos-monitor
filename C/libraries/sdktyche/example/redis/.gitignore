@@ -5,3 +5,4 @@ redis_stdin_enclave
 redis_tcp_enclave
 app
 redis_enclave
+*.out

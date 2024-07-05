@@ -171,6 +171,7 @@ where
                     if level == Level::L1 {
                         assert!(phys % (PageSize::NORMAL.bits() as u64) == 0);
                         *entry = phys | prot.bits();
+                        //log::debug!("Leaf node at L1: Virtual Address: {:x}, Physical Address: {:x}", addr.as_u64(), phys);
                         return WalkNext::Leaf;
                     }
                     // Create an entry
@@ -179,7 +180,9 @@ where
                         .expect("map_range: unable to allocate page table entry.")
                         .zeroed();
                     assert!(frame.phys_addr.as_u64() >= offset as u64);
+                    //let pt_phys_addr = frame.phys_addr.as_u64() - (offset as u64);
                     *entry = (frame.phys_addr.as_u64() - (offset as u64)) | DEFAULT_PROTS.bits();
+                    //log::debug!("New page table at level {:?}: Virtual Address: {:x}, Physical Address: {:x}", level, addr.as_u64(), pt_phys_addr);
                     WalkNext::Continue
                 },
             )
