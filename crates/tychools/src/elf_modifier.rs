@@ -3,6 +3,9 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 
+use log::info;
+use log::debug;
+
 use mmu::{PtFlag, RVPtFlag};
 use object::read::elf::{FileHeader, ProgramHeader, SectionHeader};
 use object::{elf, Endianness, U16Bytes, U32Bytes, U64Bytes};
@@ -23,6 +26,8 @@ pub enum TychePF {
 }
 
 const PT_PHYS_PAGE_MASK: u64 = ((1 << 44) - 1) << RVPtFlag::flags_count(); //TODO(neelu): This is specific for SV48.
+
+const MAX_SLOT_SIZE: u64 = 0x400000;
 
 // —————————————————————————————— Local Enums ——————————————————————————————— //
 
@@ -377,6 +382,23 @@ impl ModifiedELF {
         return res;
     }
 
+    pub fn split_long_segments(&self) {
+        let mut long_segs = Vec::new();
+        let segs = &self.segments;
+
+        // Find segments that are too long
+        for seg in segs {
+            if seg.get_memsz() > MAX_SLOT_SIZE {
+                long_segs.push(seg);
+            }
+        }
+
+        // Cut the segments that are too long
+
+
+
+    }
+
     /// Adds offset to all non-empty entries in the page table.
     /// This is used by the loader at run time.
     pub fn fix_page_tables(&mut self, offset: u64, riscv_enabled: bool) {
@@ -567,6 +589,7 @@ impl ModifiedELF {
         size: usize,
     ) {
         let addr = vaddr.unwrap_or(self.layout.max_addr);
+        debug!("Appening NoData Segment at addr {:x} of size {:x} with flags {}", addr, size, flags);
         // Update the max address.
         if addr + size as u64 > self.layout.max_addr {
             self.layout.max_addr = addr + size as u64;
@@ -834,6 +857,10 @@ impl ModifiedSegment {
     pub fn set_mask_flags(&mut self, mask: u32) {
         let fl = self.program_header.p_flags(DENDIAN);
         self.program_header.p_flags = U32Bytes::new(DENDIAN, fl | mask);
+    }
+
+    pub fn get_memsz(&self) -> u64 {
+        return self.program_header.p_memsz(DENDIAN);
     }
 }
 

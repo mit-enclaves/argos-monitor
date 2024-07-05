@@ -24,3 +24,13 @@ pub fn tyche_hook_stage1(val: u64) {
 pub fn tyche_hook_stage2(val: u64) {
     assert!(val != 0);
 }
+
+/// Hook to break on in stage 2
+pub fn tyche_hook_main_loop(val: u64) {
+    assert!(val != 0);
+}
+
+
+pub fn tyche_hook_error(val: u64) {
+    assert!(val != 0);
+}

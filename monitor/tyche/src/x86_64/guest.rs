@@ -30,6 +30,7 @@ pub struct VmxState {
 }
 
 pub fn main_loop(mut vmx_state: VmxState, mut domain: Handle<Domain>) {
+    debug::tyche_hook_main_loop(1);
     let core_id = cpuid();
     let mut result = unsafe {
         let mut context = monitor::get_context(domain, core_id);
@@ -698,6 +699,9 @@ fn handle_exit(
         | VmxExitReason::VmxPreemptionTimerExpired
         | VmxExitReason::Hlt => {
             log::trace!("Handling {:?} for dom {}", reason, domain.idx());
+            log::trace!("Debug on core {}", cpuid());
+            log::info!("Debug called on {} vcpu: {:x?}", domain.idx(), vs.vcpu);
+            monitor::do_debug(vs, domain);
             if reason == VmxExitReason::ExternalInterrupt {
                 /*let address_eoi = 0xfee000b0 as *mut u32;
                 unsafe {

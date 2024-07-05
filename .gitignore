@@ -3,6 +3,8 @@ builds/*
 !builds/.gitkeep
 .vim
 .gdb_history
+*.out
+*.swp
 *__pycache__*
 
 # OVMF UEFI firmware

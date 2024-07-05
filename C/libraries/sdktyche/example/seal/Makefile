@@ -105,6 +105,19 @@ install_disk: all
 	mkdir -p $(DISK_PATH)
 	cp -t $(DISK_PATH) seal_stdin_enclave seal_tcp_enclave
 
+objdump_app_headers: $(SEAL_SERVER_PATH)
+	objdump -x $^ > header_seal.out
+
+objdump_app_dissa: $(SEAL_SERVER_PATH)
+	objdump -S $^ > dissa_seal.out
+
+objdump_encl_headers: seal_stdin_enclave
+	objdump -x $^ > header_seal_enclave.out
+
+objdump_encl_diss: seal_stdin_enclave
+	objdump -S $^ > dissa_seal_enclave.out
+
+
 .PHONY: clean
 
 clean:
