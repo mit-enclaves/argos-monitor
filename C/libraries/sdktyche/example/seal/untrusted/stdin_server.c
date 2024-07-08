@@ -40,17 +40,8 @@ void *run_output(void *arg) {
     }
     // Print to the output.
     if (res > 0) {
-      printf("From seal at addr %llx, buffer %llx, capacity %x, count %x, head %x, tail %x, res %x\n",
-        &(thread_arg->comm->from_seal),
-        thread_arg->comm->from_seal.buffer,
-        thread_arg->comm->from_seal.capacity,
-        thread_arg->comm->from_seal.count,
-        thread_arg->comm->from_seal.head,
-        thread_arg->comm->from_seal.tail,
-        res);
-      printf("stdout: ");
+      printf("Enclave printing: ");
       fwrite(buffer, res, sizeof(char), stdout);
-      printf("\n");
     }
   }
   return NULL;

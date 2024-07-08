@@ -3,7 +3,6 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 
-use log::info;
 use log::debug;
 
 use mmu::{PtFlag, RVPtFlag};

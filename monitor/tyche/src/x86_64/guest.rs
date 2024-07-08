@@ -699,9 +699,9 @@ fn handle_exit(
         | VmxExitReason::VmxPreemptionTimerExpired
         | VmxExitReason::Hlt => {
             log::trace!("Handling {:?} for dom {}", reason, domain.idx());
-            log::trace!("Debug on core {}", cpuid());
-            log::info!("Debug called on {} vcpu: {:x?}", domain.idx(), vs.vcpu);
-            monitor::do_debug(vs, domain);
+            //log::trace!("Debug on core {}", cpuid());
+            //log::info!("Debug called on {} vcpu: {:x?}", domain.idx(), vs.vcpu);
+            //monitor::do_debug(vs, domain);
             if reason == VmxExitReason::ExternalInterrupt {
                 /*let address_eoi = 0xfee000b0 as *mut u32;
                 unsafe {
