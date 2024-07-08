@@ -24,7 +24,7 @@
 #include "backend.h"
 #include "tyche_api.h"
 
-#define TYCHE_DEBUG 1
+//#define TYCHE_DEBUG 1
 
 // ———————————————————————————— Local Functions ————————————————————————————— //
 // Hash the region
@@ -201,9 +201,9 @@ static int domain_add_mslot(tyche_domain_t *domain, int is_pipe, usize size)
     ERROR("Failed to allocate a slot.");
     goto failure;
   }
-  LOG("Size is %llx", size);
+  DEBUG("Size is %llx", size);
   while (size >= MAX_SLOT_SIZE) {
-    LOG("Create extra slot for a large region on size %llx", size);
+    DEBUG("Create extra slot for a large region on size %llx", size);
     memset(slot, 0, sizeof(domain_mslot_t));
     dll_init_elem(slot, list);
     slot->id = (is_pipe)? domain->pipe_id++ : domain->mslot_id++;
@@ -419,19 +419,19 @@ int parse_domain(tyche_domain_t* domain)
     // Special case, we handle the pipes.
     is_pipe = tpe == KERNEL_PIPE;
 
-    LOG("Segment size is %lx, Pipe size is %lx, Size of segment is %llx, MAX_SLOT_SIZE is %x", segments_size, pipes_size, seg_size, MAX_SLOT_SIZE);
-    //LOG("Segment type %x, p_vaddr %lx,  memsz %lx", domain->parser.segments[i].p_type, domain->parser.segments[i].p_vaddr, domain->parser.segments[i].p_memsz)
+    DEBUG("Segment size is %lx, Pipe size is %lx, Size of segment is %llx, MAX_SLOT_SIZE is %x", segments_size, pipes_size, seg_size, MAX_SLOT_SIZE);
+    //DEBUG("Segment type %x, p_vaddr %lx,  memsz %lx", domain->parser.segments[i].p_type, domain->parser.segments[i].p_vaddr, domain->parser.segments[i].p_memsz)
     total = (is_pipe)? pipes_size + seg_size : segments_size + seg_size;
     if (total >= MAX_SLOT_SIZE) {
-      LOG("Total is bigger that MAX_SLOT_SIZE");
+      DEBUG("Total is bigger that MAX_SLOT_SIZE");
       size_t old_size = is_pipe ? pipes_size: segments_size;
       if (domain_add_mslot(domain, is_pipe, old_size) != SUCCESS) {
         ERROR("Slot failure");
         goto close_failure;
       }
-      LOG("seg_size %llx and MAX_SLOT_SIZE %x", seg_size, MAX_SLOT_SIZE); 
+      DEBUG("seg_size %llx and MAX_SLOT_SIZE %x", seg_size, MAX_SLOT_SIZE); 
       if(seg_size >= MAX_SLOT_SIZE) {
-        LOG("seg_size is bigger that MAX_SLOT_SIZE");
+        DEBUG("seg_size is bigger that MAX_SLOT_SIZE");
         if (domain_add_mslot(domain, is_pipe, seg_size) != SUCCESS) {
          ERROR("Slot failure");
          goto close_failure;
