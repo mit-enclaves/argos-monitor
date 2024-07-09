@@ -155,6 +155,19 @@ pub fn load(
         );
     }
 
+    // Set up TPM2 TIS support
+    log::info!("Setup TPM2 TIS");
+    let virt_addr = HostVirtAddr::new(0xFED4_0000);
+    let phys_addr = HostPhysAddr::new(0xFED4_0000);
+    let size = 0x5000;
+    loaded_elf.pt_mapper.map_range(
+        stage2_allocator,
+        virt_addr,
+        phys_addr,
+        size,
+        PtFlag::PRESENT | PtFlag::WRITE | PtFlag::PAGE_CACHE_DISABLE,
+    );
+
     // Map the guest (e.g. linux) memory into Tyche.
     // This is required for hashing content and writing back attestation into Linux-controlled
     // buffers.
