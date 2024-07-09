@@ -52,6 +52,10 @@ pub fn arch_entry_point(log_level: log::LevelFilter) -> ! {
         while NB_BOOTED_CORES.load(Ordering::SeqCst) + 1 < manifest.smp.smp {
             core::hint::spin_loop();
         }
+
+        log::info!("Calling wolftpm_sys::self_test");
+        wolftpm_sys::self_test();    
+
         log::info!("Stage 2 initialized");
 
         // Mark the BSP as ready to launch guest on all APs.
