@@ -32,7 +32,7 @@ dev-riscv			:= "-device virtio-rng-pci"
 bios-riscv-gdb		:= "opensbi-stage1/build/platform/generic/firmware/fw_payload.elf"
 riscv-linux-dir     := "builds/linux-riscv"
 riscv-vmlinux       := "builds/linux-riscv/vmlinux"
-
+tpm-dev             := "-chardev socket,id=chrtpm,path=/tmp/tpm-dev-" + env_var('USER') + "/sock -tpmdev emulator,id=tpm0,chardev=chrtpm -device tpm-tis,tpmdev=tpm0"
 debian-riscv            := "../debian_rv/dqib_riscv64-virt/image.qcow2"
 deb-dev-riscv           := "-object rng-random,filename=/dev/urandom,id=rng -device virtio-rng-device,rng=rng"
 
@@ -99,7 +99,7 @@ setup-ubuntu:
 _common TARGET SMP ARG1=extra_arg ARG2=extra_arg:
 	@just build
 	@just _tpm
-	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{TARGET}} -- --uefi --smp={{SMP}} {{ARG1}} {{ARG2}}
+	-cargo run {{cargo_args}} {{x86_64}} {{first-stage}} {{TARGET}} -- --uefi --smp={{SMP}} {{ARG1}} {{ARG2}} {{tpm-dev}}
 
 # Run without any guest
 no-guest SMP=default_smp:

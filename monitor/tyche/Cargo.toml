@@ -22,7 +22,7 @@ capa-engine = {path = "../../crates/capability-engine/"}
 attestation = {path = "../../crates/attestation/"}
 # TODO: move the untrusted dependencies behing a feature flag
 qemu = { path = "../../crates/qemu/" }
-
+wolftpm-sys = { path = "../../../wolftpm-sys" }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 vtd = { path = "../../crates/vtd" }

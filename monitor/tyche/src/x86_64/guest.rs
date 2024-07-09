@@ -36,6 +36,10 @@ pub fn main_loop(mut vmx_state: VmxState, mut domain: Handle<Domain>) {
         let mut context = monitor::get_context(domain, core_id);
         vmx_state.vcpu.run(&mut context.vmcs_gp)
     };
+
+    log::info!("Calling wolftpm_sys::self_test");
+    wolftpm_sys::self_test();
+
     loop {
         let exit_reason = match result {
             Ok(exit_reason) => {
