@@ -587,17 +587,16 @@ pub trait Monitor<T: PlatformState + 'static> {
         let mut engine = Self::lock_engine(state, current);
         let domain = engine.get_domain_capa(*current, domain)?;
         let cores = engine.get_domain_permission(domain, permission::PermissionIndex::AllowedCores);
-        let remapped_core = T::remap_core(core);
-        if remapped_core > T::max_cpus() || (1 << remapped_core) & cores == 0 {
+        if core > T::max_cpus() || (1 << core) & cores == 0 {
             log::error!(
                 "Attempt to set context on unallowed core {} max_cpus {} cores: 0x{:x}",
-                remapped_core,
+                core,
                 T::max_cpus(),
                 cores
             );
             return Err(CapaError::InvalidCore);
         }
-        T::create_context(state, engine, *current, domain, remapped_core)?;
+        T::create_context(state, engine, *current, domain, core)?;
         return Ok(());
     }
 
