@@ -38,6 +38,24 @@
           "write":true,
           "exec":false
         }
+      },
+      {
+        "AddSegment":{
+          "start": 13893632,
+          "size":3276800,
+          "tpe":"KernelConfidential",
+          "write":true,
+          "exec":false
+        }
+      },
+      {
+        "AddSegment":{
+          "start": 17170432,
+          "size":3276800,
+          "tpe":"KernelConfidential",
+          "write":true,
+          "exec":false
+        }
       }
     ]
   },
