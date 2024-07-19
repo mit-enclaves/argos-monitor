@@ -399,9 +399,13 @@ fn handle_exit(
                     Ok(HandlerResult::Resume)
                 }
                 calls::EXIT => {
-                    log::info!("MonCall: exit");
-                    log::info!("Vcpu: {:x?}", vs.vcpu);
-                    Ok(HandlerResult::Exit)
+                    //log::info!("MonCall: exit");
+                    //log::info!("Vcpu: {:x?}", vs.vcpu);
+                    //Ok(HandlerResult::Exit)
+                    let mut context = monitor::get_context(*domain, cpuid());
+                    context.set(VmcsField::GuestRax, 0, None)?;
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
                 }
                 calls::SERIALIZE_ATTESTATION => {
                     let written = monitor::do_serialize_attestation(vs, domain, arg_1, arg_2).expect("TODO");
@@ -699,15 +703,14 @@ fn handle_exit(
         | VmxExitReason::VmxPreemptionTimerExpired
         | VmxExitReason::Hlt => {
             log::trace!("Handling {:?} for dom {}", reason, domain.idx());
-            //log::trace!("Debug on core {}", cpuid());
-            //log::info!("Debug called on {} vcpu: {:x?}", domain.idx(), vs.vcpu);
-            //monitor::do_debug(vs, domain);
             if reason == VmxExitReason::ExternalInterrupt {
                 /*let address_eoi = 0xfee000b0 as *mut u32;
                 unsafe {
                     // Clear the eoi
                     *address_eoi = 0;
                 }*/
+                log::info!("VmxExit ExternalInterrupt called on {} vcpu: {:x?}", domain.idx(), vs.vcpu);
+                monitor::do_debug(vs, domain);
                 x2apic::send_eoi();
             }
             match monitor::do_handle_violation(vs, domain) {
