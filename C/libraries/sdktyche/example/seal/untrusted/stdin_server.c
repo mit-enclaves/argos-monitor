@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "common_log.h"
 #include "seal_app.h"
@@ -23,6 +24,12 @@ typedef struct thread_arg_t {
 // ——————————————————————————————— Functions ———————————————————————————————— //
 
 void *run_output(void *arg) {
+  FILE *output_file=NULL;
+  output_file = fopen("output.txt", "w");
+  if (output_file == NULL) {
+      perror("Error opening output file");
+  }
+
   thread_arg_t *thread_arg = (thread_arg_t *)arg;
   char buffer[MSG_BUFFER_SIZE] = {0};
   if (pin_self_to_core((thread_arg->core)) != SUCCESS) {
@@ -40,8 +47,8 @@ void *run_output(void *arg) {
     }
     // Print to the output.
     if (res > 0) {
-      printf("Enclave printing: ");
       fwrite(buffer, res, sizeof(char), stdout);
+      fwrite(buffer, res, sizeof(char), output_file);
     }
   }
   return NULL;
