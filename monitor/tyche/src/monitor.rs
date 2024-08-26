@@ -613,6 +613,25 @@ pub trait Monitor<T: PlatformState + 'static> {
         engine.serialize_attestation(buff)
     }
 
+    fn do_tpm_selftest(
+        state: &mut T,
+        domain_handle: &mut Handle<Domain>,
+        addr: usize,
+        len: usize,
+        written: &mut usize,
+    ) -> Result<usize, CapaError> {
+        let engine = Self::lock_engine(state, domain_handle);
+        let buff = T::find_buff(&engine, *domain_handle, addr, addr + len);
+        let Some(buff) = buff else {
+            log::info!("Invalid buffer while serializing the attestation");
+            return Err(CapaError::InsufficientPermissions);
+        };
+        let buff = unsafe { core::slice::from_raw_parts_mut(buff as *mut u8, len) };
+        let result = wolftpm_sys::self_test();
+        *written = wolftpm_sys::mftr_info(buff);
+        Ok(result)
+    }
+
     fn do_init_child_context(
         state: &mut T,
         current: &mut Handle<Domain>,
@@ -868,6 +887,13 @@ pub trait Monitor<T: PlatformState + 'static> {
             calls::SERIALIZE_ATTESTATION => {
                 let written = Self::do_serialize_attestation(state, domain, args[0], args[1])?;
                 res[0] = written;
+                return Ok(true);
+            }
+            calls::TPM_SELFTEST => {
+                let written = &mut 0;
+                let result = Self::do_tpm_selftest(state, domain, args[0], args[1], written)?;
+                res[0] = *written;
+                res[1] = result;
                 return Ok(true);
             }
             calls::GET_HPA => {
