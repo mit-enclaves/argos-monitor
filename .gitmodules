@@ -1,6 +1,6 @@
 [submodule "linux-kvm-tyche"]
 	path = linux
-	url = git@github.com:YuChen-Qian/linux-kvm-tyche.git
+	url = git@github.com:efjepsen/linux-kvm-tyche.git
 [submodule "busybox"]
 	path = busybox
 	url = git://busybox.net/busybox.git
