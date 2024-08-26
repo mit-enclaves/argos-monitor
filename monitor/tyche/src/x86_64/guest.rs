@@ -37,8 +37,8 @@ pub fn main_loop(mut vmx_state: VmxState, mut domain: Handle<Domain>) {
         vmx_state.vcpu.run(&mut context.vmcs_gp)
     };
 
-    log::info!("Calling wolftpm_sys::self_test");
-    wolftpm_sys::self_test();
+    // TODO check return value
+    wolftpm_sys::init();
 
     loop {
         let exit_reason = match result {
@@ -412,6 +412,19 @@ fn handle_exit(
                     log::trace!("Wrote {} bytes of attestation", written);
                     let mut context = monitor::get_context(*domain, cpuid());
                     context.set(VmcsField::GuestRdi, written, None)?;
+                    context.set(VmcsField::GuestRax, 0, None)?;
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
+                calls::TPM_SELFTEST => {
+                    debug::tyche_hook_stage1(1);
+                    // Returns result of self_test into arg_1
+                    let written = &mut 0;
+                    let result = monitor::do_tpm_selftest(vs, domain, arg_1, arg_2, written).expect("TODO");
+                    // Prints mftr info into arg_2
+                    let mut context = monitor::get_context(*domain, cpuid());
+                    context.set(VmcsField::GuestRdi, *written, None)?;
+                    context.set(VmcsField::GuestRsi, result, None)?;
                     context.set(VmcsField::GuestRax, 0, None)?;
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
