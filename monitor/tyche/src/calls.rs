@@ -32,3 +32,4 @@ pub const GET_HPA: usize = 24;
 pub const SET_CPUID_ENTRY: usize = 26;
 /// For benchmarks to measure the cost of communication with tyche.
 pub const _TEST_CALL: usize = 30;
+pub const TPM_SELFTEST: usize = 31;
