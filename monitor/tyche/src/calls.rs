@@ -31,3 +31,4 @@ pub const RETURN_TO_MANAGER: usize = 23;
 pub const GET_HPA: usize = 24;
 /// For benchmarks to measure the cost of communication with tyche.
 pub const _TEST_CALL: usize = 30;
+pub const TPM_SELFTEST: usize = 31;
