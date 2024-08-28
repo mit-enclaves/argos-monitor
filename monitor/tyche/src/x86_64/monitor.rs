@@ -754,6 +754,126 @@ pub fn do_serialize_attestation(
     engine.serialize_attestation(buff)
 }
 
+pub fn do_signed_attestation(
+    vmx_state: &mut VmxState,
+    domain_handle: &mut Handle<Domain>,
+    attestation_addr: usize,
+    attestation_len: usize,
+    signature_addr: usize,
+    signature_len: usize,
+) -> Result<usize, CapaError> {
+    let engine = lock_engine(vmx_state, domain_handle);
+    let domain = get_domain(*domain_handle);
+    log::trace!("Serializing attestation");
+
+    // First, check if the buffer is valid and can be accessed by the current domain
+    let buff_start = attestation_addr;
+    let buff_end = buff_start + attestation_len;
+    let mut attestation_buff = None;
+    let permission_iter = engine.get_domain_permissions(*domain_handle).unwrap();
+    for range in domain.remapper.remap(permission_iter) {
+        let range_start = range.gpa;
+        let range_end = range_start + range.size;
+        if range_start <= buff_start
+            && buff_start < range_end
+            && range_start < buff_end
+            && buff_end <= range_end
+            && range.ops.contains(MemOps::WRITE)
+        {
+            // We found a valid region that encapsulate the buffer!
+            // On x86_64 it is possible that we use some relocations, so compute the physical
+            // address of the buffer.
+            let gpa_to_hpa_offset = (range.gpa as isize) - (range.hpa as isize);
+            let start = (buff_start as isize) - gpa_to_hpa_offset;
+            attestation_buff = unsafe { Some(core::slice::from_raw_parts_mut(start as *mut u8, attestation_len)) };
+            break;
+        }
+    }
+
+    let Some(attestation_buff) = attestation_buff else {
+        // The buffer is not accessible by the current domain
+        log::info!("Invalid buffer while serializing the attestation");
+        return Err(CapaError::InsufficientPermissions);
+    };
+
+    let _ = engine.serialize_attestation(attestation_buff);
+
+    // Check if the signature buffer is valid and can be accessed by the current domain
+    let buff_start = signature_addr;
+    let buff_end = buff_start + signature_len;
+    let mut signature_buff = None;
+    let permission_iter = engine.get_domain_permissions(*domain_handle).unwrap();
+    for range in domain.remapper.remap(permission_iter) {
+        let range_start = range.gpa;
+        let range_end = range_start + range.size;
+        if range_start <= buff_start
+            && buff_start < range_end
+            && range_start < buff_end
+            && buff_end <= range_end
+            && range.ops.contains(MemOps::WRITE)
+        {
+            // We found a valid region that encapsulate the buffer!
+            // On x86_64 it is possible that we use some relocations, so compute the physical
+            // address of the buffer.
+            let gpa_to_hpa_offset = (range.gpa as isize) - (range.hpa as isize);
+            let start = (buff_start as isize) - gpa_to_hpa_offset;
+            signature_buff = unsafe { Some(core::slice::from_raw_parts_mut(start as *mut u8, signature_len)) };
+            break;
+        }
+    }
+
+    let Some(signature_buff) = signature_buff else {
+        // The buffer is not accessible by the current domain
+        log::info!("Invalid buffer while serializing the attestation");
+        return Err(CapaError::InsufficientPermissions);
+    };
+
+    return Ok(wolftpm_sys::hash_and_sign(attestation_buff, signature_buff) as usize);
+}
+
+pub fn do_get_signing_key(
+    vmx_state: &mut VmxState,
+    domain_handle: &mut Handle<Domain>,
+    addr: usize,
+    len: usize,
+) -> Result<usize, CapaError> {
+    let engine = lock_engine(vmx_state, domain_handle);
+    let domain = get_domain(*domain_handle);
+    log::trace!("Serializing attestation");
+
+    // First, check if the buffer is valid and can be accessed by the current domain
+    let buff_start = addr;
+    let buff_end = buff_start + len;
+    let mut buff = None;
+    let permission_iter = engine.get_domain_permissions(*domain_handle).unwrap();
+    for range in domain.remapper.remap(permission_iter) {
+        let range_start = range.gpa;
+        let range_end = range_start + range.size;
+        if range_start <= buff_start
+            && buff_start < range_end
+            && range_start < buff_end
+            && buff_end <= range_end
+            && range.ops.contains(MemOps::WRITE)
+        {
+            // We found a valid region that encapsulate the buffer!
+            // On x86_64 it is possible that we use some relocations, so compute the physical
+            // address of the buffer.
+            let gpa_to_hpa_offset = (range.gpa as isize) - (range.hpa as isize);
+            let start = (buff_start as isize) - gpa_to_hpa_offset;
+            buff = unsafe { Some(core::slice::from_raw_parts_mut(start as *mut u8, len)) };
+            break;
+        }
+    }
+
+    let Some(buff) = buff else {
+        // The buffer is not accessible by the current domain
+        log::info!("Invalid buffer while getting the signing key");
+        return Err(CapaError::InsufficientPermissions);
+    };
+
+    return Ok(wolftpm_sys::get_signing_key(buff));
+}
+
 pub fn do_tpm_selftest(
     vmx_state: &mut VmxState,
     domain_handle: &mut Handle<Domain>,
