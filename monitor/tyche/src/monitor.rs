@@ -613,6 +613,47 @@ pub trait Monitor<T: PlatformState + 'static> {
         engine.serialize_attestation(buff)
     }
 
+    fn do_signed_attestation(
+        state: &mut T,
+        domain_handle: &mut Handle<Domain>,
+        attestation_addr: usize,
+        attestation_len: usize,
+        signature_addr: usize,
+        signature_len: usize,
+    ) -> Result<usize, CapaError> {
+        let engine = Self::lock_engine(state, domain_handle);
+        let attestation_buff = T::find_buff(&engine, *domain_handle, attestation_addr, attestation_addr + attestation_len);
+        let Some(attestation_buff) = attestation_buff else {
+            log::info!("Invalid buffer while serializing the attestation");
+            return Err(CapaError::InsufficientPermissions);
+        };
+        let attestation_buff = unsafe { core::slice::from_raw_parts_mut(attestation_buff as *mut u8, attestation_len) };
+        let signature_buff = T::find_buff(&engine, *domain_handle, signature_addr, signature_addr + signature_len);
+        let Some(signature_buff) = signature_buff else {
+            log::info!("Invalid buffer while serializing the attestation");
+            return Err(CapaError::InsufficientPermissions);
+        };
+        let signature_buff = unsafe { core::slice::from_raw_parts_mut(signature_buff as *mut u8, signature_len) };
+        engine.serialize_attestation(attestation_buff)?;    
+        Ok(wolftpm_sys::hash_and_sign(attestation_buff, signature_buff) as usize)
+    }
+    
+    fn do_get_signing_key(
+        state: &mut T,
+        domain_handle: &mut Handle<Domain>,
+        addr: usize,
+        len: usize,
+    ) -> Result<usize, CapaError> {
+        let engine = Self::lock_engine(state, domain_handle);
+        let buff = T::find_buff(&engine, *domain_handle, addr, addr + len);
+        let Some(buff) = buff else {
+            log::info!("Invalid buffer while getting the signing key");
+            return Err(CapaError::InsufficientPermissions);
+        };
+        let buff = unsafe { core::slice::from_raw_parts_mut(buff as *mut u8, len) };
+        Ok(wolftpm_sys::get_signing_key(buff))
+    }
+
     fn do_tpm_selftest(
         state: &mut T,
         domain_handle: &mut Handle<Domain>,
@@ -873,6 +914,18 @@ pub trait Monitor<T: PlatformState + 'static> {
             }
             calls::SERIALIZE_ATTESTATION => {
                 let written = Self::do_serialize_attestation(state, domain, args[0], args[1])?;
+                res[0] = written;
+                return Ok(true);
+            }
+            calls::SIGNED_ATTESTATION => {
+                let written = Self::do_signed_attestation(state, domain, args[0], args[1], args[2], args[3])?;
+                log::trace!("Wrote {} bytes of signature", written);
+                res[0] = written;
+                return Ok(true);
+            }
+            calls::GET_SIGNING_KEY => {
+                let written = Self::do_get_signing_key(state, domain, args[0], args[1])?;
+                log::trace!("Wrote {} bytes of signing key", written);
                 res[0] = written;
                 return Ok(true);
             }
