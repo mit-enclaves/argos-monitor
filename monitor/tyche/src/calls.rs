@@ -33,3 +33,5 @@ pub const SET_CPUID_ENTRY: usize = 26;
 /// For benchmarks to measure the cost of communication with tyche.
 pub const _TEST_CALL: usize = 30;
 pub const TPM_SELFTEST: usize = 31;
+pub const SIGNED_ATTESTATION: usize = 32;
+pub const GET_SIGNING_KEY: usize = 33;
