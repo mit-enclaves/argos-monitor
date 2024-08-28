@@ -434,6 +434,15 @@ fn handle_exit(
                     vs.vcpu.next_instruction()?;
                     Ok(HandlerResult::Resume)
                 }
+                calls::TPM_SIGN => {
+                    let written = monitor::do_tpm_sign(vs, domain, arg_1, arg_2, arg_3, arg_4).expect("TODO");
+                    log::trace!("Wrote {} bytes of signature", written);
+                    let mut context = monitor::get_context(*domain, cpuid());
+                    context.set(VmcsField::GuestRdi, written, None)?;
+                    context.set(VmcsField::GuestRax, 0, None)?;
+                    vs.vcpu.next_instruction()?;
+                    Ok(HandlerResult::Resume)
+                }
                 calls::TPM_SELFTEST => {
                     debug::tyche_hook_stage1(1);
                     // Returns result of self_test into arg_1
