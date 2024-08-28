@@ -1,4 +1,5 @@
 use attestation::hashing::hash_region;
+use attestation::signature;
 use capa_engine::config::NB_CORES;
 use capa_engine::utils::BitmapIterator;
 use capa_engine::{
@@ -654,6 +655,30 @@ pub trait Monitor<T: PlatformState + 'static> {
         Ok(wolftpm_sys::get_signing_key(buff))
     }
 
+    fn do_tpm_sign(
+        state: &mut T,
+        domain_handle: &mut Handle<Domain>,
+        digest_addr: usize,
+        digest_len: usize,
+        signature_addr: usize,
+        signature_len: usize,
+    ) -> Result<usize, CapaError> {
+        let engine = Self::lock_engine(state, domain_handle);
+        let digest_buff = T::find_buff(&engine, *domain_handle, digest_addr, digest_addr + digest_len);
+        let Some(digest_buff) = digest_buff else {
+            log::info!("Invalid buffer while signing digest");
+            return Err(CapaError::InsufficientPermissions);
+        };
+        let digest_buff = unsafe { core::slice::from_raw_parts_mut(digest_buff as *mut u8, digest_len) };
+        let signature_buff = T::find_buff(&engine, *domain_handle, signature_addr, signature_addr + signature_len);
+        let Some(signature_buff) = signature_buff else {
+            log::info!("Invalid buffer while signing digest");
+            return Err(CapaError::InsufficientPermissions);
+        };
+        let signature_buff = unsafe { core::slice::from_raw_parts_mut(signature_buff as *mut u8, signature_len) };
+        Ok(wolftpm_sys::sign(digest_buff, signature_buff) as usize)
+    }
+
     fn do_tpm_selftest(
         state: &mut T,
         domain_handle: &mut Handle<Domain>,
@@ -929,6 +954,12 @@ pub trait Monitor<T: PlatformState + 'static> {
             calls::GET_SIGNING_KEY => {
                 let written = Self::do_get_signing_key(state, domain, args[0], args[1])?;
                 log::trace!("Wrote {} bytes of signing key", written);
+                res[0] = written;
+                return Ok(true);
+            }
+            calls::TPM_SIGN => {
+                let written = Self::do_tpm_sign(state, domain, args[0], args[1], args[2], args[3])?;
+                log::trace!("Wrote {} bytes of signature", written);
                 res[0] = written;
                 return Ok(true);
             }
