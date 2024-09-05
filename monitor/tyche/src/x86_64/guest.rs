@@ -37,8 +37,6 @@ pub fn main_loop(mut vmx_state: VmxState, mut domain: Handle<Domain>) {
         vmx_state.vcpu.run(&mut context.vmcs_gp)
     };
 
-    // TODO check return value
-    wolftpm_sys::init();
 
     loop {
         let exit_reason = match result {

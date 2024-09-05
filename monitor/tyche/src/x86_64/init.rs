@@ -48,6 +48,10 @@ pub fn arch_entry_point(log_level: log::LevelFilter) -> ! {
         allocator::init(manifest);
         monitor::init(manifest);
 
+        // TODO check return value
+        let ret = wolftpm_sys::init();
+        log::info!("wolftpm_sys::init: {:?}", ret);
+
         log::info!("Waiting for {} cores", manifest.smp.smp);
         while NB_BOOTED_CORES.load(Ordering::SeqCst) + 1 < manifest.smp.smp {
             core::hint::spin_loop();
