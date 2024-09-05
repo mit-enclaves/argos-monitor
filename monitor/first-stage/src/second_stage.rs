@@ -74,7 +74,11 @@ pub unsafe fn enter() {
 }
 
 fn _enter_inner() {
+    // TODO: hack for i5-7500, with no SMT and phys cores [0, 2, 4, 6]
+    #[cfg(not(feature = "bare_metal"))]
     let cpu_id = cpu::id();
+    #[cfg(feature = "bare_metal")]
+    let cpu_id = cpu::id() / 2;
     // Safety:
     let info = unsafe {
         match SECOND_STAGE_ENTRIES[cpu_id] {
@@ -283,6 +287,7 @@ pub fn load(
         // function.
         let entry_point: EntryPoint = core::mem::transmute(second_stage.entry.as_usize());
 
+        // TODO: this is bugged! sometimes cpuids aren't incremental, eg 0->2->4->6...
         smp_stacks
             .iter()
             .enumerate()
