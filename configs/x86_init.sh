@@ -46,12 +46,30 @@ error() {
     exec /bin/sh
 }
 
-error_nvme_part() {
-  echo "Failed to mount"
+# Optiplex 7050
+try_sda3() {
+  echo "Failed to mount, trying sda3 device."
   umount /newroot
-  mknod /dev/nvme0n1p6 b 259 6
-  mount /dev/nvme0n1p6 /newroot || error
+  mknod /dev/sda3 b 8 3
+  mount /dev/sda3 /newroot || error
 }
+
+# Optiplex 3050
+try_nvme() {
+  echo "Failed to mount, trying NVMe device."
+  umount /newroot
+  mknod /dev/nvme0n1p3 b 259 3
+  mount /dev/nvme0n1p3 /newroot || try_sda3
+}
+
+try_sdb3() {
+  echo "Failed to mount, trying sdb3 device."
+  umount /newroot
+  mknod /dev/sdb3 b 8 19
+  mount /dev/sdb3 /newroot || try_nvme
+}
+
+
 ##
 ### Install disk
 ### We have a disk B with 2 partitions for now
@@ -61,8 +79,8 @@ mknod /dev/sdb2 b 8 18
 ###
 #### Create new root
 mkdir /newroot
-mount /dev/sdb2 /newroot || error_nvme_part
-ls /newroot/sbin || error_nvme_part
+mount /dev/sdb2 /newroot || try_sdb3
+ls /newroot/sbin || try_sdb3
 ###
 #### Switch root
 exec switch_root /newroot /sbin/init || error
