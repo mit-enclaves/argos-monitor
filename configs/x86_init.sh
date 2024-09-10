@@ -46,11 +46,20 @@ error() {
     exec /bin/sh
 }
 
+# Optiplex 7050
+try_sda3() {
+  echo "Failed to mount, trying sda3 device."
+  umount /newroot
+  mknod /dev/sda3 b 8 3
+  mount /dev/sda3 /newroot || error
+}
+
+# Optiplex 3050
 try_nvme() {
   echo "Failed to mount, trying NVMe device."
   umount /newroot
-  mknod /dev/nvme0n1p6 b 259 6
-  mount /dev/nvme0n1p6 /newroot || error
+  mknod /dev/nvme0n1p3 b 259 3
+  mount /dev/nvme0n1p3 /newroot || try_sda3
 }
 
 try_sdb3() {
