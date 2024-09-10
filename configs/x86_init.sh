@@ -46,11 +46,12 @@ error() {
     exec /bin/sh
 }
 
+# This is for our bare-metal Optiplex 3050
 try_nvme() {
   echo "Failed to mount, trying NVMe device."
   umount /newroot
-  mknod /dev/nvme0n1p6 b 259 6
-  mount /dev/nvme0n1p6 /newroot || error
+  mknod /dev/nvme0n1p3 b 259 3
+  mount /dev/nvme0n1p3 /newroot || error
 }
 
 try_sdb3() {
