@@ -1,12 +1,13 @@
 #include "back_tyche.h"
 #include "common.h"
 #include "common_log.h"
-#include "../backend.h"
+#include "backend.h"
 #include "tyche_driver.h"
 #include "tyche_api.h"
 #include "sdk_tyche.h"
 #include "tyche_register_map.h"
 
+#include <asm-generic/errno-base.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
@@ -117,6 +118,10 @@ int backend_td_alloc_mem(tyche_domain_t* domain)
   }
 
   dll_foreach(&(domain->mmaps), slot, list) {
+  // Quick fix for platforms that do not support this flag.
+#ifndef MAP_POPULATE
+#define MAP_POPULATE 0
+#endif
     slot->virtoffset = (usize) mmap(NULL, (size_t) (slot->size),
       PROT_READ|PROT_WRITE, MAP_SHARED|MAP_POPULATE, domain->handle, 0);
     if (slot->virtoffset == (usize) MAP_FAILED) {
@@ -124,7 +129,7 @@ int backend_td_alloc_mem(tyche_domain_t* domain)
       goto failure;
     }
     // Get the physoffset now.
-    info.virtaddr = slot->id;
+    info.virtaddr = slot->virtoffset;
     if (ioctl(domain->handle, TYCHE_GET_PHYSOFFSET, &info) != SUCCESS) {
       ERROR("Failed to read the physoffset for domain %d", domain->handle);
       goto failure;
@@ -136,6 +141,103 @@ failure:
   return FAILURE;
 }
 
+int backend_td_mmap(tyche_domain_t* domain, void* addr, size_t len,
+    int prot, int flags)
+{
+  msg_info_t info = {0};
+  domain_mslot_t *slot = NULL;
+  if (domain == NULL) {
+    ERROR("Nul argument.");
+    goto failure;
+  }
+  slot = malloc(sizeof(domain_mslot_t));
+  if (slot == NULL) {
+    ERROR("Unable to allocate the mslot");
+    goto failure;
+  }
+  memset(slot, 0, sizeof(domain_mslot_t));
+  // Quick fix for platforms that do not support this flag.
+#ifndef MAP_POPULATE
+#define MAP_POPULATE 0
+#endif
+  slot->size = len;
+  slot->id = domain->mslot_id++;
+  slot->virtoffset = (usize) mmap(addr, (size_t) slot->size, prot,
+      flags|MAP_SHARED|MAP_POPULATE, domain->handle, 0);
+  if (((void*)(slot->virtoffset)) == MAP_FAILED) {
+     ERROR("Unable to allocate memory for the domain.");
+     goto failure_dealloc;
+  }
+  info.virtaddr = slot->virtoffset;
+  if (ioctl(domain->handle, TYCHE_GET_PHYSOFFSET, &info) != SUCCESS) {
+     ERROR("Getting physoffset failed!");
+     close(domain->handle);
+     //TODO: munmap?
+     goto failure_dealloc;
+  }
+  slot->physoffset = info.physoffset;
+  dll_add(&(domain->mmaps), slot, list);
+  return SUCCESS;
+failure_dealloc:
+  free(slot);
+failure:
+  return FAILURE;
+}
+
+int backend_td_register_mmap(tyche_domain_t* domain, void* addr, size_t len)
+{
+  msg_info_t info = {0};
+  domain_mslot_t* slot = NULL;
+  if (domain == NULL) {
+    ERROR("Nul argument");
+    goto failure;
+  }
+  slot = malloc(sizeof(domain_mslot_t));
+  if (slot == NULL) {
+    ERROR("Unable to allocate the mslot");
+    goto failure;
+  }
+  memset(slot, 0, sizeof(domain_mslot_t));
+  slot->size = len;
+  slot->id = domain->mslot_id++;
+  slot->virtoffset = (usize) addr;
+  info.virtaddr = (usize) addr;
+  info.size = (usize) len;
+  if (ioctl(domain->handle, TYCHE_REGISTER_REGION, &info) != SUCCESS) {
+    ERROR("Unable to register the mmap");
+    goto failure_free;
+  }
+  // Now get the physoffset.
+  if (ioctl(domain->handle, TYCHE_GET_PHYSOFFSET, &info)!= SUCCESS) {
+    ERROR("Getting physoffset failed!");
+    goto failure_free;
+  }
+  slot->physoffset = info.physoffset;
+  dll_add(&(domain->mmaps), slot, list);
+  return SUCCESS;
+failure_free:
+  free(slot);
+failure:
+  return FAILURE;
+}
+
+int backend_td_virt_to_phys(tyche_domain_t* domain, usize vaddr, usize* paddr) {
+  msg_info_t info = {0};
+  if (domain == NULL || paddr == NULL) {
+    goto failure;
+  }
+  info.virtaddr = vaddr;
+  if (ioctl(domain->handle, TYCHE_GET_PHYSOFFSET, &info) != SUCCESS) {
+    close(domain->handle);
+    goto failure;
+  }
+  *paddr = info.physoffset;
+  return SUCCESS;
+failure:
+  return FAILURE;
+}
+
+//TODO check if the driver handles the overflow.
 int backend_td_register_region(
     tyche_domain_t* domain,
     usize vstart,
@@ -262,7 +364,7 @@ int backend_td_init_vcpu(tyche_domain_t* domain, usize core_idx)
     ERROR("Unable to set the stack for the vcpu.");
     goto failure;
   }
-  // Set the rip.
+  // Set the cr3.
   msg.idx = REG_GP_CR3;
   msg.value = vcpu->cr3; 
   if (ioctl(domain->handle, TYCHE_SET_DOMAIN_CORE_CONFIG, &msg) != SUCCESS) {
@@ -270,6 +372,49 @@ int backend_td_init_vcpu(tyche_domain_t* domain, usize core_idx)
     goto failure;
   }
   // All done!
+  return SUCCESS;
+failure:
+  return FAILURE;
+}
+
+int backend_td_config_vcpu(tyche_domain_t* domain, usize core_idx, usize field, usize value)
+{
+  msg_set_perm_t msg = {0};
+  struct backend_vcpu_info_t* vcpu = NULL;
+  if (domain == NULL) {
+    ERROR("Nul argument.");
+    goto failure;
+  }
+  dll_foreach(&(domain->vcpus), vcpu, list) {
+    if (vcpu->core_id == core_idx) {
+      break;
+    }
+  }
+  // Unable to find it.
+  if (vcpu == NULL) {
+    ERROR("Unable to find vcpu for core %lld. Call create_vcpu first!", core_idx);
+    goto failure;
+  }
+
+  // propagate the info.
+  switch(field) {
+    case GUEST_RIP:
+      vcpu->rip = value;
+      break;
+    case GUEST_RSP:
+      vcpu->stack = value;
+      break;
+    case GUEST_CR3:
+      vcpu->cr3 = value;
+      break;
+  }
+  msg.core = vcpu->core_id;
+  msg.idx = field;
+  msg.value = value;
+  if (ioctl(domain->handle, TYCHE_SET_DOMAIN_CORE_CONFIG, &msg) != SUCCESS) {
+    ERROR("Unable to set the field %llx for the vcpu.", field);
+    goto failure;
+  }
   return SUCCESS;
 failure:
   return FAILURE;
@@ -291,11 +436,13 @@ failure:
   return FAILURE;
 }
 
-int backend_td_vcpu_run(tyche_domain_t* domain, usize core)
+int backend_td_vcpu_run(tyche_domain_t* domain, usize core, uint32_t delta)
 {
   struct backend_vcpu_info_t *vcpu = NULL;
+  msg_switch_t params = {core, delta, 0};
   if (domain == NULL) {
     ERROR("Nul argument");
+    errno = ENOMEM;
     goto failure;
   }
   dll_foreach(&(domain->vcpus), vcpu, list) {
@@ -306,13 +453,17 @@ int backend_td_vcpu_run(tyche_domain_t* domain, usize core)
   // Unable to find it.
   if (vcpu == NULL) {
     ERROR("Unable to find vcpu for core %lld. Call create_vcpu first!", core);
+    errno = -EINVAL;
     goto failure;
   }
 
-  if (ioctl(domain->handle, TYCHE_TRANSITION, core) != SUCCESS) {
-    ERROR("Failure to run on core %lld", core);
+  if (ioctl(domain->handle, TYCHE_TRANSITION, &params) != SUCCESS) {
+    DEBUG("Failure to run on core %lld", core);
+    errno = params.error;
     goto failure;
   }
+  // Set the exit information in errno.
+  errno = params.error;
   //All done!
   return SUCCESS;
 failure:

@@ -4,6 +4,7 @@
  * This is the API for the backends: KVM and the Tyche driver.
  */
 #include "sdk_tyche_types.h"
+#include <stddef.h>
 
 // —————————————————————— Backend specific attributes ——————————————————————— //
 
@@ -46,6 +47,13 @@ typedef struct backend_info_t backend_info_t;
 int backend_td_create(tyche_domain_t* domain);
 /// Allocate memory for the domain.
 int backend_td_alloc_mem(tyche_domain_t* domain);
+/// Allocate memory and leave control to the caller; adds a slot.
+int backend_td_mmap(tyche_domain_t* domain, void* addr, size_t len,
+    int prot, int flags);
+/// Register a region mmaped by linux rather than the driver.
+int backend_td_register_mmap(tyche_domain_t* domain, void* addr, size_t len);
+/// Find the physical address for a given virtual one.
+int backend_td_virt_to_phys(tyche_domain_t* domain, usize vaddr, usize* paddr);
 /// Register a region for the domain.
 int backend_td_register_region(
     tyche_domain_t* domain,
@@ -58,8 +66,8 @@ int backend_td_delete(tyche_domain_t* domain);
 int backend_td_config(tyche_domain_t* domain, usize config, usize value);
 int backend_td_create_vcpu(tyche_domain_t* domain, usize core_idx);
 int backend_td_init_vcpu(tyche_domain_t* domain, usize core_idx);
-// int backend_td_config_vcpu(tyche_domain_t* domain, usize field, usize value);
-int backend_td_vcpu_run(tyche_domain_t* domain, usize core);
+int backend_td_config_vcpu(tyche_domain_t* domain, usize core_idx, usize field, usize value);
+int backend_td_vcpu_run(tyche_domain_t* domain, usize core, uint32_t delta);
 int backend_create_pipe(tyche_domain_t* domain, usize* id, usize physoffset,
     usize size, memory_access_right_t flags, usize width);
 int backend_acquire_pipe(tyche_domain_t* domain, domain_mslot_t* slot);

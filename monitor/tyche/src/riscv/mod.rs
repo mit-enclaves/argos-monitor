@@ -1,14 +1,14 @@
 //! Risc-V backend
 
-// TODO: remove this once the backend is implemented.
 // The line just removes the unused warnings.
 #![allow(unused)]
 
 mod arch;
+mod context;
 mod filtered_fields;
-pub mod guest;
 mod init;
-mod monitor;
+mod platform;
+mod state;
 use core::arch::asm;
 
 pub use init::arch_entry_point;
@@ -18,7 +18,6 @@ use riscv_csrs::mstatus;
 use crate::debug::qemu::ExitCode;
 use crate::println;
 
-// TODO: some empty types to be filled.
 #[derive(Debug)]
 pub enum BackendError {}
 
@@ -26,7 +25,7 @@ pub enum BackendError {}
 pub fn launch_guest(hartid: usize, arg1: usize, next_addr: usize, next_mode: usize) {
     // 0. TODO: Sanity check for next_mode and misa-extension.
 
-    log::info!("============= Launching Linux from Tyche =============");
+    println!("============= Launching Linux from Tyche =============");
 
     // 1. Update MSTATUS - MPP=01 (S-mode), and MPIE = 0.
     let mut mstatus: usize;

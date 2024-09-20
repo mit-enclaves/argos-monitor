@@ -1,10 +1,11 @@
 #include "back_kvm.h"
 #include "common.h"
 #include "common_log.h"
-#include "../backend.h"
+#include "backend.h"
 #include "contalloc_driver.h"
 #include "sdk_tyche.h"
 #include "tyche_driver.h"
+#include "tyche_register_map.h"
 
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -174,6 +175,10 @@ int backend_td_alloc_mem(tyche_domain_t* domain)
     close(domain->handle);
     goto failure;
   }
+  // Quick fix for platforms that do not support this flag.
+#ifndef MAP_POPULATE
+#define MAP_POPULATE 0
+#endif
   dll_foreach(&(domain->mmaps), slot, list) {
     slot->virtoffset = (usize) mmap(NULL, (size_t) slot->size,
       PROT_READ|PROT_WRITE, MAP_SHARED|MAP_POPULATE, domain->backend.memfd, 0);
@@ -183,7 +188,7 @@ int backend_td_alloc_mem(tyche_domain_t* domain)
       close(domain->backend.memfd);
       goto failure;
     }
-    info.virtaddr = slot->id;
+    info.virtaddr = slot->virtoffset;
     if (ioctl(domain->backend.memfd, CONTALLOC_GET_PHYSOFFSET, &info) != SUCCESS) {
       ERROR("Getting physoffset failed!");
       close(domain->handle);
@@ -198,6 +203,115 @@ failure:
   return FAILURE;
 }
 
+
+int backend_td_mmap(tyche_domain_t* domain, void* addr, size_t len,
+    int prot, int flags)
+{
+  msg_t info = {0};
+  domain_mslot_t *slot = NULL;
+  if (domain == NULL) {
+    ERROR("Nul argument.");
+    goto failure;
+  }
+  // Call contalloc driver to get contiguous memory.
+  domain->backend.memfd = open(CONTALLOC_DRIVER, O_RDWR);
+  if (domain->backend.memfd < 0) {
+    ERROR("Unable to open the contalloc driver.");
+    close(domain->handle);
+    goto failure;
+  }
+  slot = malloc(sizeof(domain_mslot_t));
+  if (slot == NULL) {
+    ERROR("Unable to allocate the mslot");
+    goto failure;
+  }
+  memset(slot, 0, sizeof(domain_mslot_t));
+  // Quick fix for platforms that do not support this flag.
+#ifndef MAP_POPULATE
+#define MAP_POPULATE 0
+#endif
+  slot->size = len;
+  slot->id = domain->mslot_id++;
+  slot->virtoffset = (usize) mmap(addr, (size_t) slot->size, prot,
+      flags|MAP_SHARED|MAP_POPULATE, domain->backend.memfd, 0);
+  if (((void*)(slot->virtoffset)) == MAP_FAILED) {
+     ERROR("Unable to allocate memory for the domain.");
+     close(domain->handle);
+     close(domain->backend.memfd);
+     goto failure_dealloc;
+  }
+  info.virtaddr = slot->virtoffset;
+  if (ioctl(domain->backend.memfd, CONTALLOC_GET_PHYSOFFSET, &info) != SUCCESS) {
+     ERROR("Getting physoffset failed!");
+     close(domain->handle);
+     close(domain->backend.memfd);
+     //TODO: munmap?
+     goto failure_dealloc;
+  }
+  slot->physoffset = info.physoffset;
+  dll_add(&(domain->mmaps), slot, list);
+  return SUCCESS;
+failure_dealloc:
+  free(slot);
+failure:
+  return FAILURE;
+}
+
+
+int backend_td_register_mmap(tyche_domain_t* domain, void* addr, size_t len) {
+  msg_t info = {0};
+  domain_mslot_t* slot = NULL;
+  if (domain == NULL) {
+    ERROR("Nul argument");
+    goto failure;
+  }
+  slot = malloc(sizeof(domain_mslot_t));
+  if (slot == NULL) {
+    ERROR("Unable to allocate the mslot");
+    goto failure;
+  }
+  memset(slot, 0, sizeof(domain_mslot_t));
+  slot->size = len;
+  slot->id = domain->mslot_id++;
+  slot->virtoffset = (usize) addr;
+  info.virtaddr = (usize) addr;
+  info.size = (usize) len;
+  if (ioctl(domain->backend.memfd, CONTALLOC_REGISTER_MMAP, &info) != SUCCESS) {
+    ERROR("Unable to register the mmap");
+    goto failure_free;
+  }
+  // Now get the physoffset.
+  if (ioctl(domain->backend.memfd, CONTALLOC_GET_PHYSOFFSET, &info)!= SUCCESS) {
+    ERROR("Getting physoffset failed!");
+    goto failure_free;
+  }
+  slot->physoffset = info.physoffset;
+  dll_add(&(domain->mmaps), slot, list);
+  return SUCCESS;
+failure_free:
+  free(slot);
+failure:
+  return FAILURE;
+}
+
+int backend_td_virt_to_phys(tyche_domain_t* domain, usize vaddr, usize* paddr) {
+  msg_t info = {0};
+  if (domain == NULL || paddr == NULL) {
+    goto failure;
+  }
+  info.virtaddr = vaddr;
+  if (ioctl(domain->backend.memfd, CONTALLOC_GET_PHYSOFFSET, &info) != SUCCESS) {
+    close(domain->handle);
+    close(domain->backend.memfd);
+    goto failure;
+  }
+  *paddr = info.physoffset;
+  return SUCCESS;
+failure:
+  return FAILURE;
+}
+
+//TODO handle overlfow;
 int backend_td_register_region(
     tyche_domain_t* domain,
     usize vstart,
@@ -369,6 +483,65 @@ failure:
   return FAILURE;
 }
 
+int backend_td_config_vcpu(tyche_domain_t* domain, usize core_idx, usize field, usize value)
+{
+  struct backend_vcpu_info_t* vcpu = NULL;
+  if (domain == NULL) {
+    ERROR("Nul argument.");
+    goto failure;
+  }
+  dll_foreach(&(domain->vcpus), vcpu, list) {
+    if (vcpu->core_id == core_idx) {
+      break;
+    }
+  }
+  // Unable to find it.
+  if (vcpu == NULL) {
+    ERROR("Unable to find vcpu for core %lld. Call create_vcpu first!", core_idx);
+    goto failure;
+  }
+
+  switch(field) {
+    case GUEST_RIP:
+      vcpu->regs.rip = value;
+      break;
+    case GUEST_RSP:
+      vcpu->regs.rsp = value;
+      break;
+    case GUEST_CR3:
+      vcpu->sregs.cr3 = value;
+      break;
+    case GUEST_FS_BASE:
+      vcpu->sregs.fs.base = value;
+      break;
+    case GUEST_FS_LIMIT:
+      vcpu->sregs.fs.limit = value;
+      break;
+    case GUEST_GS_BASE:
+      vcpu->sregs.gs.base = value;
+      break;
+    case GUEST_GS_LIMIT:
+      vcpu->sregs.gs.limit = value;
+      break;
+    default:
+      ERROR("Unkown field %llx", field);
+      goto failure;
+  }
+
+  // Register it with kvm.
+  if (ioctl(vcpu->fd, KVM_SET_SREGS, &(vcpu->sregs)) < 0) {
+    ERROR("Unable to set the sregs for core %lld", core_idx);
+    goto failure;
+  }
+  if (ioctl(vcpu->fd, KVM_SET_REGS, &(vcpu->regs)) < 0) {
+    ERROR("Unable to set the regs for core %lld", core_idx);
+    goto failure;
+  }
+  return SUCCESS;
+failure:
+  return FAILURE;
+}
+
 int backend_td_commit(tyche_domain_t* domain)
 {
   if (domain == NULL) {
@@ -382,13 +555,16 @@ failure:
   return FAILURE;
 }
 
-int backend_td_vcpu_run(tyche_domain_t* domain, usize core)
+int backend_td_vcpu_run(tyche_domain_t* domain, usize core, uint32_t delta)
 {
   int ret = 0;
   struct backend_vcpu_info_t *vcpu = NULL;
   if (domain == NULL) {
     ERROR("Nul argument");
     goto failure;
+  }
+  if (delta != 0) {
+    ERROR("Warning feature not supported: delta not 0 for vcpu run with kvm.");
   }
   dll_foreach(&(domain->vcpus), vcpu, list) {
     if (vcpu->core_id == core) {

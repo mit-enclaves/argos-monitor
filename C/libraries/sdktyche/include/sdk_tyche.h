@@ -11,7 +11,6 @@
 // ——————————————————————————————— Constants ———————————————————————————————— //
 
 #define MAX_CORES (32)
-#define MAX_SLOT_SIZE (0x400000)
 // ————————————————————————————— SDK Tyche API —————————————————————————————— //
 /// Creates a domain by parsing the current program and extracting the nested
 /// binary. It then instantiates the domain's binary.
@@ -29,7 +28,12 @@ int sdk_call_domain(tyche_domain_t* domain);
 
 /// Transitions into the domain on a specific core.
 /// @warning: fails when called from a different core.
-int sdk_call_domain_on_core(tyche_domain_t* domain, usize core);
+int sdk_call_domain_on_core(tyche_domain_t* domain, usize core, uint32_t delta);
+
+/// @warning: PROTOTYPE, experimental and not fully fledged impl.
+/// Call a domain and put a delta bound on its execution time.
+/// Delta is expressed in cycles for now.
+int sdk_call_domain_for(tyche_domain_t* domain, uint32_t delta);
 
 /// Delete the domain.
 int sdk_delete_domain(tyche_domain_t* domain);

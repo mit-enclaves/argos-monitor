@@ -2,6 +2,9 @@ all:
 
 TD1_MASK ?= 0x1
 
+
+lkvm_exists = $(shell command -v lkvm > /dev/null 2>&1 && echo yes || echo no)
+
 install_driver:
 	sudo ./scripts/mod_switch.sh
 
@@ -11,10 +14,50 @@ run_td1:
 	qemu-system-x86_64 \
 	-kernel vms/bzImage \
 	-nographic \
-	-enable-kvm -m 100 \
+	-enable-kvm -m 1G \
 	-bios vms/bios.bin \
 	-chardev file,path="/tyche/chardev/seabios",id=seabios -device isa-debugcon,iobase=0x402,chardev=seabios \
-	-append "noapic lpj=24000000 earlyprintk=serial,tty0 console=ttyS0" 
+	-append "noapic lpj=24000000 earlyprintk=serial,tty0 console=ttyS0"
+
+run_td1_multi:
+	QEMU_PIN_CORES=0 \
+	/home/dev/Documents/qemu/build/qemu-system-x86_64 \
+	-L /home/dev/Documents/qemu/build/qemu-bundle/usr/local/share/qemu/bios-256k.bin \
+	-kernel vms/bzImage \
+	-nographic \
+	-enable-kvm -m 100 \
+	-smp 2 \
+	-append "noapic lpj=24000000 earlyprintk=serial,tty0 console=ttyS0"
+
+run_td1_custom:
+	taskset $(TD1_MASK) \
+	/home/dev/Documents/qemu/build/qemu-system-x86_64 \
+	-kernel vms/bzImage \
+	-nographic \
+	-enable-kvm -m 100 \
+	-append "noapic lpj=24000000 earlyprintk=serial,tty0 console=ttyS0"
+
+run_td1_with_drive:
+	QEMU_PIN_CORES=0 \
+	/home/dev/Documents/qemu/build/qemu-system-x86_64 \
+	-L /home/dev/Documents/qemu/build/qemu-bundle/usr/local/share/qemu/bios-256k.bin \
+	-kernel vms/bzImage \
+	-nographic \
+	-enable-kvm -m 1G \
+	-smp 4 \
+	-cpu host \
+	-drive file=fake.disk,format=raw,index=0 \
+	-drive file=nested.qcow2,format=qcow2,media=disk,index=1 \
+	-append "noapic lpj=24000000 earlyprintk=serial,tty0 console=ttyS0"
+
+run_td1_lkvm_with_disk:
+	KVM_PIN_CORES=0 lkvm run \
+        --kernel ./vms/bzImage \
+        --disk nested.raw \
+        --params "root=/dev/vda2" \
+        --console virtio \
+        --network virtio \
+        --cpus 2
 
 regression:
 	sudo ./scripts/mod_switch.sh
@@ -22,3 +65,12 @@ regression:
 	sudo ./programs/sdk_tyche/application_with_sandbox
 	sudo ./programs/sdk_kvm/app_selector
 	sudo ./programs/sdk_kvm/application_with_sandbox
+
+run_td1_lkvm:
+ifeq ($(lkvm_exists), yes)
+	@echo "lkvm is available"
+else 
+	@echo "lkvm not found! Make sure it is in your path!"
+	@exit 1
+endif
+	KVM_PIN_CORES=0 lkvm run -c 1 -k vms/bzImage

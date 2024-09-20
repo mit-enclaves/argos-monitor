@@ -8,6 +8,7 @@ pub mod attestation_domain;
 mod calls;
 pub mod debug;
 pub mod error;
+pub mod monitor;
 mod rcframe;
 pub mod statics;
 mod sync;
@@ -25,4 +26,10 @@ pub mod arch {
 #[cfg(target_arch = "riscv64")]
 pub mod arch {
     pub use crate::riscv::*;
+}
+
+/// Special return values supplied by the monitor.
+#[repr(usize)]
+pub enum MonitorErrors {
+    DomainRevoked = 66,
 }

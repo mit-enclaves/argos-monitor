@@ -106,23 +106,12 @@ int hello_world() {
   }
   LOG("First enclave message:\n%s", msg->reply);
 
-  // Generating random nonce
-  const nonce_t mod = (1e9 + 7);
-  nonce_t nonce = rand() % mod;
-  LOG("Nonce sent by the client is %llx", nonce);
-  msg->nonce = nonce;
   // Call to enclave, which will do attestation
   LOG("Calling enclave to execute attestation");
   if (sdk_call_domain(enclave) != SUCCESS) {
     ERROR("Unable to call the enclave a second time %d!", enclave->handle);
     goto failure;
   }
-
-  write_to_tychools(msg);
-  LOG("Calling the command to tychools to compare the result\n");
-  //TODO: fix this.
-  call_tychools(msg->nonce, /*enclave->map.physoffset*/ 0);
-  read_tychools_response();
 
   // Clean up.
   if (sdk_delete_domain(enclave) != SUCCESS) {
