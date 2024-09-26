@@ -476,9 +476,13 @@ impl CapaEngine {
             &self.domains,
             permission::PermissionIndex::AllowedCores,
         );
-        if (1 << core) & cores == 0 {
-            return Err(CapaError::InvalidCore);
-        }
+        // HACK: remove check on this operation being allowed.
+        //       related to change in monitor::do_init_child_context
+        //       where we're making & sealing a domain for another core
+        //       that does not yet have a context
+        // if (1 << core) & cores == 0 {
+        //     return Err(CapaError::InvalidCore);
+        // }
         let capa = insert_capa(
             domain,
             Capa::Switch { to: capa, core },

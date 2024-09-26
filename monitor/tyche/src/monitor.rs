@@ -630,6 +630,9 @@ pub trait Monitor<T: PlatformState + 'static> {
 
         let mut engine = Self::lock_engine(state, current);
         let capa = engine.create_switch_on_core(*current, core, domain)?;
+        // HACK: create switch capability that the seal operation looks for
+        //       when creating a new domain
+        let _ = engine.create_switch_on_core(*current, cpuid(), domain)?;
         let domain = engine.get_domain_capa(*current, domain)?;
         T::create_context(state, engine, *current, domain, core)?;
         return Ok(capa);
