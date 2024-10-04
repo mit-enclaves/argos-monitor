@@ -3,6 +3,8 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 
+use log::debug;
+
 use mmu::{PtFlag, RVPtFlag};
 use object::read::elf::{FileHeader, ProgramHeader, SectionHeader};
 use object::{elf, Endianness, U16Bytes, U32Bytes, U64Bytes};
