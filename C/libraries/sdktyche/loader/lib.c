@@ -192,6 +192,10 @@ static int domain_add_mslot(tyche_domain_t *domain, int is_pipe, usize size)
     ERROR("Null domain.");
     goto failure;
   }
+  if (size > MAX_SLOT_SIZE) {
+    ERROR("Slot size too big");
+    goto failure;
+  }
   if (size == 0) {
     ERROR("Attempt to add a null size slot");
     goto failure;
@@ -201,32 +205,15 @@ static int domain_add_mslot(tyche_domain_t *domain, int is_pipe, usize size)
     ERROR("Failed to allocate a slot.");
     goto failure;
   }
-  DEBUG("Size is %llx", size);
-  while (size >= MAX_SLOT_SIZE) {
-    DEBUG("Create extra slot for a large region on size %llx", size);
-    memset(slot, 0, sizeof(domain_mslot_t));
-    dll_init_elem(slot, list);
-    slot->id = (is_pipe)? domain->pipe_id++ : domain->mslot_id++;
-    slot->size = MAX_SLOT_SIZE;
-    // Add the slot to the domain.
-    if (is_pipe) {
-      dll_add(&(domain->pipes), slot, list);
-    } else {
-      dll_add(&(domain->mmaps), slot, list);
-    }
-    size -= MAX_SLOT_SIZE;
-  }
-  if(size > 0) {
-    memset(slot, 0, sizeof(domain_mslot_t));
-    dll_init_elem(slot, list);
-    slot->id = (is_pipe)? domain->pipe_id++ : domain->mslot_id++;
-    slot->size = size;
-    // Add the slot to the domain.
-    if (is_pipe) {
-      dll_add(&(domain->pipes), slot, list);
-    } else {
-      dll_add(&(domain->mmaps), slot, list);
-    }
+  memset(slot, 0, sizeof(domain_mslot_t));
+  dll_init_elem(slot, list);
+  slot->id = (is_pipe)? domain->pipe_id++ : domain->mslot_id++;
+  slot->size = size;
+  // Add the slot to the domain.
+  if (is_pipe) {
+    dll_add(&(domain->pipes), slot, list);
+  } else {
+    dll_add(&(domain->mmaps), slot, list);
   }
   return SUCCESS;
 failure:
@@ -419,38 +406,47 @@ int parse_domain(tyche_domain_t* domain)
     // Special case, we handle the pipes.
     is_pipe = tpe == KERNEL_PIPE;
 
-    DEBUG("Segment size is %lx, Pipe size is %lx, Size of segment is %llx, MAX_SLOT_SIZE is %x", segments_size, pipes_size, seg_size, MAX_SLOT_SIZE);
-    //DEBUG("Segment type %x, p_vaddr %lx,  memsz %lx", domain->parser.segments[i].p_type, domain->parser.segments[i].p_vaddr, domain->parser.segments[i].p_memsz)
-    total = (is_pipe)? pipes_size + seg_size : segments_size + seg_size;
-    if (total >= MAX_SLOT_SIZE) {
-      DEBUG("Total is bigger that MAX_SLOT_SIZE");
-      size_t old_size = is_pipe ? pipes_size: segments_size;
-      if (domain_add_mslot(domain, is_pipe, old_size) != SUCCESS) {
-        ERROR("Slot failure");
+    DEBUG("Segments size so far os %lx, Pipe size so far is %lx, This segment size is %llx, MAX_SLOT_SIZE is %x", segments_size, pipes_size, seg_size, MAX_SLOT_SIZE);
+    size_t old_size = is_pipe ? pipes_size: segments_size;
+    if (old_size >= MAX_SLOT_SIZE) { // Old size should be smaller than MAX_SLOT_SIZE.
+      ERROR("Old size should be smaller than MAX_SLOT_SIZE.");
+      goto close_failure; 
+    }
+
+    if (seg_size + old_size >= MAX_SLOT_SIZE){ // Can everything fit in one slot?
+      DEBUG("Create a new slot");
+      domain_add_mslot(domain, is_pipe, MAX_SLOT_SIZE);
+      seg_size -= (MAX_SLOT_SIZE - old_size);
+      if (is_pipe) {
+        pipes_size = 0;
+      } else {
+        segments_size = 0;
+      }
+
+      // If the segment is still too big, cut it into MAX_SLOT_SIZE slots.
+      while (seg_size >= MAX_SLOT_SIZE){
+        DEBUG("Create a new slot for this segment");
+        domain_add_mslot(domain, is_pipe, MAX_SLOT_SIZE);
+        seg_size -= MAX_SLOT_SIZE;
+      }
+    }
+
+    // Add the last segment.
+    if (is_pipe) {
+      pipes_size += seg_size;
+      if (pipes_size >= MAX_SLOT_SIZE) {
+        ERROR("Pipes size should be smaller thanMAX_SLOT_SIZE");
         goto close_failure;
       }
-      DEBUG("seg_size %llx and MAX_SLOT_SIZE %x", seg_size, MAX_SLOT_SIZE); 
-      if(seg_size >= MAX_SLOT_SIZE) {
-        DEBUG("seg_size is bigger that MAX_SLOT_SIZE");
-        if (domain_add_mslot(domain, is_pipe, seg_size) != SUCCESS) {
-         ERROR("Slot failure");
-         goto close_failure;
-        }
-        seg_size = 0; 
-      }
-      if (is_pipe) {
-        pipes_size = seg_size;
-      } else {
-        segments_size = seg_size;
-      }
     } else {
-      if (is_pipe) {
-        pipes_size += seg_size;
-      } else {
-        segments_size += seg_size;
+      segments_size += seg_size;
+      if (segments_size >= MAX_SLOT_SIZE) {
+        ERROR("segments_size >= MAX_SLOT_SIZE");
+        goto close_failure;
       }
     }
   }
+
   // Add the last segment.
   if (domain_add_mslot(domain, 0, segments_size) != SUCCESS) {
     ERROR("Last slot failure");
@@ -507,10 +503,13 @@ int load_domain(tyche_domain_t* domain)
   // Copy the domain's content.
   phys_size = 0;
   slot = domain->mmaps.head;
+  DEBUG("Slot %lld is virtual offset %llx and physical offset %llx, size %llx", slot->id, slot->virtoffset, slot->physoffset, slot->size);
   for (int i = 0; i < domain->parser.header.e_phnum; i++) {
+    // TODO add a while loop to load segments that are too big for one slot.
     Elf64_Phdr seg = domain->parser.segments[i];
     // The segment is not loadable.
     if (!is_loadable(seg.p_type) || seg.p_type == KERNEL_PIPE) {
+      // TODO: Check if the segment should be initialized with 0s (e.g. .bss).
       continue;
     }
     if (slot == NULL) {
@@ -518,12 +517,8 @@ int load_domain(tyche_domain_t* domain)
       goto failure;
     }
     addr_t size = compute_real_size(seg.p_vaddr, seg.p_memsz);
+    DEBUG("Segment %d is p_vaddr %lx, p_memsz %lx, size %llx", i, seg.p_vaddr, seg.p_memsz, size);
 
-    // Safety checks for non-pipe segments.
-    if (seg.p_type != KERNEL_PIPE && phys_size + size > slot->size) {
-      ERROR("The segment does not fit in the current size.");
-      goto failure;
-    }
     addr_t seg_offset = seg.p_vaddr - align_down(seg.p_vaddr);
     addr_t dest = slot->virtoffset + phys_size;
     addr_t load_dest = dest + seg_offset;
@@ -588,11 +583,61 @@ int load_domain(tyche_domain_t* domain)
       }
       domain->config.page_table_root = fixed_cr3;
     }
+
     // Now map the segment.
     int conf_or_shared = is_confidential(seg.p_type)? CONFIDENTIAL : SHARED; 
     if (conf_or_shared == CONFIDENTIAL) {
       flags |= MEM_CONFIDENTIAL;
     }
+
+    // Check we fit in this slot.
+    if (seg.p_type != KERNEL_PIPE && phys_size + size > slot->size) { // Need to register the segment over several slots
+      DEBUG("Overflow to next slot");
+      //Register what you can
+      addr_t new_size = slot->size - phys_size; // Register what you can in that slot
+      size -= new_size;
+      if (backend_td_register_region(
+          domain,
+          dest,
+          new_size,
+          flags,
+          conf_or_shared) != SUCCESS) {
+        ERROR("Unable to map segment for domain %d at %llx",
+            domain->handle, dest);
+        goto failure;
+      }
+      if (phys_size + new_size != slot->size) { // Confirm that the slot is full
+        ERROR("phys_size + new_size != slot->size");
+        goto failure;
+      }
+      DEBUG("Slot %lld is virtual offset %llx and physical offset %llx, size %llx is being fully registered", slot->id, slot->virtoffset, slot->physoffset, slot->size);
+      DEBUG("Next Slot %lld is virtual offset %llx and physical offset %llx, size %llx", slot->list.next->id, slot->list.next->virtoffset, slot->list.next->physoffset, slot->list.next->size);
+      slot = slot->list.next;
+      dest = slot->virtoffset;
+
+      while (size > slot->size) { // If the segement is still bigger than the next slot, register what you canm
+        //Register slot->size
+        addr_t new_size = slot->size;
+        size -= new_size;
+        if (backend_td_register_region(
+          domain,
+          dest,
+          new_size,
+          flags,
+          conf_or_shared) != SUCCESS) {
+            ERROR("Unable to map segment for domain %d at %llx", domain->handle, dest);
+            goto failure;
+        }
+        DEBUG("Slot %lld is virtual offset %llx and physical offset %llx, size %llx is being fully registered", slot->id, slot->virtoffset, slot->physoffset, slot->size);
+        DEBUG("Next Slot %lld is virtual offset %llx and physical offset %llx, size %llx", slot->list.next->id, slot->list.next->virtoffset, slot->list.next->physoffset, slot->list.next->size);
+        slot = slot->list.next;
+        dest = slot->virtoffset;
+      }
+      
+      phys_size = 0; // We are starting a new slot
+    }
+
+    //Register the last part of the segment
     if (backend_td_register_region(
           domain,
           dest,
