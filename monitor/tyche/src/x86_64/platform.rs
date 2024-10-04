@@ -854,6 +854,33 @@ impl MonitorX86 {
         | VmxExitReason::AccessToLdtrOrTr
         | VmxExitReason::Hlt => {
             log::trace!("Handling {:?} for dom {} on core {}", reason, domain.idx(), cpuid());
+            if reason == VmxExitReason::Exception {
+                log::info!("Exception: for dom {} on core {} vcpu {:x?}", domain.idx(), cpuid(), vs.vcpu);
+                let mut gp_values = [0usize; ContextGpx86::size()];
+                let ctxt = StateX86::get_context(*domain, cpuid());
+                for idx in 0..(ContextGpx86::size() - 1) {
+                    gp_values[idx] = ctxt.regs.state_gp.values[idx];
+                }
+                log::info!("General Purpose Registers for domain {} on core {}:", domain.idx(), cpuid());
+                log::info!("RAX: {:#018x}", gp_values[0]);
+                log::info!("RBX: {:#018x}", gp_values[1]);
+                log::info!("RCX: {:#018x}", gp_values[2]);
+                log::info!("RDX: {:#018x}", gp_values[3]);
+
+                log::info!("RSI: {:#018x}", gp_values[5]);
+                log::info!("RDI: {:#018x}", gp_values[6]);
+                log::info!("RBP: {:#018x}", gp_values[4]);
+                //log::info!("RSP: {:#018x}", gp_values[15]);
+
+                log::info!("R8:  {:#018x}", gp_values[7]);
+                log::info!("R9:  {:#018x}", gp_values[8]);
+                log::info!("R10: {:#018x}", gp_values[9]);
+                log::info!("R11: {:#018x}", gp_values[10]);
+                log::info!("R12: {:#018x}", gp_values[11]);
+                log::info!("R13: {:#018x}", gp_values[12]);
+                log::info!("R14: {:#018x}", gp_values[13]);
+                log::info!("R15: {:#018x}", gp_values[14]);
+            }
             if reason == VmxExitReason::ExternalInterrupt {
                 /*let address_eoi = 0xfee000b0 as *mut u32;
                 unsafe {
