@@ -1044,6 +1044,7 @@ impl<'vmx> core::fmt::Debug for ActiveVmcs<'vmx> {
         )?;
         writeln!(f, "        EPT Ptr: {:#x}", self.get_ept_ptr().unwrap())?;
         writeln!(f, "        EPTP List: {:#x}", self.get_eptp_list().unwrap())?;
+        #[cfg(not(feature = "bare_metal"))]
         writeln!(
             f,
             "        PostedInterruptAddr: {:#x}",

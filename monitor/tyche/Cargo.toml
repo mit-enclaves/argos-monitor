@@ -6,7 +6,7 @@ edition = "2021"
 [features]
 default = []
 vga = ["dep:vga"] # Print to VGA text mode
-bare_metal = []
+bare_metal = ["vmx/bare_metal"]
 visionfive2 = ["dep:riscv_serial","stage_two_abi/visionfive2","qemu/visionfive2","riscv_pmp/visionfive2","riscv_tyche/visionfive2"]
 
 [dependencies]
