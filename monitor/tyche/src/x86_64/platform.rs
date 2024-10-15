@@ -10,9 +10,11 @@ use capa_engine::{
 };
 use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::FrameAllocator;
+use mmu::PtMapper;
 use spin::MutexGuard;
 use stage_two_abi::{GuestInfo, Manifest};
 use utils::HostPhysAddr;
+use utils::{GuestPhysAddr, GuestVirtAddr};
 use vmx::bitmaps::exit_qualification;
 use vmx::fields::VmcsField;
 use vmx::{VmxError, VmxExitReason};
@@ -76,16 +78,36 @@ impl PlatformState for StateX86 {
     type Context = Contextx86;
 
     fn find_buff(
+        &mut self,
         engine: &MutexGuard<CapaEngine>,
         domain_handle: Handle<Domain>,
         addr: usize,
-        end: usize,
+        len: usize,
+        is_gva: bool,
     ) -> Option<usize> {
         let domain = Self::get_domain(domain_handle);
         let permission_iter = engine.get_domain_permissions(domain_handle).unwrap();
-        for range in domain.remapper.remap(permission_iter) {
+
+        // HACK: Allow parsing addr as Guest Virtual Address
+        // This absolutely has poor security implications.
+        let addr = if is_gva {
+            let cr3 = self.vcpu.get(VmcsField::GuestCr3).unwrap();
+            let mut ptm = PtMapper::new(0, 0, GuestPhysAddr::new(cr3));
+            let gpa = ptm.translate(GuestVirtAddr::new(addr));
+            let Some(gpa) = gpa else {
+                return None;
+            };
+            gpa.as_usize() + (addr & 0xfff)
+        } else {
+            addr
+        };
+
+        let end = addr + len;
+
+        for range in domain.remapper.remap(permission_iter.clone()) {
             let range_start = range.gpa;
             let range_end = range_start + range.size;
+            log::info!("range: [{:x?}, {:x?}], addr: {:x?}", range_start, range_end, addr);
             if range_start <= addr
                 && addr < range_end
                 && range_start < end

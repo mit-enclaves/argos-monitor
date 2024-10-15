@@ -51,10 +51,12 @@ pub trait PlatformState {
     type DomainData;
     type Context;
     fn find_buff(
+        &mut self,
         engine: &MutexGuard<CapaEngine>,
         domain: Handle<Domain>,
         addr: usize,
-        end: usize,
+        len: usize,
+        is_gva: bool,
     ) -> Option<usize>;
     fn remap_core_bitmap(bitmap: u64) -> u64;
     fn remap_core(core: usize) -> usize;
@@ -602,10 +604,11 @@ pub trait Monitor<T: PlatformState + 'static> {
         domain_handle: &mut Handle<Domain>,
         addr: usize,
         len: usize,
+        is_gva: bool,
     ) -> Result<usize, CapaError> {
         let engine = Self::lock_engine(state, domain_handle);
         //TODO maybe we have some more arguments
-        let buff = T::find_buff(&engine, *domain_handle, addr, addr + len);
+        let buff = T::find_buff(state, &engine, *domain_handle, addr, len, is_gva);
         let Some(buff) = buff else {
             log::info!("Invalid buffer in serialize attestation");
             return Err(CapaError::InsufficientPermissions);
@@ -621,15 +624,16 @@ pub trait Monitor<T: PlatformState + 'static> {
         attestation_len: usize,
         signature_addr: usize,
         signature_len: usize,
+        is_gva: bool,
     ) -> Result<usize, CapaError> {
         let engine = Self::lock_engine(state, domain_handle);
-        let attestation_buff = T::find_buff(&engine, *domain_handle, attestation_addr, attestation_addr + attestation_len);
+        let attestation_buff = T::find_buff(state, &engine, *domain_handle, attestation_addr, attestation_len, is_gva);
         let Some(attestation_buff) = attestation_buff else {
             log::info!("Invalid buffer while serializing the attestation");
             return Err(CapaError::InsufficientPermissions);
         };
         let attestation_buff = unsafe { core::slice::from_raw_parts_mut(attestation_buff as *mut u8, attestation_len) };
-        let signature_buff = T::find_buff(&engine, *domain_handle, signature_addr, signature_addr + signature_len);
+        let signature_buff = T::find_buff(state, &engine, *domain_handle, signature_addr, signature_len, is_gva);
         let Some(signature_buff) = signature_buff else {
             log::info!("Invalid buffer while serializing the attestation");
             return Err(CapaError::InsufficientPermissions);
@@ -644,9 +648,10 @@ pub trait Monitor<T: PlatformState + 'static> {
         domain_handle: &mut Handle<Domain>,
         addr: usize,
         len: usize,
+        is_gva: bool,
     ) -> Result<usize, CapaError> {
         let engine = Self::lock_engine(state, domain_handle);
-        let buff = T::find_buff(&engine, *domain_handle, addr, addr + len);
+        let buff = T::find_buff(state, &engine, *domain_handle, addr, len, is_gva);
         let Some(buff) = buff else {
             log::info!("Invalid buffer while getting the signing key");
             return Err(CapaError::InsufficientPermissions);
@@ -662,15 +667,16 @@ pub trait Monitor<T: PlatformState + 'static> {
         digest_len: usize,
         signature_addr: usize,
         signature_len: usize,
+        is_gva: bool,
     ) -> Result<usize, CapaError> {
         let engine = Self::lock_engine(state, domain_handle);
-        let digest_buff = T::find_buff(&engine, *domain_handle, digest_addr, digest_addr + digest_len);
+        let digest_buff = T::find_buff(state, &engine, *domain_handle, digest_addr, digest_len, is_gva);
         let Some(digest_buff) = digest_buff else {
             log::info!("Invalid buffer while signing digest");
             return Err(CapaError::InsufficientPermissions);
         };
         let digest_buff = unsafe { core::slice::from_raw_parts_mut(digest_buff as *mut u8, digest_len) };
-        let signature_buff = T::find_buff(&engine, *domain_handle, signature_addr, signature_addr + signature_len);
+        let signature_buff = T::find_buff(state, &engine, *domain_handle, signature_addr, signature_len, is_gva);
         let Some(signature_buff) = signature_buff else {
             log::info!("Invalid buffer while signing digest");
             return Err(CapaError::InsufficientPermissions);
@@ -684,10 +690,11 @@ pub trait Monitor<T: PlatformState + 'static> {
         domain_handle: &mut Handle<Domain>,
         addr: usize,
         len: usize,
+        is_gva: bool,
         written: &mut usize,
     ) -> Result<usize, CapaError> {
         let engine = Self::lock_engine(state, domain_handle);
-        let buff = T::find_buff(&engine, *domain_handle, addr, addr + len);
+        let buff = T::find_buff(state, &engine, *domain_handle, addr, len, is_gva);
         let Some(buff) = buff else {
             log::info!("Invalid buffer while serializing the attestation");
             return Err(CapaError::InsufficientPermissions);
@@ -951,31 +958,31 @@ pub trait Monitor<T: PlatformState + 'static> {
                 return Ok(true);
             }
             calls::SERIALIZE_ATTESTATION => {
-                let written = Self::do_serialize_attestation(state, domain, args[0], args[1])?;
+                let written = Self::do_serialize_attestation(state, domain, args[0], args[1], args[2] != 0)?;
                 res[0] = written;
                 return Ok(true);
             }
             calls::SIGNED_ATTESTATION => {
-                let written = Self::do_signed_attestation(state, domain, args[0], args[1], args[2], args[3])?;
+                let written = Self::do_signed_attestation(state, domain, args[0], args[1], args[2], args[3], args[4] != 0)?;
                 log::trace!("Wrote {} bytes of signature", written);
                 res[0] = written;
                 return Ok(true);
             }
             calls::GET_SIGNING_KEY => {
-                let written = Self::do_get_signing_key(state, domain, args[0], args[1])?;
+                let written = Self::do_get_signing_key(state, domain, args[0], args[1], args[2] != 0)?;
                 log::trace!("Wrote {} bytes of signing key", written);
                 res[0] = written;
                 return Ok(true);
             }
             calls::TPM_SIGN => {
-                let written = Self::do_tpm_sign(state, domain, args[0], args[1], args[2], args[3])?;
+                let written = Self::do_tpm_sign(state, domain, args[0], args[1], args[2], args[3], args[4] != 0)?;
                 log::trace!("Wrote {} bytes of signature", written);
                 res[0] = written;
                 return Ok(true);
             }
             calls::TPM_SELFTEST => {
                 let written = &mut 0;
-                let result = Self::do_tpm_selftest(state, domain, args[0], args[1], written)?;
+                let result = Self::do_tpm_selftest(state, domain, args[0], args[1], args[2] != 0, written)?;
                 res[0] = *written;
                 res[1] = result;
                 return Ok(true);
