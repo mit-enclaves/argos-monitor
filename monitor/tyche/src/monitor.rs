@@ -50,10 +50,12 @@ pub trait PlatformState {
     type DomainData;
     type Context;
     fn find_buff(
+        &mut self,
         engine: &MutexGuard<CapaEngine>,
         domain: Handle<Domain>,
         addr: usize,
-        end: usize,
+        len: usize,
+        is_gva: bool,
     ) -> Option<usize>;
     fn remap_core_bitmap(bitmap: u64) -> u64;
     fn remap_core(core: usize) -> usize;
@@ -601,10 +603,11 @@ pub trait Monitor<T: PlatformState + 'static> {
         domain_handle: &mut Handle<Domain>,
         addr: usize,
         len: usize,
+        is_gva: bool,
     ) -> Result<usize, CapaError> {
         let engine = Self::lock_engine(state, domain_handle);
         //TODO maybe we have some more arguments
-        let buff = T::find_buff(&engine, *domain_handle, addr, addr + len);
+        let buff = T::find_buff(state, &engine, *domain_handle, addr, len, is_gva);
         let Some(buff) = buff else {
             log::info!("Invalid buffer in serialize attestation");
             return Err(CapaError::InsufficientPermissions);
@@ -856,7 +859,7 @@ pub trait Monitor<T: PlatformState + 'static> {
                 return Ok(true);
             }
             calls::SERIALIZE_ATTESTATION => {
-                let written = Self::do_serialize_attestation(state, domain, args[0], args[1])?;
+                let written = Self::do_serialize_attestation(state, domain, args[0], args[1], args[2] != 0)?;
                 res[0] = written;
                 return Ok(true);
             }
