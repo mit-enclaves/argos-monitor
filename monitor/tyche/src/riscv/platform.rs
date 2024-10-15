@@ -485,10 +485,12 @@ impl PlatformState for StateRiscv {
     type Context = ContextRiscv;
 
     fn find_buff(
+        &mut self,
         engine: &MutexGuard<CapaEngine>,
         domain_handle: Handle<Domain>,
         addr: usize,
-        end: usize,
+        len: usize,
+        is_gva: usize,
     ) -> Option<usize> {
         todo!("Implement");
     }
