@@ -479,7 +479,7 @@ impl RegionTracker {
             next: region.next,
         };
         let second_half_handle = tracker.allocate(second_half).ok_or_else(|| {
-            log::error!("Unable to allocate new region!");
+            log::error!("Unable to allocate new region! Runned out of Tracker");
             CapaError::OutOfMemory
         })?;
 
@@ -513,7 +513,7 @@ impl RegionTracker {
         let handle = tracker
             .allocate(Region::new(start, end, ops).set_next(region.next))
             .ok_or_else(|| {
-                log::trace!("Unable to allocate new region!");
+                log::error!("Unable to allocate new region! Increase number of Trackers");
                 CapaError::OutOfMemory
             })?;
         let region = &mut tracker[after];
@@ -539,7 +539,7 @@ impl RegionTracker {
 
         let region = Region::new(start, end, ops).set_next(self.head);
         let handle = tracker.allocate(region).ok_or_else(|| {
-            log::trace!("Unable to allocate new region!");
+            log::error!("Unable to allocate new region! Increase number of trackers");
             CapaError::OutOfMemory
         })?;
         self.head = Some(handle);

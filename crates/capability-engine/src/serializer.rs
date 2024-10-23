@@ -41,6 +41,7 @@ impl<'a> Buffer<'a> {
 
     fn write_bytes<const N: usize>(&mut self, bytes: [u8; N]) -> Result<(), CapaError> {
         if self.idx + N > self.buff.len() {
+            log::error!("Buffer is full");
             return Err(CapaError::OutOfMemory);
         }
         self.buff[self.idx..(self.idx + N)].copy_from_slice(&bytes);

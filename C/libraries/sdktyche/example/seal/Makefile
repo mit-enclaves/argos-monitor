@@ -79,7 +79,8 @@ endif
 TYCHOOLS_PATH ?= ../../../../../crates/tychools/
 
 # TODO: make that clean
-SEAL_SERVER_PATH ?= ../../../../../../tyche-experiment-seal/SEAL/build/bin/sealexamples
+#SEAL_SERVER_PATH ?= ../../../../../../tyche-experiment-seal/SEAL/build/bin/sealexamples
+SEAL_SERVER_PATH ?= ../../../../../../tyche-experiment-seal/SealPIR/bin/main
 
 ## ———————————————————————————————— Targets ————————————————————————————————— ##
 
@@ -93,13 +94,11 @@ enclave:
 	test -s $(SEAL_SERVER_PATH) && cp $(SEAL_SERVER_PATH) $@
 
 
-seal_enclave: stdin_app tcp_app enclave
+seal_enclave: stdin_app  enclave #tcp_app
 	cargo -Z unstable-options -C $(TYCHOOLS_PATH) install --path . --locked
 	tychools instrument -s manifests/stdin.json
-	tychools instrument -s manifests/tcp.json
 	chmod +x seal_stdin_enclave
-	chmod +x seal_tcp_enclave
-	rm stdin_app tcp_app enclave
+	#rm stdin_app enclave
 
 install_disk: all 
 	mkdir -p $(DISK_PATH)

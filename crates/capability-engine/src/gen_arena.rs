@@ -73,6 +73,7 @@ impl<T, const N: usize> GenArena<T, N> {
         if self.free_list.capacity() >= count {
             Ok(())
         } else {
+            log::error!("Arena does not have enough capacities for {:?} objects. Out of memory", count);
             Err(CapaError::OutOfMemory)
         }
     }

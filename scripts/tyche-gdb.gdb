@@ -58,12 +58,17 @@ end
 source scripts/tyche_debug.py
 
 b tyche_hook_stage1
-commands
-tyche_set_convenience_vars
-tyche_load_stage2
-end
+#commands
+#tyche_set_convenience_vars
+#tyche_load_stage2
+#end
 
-symbol_seal
-b tyche_suicide
+#symbol_seal
+#b tyche_suicide
+
+#symbol_tyche
+#b CapaEngine::create_manager_domain
 
 set print asm-demangle on
+
+c

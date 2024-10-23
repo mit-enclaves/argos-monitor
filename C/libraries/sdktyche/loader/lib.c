@@ -505,7 +505,6 @@ int load_domain(tyche_domain_t* domain)
   slot = domain->mmaps.head;
   DEBUG("Slot %lld is virtual offset %llx and physical offset %llx, size %llx", slot->id, slot->virtoffset, slot->physoffset, slot->size);
   for (int i = 0; i < domain->parser.header.e_phnum; i++) {
-    // TODO add a while loop to load segments that are too big for one slot.
     Elf64_Phdr seg = domain->parser.segments[i];
     // The segment is not loadable.
     if (!is_loadable(seg.p_type) || seg.p_type == KERNEL_PIPE) {
@@ -544,7 +543,7 @@ int load_domain(tyche_domain_t* domain)
     // Fix the page tables here.
     // We need to go through and compute the offset of addresses in segments.
     // We should have the guarantee that start and end fall within the same
-    // memory slot by construction for the moment (provided we don't have 2^11
+    // memory slot by construction for the moment (provided we don't have 2^10
     // pages in the page tables).
     if (seg.p_type == PAGE_TABLES_CONF || seg.p_type == PAGE_TABLES_SB) {
         //ERROR("Loading domain - fixing segment PTs");

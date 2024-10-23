@@ -5,7 +5,7 @@ use mmu::FrameAllocator;
 use utils::{Frame, HostPhysAddr, HostVirtAddr};
 
 pub const PAGE_SIZE: usize = 0x1000;
-pub const DEFAULT_BUMP_SIZE: usize = 500;
+pub const DEFAULT_BUMP_SIZE: usize = 2000;
 
 /// A 4096 bytes page.
 ///

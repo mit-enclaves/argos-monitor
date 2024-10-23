@@ -42,12 +42,12 @@ use crate::segment::EMPTY_REGION_CAPA;
 /// Configuration for the static Capa Engine size.
 pub mod config {
     pub const NB_DOMAINS: usize = 32;
-    pub const NB_CAPAS_PER_DOMAIN: usize = 128;
-    pub const NB_REGIONS: usize = 1024;
+    pub const NB_CAPAS_PER_DOMAIN: usize = 1024;
+    pub const NB_REGIONS: usize = 2048;
     pub const NB_TRACKER: usize = 1024;
     pub const NB_UPDATES: usize = 128;
     pub const NB_CORES: usize = 32; // NOTE: Can't be greater than 64 as we use 64 bits bitmaps.
-    pub const NB_REMAP_REGIONS: usize = 128;
+    pub const NB_REMAP_REGIONS: usize = 1024;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -102,7 +102,7 @@ impl CapaEngine {
     }
 
     pub fn create_manager_domain(&mut self, permissions: u64) -> Result<DomainHandle, CapaError> {
-        log::trace!("Create new manager domain");
+        //log::trace!("Create new manager domain");
 
         let id = self.domain_id();
         match self.domains.allocate(Domain::new(id, false)) {
@@ -134,7 +134,7 @@ impl CapaEngine {
                 Ok(handle)
             }
             None => {
-                log::info!("Failed to create new domain: out of memory");
+                log::error!("Failed to create new domain: out of memory");
                 Err(CapaError::OutOfMemory)
             }
         }
@@ -776,7 +776,7 @@ impl CapaEngine {
                 Ok(capa)
             }
             None => {
-                log::info!("Failed to create new domain: out of memory");
+                log::error!("Failed to create new domain: out of memory");
                 Err(CapaError::OutOfMemory)
             }
         }

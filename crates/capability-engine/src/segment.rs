@@ -196,7 +196,10 @@ fn alias_region(
 
     let new_region =
         RegionCapa::new(domain_handle, RegionKind::Alias(handle), access).confidential(false);
-    let new_handle = regions.allocate(new_region).ok_or(CapaError::OutOfMemory)?;
+    let new_handle = regions.allocate(new_region).ok_or_else(|| {
+        log::error!("Unable to allocate new region! Increase number of regions");
+        CapaError::OutOfMemory
+    })?;
     insert_child(handle, new_handle, regions);
     Ok(new_handle)
 }
@@ -251,7 +254,10 @@ fn carve_region(
 
     let new_region = RegionCapa::new(domain_handle, RegionKind::Carve(handle), access)
         .confidential(is_confidential);
-    let new_handle = regions.allocate(new_region).ok_or(CapaError::OutOfMemory)?;
+    let new_handle = regions.allocate(new_region).ok_or_else(|| {
+        log::error!("Unable to allocate new region! Increase the number of regions");
+        CapaError::OutOfMemory
+    })?;
     insert_child(handle, new_handle, regions);
     Ok(new_handle)
 }
