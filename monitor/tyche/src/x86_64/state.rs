@@ -12,9 +12,10 @@ use vmx::fields::VmcsField;
 use vmx::{ActiveVmcs, VmxExitReason, Vmxon};
 use vtd::Iommu;
 
-use super::context::{Contextx86, SchedInfo};
-use super::vmx_helper::{dump_host_state, load_host_state};
+use super::context::{Contextx86, CpuidEntry, SchedInfo, MAX_CPUID_ENTRIES};
+use super::perf;
 use crate::allocator::allocator;
+use crate::calls::{MONITOR_SUCCESS, MONITOR_SWITCH_INTERRUPTED};
 use crate::monitor::PlatformState;
 use crate::rcframe::{RCFrame, RCFramePool, EMPTY_RCFRAME};
 use crate::sync::Barrier;
@@ -40,6 +41,16 @@ pub static TLB_FLUSH_BARRIERS: [Barrier; NB_DOMAINS] = [Barrier::NEW; NB_DOMAINS
 pub static TLB_FLUSH: [AtomicBool; NB_DOMAINS] = [FALSE; NB_DOMAINS];
 
 // —————————————————————————————— Empty values —————————————————————————————— //
+
+const EMPTY_CPUID_ENTRY: CpuidEntry = CpuidEntry {
+    function: 0,
+    index: 0,
+    flags: 0,
+    eax: 0,
+    ebx: 0,
+    ecx: 0,
+    edx: 0,
+};
 const EMPTY_CONTEXT_ARRAY: [Mutex<Contextx86>; NB_CORES] = [EMPTY_CONTEXT; NB_CORES];
 const EMPTY_CONTEXT: Mutex<Contextx86> = Mutex::new(Contextx86 {
     regs: RegisterContext {
@@ -57,6 +68,9 @@ const EMPTY_CONTEXT: Mutex<Contextx86> = Mutex::new(Contextx86 {
         saved_ctrls: 0,
     },
     vmcs: Handle::<RCFrame>::new_invalid(),
+    launched: false,
+    nb_active_cpuid_entries: 0,
+    cpuid_entries: [EMPTY_CPUID_ENTRY; MAX_CPUID_ENTRIES],
 });
 const EMPTY_DOMAIN: Mutex<DataX86> = Mutex::new(DataX86 {
     ept: None,
@@ -214,6 +228,7 @@ impl StateX86 {
         return_capa: LocalCapa,
         delta: usize,
     ) -> Result<(), CapaError> {
+        perf::start_step(0);
         // Safety check that both contexts have a valid vmcs.
         if current_ctx.vmcs.is_invalid() || next_ctx.vmcs.is_invalid() {
             log::error!(
@@ -235,7 +250,7 @@ impl StateX86 {
         if current_ctx.interrupted {
             // If it was a timer, we need to reset the information.
             if current_ctx
-                .get(VmcsField::VmExitReason, Some(vcpu))
+                .get_current(VmcsField::VmExitReason, Some(vcpu))
                 .unwrap()
                 == VmxExitReason::VmxPreemptionTimerExpired as usize
                 && current_ctx.sched_info.timed
@@ -250,10 +265,12 @@ impl StateX86 {
                 vcpu.set_pin_based_ctrls(PinbasedControls::from_bits_truncate(saved as u32))
                     .unwrap();
             }
-            next_ctx.copy_interrupt_frame(current_ctx, vcpu).unwrap();
+            next_ctx
+                .copy_interrupt_frame(current_ctx, vcpu, false)
+                .unwrap();
             // Set the return values.
             next_ctx
-                .set(VmcsField::GuestRax, 0, None)
+                .set(VmcsField::GuestRax, MONITOR_SWITCH_INTERRUPTED, None)
                 .or(Err(CapaError::PlatformError))?;
             next_ctx
                 .set(VmcsField::GuestRdi, return_capa.as_usize(), None)
@@ -264,50 +281,46 @@ impl StateX86 {
         } else {
             // Case 3: synchronous call.
             next_ctx
-                .set(VmcsField::GuestRax, 0, None)
+                .set(VmcsField::GuestRax, MONITOR_SUCCESS, None)
                 .or(Err(CapaError::PlatformError))?;
             next_ctx
                 .set(VmcsField::GuestRdi, return_capa.as_usize(), None)
                 .or(Err(CapaError::PlatformError))?;
-            if delta != 0 {
-                // We should do it differently, e.g., put it in the cache.
-                // But the problem is that ctrls fields behave in an odd way (see vmx/src/lib.rs
-                // set_ctrls).
-                next_ctx.sched_info.timed = true;
-                next_ctx.sched_info.saved_ctrls = next_ctx
-                    .get(VmcsField::PinBasedVmExecControl, None)
-                    .unwrap();
-                next_ctx.sched_info.budget = delta;
-                let mut pin =
-                    PinbasedControls::from_bits_truncate(next_ctx.sched_info.saved_ctrls as u32);
-                pin.set(PinbasedControls::VMX_PREEMPTION_TIMER, true);
-                next_ctx
-                    .set(VmcsField::PinBasedVmExecControl, pin.bits() as usize, None)
-                    .unwrap();
-                next_ctx
-                    .set(VmcsField::VmxPreemptionTimerValue, delta, None)
-                    .unwrap();
-            }
         }
 
         // Now the logic for shared vs. private vmcs.
         if current_ctx.vmcs == next_ctx.vmcs {
             panic!("Why are the two vmcs the same?");
         }
-        current_ctx.load(vcpu);
 
-        // NOTE; it seems on hardware we need to save and restore the host context, but we don't know
-        // why yet, we need further invesdigation to be able to optimise this.
-        let mut values: [usize; 13] = [0; 13];
-        dump_host_state(vcpu, &mut values).expect("Couldn't save host context");
+        //next_ctx.switch_flush(&RC_VMCS, vcpu);
+        next_ctx.switch_no_flush(&RC_VMCS, vcpu);
+        if delta != 0 {
+            // We should do it differently, e.g., put it in the cache.
+            // But the problem is that ctrls fields behave in an odd way (see vmx/src/lib.rs
+            // set_ctrls).
+            next_ctx.sched_info.timed = true;
+            //TODO change this.
+            next_ctx.sched_info.saved_ctrls = next_ctx
+                .get_current(VmcsField::PinBasedVmExecControl, Some(vcpu))
+                .unwrap();
+            next_ctx.sched_info.budget = delta;
+            let mut pin =
+                PinbasedControls::from_bits_truncate(next_ctx.sched_info.saved_ctrls as u32);
+            pin.set(PinbasedControls::VMX_PREEMPTION_TIMER, true);
+            next_ctx
+                .set(VmcsField::PinBasedVmExecControl, pin.bits() as usize, None)
+                .unwrap();
+            next_ctx
+                .set(VmcsField::VmxPreemptionTimerValue, delta, None)
+                .unwrap();
+        }
+        next_ctx.flush(vcpu);
 
-        // Configure state of the next TD
-        next_ctx.switch_flush(&RC_VMCS, vcpu);
         vcpu.set_ept_ptr(HostPhysAddr::new(
             next_domain.ept.unwrap().as_usize() | EPT_ROOT_FLAGS,
         ))
         .expect("Failed to update EPT");
-        load_host_state(vcpu, &mut values).expect("Couldn't save host context");
         Ok(())
     }
 }

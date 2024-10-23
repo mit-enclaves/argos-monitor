@@ -3,9 +3,11 @@ use capa_engine::Handle;
 use spin::Mutex;
 use vmx::bitmaps::{PinbasedControls, PrimaryControls, SecondaryControls};
 use vmx::fields::{VmcsField, VmcsFieldWidth};
-use vmx::{ActiveVmcs, VmxError};
+use vmx::{ActiveVmcs, VmxError, VmxExitReason};
 
 use crate::rcframe::{RCFrame, RCFramePool};
+
+pub const MAX_CPUID_ENTRIES: usize = 50;
 
 trait ContextRegisterx86 {
     fn as_vmcs_field(&self) -> VmcsField;
@@ -773,7 +775,8 @@ impl ContextNatx86 {
     }
 }
 
-pub const DUMP_FRAME: [(VmcsField, VmcsField); 9] = [
+// TODO(aghosn): worst comes to worst, we still have rbp too.
+pub const DUMP_FRAME: [(VmcsField, VmcsField); 13] = [
     (VmcsField::GuestRbx, VmcsField::GuestRip),
     (VmcsField::GuestRcx, VmcsField::GuestRsp),
     (VmcsField::GuestRdx, VmcsField::GuestRflags),
@@ -782,7 +785,11 @@ pub const DUMP_FRAME: [(VmcsField, VmcsField); 9] = [
     (VmcsField::GuestR9, VmcsField::VmExitIntrInfo),
     (VmcsField::GuestR10, VmcsField::VmExitIntrErrorCode),
     (VmcsField::GuestR11, VmcsField::VmExitInstructionLen),
-    (VmcsField::GuestR12, VmcsField::VmInstructionError),
+    (VmcsField::GuestR12, VmcsField::IdtVectoringInfoField),
+    (VmcsField::GuestR13, VmcsField::GuestPmlIndex),
+    (VmcsField::GuestR14, VmcsField::GuestInterruptibilityInfo),
+    (VmcsField::GuestR15, VmcsField::ExitQualification),
+    (VmcsField::GuestRbp, VmcsField::GuestIntrStatus),
 ];
 
 /// Scheduling information.
@@ -790,6 +797,16 @@ pub struct SchedInfo {
     pub timed: bool,
     pub budget: usize,
     pub saved_ctrls: usize,
+}
+
+pub struct CpuidEntry {
+    pub function: u32,
+    pub index: u32,
+    pub flags: u32,
+    pub eax: u32,
+    pub ebx: u32,
+    pub ecx: u32,
+    pub edx: u32,
 }
 
 pub struct Contextx86 {
@@ -804,6 +821,9 @@ pub struct Contextx86 {
     pub interrupted: bool,
     pub sched_info: SchedInfo,
     pub vmcs: Handle<RCFrame>,
+    pub launched: bool,
+    pub nb_active_cpuid_entries: usize,
+    pub cpuid_entries: [CpuidEntry; MAX_CPUID_ENTRIES],
 }
 
 impl Contextx86 {
@@ -850,13 +870,31 @@ impl Contextx86 {
         Ok(())
     }
 
-    pub fn get(&mut self, field: VmcsField, vcpu: Option<&ActiveVmcs>) -> Result<usize, VmxError> {
+    pub fn get_current(
+        &mut self,
+        field: VmcsField,
+        vcpu: Option<&ActiveVmcs>,
+    ) -> Result<usize, VmxError> {
         let (group, idx) = Self::translate_field(field);
         if group != RegisterGroup::RegGp {
             if let Some(vcpu) = vcpu {
                 self.regs.set(group, idx, vcpu.get(field)?).unwrap();
                 self.regs.clear(group, idx);
             }
+        }
+        Ok(self.regs.get(group, idx).unwrap())
+    }
+
+    //TODO: modify this.
+    pub fn get_from_frame(
+        &mut self,
+        field: VmcsField,
+        vcpu: &ActiveVmcs,
+    ) -> Result<usize, VmxError> {
+        let (group, idx) = Self::translate_field(field);
+        if group != RegisterGroup::RegGp {
+            self.regs.set(group, idx, vcpu.get(field)?).unwrap();
+            self.regs.clear(group, idx);
         }
         Ok(self.regs.get(group, idx).unwrap())
     }
@@ -896,7 +934,7 @@ impl Contextx86 {
     }
 
     /// Read vcpu, write context.
-    pub fn load(&mut self, vcpu: &ActiveVmcs) {
+    pub fn _load(&mut self, vcpu: &ActiveVmcs) {
         // General purpose registers are handled by vmlaunch/vmresume.
         // 16-bits.
         for i in 0..Context16x86::size() {
@@ -928,7 +966,7 @@ impl Contextx86 {
     }
 
     /// Switch frames and flush.
-    pub fn switch_flush(&mut self, rc_vmcs: &Mutex<RCFramePool>, vcpu: &mut ActiveVmcs) {
+    pub fn _switch_flush(&mut self, rc_vmcs: &Mutex<RCFramePool>, vcpu: &mut ActiveVmcs) {
         let locked = rc_vmcs.lock();
         let rc_frame = locked.get(self.vmcs).unwrap();
         // Switch the frame.
@@ -937,15 +975,27 @@ impl Contextx86 {
         self.flush(vcpu);
     }
 
+    pub fn switch_no_flush(&mut self, rc_vmcs: &Mutex<RCFramePool>, vcpu: &mut ActiveVmcs) {
+        let locked = rc_vmcs.lock();
+        let rc_frame = locked.get(self.vmcs).unwrap();
+        // Switch the frame.
+        vcpu.switch_frame(rc_frame.frame).unwrap();
+    }
+
     // TODO: maybe more efficient if we dump the frame first?
     pub fn copy_interrupt_frame(
         &mut self,
         child: &mut Self,
         vcpu: &ActiveVmcs,
+        synchronous: bool,
     ) -> Result<(), VmxError> {
         for i in DUMP_FRAME {
-            let value = child.get(i.1, Some(vcpu))?;
+            let value = child.get_current(i.1, Some(vcpu))?;
             self.set(i.0, value, None)?;
+        }
+        // Fake exit reason to trigger call to userspace.
+        if synchronous {
+            self.set(VmcsField::GuestR8, VmxExitReason::Unknown as usize, None)?;
         }
 
         Ok(())
@@ -953,6 +1003,7 @@ impl Contextx86 {
 
     pub fn reset(&mut self) {
         self.regs.reset();
+        self.launched = false;
         self.interrupted = false;
         self.sched_info.timed = false;
         self.sched_info.saved_ctrls = 0;

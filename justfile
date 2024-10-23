@@ -164,11 +164,18 @@ _build-linux-common ARCH CROSS_COMPILE=extra_arg:
 	@just _clean-linux-config {{ARCH}}
 
 build-linux-x86-nested:
+  # Normal VMs, no swiotlb or cma.
   cp ./configs/linux-x86-nested.config ./linux/arch/x86/configs/linux-x86-nested_defconfig
   mkdir -p ./builds/linux-x86-nested
   make -C ./linux ARCH=x86 O=../builds/linux-x86-nested defconfig KBUILD_DEFCONFIG=linux-x86-nested_defconfig
   make -C ./linux ARCH=x86 O=../builds/linux-x86-nested -j `nproc`
   rm ./linux/arch/x86/configs/linux-x86-nested_defconfig
+  # Confidential VMs, swiotlb and cma.
+  cp ./configs/linux-x86-nested-confidential.config ./linux/arch/x86/configs/linux-x86-nested-confidential_defconfig
+  mkdir -p ./builds/linux-x86-nested-confidential
+  make -C ./linux ARCH=x86 O=../builds/linux-x86-nested-confidential defconfig KBUILD_DEFCONFIG=linux-x86-nested-confidential_defconfig
+  make -C ./linux ARCH=x86 O=../builds/linux-x86-nested-confidential -j `nproc`
+  rm ./linux/arch/x86/configs/linux-x86-nested-confidential_defconfig
 
 _build-linux-header-common ARCH CROSS_COMPILE=extra_arg:
 	@just _setup-linux-config {{ARCH}}
@@ -334,14 +341,12 @@ install-drivers:
 setup_lab_x86:
   @just build-linux-x86 && just install-drivers
   @just build-linux-x86-nested
-  rm -rf /tmp/seabios_tmp
-  git clone git@github.com:aghosn/seabios.git /tmp/seabios_tmp
-  make -C /tmp/seabios_tmp/
   ARCH=x86 make -C C/ ubuntu_mount
   ARCH=x86 make -C C/ update_disk
   # Copy all the necessary files
   mkdir -p /tmp/mount/tyche/vms
   sudo cp builds/linux-x86-nested/arch/x86_64/boot/bzImage /tmp/mount/tyche/vms/bzImage
+  sudo cp builds/linux-x86-nested-confidential/arch/x86_64/boot/bzImage /tmp/mount/tyche/vms/bzImageConfidential
   sudo cp configs/Makefile_td0 /tmp/mount/tyche/Makefile
   mkdir -p /tmp/mount/tyche/scripts
   mkdir -p /tmp/mount/tyche/chardev/
@@ -349,9 +354,16 @@ setup_lab_x86:
   sudo cp scripts/mod_switch.sh /tmp/mount/tyche/scripts/mod_switch.sh
   sudo cp configs/README_td0.md /tmp/mount/tyche/README.md
   sudo chmod +x /tmp/mount/tyche/scripts/mod_switch.sh
-  sudo cp /tmp/seabios_tmp/out/bios.bin /tmp/mount/tyche/vms/bios.bin
-  rm -rf /tmp/seabios_tmp/
+  @just seabios_setup
   ARCH=x86 make -C C/ ubuntu_umount
+
+seabios_setup:
+  #!/usr/bin/env bash
+  if [ ! -d builds/seabios ]; then
+    git clone git@github.com:aghosn/seabios.git builds/seabios
+  fi
+  make -C builds/seabios
+  sudo cp builds/seabios/out/bios.bin /tmp/mount/tyche/vms/bios.bin
 
 # The following line gives highlighting on vim
 # vim: set ft=make :
