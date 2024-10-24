@@ -99,7 +99,7 @@ pub fn generate_page_tables(
     log::debug!("Computed size for the binary is {:x}", memsz);
 
     // Pages for the page table start at phys_addr == memsz;
-    let mut bump = BumpAllocator::<DEFAULT_BUMP_SIZE>::new(memsz);
+    let mut bump = Box::new(BumpAllocator::<DEFAULT_BUMP_SIZE>::new(memsz));
     //log::debug!("Virtual offset for the page table {:x}", bump.get_virt_offset());
     if bump.get_virt_offset() < memsz {
         log::error!(

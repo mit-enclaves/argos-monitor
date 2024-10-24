@@ -22,7 +22,7 @@ pub struct BumpAllocator<const N: usize> {
     pub idx: usize,
     /// Physical offset where the allocator starts in the physical segment.
     pub phys_offset: usize,
-    pub pages: [Page; N],
+    pub pages: Vec<Page>,
 }
 
 impl<const N: usize> BumpAllocator<N> {
@@ -30,7 +30,7 @@ impl<const N: usize> BumpAllocator<N> {
         Self {
             idx: 0,
             phys_offset: offset,
-            pages: [Page { data: [0; 0x1000] }; N],
+            pages: vec![Page { data: [0; PAGE_SIZE] }; N],
         }
     }
 
