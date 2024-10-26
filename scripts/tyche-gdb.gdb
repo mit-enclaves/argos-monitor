@@ -46,6 +46,13 @@ define symbol_seal
   symbol-file ~/tyche-experiment-seal/SEAL/build/bin/sealexamples
 end
 
+define symbol_seal_pir
+  delete breakpoints
+  set solib-search-path ~/tyche-experiment-seal/toolchain-root/lib/
+  set solib-absolute-prefix ~/tyche-experiment-seal/toolchain-root/lib/
+  symbol-file ~/tyche-experiment-seal/SealPIR/bin/main
+end
+
 define symbol_tyche
   delete breakpoints
   add-symbol-file target/x86_64-unknown-kernel/release/tyche 0x80000000000
