@@ -42,12 +42,12 @@ use crate::segment::EMPTY_REGION_CAPA;
 /// Configuration for the static Capa Engine size.
 pub mod config {
     pub const NB_DOMAINS: usize = 32;
-    pub const NB_CAPAS_PER_DOMAIN: usize = 1024;
-    pub const NB_REGIONS: usize = 2048;
+    pub const NB_CAPAS_PER_DOMAIN: usize = 128;
+    pub const NB_REGIONS: usize = 1024;
     pub const NB_TRACKER: usize = 1024;
     pub const NB_UPDATES: usize = 128;
     pub const NB_CORES: usize = 32; // NOTE: Can't be greater than 64 as we use 64 bits bitmaps.
-    pub const NB_REMAP_REGIONS: usize = 1024;
+    pub const NB_REMAP_REGIONS: usize = 128;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
