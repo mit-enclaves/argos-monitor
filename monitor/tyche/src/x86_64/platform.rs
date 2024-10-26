@@ -787,6 +787,7 @@ impl MonitorX86 {
             vs.vcpu.next_instruction().or(Err(CapaError::PlatformError))?;
             return Ok(HandlerResult::Resume)
 
+            // Just emulate cpuid for all cores for now.
             /*  
             // Domain 0 gets direct access to CPUID
             if domain.idx() == 0 {
