@@ -30,7 +30,8 @@
 #define NO_TRAPS ((usize)(0))
 #define DEFAULT_PERM ((usize)0)
 
-/// KVM imposes a limit on the size of a contiguous memory segment.
+// KVM imposes a limit on the size of a contiguous memory segment.
+// But by modifying the linux driver to use memmap we can avoid it.
 #define MAX_SLOT_SIZE (0x40000000)
 
 // ————————————————————————————— Tychools Phdrs ————————————————————————————— //
