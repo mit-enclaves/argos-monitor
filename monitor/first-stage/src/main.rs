@@ -22,8 +22,7 @@ use s1::{guests, println, second_stage, smp, HostPhysAddr, HostVirtAddr};
 use stage_two_abi::{Smp, VgaInfo};
 use x86_64::registers::control::Cr4;
 
-// Change here for debug levels
-const LOG_LEVEL: LevelFilter = LevelFilter::Info;
+const LOG_LEVEL: LevelFilter = LevelFilter::Trace;
 
 entry_point!(kernel_main);
 
