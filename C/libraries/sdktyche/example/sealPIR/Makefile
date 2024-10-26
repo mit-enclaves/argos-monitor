@@ -79,7 +79,8 @@ endif
 TYCHOOLS_PATH ?= ../../../../../crates/tychools/
 
 # TODO: make that clean
-SEAL_SERVER_PATH ?= ../../../../../../tyche-experiment-seal/SEAL/build/bin/sealexamples
+#SEAL_SERVER_PATH ?= ../../../../../../tyche-experiment-seal/SEAL/build/bin/sealexamples
+SEAL_SERVER_PATH ?= ../../../../../../tyche-experiment-seal/SealPIR/bin/main
 
 ## ———————————————————————————————— Targets ————————————————————————————————— ##
 
