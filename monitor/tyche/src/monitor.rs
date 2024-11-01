@@ -754,7 +754,7 @@ pub trait Monitor<T: PlatformState + 'static> {
                 todo!("Exit called")
             }
             calls::DEBUG => {
-                log::info!(
+                log::debug!(
                     "Debug called with {} from dom{} on core {}",
                     args[0],
                     domain.idx(),

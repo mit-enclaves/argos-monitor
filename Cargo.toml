@@ -80,6 +80,6 @@ harness = false
 panic = "abort"
 
 [profile.release]
-opt-level = "s"
+opt-level = 3
 panic = "abort"
-debug = true
+debug = false
