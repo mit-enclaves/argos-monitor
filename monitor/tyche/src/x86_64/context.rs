@@ -776,7 +776,7 @@ impl ContextNatx86 {
 }
 
 // TODO(aghosn): worst comes to worst, we still have rbp too.
-pub const DUMP_FRAME: [(VmcsField, VmcsField); 13] = [
+pub const DUMP_FRAME: [(VmcsField, VmcsField); 12] = [
     (VmcsField::GuestRbx, VmcsField::GuestRip),
     (VmcsField::GuestRcx, VmcsField::GuestRsp),
     (VmcsField::GuestRdx, VmcsField::GuestRflags),
@@ -789,7 +789,7 @@ pub const DUMP_FRAME: [(VmcsField, VmcsField); 13] = [
     (VmcsField::GuestR13, VmcsField::GuestPmlIndex),
     (VmcsField::GuestR14, VmcsField::GuestInterruptibilityInfo),
     (VmcsField::GuestR15, VmcsField::ExitQualification),
-    (VmcsField::GuestRbp, VmcsField::GuestIntrStatus),
+    // (VmcsField::GuestRbp, VmcsField::GuestIntrStatus),
 ];
 
 /// Scheduling information.
@@ -926,7 +926,9 @@ impl Contextx86 {
                         .unwrap();
                 }
                 _ => {
-                    vcpu.set(field, value).unwrap();
+                    if (field != VmcsField::GuestIntrStatus && field != VmcsField::PostedIntrNv) {
+                        vcpu.set(field, value).unwrap();
+                    }
                 }
             }
         };
