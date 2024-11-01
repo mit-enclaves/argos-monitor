@@ -694,6 +694,9 @@ impl MonitorX86 {
     ) -> Result<VmxExitReason, VmxError> {
         if !context.launched {
             context.launched = true;
+            // HACK: hotfix while vmclear is not issued at domain exit
+            state.vcpu.vmclear()?;
+            state.vcpu.reload();
             state.vcpu.launch(&mut context.regs.state_gp.values)
         } else {
             state.vcpu.resume(&mut context.regs.state_gp.values)
