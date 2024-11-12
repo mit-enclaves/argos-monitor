@@ -34,3 +34,34 @@ pub fn tyche_hook_main_loop(val: u64) {
 pub fn tyche_hook_error(val: u64) {
     assert!(val != 0);
 }
+
+/* ---- Basic benchmarking helpers ---- */
+
+use core::arch::asm;
+use core::arch::x86_64::__rdtscp;
+
+// #[allow(unused_mut)]
+// fn rdmsr(msr: u32) -> u64 {
+//     unsafe {
+//         let (high, low): (u32, u32);
+//         asm!("rdmsr", out("eax") low, out("edx") high, in("ecx") msr);
+//         ((high as u64) << 32) | (low as u64)
+//     }
+// }
+
+pub fn tsc_to_us(t1: u64, t0: u64) -> u64 {
+    let max_freq: u64 = 3_600_000_000;
+    let max_freq_us: u64 = max_freq / 1_000_000;
+    // let aperf = rdmsr(0xe8);
+    // let mperf = rdmsr(0xe7);
+
+    // (((t1 - t0) * aperf) / max_freq_us) / mperf
+    (t1 - t0) / max_freq_us
+}
+
+pub fn rdtscp() -> u64 {
+    let mut aux: u32 = 0;
+    unsafe { __rdtscp(&mut aux as *mut u32) }
+}
+
+/* ------------------------------------ */
