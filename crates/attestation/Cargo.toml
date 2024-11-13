@@ -7,7 +7,8 @@ edition = "2021"
 
 [dependencies]
 log = { workspace = true }
-ed25519-compact = {path = "../../vendor/forked_signature"}
+# ed25519-compact = {path = "../../vendor/forked_signature"}
+p256 = { version = "0.13.2", features = ["ecdsa"], default-features = false}
 # sha2 = { version = "0.9.1", default-features = false }
 blake3 = { version = "1.5.4", default-features = false }
 
