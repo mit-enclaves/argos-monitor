@@ -8,7 +8,8 @@ edition = "2021"
 [dependencies]
 log = { workspace = true }
 ed25519-compact = {path = "../../vendor/forked_signature"}
-sha2 = "0.6.0"
+# sha2 = { version = "0.9.1", default-features = false }
+blake3 = { version = "1.5.4", default-features = false }
 
 [dev-dependencies.simple_logger]
 default-features = false

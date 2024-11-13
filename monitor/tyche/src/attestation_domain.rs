@@ -29,7 +29,7 @@ fn hash_capa_info(
                 children: _,
                 ops,
             } => {
-                if ops.contains(MemOps::HASH) {
+                // if ops.contains(MemOps::HASH) {
                     // Hashing start - end of region
                     hashing::hash_segment(hasher, &(usize::to_le_bytes(start)));
                     hashing::hash_segment(hasher, &(usize::to_le_bytes(end)));
@@ -56,7 +56,7 @@ fn hash_capa_info(
                             addr = addr + 1;
                         }
                     }
-                }
+                // }
             }
             _ => {}
         }
@@ -69,7 +69,7 @@ pub fn calculate_attestation_hash(engine: &mut MutexGuard<'_, CapaEngine>, domai
     hash_capa_info(&mut hasher, engine, domain);
 
     log::trace!("Finished calculating the hash!");
-    engine.set_hash(domain, hashing::get_hash(&mut hasher));
+    engine.set_hash(domain, hashing::get_hash(hasher));
 }
 
 // —————————————————————— Attestation —————————————————————— //
