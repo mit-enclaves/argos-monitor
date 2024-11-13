@@ -1,5 +1,5 @@
-use blake3;
-pub type TycheHasher = blake3::Hasher;
+use sha2::{Digest, Sha256};
+pub type TycheHasher = Sha256;
 
 #[derive(Copy, Clone)]
 pub struct HashEnclave {
@@ -28,7 +28,7 @@ impl HashEnclave {
 }
 
 pub fn get_hasher() -> TycheHasher {
-    blake3::Hasher::new()
+    Sha256::default()
 }
 
 pub fn hash_segment(hasher: &mut TycheHasher, segment_data: &[u8]) {
@@ -38,10 +38,10 @@ pub fn hash_segment(hasher: &mut TycheHasher, segment_data: &[u8]) {
 pub fn get_hash(hasher: TycheHasher) -> HashEnclave {
     let result = hasher.finalize();
     log::trace!("Computed hash: ");
-    log::trace!("{}", result);
+    log::trace!("{:x}", result);
     // TODO: this is swapped and wrong!
-    let hash_low: u128 = u128::from_be_bytes(result.as_bytes()[0..16].try_into().unwrap());
-    let hash_high: u128 = u128::from_be_bytes(result.as_bytes()[16..32].try_into().unwrap());
+    let hash_low: u128 = u128::from_be_bytes(result.as_slice()[0..16].try_into().unwrap());
+    let hash_high: u128 = u128::from_be_bytes(result.as_slice()[16..32].try_into().unwrap());
     let henc = HashEnclave {
         low: hash_low,
         high: hash_high,
@@ -50,10 +50,11 @@ pub fn get_hash(hasher: TycheHasher) -> HashEnclave {
 }
 
 pub fn hash_region(region: &[u8]) -> [u8; 32] {
-    let mut hasher = TycheHasher::new();
+    let mut hasher = Sha256::default();
     hasher.update(region);
     hasher
         .finalize()
+        .as_slice()
         .try_into()
         .expect("Failed to convert hash slice into array: wrong size")
 }
