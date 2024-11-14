@@ -47,14 +47,18 @@ fn hash_capa_info(
 
                     // Hashing region data info
                     let mut addr = start;
-                    let addr_end = end;
-                    while addr < addr_end {
-                        unsafe {
-                            let byte_data = *(addr as *const u8);
-                            let byte_arr: [u8; 1] = [byte_data as u8];
-                            hashing::hash_segment(hasher, &byte_arr);
-                            addr = addr + 1;
-                        }
+                    const BLOCK_SIZE: usize = 0x4000;
+                    
+                    while addr < end {
+                        let len = if (addr + BLOCK_SIZE < end) { BLOCK_SIZE } else { end - addr };
+                        let data = unsafe { 
+                            core::slice::from_raw_parts(
+                                addr as *const u8,
+                                len
+                            )
+                        };
+                        hashing::hash_segment(hasher, data);
+                        addr = addr + len;
                     }
                 // }
             }
