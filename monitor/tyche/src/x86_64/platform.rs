@@ -105,7 +105,7 @@ impl PlatformState for StateX86 {
         for range in domain.remapper.remap(permission_iter.clone()) {
             let range_start = range.gpa;
             let range_end = range_start + range.size;
-            log::info!("range: [{:x?}, {:x?}], addr: {:x?}", range_start, range_end, addr);
+            log::trace!("range: [{:x?}, {:x?}], addr: {:x?}", range_start, range_end, addr);
             if range_start <= addr
                 && addr < range_end
                 && range_start < end
@@ -180,7 +180,7 @@ impl PlatformState for StateX86 {
             vmx_helper::default_vmcs_config(&mut self.vcpu, &info, false);
             let vpid = (domain.idx() + 1) as u16; // VPID 0 is reserved for VMX root execution
             self.vcpu.set_vpid(vpid).expect("Failled to install VPID");
-            log::info!("Configured VPID {} on CPU {} for domain {}", vpid, cpuid(), domain.idx());
+            log::trace!("Configured VPID {} on CPU {} for domain {}", vpid, cpuid(), domain.idx());
 
             // Load the default values.
             load_host_state(&mut self.vcpu, &mut values).or(Err(CapaError::InvalidValue))?;
