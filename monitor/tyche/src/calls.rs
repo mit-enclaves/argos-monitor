@@ -37,6 +37,7 @@ pub const TPM_SELFTEST: usize = 31;
 pub const SIGNED_ATTESTATION: usize = 32;
 pub const GET_SIGNING_KEY: usize = 33;
 pub const TPM_SIGN: usize = 34;
+pub const VTPM_SIGN: usize = 35;
 
 // ————————————————————— Return values for the monitor —————————————————————— //
 pub const MONITOR_SUCCESS: usize = 0;

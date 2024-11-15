@@ -685,6 +685,31 @@ pub trait Monitor<T: PlatformState + 'static> {
         Ok(wolftpm_sys::sign(digest_buff, signature_buff) as usize)
     }
 
+    fn do_vtpm_sign(
+        state: &mut T,
+        domain_handle: &mut Handle<Domain>,
+        digest_addr: usize,
+        digest_len: usize,
+        signature_addr: usize,
+        signature_len: usize,
+        is_gva: bool,
+    ) -> Result<usize, CapaError> {
+        let engine = Self::lock_engine(state, domain_handle);
+        let digest_buff = T::find_buff(state, &engine, *domain_handle, digest_addr, digest_len, is_gva);
+        let Some(digest_buff) = digest_buff else {
+            log::info!("Invalid buffer while signing digest");
+            return Err(CapaError::InsufficientPermissions);
+        };
+        let digest_buff = unsafe { core::slice::from_raw_parts_mut(digest_buff as *mut u8, digest_len) };
+        let signature_buff = T::find_buff(state, &engine, *domain_handle, signature_addr, signature_len, is_gva);
+        let Some(signature_buff) = signature_buff else {
+            log::info!("Invalid buffer while signing digest");
+            return Err(CapaError::InsufficientPermissions);
+        };
+        let signature_buff = unsafe { core::slice::from_raw_parts_mut(signature_buff as *mut u8, signature_len) };
+        Ok(signature::vtpm_sign(digest_buff, signature_buff) as usize)
+    }
+
     fn do_tpm_selftest(
         state: &mut T,
         domain_handle: &mut Handle<Domain>,
@@ -976,6 +1001,12 @@ pub trait Monitor<T: PlatformState + 'static> {
             }
             calls::TPM_SIGN => {
                 let written = Self::do_tpm_sign(state, domain, args[0], args[1], args[2], args[3], args[4] != 0)?;
+                log::trace!("Wrote {} bytes of signature", written);
+                res[0] = written;
+                return Ok(true);
+            }
+            calls::VTPM_SIGN => {
+                let written = Self::do_vtpm_sign(state, domain, args[0], args[1], args[2], args[3], args[4] != 0)?;
                 log::trace!("Wrote {} bytes of signature", written);
                 res[0] = written;
                 return Ok(true);
