@@ -107,7 +107,6 @@ impl PlatformState for StateX86 {
         for range in domain.remapper.remap(permission_iter.clone()) {
             let range_start = range.gpa;
             let range_end = range_start + range.size;
-            log::info!("range: [{:x?}, {:x?}], addr: {:x?}", range_start, range_end, addr);
             if range_start <= addr
                 && addr < range_end
                 && range_start < end
