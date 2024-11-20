@@ -31,7 +31,7 @@
 #define DEFAULT_PERM ((usize)0)
 
 /// KVM imposes a limit on the size of a contiguous memory segment.
-#define MAX_SLOT_SIZE (0x400000)
+#define MAX_SLOT_SIZE (0x40000000)
 
 // ————————————————————————————— Tychools Phdrs ————————————————————————————— //
 /// OS-specific Phdr (Segments) types.

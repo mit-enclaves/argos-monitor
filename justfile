@@ -22,7 +22,7 @@ bare-metal-tyche    := "--features=tyche/bare_metal"
 build_path          := justfile_directory() + "/builds"
 tpm_path            := "/tmp/tpm-dev-" + env_var('USER')
 default_dbg         := "/tmp/dbg-" + env_var('USER')
-default_smp         := "2"
+default_smp         := "6"
 extra_arg           := ""
 
 qemu-riscv			:= "../qemu/build/riscv64-softmmu/qemu-system-riscv64"
