@@ -456,11 +456,7 @@ version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa68f1b12764fab894d2755d2518754e71b4fd80ecfb822714a1206c2aab39bf"
 dependencies = [
-<<<<<<< HEAD
- "cc 1.0.79",
-=======
  "cc 1.2.0",
->>>>>>> 66573eb2 (Use blake3 for hashing instead of sha2)
  "libc",
 ]
 
