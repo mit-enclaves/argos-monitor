@@ -329,10 +329,11 @@ impl CapaEngine {
                         log::error!("Invalid hcvs! {:?}", flags);
                         return Err(CapaError::InvalidPermissions);
                     }
-                    if flags.contains(MemOps::HASH) && hash.is_none() {
-                        log::error!("Missing hash");
-                        return Err(CapaError::InvalidValue);
-                    }
+                    // No longer using hash flag this way for the fast hashing fix
+                    // if flags.contains(MemOps::HASH) && hash.is_none() {
+                    //     log::error!("Missing hash");
+                    //     return Err(CapaError::InvalidValue);
+                    // }
                     match hash {
                         Some(hash) => self.regions[region].set_hash(&hash),
                         None => self.regions[region].reset_hash(),

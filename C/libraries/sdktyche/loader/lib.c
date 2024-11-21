@@ -466,6 +466,32 @@ failure:
   return FAILURE;
 }
 
+int should_hash(Elf64_Phdr seg) {
+  Elf64_Word type = seg.p_type;
+  Elf64_Word flags = seg.p_flags;
+
+  if (type == USER_STACK_SB ||
+      type == USER_STACK_CONF ||
+      type == USER_SHARED ||
+      type == KERNEL_STACK_SB ||
+      type == KERNEL_STACK_CONF ||
+      type == KERNEL_SHARED ||
+      type == KERNEL_PIPE) {
+      return 0;
+  }
+
+  // RWX confidential pages aren't normal. Easy way to flag regions added by manifest.
+  // Really, we should have the tyche loader add the PF_H flag to segments in the manifest
+  // instead of looking for particular combos here :-)
+  if (type == USER_CONFIDENTIAL || type == KERNEL_CONFIDENTIAL) {
+    if ((flags & PF_R) && (flags & PF_W) && (flags & PF_X)) {
+      return 0;
+    }
+  }
+
+  return 1;
+}
+
 int load_domain(tyche_domain_t* domain)
 {
     //ERROR("Loading domain");
@@ -511,6 +537,9 @@ int load_domain(tyche_domain_t* domain)
       // TODO: Check if the segment should be initialized with 0s (e.g. .bss).
       continue;
     }
+  
+    // LOG("load_domain: parsing segment %i: ptype 0x%08x vaddr 0x%x len 0x%x flags 0x%04x", i, seg.p_type, seg.p_vaddr, seg.p_memsz, seg.p_flags);
+
     if (slot == NULL) {
       ERROR("Slot should not be null");
       goto failure;
@@ -522,6 +551,14 @@ int load_domain(tyche_domain_t* domain)
     addr_t dest = slot->virtoffset + phys_size;
     addr_t load_dest = dest + seg_offset;
     memory_access_right_t flags = translate_flags_to_tyche(seg.p_flags);
+
+    // Alter flags to include hash.
+    int ret = should_hash(seg);
+    // LOG("Segment %i: should_hash %i", i, ret);
+    if (ret) {
+      flags |= MEM_HASH;
+    }
+
     load_elf64_segment(&domain->parser.elf, (void*) load_dest, seg);
 
     // If segment is shared, fix it in the shared_segments.
@@ -721,7 +758,7 @@ int sdk_create_domain(
     usize traps,
     usize perms)
 {
-  LOG("Called SDK create domain");
+  // LOG("Called SDK create domain");
 
   char* dump =  NULL;
   if (dom == NULL) {

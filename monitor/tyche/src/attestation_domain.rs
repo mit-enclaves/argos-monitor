@@ -29,7 +29,9 @@ fn hash_capa_info(
                 children: _,
                 ops,
             } => {
-                // if ops.contains(MemOps::HASH) {
+                if ops.contains(MemOps::HASH) {
+                    log::trace!("Hashing region at {:x}->{:x} with ops {:?}", start, end, ops);
+
                     // Hashing start - end of region
                     hashing::hash_segment(hasher, &(usize::to_le_bytes(start)));
                     hashing::hash_segment(hasher, &(usize::to_le_bytes(end)));
@@ -47,7 +49,7 @@ fn hash_capa_info(
 
                     // Hashing region data info
                     let mut addr = start;
-                    const BLOCK_SIZE: usize = 0x4000;
+                    const BLOCK_SIZE: usize = 0x4000; // 16KB
                     
                     while addr < end {
                         let len = if (addr + BLOCK_SIZE < end) { BLOCK_SIZE } else { end - addr };
@@ -60,7 +62,34 @@ fn hash_capa_info(
                         hashing::hash_segment(hasher, data);
                         addr = addr + len;
                     }
-                // }
+                } else {
+                    log::trace!("NOT hashing region at {:x}->{:x} with ops {:?}", start, end, ops);
+
+                    // Hash capa but set region to zero.
+                    // Hashing start - end of region
+                    hashing::hash_segment(hasher, &(usize::to_le_bytes(start)));
+                    hashing::hash_segment(hasher, &(usize::to_le_bytes(end)));
+
+                    // Hashing access rights
+                    let access_rights = ops.bits();
+                    hash_access_right(hasher, access_rights, MemOps::HASH.bits());
+                    hash_access_right(hasher, access_rights, MemOps::EXEC.bits());
+                    hash_access_right(hasher, access_rights, MemOps::WRITE.bits());
+                    hash_access_right(hasher, access_rights, MemOps::READ.bits());
+
+                    // Hash conf/shared info
+                    let conf_info = if unique { 1 as u8 } else { 0 as u8 };
+                    hashing::hash_segment(hasher, &(u8::to_le_bytes(conf_info)));
+
+                    // Set region to zero
+                    let data = unsafe {
+                        core::slice::from_raw_parts_mut(
+                            start as *mut u8,
+                            end - start,
+                        )
+                    };
+                    data.fill(0);
+                }
             }
             _ => {}
         }

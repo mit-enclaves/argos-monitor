@@ -421,6 +421,7 @@ pub trait Monitor<T: PlatformState + 'static> {
         prot: usize,
     ) -> Result<(LocalCapa, LocalCapa), CapaError> {
         let prot = MemOps::from_usize(prot)?;
+        log::trace!("segment_region: {:x}->{:x}, {:?}", start, end, prot);
         if prot.intersects(MEMOPS_EXTRAS) {
             log::error!("Invalid prots for segment region {:?}", prot);
             return Err(CapaError::InvalidOperation);
@@ -501,18 +502,20 @@ pub trait Monitor<T: PlatformState + 'static> {
         if !flags.is_empty() {
             // NOTE: we are missing some checks here, not all memory covered by regions can be accessed
             // in the current design.
-            let hash = if flags.contains(MemOps::HASH) {
-                let data = unsafe {
-                    core::slice::from_raw_parts(
-                        region_info.start as *const u8,
-                        region_info.end - region_info.start,
-                    )
-                };
-                let hash = hash_region(data);
-                Some(hash)
-            } else {
-                None
-            };
+            // No longer using memops::hash this way in the fasthash fix :) dont want to hash twice
+            // let hash = if flags.contains(MemOps::HASH) {
+            //     let data = unsafe {
+            //         core::slice::from_raw_parts(
+            //             region_info.start as *const u8,
+            //             region_info.end - region_info.start,
+            //         )
+            //     };
+            //     let hash = hash_region(data);
+            //     Some(hash)
+            // } else {
+            //     None
+            // };
+            let hash = None;
             let opt_flags = if flags.is_empty() { None } else { Some(flags) };
             let _ = engine.send_with_flags(*current, capa, to, opt_flags, hash);
         } else {
