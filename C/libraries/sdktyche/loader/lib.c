@@ -24,6 +24,8 @@
 #include "backend.h"
 #include "tyche_api.h"
 
+#include "blake3.h"
+
 //#define TYCHE_DEBUG 1
 
 // ———————————————————————————— Local Functions ————————————————————————————— //
@@ -384,7 +386,130 @@ int parse_domain(tyche_domain_t* domain)
       //TODO figure out if we want to keep a pointer to the segment.
     }
   }
+
+  //////////////////////////////////////////////////////////
+  // Calculate expected attestation hash of given domain. //
+  //////////////////////////////////////////////////////////
+
+  // Sort ELF segments by vaddr using a simple selection sort algorithm
+  int n_loadable = domain->parser.header.e_phnum;
+  int * sorted_idxs = malloc(sizeof(int)*n_loadable);
+
+  for (int i = 0; i < n_loadable; i++) {
+      sorted_idxs[i] = i;
+  }
+
+  for (int i = 0; i < n_loadable - 1; i++) {
+      for (int j = i + 1; j < n_loadable; j++) {
+          if (domain->parser.segments[sorted_idxs[i]].p_vaddr > domain->parser.segments[sorted_idxs[j]].p_vaddr) {
+              int temp = sorted_idxs[i];
+              sorted_idxs[i] = sorted_idxs[j];
+              sorted_idxs[j] = temp;
+          }
+      }
+  }
+
+  // Initialize blake3 hasher
+  #define BLOCK_SIZE 16*1024
+  #define HASH_LEN 32
+  uint8_t zeroes[BLOCK_SIZE] = {0}; // convenience for hashing segments where filesz < memsz
+  uint8_t buf[BLOCK_SIZE] = {0};
+  uint8_t hash[HASH_LEN] = {0};
+
+  blake3_hasher hasher;
+  blake3_hasher_init(&hasher);
+
+  // Iterate over segments, hashing contents appropriately
+  // TODO(fisher): This currently only hashes appended contents of confidential segments, w/o metadata like vaddr, flags, etc.
+  for (int i = 0; i < n_loadable; i++) {
+    int idx = sorted_idxs[i];
+    Elf64_Phdr seg = domain->parser.segments[idx];
+
+    // TODO(fisher): Detail the non-loadable segment types.
+    if (!is_loadable(seg.p_type)) {
+      continue;
+    }
+
+    // KERNEL_SHARED segments are segments which we can't trust, anyway.
+    if (seg.p_type == KERNEL_SHARED) {
+      // TODO(fisher): Hash metadata of the segment
+      continue;
+    }
+
+    // This segment is modified anyway, correctness is proved by Tyche's method of producing the measurement.
+    // TODO(fisher): This is a version of the enclave PT (vmcs.cr3) that is modified anyway, right?
+    if (seg.p_type == PAGE_TABLES_CONF) {
+      continue;
+    }
+
+    // TODO(fisher): Should be zeroed, right? Unsure if we ever encounter this anymore.
+    if (seg.p_type == KERNEL_STACK_CONF) {
+      continue;
+    }
+
+    // TODO(fisher): IIRC, this indicates a segment added by the manifest, as
+    // confidential segments w/ RWX (0x7) is not normal. So this is a way to
+    // flag segments added by the manifest, should be zeroed.
+    if (seg.p_type == KERNEL_CONFIDENTIAL || seg.p_type == USER_CONFIDENTIAL) {
+      if (seg.p_flags == PF_R | PF_W | PF_X) {
+        // TODO(fisher): Hash metadata of segment
+        continue;
+      }
+    }
+
+    // The real size of allocated memory for the segment (size) may be larger than the
+    // stored bytes in the ELF (filesz). So we hash `filesz` bytes from the ELF,
+    // and then `size-filesz` bytes of zeroes.
+    size_t size = compute_real_size(seg.p_vaddr, seg.p_memsz);
+    elf_parser_t * parser = &domain->parser.elf;
   
+    LOG("hashing vaddr 0x%x memsz 0x%x total_size 0x%x flags %x", seg.p_vaddr, seg.p_memsz, size, seg.p_flags);
+
+    if (parser->type == FILE_ELF) {
+      lseek(parser->fd, seg.p_offset, SEEK_SET);
+    } else {
+      parser->memory.offset = seg.p_offset;
+    }
+
+    size_t current_read = 0;
+    while (current_read < seg.p_filesz) {
+      // Hash one block at a time. May be unnecessary for performance.
+      size_t to_read = (seg.p_filesz - current_read > BLOCK_SIZE) ? BLOCK_SIZE : seg.p_filesz - current_read;
+
+      LOG("hashing vaddr 0x%x sz 0x%x", seg.p_vaddr + current_read, to_read);
+      if (parser->type == FILE_ELF) {
+        read(parser->fd, buf, to_read);
+        blake3_hasher_update(&hasher, buf, to_read);
+      } else {
+        blake3_hasher_update(&hasher, parser->memory.start + parser->memory.offset, to_read);
+        parser->memory.offset += to_read;
+      }
+
+      current_read += to_read;
+    }
+
+    while (current_read < size) {
+      // Hash one block at a time. May be unnecessary for performance.
+      size_t to_read = (size - current_read > BLOCK_SIZE) ? BLOCK_SIZE : size - current_read;
+      LOG("hashing vaddr 0x%x zeroes sz 0x%x", seg.p_vaddr + current_read, to_read);
+      blake3_hasher_update(&hasher, zeroes, to_read);
+      current_read += to_read;
+    }
+  }
+
+  blake3_hasher_finalize(&hasher, hash, HASH_LEN);
+
+  char logbuf[128] = {0};
+  int n = sprintf(logbuf, "Final hash: 0x");
+  for (int i = 0; i < HASH_LEN; i++) {
+    sprintf(&logbuf[n + i*2], "%02x", hash[i]);
+  }
+  LOG(logbuf);
+
+  ////////////////////////////////////////////////////////////////
+  // END calculating expected attestation hash of given domain. //
+  ////////////////////////////////////////////////////////////////
+
   // Compute the memory slots required for the segments.
   // Go through segments.
   for (int i = 0; i < domain->parser.header.e_phnum; i++) {
