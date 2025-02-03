@@ -690,6 +690,15 @@ impl CapaEngine {
         self.domains[domain].get(capa)?.as_domain()
     }
 
+    pub fn get_switch_capa(
+        &self,
+        domain: Handle<Domain>,
+        capa: LocalCapa,
+    ) -> Result<Handle<Domain>, CapaError> {
+        let (switch_capa, _) = self.domains[domain].get(capa)?.as_switch()?;
+        Ok(switch_capa)
+    }
+
     pub fn get_region_capa(
         &self,
         domain: Handle<Domain>,

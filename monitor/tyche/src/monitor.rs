@@ -175,6 +175,14 @@ pub trait PlatformState {
         gpa: usize,
         size: usize,
     ) -> Result<(usize, usize), CapaError>;
+
+    fn measure(
+        &mut self,
+        engine: &mut MutexGuard<CapaEngine>,
+        current_handle: Handle<Domain>,
+        domain_handle: Handle<Domain>,
+        core: usize,
+    ) -> Result<u64, CapaError>;
 }
 
 pub trait Monitor<T: PlatformState + 'static> {
@@ -404,7 +412,12 @@ pub trait Monitor<T: PlatformState + 'static> {
         //TODO: fix that.
         let capa = engine.seal(*current, core, domain)?;
         if let Ok(domain_capa) = engine.get_domain_capa(*current, domain) {
+            // Old capability-hashing attestation method.
             calculate_attestation_hash(&mut engine, domain_capa);
+            let switch_capa = engine.get_switch_capa(*current, capa)?;
+            // Calculate attestation hash by measuring virutal memory.
+            // TODO(fisher): The hash is currently not returned, just printed.
+            let hash = state.measure(&mut engine, *current, switch_capa, 1);
         }
 
         Self::apply_updates(state, &mut engine);

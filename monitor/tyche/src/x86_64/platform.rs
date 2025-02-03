@@ -6,11 +6,13 @@ use core::sync::atomic::Ordering;
 use capa_engine::context::RegisterGroup;
 use capa_engine::utils::BitmapIterator;
 use capa_engine::{
-    permission, AccessRights, CapaEngine, CapaError, Domain, Handle, LocalCapa, MemOps,
+    permission, AccessRights, CapaEngine, CapaError, Domain, Handle, LocalCapa, MemOps, MEMOPS_ALL
 };
 use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::FrameAllocator;
 use mmu::PtMapper;
+use mmu::PtFlag;
+use mmu::walker::{Level, WalkNext};
 use spin::MutexGuard;
 use stage_two_abi::{GuestInfo, Manifest};
 use utils::HostPhysAddr;
@@ -18,6 +20,8 @@ use utils::{GuestPhysAddr, GuestVirtAddr};
 use vmx::bitmaps::exit_qualification;
 use vmx::fields::VmcsField;
 use vmx::VmxExitReason;
+
+use attestation::hashing::TycheHasher;
 
 use super::context::{ContextGpx86, Contextx86};
 use super::cpuid_filter::{filter_mpk, filter_tpause};
@@ -74,6 +78,131 @@ pub fn remap_core_bitmap(bitmap: u64) -> u64 {
 impl PlatformState for StateX86 {
     type DomainData = DataX86;
     type Context = Contextx86;
+
+    // Measure the next domain to be loaded, domain_handle.
+    //
+    // Currently, the measurement is the hash of the concatenation of
+    // the contents of virtual memory available to the domain, which is done
+    // by walking the new domain's page table.
+    //
+    // Pages which correspond to shared memory, or memory which is confidential
+    // and specified by the manifest, are zeroed instead of hashed.
+    //
+    // This is close to a real attestation method for benchmarking, but in a real
+    // deployment you would want to also ensure uniqueness of the underlying physical
+    // memory for non-shared pages, and also ensure that non-shared pages belong
+    // to regions which are only owned by that domain, i.e. are not carved.
+    //
+    // Additionally, basic metadata for each page should be added to the hash,
+    // like vaddr, size, and ptflags, rather than just the contents.
+    fn measure(
+        &mut self,
+        engine: &mut MutexGuard<CapaEngine>,
+        current_handle: Handle<Domain>,
+        domain_handle: Handle<Domain>,
+        core: usize,
+    ) -> Result<u64, CapaError> {
+        let rcvmcs = RC_VMCS.lock();
+        let current_domain = Self::get_domain(current_handle);
+        let mut current_ctx = Self::get_context(current_handle, cpuid());
+        let next_domain = Self::get_domain(domain_handle);
+        let mut next_ctx = Self::get_context(domain_handle, core);
+
+        // Load the VMCS structure of the next domain, IIRC just to make grabbing the Guest CR3 easy.
+        current_ctx.load(&mut self.vcpu);
+        let mut values: [usize; 13] = [0; 13];
+        dump_host_state(&mut self.vcpu, &mut values).or(Err(CapaError::InvalidValue))?;
+        self.vcpu
+        .switch_frame(rcvmcs.get(next_ctx.vmcs).unwrap().frame)
+        .unwrap();
+        next_ctx.flush(&mut self.vcpu);
+        self.vcpu.set_ept_ptr(HostPhysAddr::new(next_domain.ept.unwrap().as_usize() | EPT_ROOT_FLAGS))
+        .expect("Failed to set guest EPT");
+
+        // Initialize page-table walker and hasher.
+        let cr3 = self.vcpu.get(VmcsField::GuestCr3).unwrap();
+        let mut ptm: PtMapper<GuestPhysAddr, _> = PtMapper::new(0, 0, GuestPhysAddr::new(cr3));
+        let mut hasher = TycheHasher::new();
+        let permission_iter = engine.get_domain_permissions(domain_handle).unwrap();
+
+        static PAGE_MASK: usize = !(0x1000 - 1);
+
+        // Callback function for the page-table walker that updates the hash.
+        let callback = &mut |addr: GuestVirtAddr, entry: &mut u64, level: Level| {
+            let flags = PtFlag::from_bits_truncate(*entry);
+
+            if flags.contains(PtFlag::PRESENT) {
+                let lvl = match level {
+                    Level::L1 => 1,
+                    Level::L2 => 2,
+                    Level::L3 => 3,
+                    Level::L4 => 4,
+                    _ => 5,
+                };
+
+                if lvl > 1 {
+                    if flags.contains(PtFlag::PSIZE) {
+                        panic!("Huge/giga pages unsupported in measure.");
+                    }
+                }
+
+                if lvl == 1 {
+                    let phys = (*entry & ((1 << 63) - 1) & (PAGE_MASK as u64)) as usize;
+                    let end = phys + 0x1000;
+
+                    // Find physical memory range of domain that corresponds to guest VA `addr`
+                    for range in next_domain.remapper.remap(permission_iter.clone()) {
+                        let range_start = range.gpa;
+                        let range_end = range_start + range.size;
+                        if range_start <= phys
+                            && phys < range_end
+                            && end <= range_end
+                        {
+                            // Create ptr to phys memory
+                            let data = unsafe {
+                                core::slice::from_raw_parts_mut(
+                                    phys as *mut u8,
+                                    end - phys,
+                                )
+                            };
+
+                            // Ranges with MEMOPS_ALL are ones that we can zero, that is, ranges which
+                            // were specified via the manifest and are either shared or confidential and zero.
+                            if range.ops == MEMOPS_ALL {
+                                data.fill(0);
+                            } else {
+                                hasher.update(data);
+                                // log::info!("adding virt 0x{:x} phys 0x{:x} flags {:x} memops {:?} to hash", addr.as_usize(), phys, flags, range.ops);
+                            }
+                        }
+                    }
+                }
+
+                return WalkNext::Continue;
+            }
+
+            return WalkNext::Leaf;
+        };
+
+        // Probably increase range of walked memory to more than 4GB in the future.
+        ptm.look_around(GuestVirtAddr::new(0), GuestVirtAddr::new(1 << 32), callback)
+        .expect("Looking around FAILED :(");
+
+        // TODO(fisher): Not returned, just printed.
+        let hash = hasher.finalize();
+        log::info!("final hash: {}", hash.to_hex());
+
+        // Switch back to original VMCS
+        load_host_state(&mut self.vcpu, &mut values).or(Err(CapaError::InvalidValue))?;
+        self.vcpu
+        .switch_frame(rcvmcs.get(current_ctx.vmcs).unwrap().frame)
+        .unwrap();
+        self.vcpu.set_ept_ptr(HostPhysAddr::new(current_domain.ept.unwrap().as_usize() | EPT_ROOT_FLAGS))
+        .expect("Failed to update EPT");
+        current_ctx.flush(&mut self.vcpu);
+
+        return Ok(0 as u64);
+    }
 
     fn find_buff(
         &mut self,

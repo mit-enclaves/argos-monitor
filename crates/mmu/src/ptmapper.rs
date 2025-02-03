@@ -121,6 +121,21 @@ where
         phys_addr
     }
 
+    // Helper to expose walk_range
+    pub fn look_around<F>(
+        &mut self,
+        start: VirtAddr,
+        end: VirtAddr,
+        callback: &mut F,
+    ) -> Result<(), ()>
+    where
+        F: FnMut(VirtAddr, &mut u64, Level) -> WalkNext,
+    {
+        unsafe {
+            self.walk_range(start, end, callback)
+        }
+    }
+
     pub fn map_range(
         &mut self,
         allocator: &impl FrameAllocator,
