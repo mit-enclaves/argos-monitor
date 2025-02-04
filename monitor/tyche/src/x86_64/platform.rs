@@ -3,11 +3,13 @@
 use core::arch::asm;
 use core::sync::atomic::Ordering;
 
+use capa_engine::config::NB_CAPAS_PER_DOMAIN;
 use capa_engine::context::RegisterGroup;
 use capa_engine::utils::BitmapIterator;
 use capa_engine::{
-    permission, AccessRights, CapaEngine, CapaError, Domain, Handle, LocalCapa, MemOps, MEMOPS_ALL
+    permission, AccessRights, CapaEngine, CapaError, CapaInfo, Domain, Handle, LocalCapa, MemOps, NextCapaToken, MEMOPS_ALL
 };
+
 use mmu::eptmapper::EPT_ROOT_FLAGS;
 use mmu::FrameAllocator;
 use mmu::PtMapper;
@@ -77,6 +79,8 @@ pub fn remap_core_bitmap(bitmap: u64) -> u64 {
 }
 
 static mut UNIQUE_MEM: TycheHashSet = TycheHashSet { data: [None; CAPACITY] };
+const ARRAY_REPEAT_VALUE: Option<CapaInfo> = None;
+static mut REGION_CAPAS: [Option<CapaInfo>; NB_CAPAS_PER_DOMAIN] = [ARRAY_REPEAT_VALUE; NB_CAPAS_PER_DOMAIN];
 
 impl PlatformState for StateX86 {
     type DomainData = DataX86;
@@ -122,6 +126,28 @@ impl PlatformState for StateX86 {
         self.vcpu.set_ept_ptr(HostPhysAddr::new(next_domain.ept.unwrap().as_usize() | EPT_ROOT_FLAGS))
         .expect("Failed to set guest EPT");
 
+        // Create a list of all the region capabilities
+        // Awkward, but creating this list ahead of time avoids borrow issues with calling engine.enumerate in the callback.
+        // Reason we need capabilities in the first place is because Mappings don't contain info on regions being shared or not.
+        let mut num_regions = 0;
+        let mut next_capa = NextCapaToken::new();
+        while let Some((info, next_next_capa, _)) = engine.enumerate(domain_handle, next_capa) {
+            next_capa = next_next_capa;
+            match info {
+                CapaInfo::Region {
+                    start,
+                    end,
+                    unique,
+                    children: _,
+                    ops,
+                } => {
+                    unsafe { REGION_CAPAS[num_regions] = Some(info); };
+                    num_regions += 1;
+                }
+                _ => {}
+            }
+        }
+
         // Initialize page-table walker and hasher.
         let cr3 = self.vcpu.get(VmcsField::GuestCr3).unwrap();
         let mut ptm: PtMapper<GuestPhysAddr, _> = PtMapper::new(0, 0, GuestPhysAddr::new(cr3));
@@ -151,7 +177,7 @@ impl PlatformState for StateX86 {
 
                 if lvl == 1 {
                     let phys = (*entry & ((1 << 63) - 1) & (PAGE_MASK as u64)) as usize;
-                    let end = phys + 0x1000;
+                    let phys_end = phys + 0x1000;
 
                     // Find physical memory range of domain that corresponds to guest VA `addr`
                     for range in next_domain.remapper.remap(permission_iter.clone()) {
@@ -159,33 +185,51 @@ impl PlatformState for StateX86 {
                         let range_end = range_start + range.size;
                         if range_start <= phys
                             && phys < range_end
-                            && end <= range_end
+                            && phys_end <= range_end
                         {
-                            // Create ptr to phys memory
-                            let data = unsafe {
-                                core::slice::from_raw_parts_mut(
-                                    phys as *mut u8,
-                                    end - phys,
-                                )
-                            };
+                            // Find capability corresponding to region
+                            for i in 0..num_regions {
+                                let capa = unsafe { REGION_CAPAS[i].clone().unwrap() };
+                                match capa {
+                                    CapaInfo::Region {
+                                        start,
+                                        end,
+                                        unique,
+                                        children,
+                                        ops,
+                                    } => {
+                                        if start >= range_start && end <= range_end {
+                                            // Create ptr to phys memory
+                                            let data = unsafe {
+                                                core::slice::from_raw_parts_mut(
+                                                    phys as *mut u8,
+                                                    phys_end - phys,
+                                                )
+                                            };
 
-                            // Ensure that unshared pages are unique
-                            // TODO(fisher): only check for unique pages
-                            let fresh = unsafe { UNIQUE_MEM.insert(phys) };
-                            if (!fresh) {
-                                panic!("{:#x} is already in UNIQUE_MEM!", phys);
-                            } else {
-                                // log::info!("Adding {:#x} to unique_mem", phys);
+                                            // Ensure that unshared pages are unique
+                                            if (unique) {
+                                                let fresh = unsafe { UNIQUE_MEM.insert(phys) };
+                                                if (!fresh) {
+                                                    panic!("{:#x} is already in UNIQUE_MEM!", phys);
+                                                }
+                                            }
+
+                                            // Ranges with MEMOPS_ALL are ones that we can zero, that is, ranges which
+                                            // were specified via the manifest and are either shared or confidential and zero.
+                                            if !unique || range.ops == MEMOPS_ALL {
+                                                data.fill(0);
+                                            } else {
+                                                hasher.update(data);
+                                            }
+
+                                            break;
+                                        }
+                                    }
+                                    _  => {}
+                                }
                             }
 
-                            // Ranges with MEMOPS_ALL are ones that we can zero, that is, ranges which
-                            // were specified via the manifest and are either shared or confidential and zero.
-                            if range.ops == MEMOPS_ALL {
-                                data.fill(0);
-                            } else {
-                                hasher.update(data);
-                                // log::info!("adding virt 0x{:x} phys 0x{:x} flags {:x} memops {:?} to hash", addr.as_usize(), phys, flags, range.ops);
-                            }
                         }
                     }
                 }
@@ -200,9 +244,12 @@ impl PlatformState for StateX86 {
         ptm.look_around(GuestVirtAddr::new(0), GuestVirtAddr::new(1 << 32), callback)
         .expect("Looking around FAILED :(");
 
-        // Clear the hashset
+        // Clear the hashset & list of region capabilities
         unsafe {
             UNIQUE_MEM.clear();
+            for i in 0..NB_CAPAS_PER_DOMAIN {
+                unsafe { REGION_CAPAS[i] = None };
+            }
         };
 
         // TODO(fisher): Not returned, just printed.
