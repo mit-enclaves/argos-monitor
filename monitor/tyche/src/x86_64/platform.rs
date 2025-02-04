@@ -22,6 +22,7 @@ use vmx::fields::VmcsField;
 use vmx::VmxExitReason;
 
 use attestation::hashing::TycheHasher;
+use attestation::hashset::{TycheHashSet, CAPACITY};
 
 use super::context::{ContextGpx86, Contextx86};
 use super::cpuid_filter::{filter_mpk, filter_tpause};
@@ -74,6 +75,8 @@ pub fn remap_core_bitmap(bitmap: u64) -> u64 {
 
     new_bitmap
 }
+
+static mut UNIQUE_MEM: TycheHashSet = TycheHashSet { data: [None; CAPACITY] };
 
 impl PlatformState for StateX86 {
     type DomainData = DataX86;
@@ -166,6 +169,15 @@ impl PlatformState for StateX86 {
                                 )
                             };
 
+                            // Ensure that unshared pages are unique
+                            // TODO(fisher): only check for unique pages
+                            let fresh = unsafe { UNIQUE_MEM.insert(phys) };
+                            if (!fresh) {
+                                panic!("{:#x} is already in UNIQUE_MEM!", phys);
+                            } else {
+                                // log::info!("Adding {:#x} to unique_mem", phys);
+                            }
+
                             // Ranges with MEMOPS_ALL are ones that we can zero, that is, ranges which
                             // were specified via the manifest and are either shared or confidential and zero.
                             if range.ops == MEMOPS_ALL {
@@ -187,6 +199,11 @@ impl PlatformState for StateX86 {
         // Probably increase range of walked memory to more than 4GB in the future.
         ptm.look_around(GuestVirtAddr::new(0), GuestVirtAddr::new(1 << 32), callback)
         .expect("Looking around FAILED :(");
+
+        // Clear the hashset
+        unsafe {
+            UNIQUE_MEM.clear();
+        };
 
         // TODO(fisher): Not returned, just printed.
         let hash = hasher.finalize();

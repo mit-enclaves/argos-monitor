@@ -17,7 +17,7 @@ use crate::{allocator, vmx, HostPhysAddr, HostVirtAddr};
 pub const PAGE_SIZE: usize = 0x1000;
 
 /// How much memory to reserve for the second stage
-const SECOND_STAGE_RESERVED_MEMORY: u64 = 0x1000000;
+const SECOND_STAGE_RESERVED_MEMORY: u64 = 0x8000000;
 
 // ————————————————————————— Physical Memory Offset ————————————————————————— //
 
