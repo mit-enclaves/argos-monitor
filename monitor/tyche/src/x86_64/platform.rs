@@ -88,20 +88,31 @@ impl PlatformState for StateX86 {
 
     // Measure the next domain to be loaded, domain_handle.
     //
-    // Currently, the measurement is the hash of the concatenation of
-    // the contents of virtual memory available to the domain, which is done
-    // by walking the new domain's page table.
+    // The measurement is made by walking the domain's page table and, for each
+    // page, adding the concatenation of the following to a hash:
     //
-    // Pages which correspond to shared memory, or memory which is confidential
-    // and specified by the manifest, are zeroed instead of hashed.
+    //   v_addr: 8 bytes
+    //   size:   8 bytes
+    //   flags:  8 bytes
+    //   status: 1 byte
+    //   [data]: size bytes
     //
-    // This is close to a real attestation method for benchmarking, but in a real
-    // deployment you would want to also ensure uniqueness of the underlying physical
-    // memory for non-shared pages, and also ensure that non-shared pages belong
-    // to regions which are only owned by that domain, i.e. are not carved.
+    //   flags is the copy of the flags from the PTE
+    //   status is 0 for shared, 1 for unique and zeroed, 2 for unique & hashed
+    //   [data] only follows if status==2.
     //
-    // Additionally, basic metadata for each page should be added to the hash,
-    // like vaddr, size, and ptflags, rather than just the contents.
+    // Pages which correspond to confidential memory specified by the manifest
+    // are enforced to be zeroed instead of hashed.
+    //
+    // Pages which correspond to shared memory are neither zeroed nor hashed, as
+    // their contents should always be treated as untrusted inputs.
+    //
+    // Additionally, this measurement function enforces that the underlying physical
+    // memory for all confidential memory is unique. This is done by adding all
+    // used physical memory to a hashset, and checking that the underlying physical
+    // memory is only accessible to the domain (checking the unique bit in the region capability).
+    //
+    // TODO(fisher): Also append basic state of the VMCS like rsp rip etc to the measurement.
     fn measure(
         &mut self,
         engine: &mut MutexGuard<CapaEngine>,
@@ -154,7 +165,7 @@ impl PlatformState for StateX86 {
         let mut hasher = TycheHasher::new();
         let permission_iter = engine.get_domain_permissions(domain_handle).unwrap();
 
-        static PAGE_MASK: usize = !(0x1000 - 1);
+        const PAGE_MASK: usize = !(0x1000 - 1);
 
         // Callback function for the page-table walker that updates the hash.
         let callback = &mut |addr: GuestVirtAddr, entry: &mut u64, level: Level| {
@@ -180,6 +191,9 @@ impl PlatformState for StateX86 {
                     let phys_end = phys + 0x1000;
 
                     // Find physical memory range of domain that corresponds to guest VA `addr`
+                    // TODO(fisher): For x86 we always have GPA==HPA, so we could likely speed this up by
+                    //               only iterating over the region capabilities instead rather than
+                    //               the Mappings and then finding the corresponding region capability.
                     for range in next_domain.remapper.remap(permission_iter.clone()) {
                         let range_start = range.gpa;
                         let range_end = range_start + range.size;
@@ -215,12 +229,23 @@ impl PlatformState for StateX86 {
                                                 }
                                             }
 
+                                            // Add page metadata to hash
+                                            hasher.update(&addr.as_u64().to_le_bytes());   // m = m || v_addrs
+                                            hasher.update(&(phys_end-phys).to_le_bytes()); // m = m || size
+                                            hasher.update(&flags.bits().to_le_bytes());    // m = m || flags
+
                                             // Ranges with MEMOPS_ALL are ones that we can zero, that is, ranges which
                                             // were specified via the manifest and are either shared or confidential and zero.
-                                            if !unique || range.ops == MEMOPS_ALL {
-                                                data.fill(0);
+                                            if unique {
+                                                if range.ops == MEMOPS_ALL {
+                                                    hasher.update(&[1_u8]); // m = m || status
+                                                    data.fill(0);
+                                                } else {
+                                                    hasher.update(&[2_u8]); // m = m || status
+                                                    hasher.update(data);    // m = m || <size_bytes>
+                                                }
                                             } else {
-                                                hasher.update(data);
+                                                hasher.update(&[0_u8]);     // m = m || status
                                             }
 
                                             break;
