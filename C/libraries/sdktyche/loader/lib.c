@@ -420,42 +420,29 @@ int parse_domain(tyche_domain_t* domain)
   blake3_hasher_init(&hasher);
 
   // Iterate over segments, hashing contents appropriately
-  // TODO(fisher): This currently only hashes appended contents of confidential segments, w/o metadata like vaddr, flags, etc.
   for (int i = 0; i < n_loadable; i++) {
     int idx = sorted_idxs[i];
     Elf64_Phdr seg = domain->parser.segments[idx];
 
-    // TODO(fisher): Detail the non-loadable segment types.
     if (!is_loadable(seg.p_type)) {
       continue;
     }
 
-    // KERNEL_SHARED segments are segments which we can't trust, anyway.
-    if (seg.p_type == KERNEL_SHARED) {
-      // TODO(fisher): Hash metadata of the segment
-      continue;
-    }
-
     // This segment is modified anyway, correctness is proved by Tyche's method of producing the measurement.
-    // TODO(fisher): This is a version of the enclave PT (vmcs.cr3) that is modified anyway, right?
     if (seg.p_type == PAGE_TABLES_CONF) {
       continue;
     }
 
-    // TODO(fisher): Should be zeroed, right? Unsure if we ever encounter this anymore.
-    if (seg.p_type == KERNEL_STACK_CONF) {
-      continue;
-    }
-
-    // TODO(fisher): IIRC, this indicates a segment added by the manifest, as
-    // confidential segments w/ RWX (0x7) is not normal. So this is a way to
-    // flag segments added by the manifest, should be zeroed.
-    if (seg.p_type == KERNEL_CONFIDENTIAL || seg.p_type == USER_CONFIDENTIAL) {
-      if (seg.p_flags == PF_R | PF_W | PF_X) {
-        // TODO(fisher): Hash metadata of segment
-        continue;
-      }
-    }
+    // format of the hash per page is:
+    //   v_addr: 8 bytes
+    //   size:   8 bytes
+    //   flags:  8 bytes
+    //   status: 1 byte
+    //   [data]: size bytes
+    //
+    //   flags is the copy of the flags from the PTE
+    //   status is 0 for shared, 1 for unique and zeroed, 2 for unique & hashed
+    //   [data] only follows if status==2.
 
     // The real size of allocated memory for the segment (size) may be larger than the
     // stored bytes in the ELF (filesz). So we hash `filesz` bytes from the ELF,
@@ -463,37 +450,73 @@ int parse_domain(tyche_domain_t* domain)
     size_t size = compute_real_size(seg.p_vaddr, seg.p_memsz);
     elf_parser_t * parser = &domain->parser.elf;
   
-    LOG("hashing vaddr 0x%x memsz 0x%x total_size 0x%x flags %x", seg.p_vaddr, seg.p_memsz, size, seg.p_flags);
-
     if (parser->type == FILE_ELF) {
       lseek(parser->fd, seg.p_offset, SEEK_SET);
     } else {
       parser->memory.offset = seg.p_offset;
     }
 
-    size_t current_read = 0;
-    while (current_read < seg.p_filesz) {
-      // Hash one block at a time. May be unnecessary for performance.
-      size_t to_read = (seg.p_filesz - current_read > BLOCK_SIZE) ? BLOCK_SIZE : seg.p_filesz - current_read;
-
-      LOG("hashing vaddr 0x%x sz 0x%x", seg.p_vaddr + current_read, to_read);
-      if (parser->type == FILE_ELF) {
-        read(parser->fd, buf, to_read);
-        blake3_hasher_update(&hasher, buf, to_read);
-      } else {
-        blake3_hasher_update(&hasher, parser->memory.start + parser->memory.offset, to_read);
-        parser->memory.offset += to_read;
-      }
-
-      current_read += to_read;
+    // Determine status byte
+    uint8_t status = 0;
+    if (seg.p_type != USER_SHARED && seg.p_type != KERNEL_SHARED) {
+      status = should_zero(seg) ? 1 : 2;
     }
 
-    while (current_read < size) {
-      // Hash one block at a time. May be unnecessary for performance.
-      size_t to_read = (size - current_read > BLOCK_SIZE) ? BLOCK_SIZE : size - current_read;
-      LOG("hashing vaddr 0x%x zeroes sz 0x%x", seg.p_vaddr + current_read, to_read);
-      blake3_hasher_update(&hasher, zeroes, to_read);
-      current_read += to_read;
+    // Create bitfield matching the PTE flag bits.
+    // All PTEs for a given segment should have the same PTE flags.
+    uint64_t flags = 0;
+    if (seg.p_flags & PF_R)
+      flags |= 1 << 0;
+
+    if (seg.p_flags & PF_W)
+      flags |= 1 << 1;
+
+    if ((seg.p_flags & PF_X) != PF_X)
+      flags |= ((uint64_t)1 << 63);
+
+    uint64_t pt_size = PT_PAGE_SIZE;
+    size_t current_read = 0;
+    for (int i = 0; i < size / PT_PAGE_SIZE; i++) {
+      uint64_t vaddr = seg.p_vaddr + i * PT_PAGE_SIZE;
+
+      blake3_hasher_update(&hasher, &vaddr, sizeof(uint64_t));
+      blake3_hasher_update(&hasher, &pt_size, sizeof(uint64_t));
+      blake3_hasher_update(&hasher, &flags, sizeof(uint64_t));
+      blake3_hasher_update(&hasher, &status, sizeof(uint8_t));
+
+      // If unique & we should hash contents.
+      if (status == 2) {
+        size_t mem_to_read, zeroes_to_read;
+
+        // Determine how many bytes from ELF to read for this page. ELFs do not
+        // store memory to fill out are page, so we need to read from zeroes
+        // at the end of a segment.
+        if (current_read < seg.p_filesz) {
+          mem_to_read = seg.p_filesz - current_read > PT_PAGE_SIZE ? PT_PAGE_SIZE : seg.p_filesz - current_read;
+          zeroes_to_read = mem_to_read < PT_PAGE_SIZE ? PT_PAGE_SIZE - mem_to_read : 0;
+        } else {
+          mem_to_read = 0;
+          zeroes_to_read = PT_PAGE_SIZE;
+        }
+
+        // Read from ELF
+        if (mem_to_read > 0) {
+          if (parser->type == FILE_ELF) {
+            read(parser->fd, buf, mem_to_read);
+            blake3_hasher_update(&hasher, buf, mem_to_read);
+          } else {
+            blake3_hasher_update(&hasher, parser->memory.start + parser->memory.offset, mem_to_read);
+            parser->memory.offset += mem_to_read;
+          }
+        }
+
+        // Read from zeroes
+        if (zeroes_to_read > 0) {
+          blake3_hasher_update(&hasher, zeroes, zeroes_to_read);
+        }
+
+        current_read += PT_PAGE_SIZE;
+      }
     }
   }
 
@@ -517,6 +540,28 @@ int parse_domain(tyche_domain_t* domain)
     usize total = 0;
     usize seg_size = 0;
     int is_pipe = 0;
+
+  Elf64_Word	p_type;			/* Segment type */
+  Elf64_Word	p_flags;		/* Segment flags */
+  Elf64_Off	p_offset;		/* Segment file offset */
+  Elf64_Addr	p_vaddr;		/* Segment virtual address */
+  Elf64_Addr	p_paddr;		/* Segment physical address */
+  Elf64_Xword	p_filesz;		/* Segment size in file */
+  Elf64_Xword	p_memsz;		/* Segment size in memory */
+  Elf64_Xword	p_align;		/* Segment alignment */
+
+
+
+    LOG("seg loadable %d vaddr 0x%x memsz 0x%x type %x filesz 0x%x align %x, flags %x",
+      is_loadable(tpe),
+      domain->parser.segments[i].p_vaddr,
+      domain->parser.segments[i].p_memsz,
+      tpe,
+      domain->parser.segments[i].p_filesz,
+      domain->parser.segments[i].p_align,
+      domain->parser.segments[i].p_flags
+    );
+
     // Only consider loadable segments instrumented by tychools.
     if (!is_loadable(tpe)) {
       continue;
@@ -615,6 +660,27 @@ int should_hash(Elf64_Phdr seg) {
   }
 
   return 1;
+}
+
+int should_zero(Elf64_Phdr seg) {
+  Elf64_Word type = seg.p_type;
+  Elf64_Word flags = seg.p_flags;
+
+  // RWX confidential pages aren't normal. Easy way to flag regions added by manifest.
+  if (type == USER_CONFIDENTIAL || type == KERNEL_CONFIDENTIAL) {
+    if ((flags & PF_R) && (flags & PF_W) && (flags & PF_X)) {
+      return 1;
+    }
+  }
+
+  if (type == USER_STACK_SB ||
+      type == USER_STACK_CONF ||
+      type == KERNEL_STACK_SB ||
+      type == KERNEL_STACK_CONF) {
+        return 1;
+      }
+
+  return 0;
 }
 
 int load_domain(tyche_domain_t* domain)
