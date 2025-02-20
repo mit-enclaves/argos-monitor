@@ -1,7 +1,7 @@
 use core::cell::Cell;
 use core::iter::Iterator;
 
-use attestation::hashing::HashEnclave;
+use attestation::hashing::{TycheHasher, HashEnclave};
 use attestation::signature::EnclaveReport;
 
 use crate::capa::{Capa, IntoCapa};
@@ -90,6 +90,12 @@ pub struct Domain {
     attestation_report: Option<EnclaveReport>,
     /// Is it an I/O domain?
     is_io: bool,
+    /// argos measurement hash
+    argos_measurement: Option<[u8; 32]>,
+    /// argos transcript finalized
+    argos_finalized: bool,
+    /// argos transcript hash
+    argos_transcript: Option<[u8; 32]>,
     /// Temporary ID used for attestation
     pub(crate) temporary_id: Cell<u64>,
 }
@@ -111,6 +117,9 @@ impl Domain {
             attestation_hash: None,
             attestation_report: None,
             is_io: io,
+            argos_measurement: None,
+            argos_finalized: false,
+            argos_transcript: None,
             temporary_id: Cell::new(0),
         }
     }
@@ -260,6 +269,44 @@ impl Domain {
 
     pub fn set_report(&mut self, report: EnclaveReport) {
         self.attestation_report = Some(report);
+    }
+
+    pub fn set_argos_measurement(&mut self, measurement: &[u8; 32]) {
+        self.argos_measurement = Some(*measurement);
+    }
+
+    pub fn get_argos_measurement(&mut self) -> Option<[u8; 32]> {
+        self.argos_measurement
+    }
+
+    pub fn argos_append_transcript(&mut self, data: &[u8]) {
+        if self.argos_finalized {
+            panic!("Attempted to append to a finalized transcript");
+        }
+
+        let mut hasher = TycheHasher::new();
+
+        if let Some(transcript) = &self.argos_transcript {
+            log::info!("transcript was: {:?}", transcript);
+            hasher.update(transcript);
+        } else {
+            if let Some(measurement) = &self.argos_measurement {
+                log::info!("transcript was: {:?}", measurement);
+                hasher.update(measurement);
+            } else {
+                panic!("Attempted to append to transcript on domain without a measurement");
+            }
+        }
+
+        log::info!("updating transcript with {:?}", data);
+        hasher.update(data);
+        self.argos_transcript = Some(*hasher.finalize().as_bytes());
+        log::info!("new transcript: {:?}", self.argos_transcript);
+    }
+
+    pub fn argos_finalize_transcript(&mut self) -> Option<[u8; 32]> {
+        self.argos_finalized = true;
+        self.argos_transcript
     }
 
     pub fn get_report(&self) -> Option<EnclaveReport> {

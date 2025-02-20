@@ -7,10 +7,11 @@ use capa_engine::config::NB_CAPAS_PER_DOMAIN;
 use capa_engine::context::RegisterGroup;
 use capa_engine::utils::BitmapIterator;
 use capa_engine::{
-    permission, AccessRights, CapaEngine, CapaError, CapaInfo, Domain, Handle, LocalCapa, MemOps, NextCapaToken, MEMOPS_ALL
+    permission, AccessRights, CapaEngine, CapaError, CapaInfo, Domain, Handle, LocalCapa, MemOps, NextCapaToken, Region, MEMOPS_ALL
 };
 
 use mmu::eptmapper::EPT_ROOT_FLAGS;
+use mmu::ioptmapper::{ADDRESS_MASK, PAGE_SIZE};
 use mmu::FrameAllocator;
 use mmu::PtMapper;
 use mmu::PtFlag;
@@ -24,7 +25,9 @@ use vmx::fields::VmcsField;
 use vmx::VmxExitReason;
 
 use attestation::hashing::TycheHasher;
-use attestation::hashset::{TycheHashSet, CAPACITY};
+use attestation::hashset::{ArgosHashSet, CAPACITY};
+
+use debug::rdtscp;
 
 use super::context::{ContextGpx86, Contextx86};
 use super::cpuid_filter::{filter_mpk, filter_tpause};
@@ -78,9 +81,10 @@ pub fn remap_core_bitmap(bitmap: u64) -> u64 {
     new_bitmap
 }
 
-static mut UNIQUE_MEM: TycheHashSet = TycheHashSet { data: [None; CAPACITY] };
-const ARRAY_REPEAT_VALUE: Option<CapaInfo> = None;
-static mut REGION_CAPAS: [Option<CapaInfo>; NB_CAPAS_PER_DOMAIN] = [ARRAY_REPEAT_VALUE; NB_CAPAS_PER_DOMAIN];
+static mut UNIQUE_MEM: ArgosHashSet = ArgosHashSet { data: [None; CAPACITY] };
+const REGION_CAPAS_REPEAT: Option<CapaInfo> = None;
+static mut REGION_CAPAS: [Option<CapaInfo>; NB_CAPAS_PER_DOMAIN] = [REGION_CAPAS_REPEAT; NB_CAPAS_PER_DOMAIN];
+static mut LAST_CAPA: Option<&CapaInfo> = None;
 
 impl PlatformState for StateX86 {
     type DomainData = DataX86;
@@ -119,14 +123,18 @@ impl PlatformState for StateX86 {
         current_handle: Handle<Domain>,
         domain_handle: Handle<Domain>,
         core: usize,
+        measurement: &mut [u8; 32],
     ) -> Result<u64, CapaError> {
+
+        let start = rdtscp();
+
         let rcvmcs = RC_VMCS.lock();
         let current_domain = Self::get_domain(current_handle);
         let mut current_ctx = Self::get_context(current_handle, cpuid());
         let next_domain = Self::get_domain(domain_handle);
         let mut next_ctx = Self::get_context(domain_handle, core);
 
-        // Load the VMCS structure of the next domain, IIRC just to make grabbing the Guest CR3 easy.
+        // Load the VMCS structure of the next domain, to make grabbing the Guest CR3 easy.
         current_ctx.load(&mut self.vcpu);
         let mut values: [usize; 13] = [0; 13];
         dump_host_state(&mut self.vcpu, &mut values).or(Err(CapaError::InvalidValue))?;
@@ -146,11 +154,7 @@ impl PlatformState for StateX86 {
             next_capa = next_next_capa;
             match info {
                 CapaInfo::Region {
-                    start,
-                    end,
-                    unique,
-                    children: _,
-                    ops,
+                    ..
                 } => {
                     unsafe { REGION_CAPAS[num_regions] = Some(info); };
                     num_regions += 1;
@@ -159,105 +163,109 @@ impl PlatformState for StateX86 {
             }
         }
 
+        // Used as cache so we don't have to search across all region capabilities for every page.
+        unsafe { LAST_CAPA = REGION_CAPAS[0].as_ref() };
+
+        log::info!("num_regions: {}", num_regions);
+
         // Initialize page-table walker and hasher.
         let cr3 = self.vcpu.get(VmcsField::GuestCr3).unwrap();
         let mut ptm: PtMapper<GuestPhysAddr, _> = PtMapper::new(0, 0, GuestPhysAddr::new(cr3));
         let mut hasher = TycheHasher::new();
-        let permission_iter = engine.get_domain_permissions(domain_handle).unwrap();
-
-        const PAGE_MASK: usize = !(0x1000 - 1);
 
         // Callback function for the page-table walker that updates the hash.
         let callback = &mut |addr: GuestVirtAddr, entry: &mut u64, level: Level| {
             let flags = PtFlag::from_bits_truncate(*entry);
 
             if flags.contains(PtFlag::PRESENT) {
-                let lvl = match level {
-                    Level::L1 => 1,
-                    Level::L2 => 2,
-                    Level::L3 => 3,
-                    Level::L4 => 4,
-                    _ => 5,
-                };
-
-                if lvl > 1 {
+                if level != Level::L1 {
                     if flags.contains(PtFlag::PSIZE) {
                         panic!("Huge/giga pages unsupported in measure.");
                     }
+
+                    return WalkNext::Continue;
                 }
 
-                if lvl == 1 {
-                    let phys = (*entry & ((1 << 63) - 1) & (PAGE_MASK as u64)) as usize;
-                    let phys_end = phys + 0x1000;
+                let phys = (*entry & ((1 << 63) - 1) & (ADDRESS_MASK as u64)) as usize;
+                let phys_end = phys + 0x1000;
 
-                    // Find physical memory range of domain that corresponds to guest VA `addr`
-                    // TODO(fisher): For x86 we always have GPA==HPA, so we could likely speed this up by
-                    //               only iterating over the region capabilities instead rather than
-                    //               the Mappings and then finding the corresponding region capability.
-                    for range in next_domain.remapper.remap(permission_iter.clone()) {
-                        let range_start = range.gpa;
-                        let range_end = range_start + range.size;
-                        if range_start <= phys
-                            && phys < range_end
-                            && phys_end <= range_end
-                        {
-                            // Find capability corresponding to region
-                            for i in 0..num_regions {
-                                let capa = unsafe { REGION_CAPAS[i].clone().unwrap() };
-                                match capa {
-                                    CapaInfo::Region {
-                                        start,
-                                        end,
-                                        unique,
-                                        children,
-                                        ops,
-                                    } => {
-                                        if start >= range_start && end <= range_end {
-                                            // Create ptr to phys memory
-                                            let data = unsafe {
-                                                core::slice::from_raw_parts_mut(
-                                                    phys as *mut u8,
-                                                    phys_end - phys,
-                                                )
-                                            };
+                // Find physical memory range of domain that corresponds to guest VA `addr`
+                // For x86 in Tyche, we always have GPA==HPA, so checking the region capabilities is enough.
+                // Find capability corresponding to region
+                let mut capa = unsafe {
+                    match LAST_CAPA.unwrap() {
+                    CapaInfo::Region {
+                        start,
+                        end,
+                        ..
+                    } => { if *start <= phys && phys_end <= *end { LAST_CAPA } else { None }}
+                    _ => { None }
+                }};
 
-                                            // Ensure that unshared pages are unique
-                                            if (unique) {
-                                                let fresh = unsafe { UNIQUE_MEM.insert(phys) };
-                                                if (!fresh) {
-                                                    panic!("{:#x} is already in UNIQUE_MEM!", phys);
-                                                }
-                                            }
-
-                                            // Add page metadata to hash
-                                            hasher.update(&addr.as_u64().to_le_bytes());   // m = m || v_addrs
-                                            hasher.update(&(phys_end-phys).to_le_bytes()); // m = m || size
-                                            hasher.update(&flags.bits().to_le_bytes());    // m = m || flags
-
-                                            // Ranges with MEMOPS_ALL are ones that we can zero, that is, ranges which
-                                            // were specified via the manifest and are either shared or confidential and zero.
-                                            if unique {
-                                                if range.ops == MEMOPS_ALL {
-                                                    hasher.update(&[1_u8]); // m = m || status
-                                                    data.fill(0);
-                                                } else {
-                                                    hasher.update(&[2_u8]); // m = m || status
-                                                    hasher.update(data);    // m = m || <size_bytes>
-                                                }
-                                            } else {
-                                                hasher.update(&[0_u8]);     // m = m || status
-                                            }
-
-                                            break;
-                                        }
-                                    }
-                                    _  => {}
-                                }
-                            }
-
+                // If the previously used region capability does not contain the page, search for another one.
+                if capa.is_none() {
+                    for i in 0..num_regions {
+                        let possible_capa = unsafe { REGION_CAPAS[i].as_ref() };
+                        match possible_capa.unwrap() {
+                            CapaInfo::Region {
+                                start,
+                                end,
+                                ..
+                            } => { if *start <= phys && phys_end <= *end { capa = possible_capa; break } }
+                            _ => {}
                         }
                     }
-                }
+                };
+
+                match capa.unwrap() {
+                    CapaInfo::Region {
+                        start: _,
+                        end: _,
+                        unique,
+                        children: _,
+                        ops,
+                    } => {
+                        // Create ptr to phys memory
+                        let data = unsafe {
+                            core::slice::from_raw_parts_mut(
+                                phys as *mut u8,
+                                phys_end - phys,
+                            )
+                        };
+
+                        // Ensure that unshared pages are unique
+                        if *unique {
+                            let fresh = unsafe { UNIQUE_MEM.insert(phys) };
+                            if (!fresh) {
+                                panic!("{:#x} is already in UNIQUE_MEM!", phys);
+                            }
+                        }
+
+                        // Add page metadata to hash
+                        let mut metadata = [0u8; 25];
+                        metadata[0..8].copy_from_slice(&addr.as_u64().to_le_bytes());    // v_addrs (8 bytes)
+                        metadata[8..16].copy_from_slice(&(phys_end-phys).to_le_bytes()); // size (8 bytes) 
+                        metadata[16..24].copy_from_slice(&flags.bits().to_le_bytes());   // flags (8 bytes)
+                        metadata[24] = if *unique {                                      // status (1 byte)
+                            if *ops == MEMOPS_ALL { 1 } else { 2 }
+                        } else { 0 };
+                        hasher.update(&metadata);
+
+                        // Either add memory to hash or zero instead.
+                        if *unique {
+                            // Regions with MEMOPS_ALL correspond to memory specified in manifest, i.e.
+                            // either shared or unique and initialized to zero.
+                            if *ops == MEMOPS_ALL {
+                                data.fill(0);
+                            } else {
+                                hasher.update(data); // data (size bytes)
+                            }
+                        }
+                    }
+                    _  => { panic!("Appropriate region capability not found."); }
+                };
+
+                unsafe { LAST_CAPA = capa };
 
                 return WalkNext::Continue;
             }
@@ -266,20 +274,23 @@ impl PlatformState for StateX86 {
         };
 
         // Probably increase range of walked memory to more than 4GB in the future.
+        let onlywalk_start = rdtscp();
         ptm.look_around(GuestVirtAddr::new(0), GuestVirtAddr::new(1 << 32), callback)
         .expect("Looking around FAILED :(");
+        let onlywalk_end = rdtscp();
 
-        // Clear the hashset & list of region capabilities
+        // Clear the hashset, list of region capabilities, cached capa
         unsafe {
             UNIQUE_MEM.clear();
             for i in 0..NB_CAPAS_PER_DOMAIN {
-                unsafe { REGION_CAPAS[i] = None };
+                REGION_CAPAS[i] = None;
             }
+            LAST_CAPA = None;
         };
 
-        // TODO(fisher): Not returned, just printed.
+        // Finalize & store the measurement
         let hash = hasher.finalize();
-        log::info!("final hash: {}", hash.to_hex());
+        *measurement = hash.try_into().expect("Hasher finalizing failed");
 
         // Switch back to original VMCS
         load_host_state(&mut self.vcpu, &mut values).or(Err(CapaError::InvalidValue))?;
@@ -289,6 +300,12 @@ impl PlatformState for StateX86 {
         self.vcpu.set_ept_ptr(HostPhysAddr::new(current_domain.ept.unwrap().as_usize() | EPT_ROOT_FLAGS))
         .expect("Failed to update EPT");
         current_ctx.flush(&mut self.vcpu);
+
+        let end = rdtscp();
+
+        log::info!("measurement: 0x{}", hash.to_hex());
+        log::info!("measurement time: {} cycles", end - start);
+        log::info!("only the pt walk: {} cycles", onlywalk_end - onlywalk_start);
 
         return Ok(0 as u64);
     }

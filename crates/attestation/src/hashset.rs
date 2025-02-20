@@ -1,11 +1,11 @@
-use blake3::Hasher;
+use const_fnv1a_hash::fnv1a_hash_64;
 
 pub const CAPACITY: usize = 2097152;
-pub struct TycheHashSet {
+pub struct ArgosHashSet {
     pub data: [Option<usize>; CAPACITY],
 }
 
-impl TycheHashSet {
+impl ArgosHashSet {
     /// Inserts an element into the set.
     /// Returns `true` if the element was inserted, or `false` if it already exists.
     pub fn insert(&mut self, value: usize) -> bool {
@@ -55,12 +55,7 @@ impl TycheHashSet {
 
     /// Hashes a value to an index within the array bounds.
     fn hash(&self, value: usize) -> usize {
-        let mut hasher = Hasher::new();
-        hasher.update(&value.to_ne_bytes());
-        let binding = hasher.finalize();
-        let bytes = binding.as_bytes();
-        let array: [u8; 8] = bytes[0..8].try_into().unwrap();
-        usize::from_ne_bytes(array) % CAPACITY
+        (fnv1a_hash_64(&value.to_ne_bytes(), Some(0)) as usize) % CAPACITY
     }
 
     // Clears the hashset.

@@ -37,3 +37,5 @@ pub const SIGNED_ATTESTATION: usize = 32;
 pub const GET_SIGNING_KEY: usize = 33;
 pub const TPM_SIGN: usize = 34;
 pub const VTPM_SIGN: usize = 35;
+pub const ARGOS_APPEND_TRANSCRIPT: usize = 36;
+pub const ARGOS_GET_SIGNED_TRANSCRIPT: usize = 37;

@@ -182,6 +182,7 @@ pub trait PlatformState {
         current_handle: Handle<Domain>,
         domain_handle: Handle<Domain>,
         core: usize,
+        measurement: &mut [u8; 32],
     ) -> Result<u64, CapaError>;
 }
 
@@ -412,12 +413,17 @@ pub trait Monitor<T: PlatformState + 'static> {
         //TODO: fix that.
         let capa = engine.seal(*current, core, domain)?;
         if let Ok(domain_capa) = engine.get_domain_capa(*current, domain) {
-            // Old capability-hashing attestation method.
+            // Tyche's capability-hashing attestation method.
             calculate_attestation_hash(&mut engine, domain_capa);
+
+            // Argos attestation measuring enclave memory directly.
             let switch_capa = engine.get_switch_capa(*current, capa)?;
-            // Calculate attestation hash by measuring virutal memory.
-            // TODO(fisher): The hash is currently not returned, just printed.
-            let hash = state.measure(&mut engine, *current, switch_capa, 1);
+            let measurement: &mut [u8; 32] = &mut [0u8; 32];
+
+            // TODO: Get core id of what we're switching to. For testing, 1 for qemu, 2 for hw
+            let core = 1;
+            state.measure(&mut engine, *current, switch_capa, core, measurement)?;
+            engine.argos_set_measurement(domain_capa, measurement);
         }
 
         Self::apply_updates(state, &mut engine);
@@ -726,6 +732,80 @@ pub trait Monitor<T: PlatformState + 'static> {
         Ok(signature::vtpm_sign(digest_buff, signature_buff) as usize)
     }
 
+    // Allows a user to add a hash to the running transcript
+    // User specifies a buffer containing data & whether or not to hash it.
+    fn do_argos_append_transcript(
+        state: &mut T,
+        domain_handle: &mut Handle<Domain>,
+        addr: usize,
+        len: usize,
+        should_hash: bool,
+        is_gva: bool,
+    ) -> Result <usize, CapaError> {
+        let mut engine = Self::lock_engine(state, domain_handle);
+        let buff = T::find_buff(state, &engine, *domain_handle, addr, len, is_gva);
+        let Some(buff) = buff else {
+            log::info!("Invalid buffer while appending to transcript");
+            return Err(CapaError::InsufficientPermissions);
+        };
+        let data  = unsafe {
+            core::slice::from_raw_parts(
+                buff as *const u8,
+                len,
+            )
+        };
+
+        if should_hash {
+            let digest = attestation::hashing::hash_region(data);
+            engine.argos_append_transcript(*domain_handle, &digest);
+        } else {
+            engine.argos_append_transcript(*domain_handle, data);
+        }
+
+        Ok(0)
+    }
+
+    fn do_argos_get_signed_transcript(
+        state: &mut T,
+        domain_handle: &mut Handle<Domain>,
+        transcript_addr: usize,
+        transcript_len: usize,
+        signature_addr: usize,
+        signature_len: usize,
+        is_gva: bool,
+    ) -> Result<usize, CapaError> {
+        let mut engine = Self::lock_engine(state, domain_handle);
+        let transcript_buff = T::find_buff(state, &engine, *domain_handle, transcript_addr, transcript_len, is_gva);
+        let Some(transcript_buff) = transcript_buff else {
+            log::info!("Invalid buffer while appending to transcript");
+            return Err(CapaError::InsufficientPermissions);
+        };
+        let transcript_buff = unsafe { core::slice::from_raw_parts_mut(transcript_buff as *mut u8, transcript_len) };
+
+        let signature_buff = T::find_buff(state, &engine, *domain_handle, signature_addr, signature_len, is_gva);
+        let Some(signature_buff) = signature_buff else {
+            log::info!("Invalid buffer while appending to transcript");
+            return Err(CapaError::InsufficientPermissions);
+        };
+        let signature_buff = unsafe { core::slice::from_raw_parts_mut(signature_buff as *mut u8, signature_len) };
+
+        let Some(transcript) = engine.argos_finalize_transcript(*domain_handle) else {
+            return Err(CapaError::AlreadySealed);
+        };
+
+        // Check len of transcript buff
+        if (transcript_buff.len() < transcript.len()) {
+            log::info!("Transcript buffer too small");
+            return Err(CapaError::OutOfMemory);
+        }
+
+        transcript_buff.copy_from_slice(&transcript);
+
+        wolftpm_sys::hash_and_sign(&transcript, signature_buff);
+
+        Ok(0)
+    }
+
     fn do_tpm_selftest(
         state: &mut T,
         domain_handle: &mut Handle<Domain>,
@@ -1015,6 +1095,16 @@ pub trait Monitor<T: PlatformState + 'static> {
                 let written = Self::do_vtpm_sign(state, domain, args[0], args[1], args[2], args[3], args[4] != 0)?;
                 log::trace!("Wrote {} bytes of signature", written);
                 res[0] = written;
+                return Ok(true);
+            }
+            calls::ARGOS_APPEND_TRANSCRIPT => {
+                let result = Self::do_argos_append_transcript(state, domain, args[0], args[1], args[2] != 0, args[3] != 0)?;
+                res[0] = result;
+                return Ok(true);
+            }
+            calls::ARGOS_GET_SIGNED_TRANSCRIPT => {
+                let result = Self::do_argos_get_signed_transcript(state, domain, args[0], args[1], args[2], args[3], args[4] != 0)?;
+                res[0] = result;
                 return Ok(true);
             }
             calls::TPM_SELFTEST => {

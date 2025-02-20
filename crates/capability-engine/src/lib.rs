@@ -745,6 +745,18 @@ impl CapaEngine {
         self.domains[domain].set_report(rep);
     }
 
+    pub fn argos_set_measurement(&mut self, domain: Handle<Domain>, measurement: &[u8; 32]) {
+        self.domains[domain].set_argos_measurement(measurement);
+    }
+
+    pub fn argos_append_transcript(&mut self, domain: Handle<Domain>, data: &[u8]) {
+        self.domains[domain].argos_append_transcript(data);
+    }
+
+    pub fn argos_finalize_transcript(&mut self, domain: Handle<Domain>) -> Option<[u8; 32]> {
+        self.domains[domain].argos_finalize_transcript()
+    }
+
     /// Writes the attestation into the provided buffer.
     ///
     /// Returns the number of bytes written. Raises an out of memory error if buffer space is
