@@ -476,8 +476,11 @@ int parse_domain(tyche_domain_t* domain)
 
     uint64_t pt_size = PT_PAGE_SIZE;
     size_t current_read = 0;
+
+    uint64_t p_vaddr = seg.p_vaddr & PT_PHYS_PAGE_MASK;
+    size_t unaligned = seg.p_vaddr % PT_PAGE_SIZE;
     for (int i = 0; i < size / PT_PAGE_SIZE; i++) {
-      uint64_t vaddr = seg.p_vaddr + i * PT_PAGE_SIZE;
+      uint64_t vaddr = p_vaddr + i * PT_PAGE_SIZE;
 
       blake3_hasher_update(&hasher, &vaddr, sizeof(uint64_t));
       blake3_hasher_update(&hasher, &pt_size, sizeof(uint64_t));
@@ -488,15 +491,30 @@ int parse_domain(tyche_domain_t* domain)
       if (status == 2) {
         size_t mem_to_read, zeroes_to_read;
 
-        // Determine how many bytes from ELF to read for this page. ELFs do not
-        // store memory to fill out are page, so we need to read from zeroes
-        // at the end of a segment.
-        if (current_read < seg.p_filesz) {
-          mem_to_read = seg.p_filesz - current_read > PT_PAGE_SIZE ? PT_PAGE_SIZE : seg.p_filesz - current_read;
-          zeroes_to_read = mem_to_read < PT_PAGE_SIZE ? PT_PAGE_SIZE - mem_to_read : 0;
+        // If we have an unaligned segment,
+        if (vaddr < seg.p_vaddr) {
+          // we need to hash some zeroes first.
+          blake3_hasher_update(&hasher, zeroes, unaligned);
+          // If the remaining memory doesn't fill out the page,
+          // we still have some zeroes to read after the segment data.
+          if (seg.p_filesz + unaligned < PT_PAGE_SIZE) {
+            mem_to_read  = seg.p_filesz;
+            zeroes_to_read = PT_PAGE_SIZE - seg.p_filesz - unaligned;
+          } else  {
+            mem_to_read = PT_PAGE_SIZE - unaligned;
+            zeroes_to_read = 0;
+          }
         } else {
-          mem_to_read = 0;
-          zeroes_to_read = PT_PAGE_SIZE;
+          // Determine how many bytes from ELF to read for this page. ELFs do not
+          // store memory to fill out are page, so we need to read from zeroes
+          // at the end of a segment.
+          if (current_read < seg.p_filesz + unaligned) {
+            mem_to_read = seg.p_filesz + unaligned - current_read > PT_PAGE_SIZE ? PT_PAGE_SIZE : seg.p_filesz + unaligned - current_read;
+            zeroes_to_read = mem_to_read < PT_PAGE_SIZE ? PT_PAGE_SIZE - mem_to_read : 0;
+          } else {
+            mem_to_read = 0;
+            zeroes_to_read = PT_PAGE_SIZE;
+          }
         }
 
         // Read from ELF
