@@ -44,6 +44,8 @@ pub static CORE_UPDATES: [Mutex<Buffer<CoreUpdate>>; NB_CORES] = [EMPTY_UPDATE_B
 
 // —————————————————————— Constants for initialization —————————————————————— //
 const EMPTY_UPDATE_BUFFER: Mutex<Buffer<CoreUpdate>> = Mutex::new(Buffer::new());
+const TPM_TIS_ADDR: usize = 0xFED4_000;
+const TPM_TIS_SIZE: usize = 0x5000;
 
 // —————————————————————————— Trying to generalize —————————————————————————— //
 
@@ -206,11 +208,23 @@ pub trait Monitor<T: PlatformState + 'static> {
             .create_manager_domain(permission::monitor_inter_perm::ALL)
             .unwrap();
         Self::apply_updates(state, &mut engine);
+
+        // Argos: Don't give the initial domain capabilities to the TPM TIS interface.
         engine
             .create_root_region(
                 domain,
                 AccessRights {
                     start: 0,
+                    end: TPM_TIS_ADDR,
+                    ops: MEMOPS_ALL,
+                },
+            )
+            .unwrap();
+        engine
+            .create_root_region(
+                domain,
+                AccessRights {
+                    start: TPM_TIS_ADDR + TPM_TIS_SIZE,
                     end: manifest.poffset as usize,
                     ops: MEMOPS_ALL,
                 },
