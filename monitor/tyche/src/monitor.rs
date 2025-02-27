@@ -434,8 +434,8 @@ pub trait Monitor<T: PlatformState + 'static> {
             let switch_capa = engine.get_switch_capa(*current, capa)?;
             let measurement: &mut [u8; 32] = &mut [0u8; 32];
 
-            // TODO: Get core id of what we're switching to. For testing, 1 for qemu, 2 for hw
-            let core = 1;
+            // TODO: Get core id of domain that we're switching to. For now, 1 for qemu, 2 for hw (optiplex 7050)
+            let core = if cfg!(feature = "bare_metal") { 2 } else { 1 };
             state.measure(&mut engine, *current, switch_capa, core, measurement)?;
             engine.argos_set_measurement(domain_capa, measurement);
         }
