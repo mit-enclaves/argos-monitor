@@ -541,7 +541,7 @@ int parse_domain(tyche_domain_t* domain)
   blake3_hasher_finalize(&hasher, hash, HASH_LEN);
 
   char logbuf[128] = {0};
-  int n = sprintf(logbuf, "Final hash: 0x");
+  int n = sprintf(logbuf, "sdktyche loader measurement: 0x");
   for (int i = 0; i < HASH_LEN; i++) {
     sprintf(&logbuf[n + i*2], "%02x", hash[i]);
   }
@@ -559,26 +559,15 @@ int parse_domain(tyche_domain_t* domain)
     usize seg_size = 0;
     int is_pipe = 0;
 
-  Elf64_Word	p_type;			/* Segment type */
-  Elf64_Word	p_flags;		/* Segment flags */
-  Elf64_Off	p_offset;		/* Segment file offset */
-  Elf64_Addr	p_vaddr;		/* Segment virtual address */
-  Elf64_Addr	p_paddr;		/* Segment physical address */
-  Elf64_Xword	p_filesz;		/* Segment size in file */
-  Elf64_Xword	p_memsz;		/* Segment size in memory */
-  Elf64_Xword	p_align;		/* Segment alignment */
-
-
-
-    LOG("seg loadable %d vaddr 0x%x memsz 0x%x type %x filesz 0x%x align %x, flags %x",
-      is_loadable(tpe),
-      domain->parser.segments[i].p_vaddr,
-      domain->parser.segments[i].p_memsz,
-      tpe,
-      domain->parser.segments[i].p_filesz,
-      domain->parser.segments[i].p_align,
-      domain->parser.segments[i].p_flags
-    );
+    // LOG("seg loadable %d vaddr 0x%x memsz 0x%x type %x filesz 0x%x align %x, flags %x",
+    //   is_loadable(tpe),
+    //   domain->parser.segments[i].p_vaddr,
+    //   domain->parser.segments[i].p_memsz,
+    //   tpe,
+    //   domain->parser.segments[i].p_filesz,
+    //   domain->parser.segments[i].p_align,
+    //   domain->parser.segments[i].p_flags
+    // );
 
     // Only consider loadable segments instrumented by tychools.
     if (!is_loadable(tpe)) {
