@@ -6,6 +6,23 @@ More detailed documentation for the rest of Tyche is farther below in the docume
 
 These instructions assume you are building on an Intel x86_64 processor with VT-x capabilities. You must also have [Rust](https://www.rust-lang.org/tools/install) and [Qemu](https://www.qemu.org/download/#linux) installed.
 
+## Note on modifications
+
+Changes to Tyche that were made for supporting Argos have mostly been prepended with a comment citing `// Argos` or are
+functions with `argos` in the name. In particular, we added support for interacting with the TPM, added vmcalls for Argos
+applications to create their I/O transcript, and added an additional enclave-measurement system for Argos attestations.
+
+The vmcalls can be found in `monitor/tyche/src/monitor.rs`. Some additional vmcalls have been added there, which were useful
+for benchmarking purposes or PoC work.
+
+The measurement work can be found in `montior/tyche/src/x86_64/platform.rs:measure` and an example of generating the same
+measurement outside of monitor, i.e. from the enclave ELF directly, is in the sdktyche loader application
+`C/libraries/sdktyche/loader/lib.c`.
+
+We added several additional enclave applications, the loaders are built from and found at:
+ - `C/libraries/sdktyche/example/seal`
+ - `C/libraries/sdktyche/example/sealPIR`
+
 ## Creating a VM disk image
 
 To start, create an Ubuntu `.qcow2` image for your VM.
