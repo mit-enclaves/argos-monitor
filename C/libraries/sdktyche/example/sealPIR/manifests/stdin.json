@@ -17,7 +17,7 @@
       {
         "AddSegment":{
           "start": 9437184, 
-          "size":2147483648,
+          "size":3221225472,
           "tpe":"KernelConfidential",
           "write":true,
           "exec":false
@@ -25,7 +25,7 @@
       },
       {
         "AddSegment":{
-          "start": 2156953600,
+          "start": 3230662656,
           "size":32768,
           "tpe":"KernelStackConf",
           "write":true,"exec":false

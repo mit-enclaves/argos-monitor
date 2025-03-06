@@ -1,10 +1,17 @@
 {
   "untrusted_bin": {
-    "path": "stdin_app"
+    "path": "tcp_app"
   },
   "kern_bin": {
     "path":"enclave",
     "ops":[
+      {
+        "AddSegment":{
+          "size":8192,
+          "tpe":"KernelStackConf",
+          "write":true,"exec":false
+        }
+      },
       {
         "AddSegment":{
           "start": 3145728, 
@@ -16,8 +23,8 @@
       },
       {
         "AddSegment":{
-          "start": 9437184, 
-          "size":1073741824,
+          "start": 7340032, 
+          "size":3276800,
           "tpe":"KernelConfidential",
           "write":true,
           "exec":false
@@ -25,13 +32,15 @@
       },
       {
         "AddSegment":{
-          "size":32768,
-          "tpe":"KernelStackConf",
-          "write":true,"exec":false
+          "start": 10616832, 
+          "size":3276800,
+          "tpe":"KernelConfidential",
+          "write":true,
+          "exec":false
         }
       }
     ]
   },
   "generate_pts": true,
-  "output": "seal_stdin_enclave"
+  "output": "seal_tcp_enclave"
 }
