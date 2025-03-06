@@ -1,9 +1,9 @@
 [submodule "linux-kvm-tyche"]
 	path = linux
-	url = git@github.com:YuChen-Qian/linux-kvm-tyche.git
+	url = https://github.com/mit-enclaves/linux-kvm-tyche.git
 [submodule "busybox"]
 	path = busybox
-	url = git://busybox.net/busybox.git
+	url = https://git.busybox.net/busybox.git
 [submodule "opensbi-stage1"]
 	path = opensbi-stage1
-	url = git@github.com:neeluk7/opensbi-stage1.git
+	url = https://github.com/epfl-dcsl/tyche-stage1-opensbi.git
