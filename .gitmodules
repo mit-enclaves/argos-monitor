@@ -1,6 +1,6 @@
-[submodule "linux-kvm-tyche"]
+[submodule "linux-kvm-argos"]
 	path = linux
-	url = https://github.com/mit-enclaves/linux-kvm-tyche.git
+	url = https://github.com/mit-enclaves/linux-kvm-argos.git
 [submodule "busybox"]
 	path = busybox
 	url = https://git.busybox.net/busybox.git
