@@ -27,6 +27,7 @@ TYCHOOLS_LOCAL_BIN_PATH ?= ../target/release
 update_seal:
 	make ARCH=x86 KVM=0 DISK_PATH=/tmp/mount/tyche/programs/sdk_tyche -B -C libraries/sdktyche/example/seal all
 	make ARCH=x86 KVM=0 DISK_PATH=/tmp/mount/tyche/programs/sdk_tyche -B -C libraries/sdktyche/example/sealPIR all
+	make ARCH=x86 KVM=0 DISK_PATH=/tmp/mount/tyche/programs/sdk_tyche -B -C libraries/sdktyche/example/sealAPSI all
 
 
 # Make sure you mount the disk first
