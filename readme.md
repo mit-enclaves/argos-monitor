@@ -1,3 +1,5 @@
+This repository is based on the [`tyche-devel`](https://github.com/epfl-dcsl/tyche-devel) repository.
+
 # Argos Quick Build
 
 Below are instructions for quickly building Argos along with its example FHE applications.
@@ -22,6 +24,7 @@ measurement outside of monitor, i.e. from the enclave ELF directly, is in the sd
 We added several additional enclave applications, the loaders are built from and found at:
  - `C/libraries/sdktyche/example/seal`
  - `C/libraries/sdktyche/example/sealPIR`
+ - `C/libraries/sdktyche/example/sealAPSI`
 
 ## Creating a VM disk image
 
@@ -49,20 +52,20 @@ $ qemu-system-x86_64 \
 $ sudo mkdir -p /etc/systemd/system/serial-getty@ttyS0.service.d && echo -e "[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin $USER --noclear --noissue %I 115200 linux" | sudo tee /etc/systemd/system/serial-getty@ttyS0.service.d/override.conf > /dev/null && sudo sync
 ```
 
-## Building Tyche monitor
+## Building the monitor
 
-If you are here, you should have cloned at least `tyche-experiment-seal` and
-`wolftpm-sys` in the parent folder to `tyche-devel`, such that the folder hierarchy
+If you are here, you should have cloned at least `argos-experiment-seal` and
+`wolftpm-sys` in the parent folder to `argos-monitor`, such that the folder hierarchy
 looks like this:
 
 ```sh
 argos
-├── tyche-devel
-├── tyche-experiment-seal
+├── argos-monitor
+├── argos-experiment-seal
 └── wolftpm-sys
 ```
 
-Now, we can build Tyche.
+Now, we can build the monitor.
 
 ```sh
 # Build Tyche monitor
@@ -81,18 +84,17 @@ $ just build-linux-x86
 ## Building enclave applications
 
 ```sh
-# Build Tyche experiments
-$ cd ../tyche-experiment-seal
-# Recursively cloning submodules for tyche-experiment-seal may take a while
+$ cd ../argos-experiment-seal
+# Recursively cloning submodules for argos-experiment-seal may take a while
 $ git submodule update --init --recursive
 $ just refresh # Compiles all examples
 
-# Compile SEAL applications into
-$ cd tyche-devel
+# Instrument SEAL applications as enclaves
+$ cd ../argos-monitor
 $ make -C C update_seal
 ```
 
-Now, the untrusted enclave loader and the enclave have been built to `C/libraries/sdktyche/example/seal/seal_stdin_enclave` and `C/libraries/sdktyche/example/sealPIR/seal_stdin_enclave`.
+Now, the untrusted enclave loader and the enclave have been built to `C/libraries/sdktyche/example/seal/seal_stdin_enclave` and `C/libraries/sdktyche/example/sealPIR/seal_stdin_enclave` and `C/libraries/sdktyche/example/sealAPSI/seal_stdin_enclave`.
 
 These applications need to be copied to the VM to launch.
 
