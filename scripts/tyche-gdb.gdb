@@ -32,25 +32,32 @@ define symbol_linux
   #lx-symbols
 end
 
-define symbol_redis
-  delete breakpoints
-  set solib-search-path ~/tyche-experiment-redis/musl-build/lib/
-  set solib-absolute-prefix ~/tyche-experiment-redis/musl-build/lib/
-  symbol-file ~/tyche-experiment-redis/tyche-redis/src/redis-server
-end
+#define symbol_redis
+#  delete breakpoints
+#  set solib-search-path ~/tyche-experiment-redis/musl-build/lib/
+#  set solib-absolute-prefix ~/tyche-experiment-redis/musl-build/lib/
+#  symbol-file ~/tyche-experiment-redis/tyche-redis/src/redis-server
+#end
 
 define symbol_seal
   delete breakpoints
-  set solib-search-path ~/tyche-experiment-seal/toolchain-root/lib/
-  set solib-absolute-prefix ~/tyche-experiment-seal/toolchain-root/lib/
-  symbol-file ~/tyche-experiment-seal/SEAL/build/bin/sealexamples
+  set solib-search-path ../argos-experiment-seal/toolchain-root/lib/
+  set solib-absolute-prefix ../argos-experiment-seal/toolchain-root/lib/
+  symbol-file ../argos-experiment-seal/SEAL/build/bin/sealexamples
 end
 
 define symbol_seal_pir
   delete breakpoints
-  set solib-search-path ~/tyche-experiment-seal/toolchain-root/lib/
-  set solib-absolute-prefix ~/tyche-experiment-seal/toolchain-root/lib/
-  symbol-file ~/tyche-experiment-seal/SealPIR/bin/main
+  set solib-search-path ../argos-experiment-seal/toolchain-root/lib/
+  set solib-absolute-prefix ../argos-experiment-seal/toolchain-root/lib/
+  symbol-file ../argos-experiment-seal/SealPIR/bin/main
+end
+
+define symbol_seal_apsi
+  delete breakpoints
+  set solib-search-path ../argos-experiment-seal/toolchain-root/lib/
+  set solib-absolute-prefix ../argos-experiment-seal/toolchain-root/lib/
+  symbol-file ../argos-experiment-seal/APSI/build/bin/integration_tests
 end
 
 define symbol_tyche
