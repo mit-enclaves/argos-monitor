@@ -17,6 +17,8 @@ applications to create their I/O transcript, and added an additional enclave-mea
 The vmcalls can be found in `monitor/tyche/src/monitor.rs`. Some additional vmcalls have been added there, which were useful
 for benchmarking purposes or PoC work.
 
+For an example of using the transcript-related vmcalls, use the `argos_transcript_example` branch of [`argos-experiment-seal`](https://github.com/mit-enclaves/argos-experiment-seal/tree/argos_transcript_example).
+
 The measurement work can be found in `montior/tyche/src/x86_64/platform.rs:measure` and an example of generating the same
 measurement outside of monitor, i.e. from the enclave ELF directly, is in the sdktyche loader application
 `C/libraries/sdktyche/loader/lib.c`.
